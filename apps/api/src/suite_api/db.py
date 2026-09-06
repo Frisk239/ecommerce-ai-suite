@@ -1,6 +1,15 @@
-"""裸 psycopg 连通检查：本刀无 ORM/迁移，健康检查只回答「数据库可达吗」。"""
+"""数据库层：裸 psycopg 连通检查（/health 语义）+ SQLAlchemy engine 管理。
+
+/health 不依赖 ORM/迁移：仍走 check_database（原语义保留）。
+业务引擎统一走 to_sqlalchemy_url 归一化的 psycopg3 URL。
+"""
 
 import psycopg
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
+_DRIVER_PREFIX = "postgresql+psycopg://"
+_BARE_PREFIX = "postgresql://"
 
 
 def check_database(database_url: str, *, timeout_seconds: float = 3.0) -> bool:
@@ -17,3 +26,20 @@ def check_database(database_url: str, *, timeout_seconds: float = 3.0) -> bool:
     except Exception:  # noqa: BLE001 - 健康检查必须吞掉一切连接错误细节
         return False
     return True
+
+
+def to_sqlalchemy_url(database_url: str) -> str:
+    """postgresql:// -> postgresql+psycopg://（驱动固定 psycopg3，ADR 0022 工程选型）。"""
+    if database_url.startswith(_DRIVER_PREFIX):
+        return database_url
+    if database_url.startswith(_BARE_PREFIX):
+        return _DRIVER_PREFIX + database_url[len(_BARE_PREFIX) :]
+    return database_url
+
+
+def create_database_engine(database_url: str) -> Engine:
+    return create_engine(to_sqlalchemy_url(database_url), pool_pre_ping=True)
+
+
+def create_session_factory(engine: Engine) -> sessionmaker[Session]:
+    return sessionmaker(bind=engine, expire_on_commit=False)
