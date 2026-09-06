@@ -1,0 +1,49 @@
+# 电商 AI 套件 · 工程脚手架
+# 用户路径：docker compose up -> http://localhost:5173 健康卡双绿。
+# 本刀无业务：db 只装 pgvector 不用，api 只有 /health。
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: suite
+      POSTGRES_PASSWORD: suite
+      POSTGRES_DB: suite
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U suite"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://suite:suite@db:5432/suite
+      STORAGE_ROOT: /data/objects
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/objects:/data/objects
+
+  web:
+    build: ./apps/web
+    depends_on:
+      - api
+    environment:
+      # 容器内 vite dev proxy 指向 compose 网络里的 api 服务；
+      # 本地裸跑 npm run dev 时不设该变量，默认代理到 localhost:8000
+      API_PROXY_TARGET: http://api:8000
+    ports:
+      - "5173:5173"
+
+volumes:
+  pgdata:

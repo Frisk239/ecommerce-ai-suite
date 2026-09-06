@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/*
+ * 脚手架视觉锚定（与冻结原型同语言，token 子集）：
+ * - 白画布；分层一律 rgba 墨线（.10/.16），不用实色描边
+ * - 品牌蓝 #4176E6 只承担信息语义（链接/选中/正常态），不进按钮、不做渐变
+ * - 数字 tabular-nums；中文系统字体栈；无 emoji
+ * - Tailwind v4：不用 @apply，只留 token + 内置 utility
+ */
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC",
+    sans-serif;
+
+  --color-ink: #0f172a;
+  --color-ink-2: #475569;
+  --color-ink-3: #94a3b8;
+
+  --color-line: rgba(15, 23, 42, 0.1);
+  --color-line-strong: rgba(15, 23, 42, 0.16);
+
+  --color-accent: #4176e6;
+}
+
+@layer base {
+  html {
+    font-size: 100%;
+  }
+  body {
+    background-color: #ffffff;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: rgba(65, 118, 230, 0.16);
+  }
+  *:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+}

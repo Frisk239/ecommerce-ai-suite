@@ -1,0 +1,13 @@
+# api 镜像的 build context 是仓库根（见 compose.yaml），
+# 只需要 pyproject/lock 与两个 Python 成员，排除其余内容加速构建。
+.git
+.scratch
+docs
+prototype
+reference
+apps/web
+data
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
