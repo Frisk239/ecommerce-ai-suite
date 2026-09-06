@@ -1,0 +1,418 @@
+@import "tailwindcss";
+
+/*
+ * 设计系统 v3：对齐 deepseek-harness / StaffDesk 的视觉语言（token 取值见 UX-NOTES.md）
+ * - 白画布 + 侧栏 #F9FAFB 灰蓝阶；分层靠 rgba 墨线（4/10/12/16%）与极淡阴影，不靠实色描边
+ * - 主按钮近黑 #0F1115（DSH brand-primary），品牌蓝 #4176E6 只承担信息语义：链接、选中、发送、引用
+ * - 文字四级墨阶：ink #0F1115 / ink-2 #61666B / ink-3 #81858C / caption #ADB2B8
+ * - hover 用墨色 alpha 叠加（#263148 6-10%），不换色相；active scale(0.98)
+ * - 圆角：4 芯片标签 / 6 按钮小件 / 8 面板输入 / 16 气泡；等宽栈尾接 PingFang SC 防 Windows 回退宋体
+ * - 数字一律 tabular-nums；过渡 cubic-bezier(0.4,0,0.2,1) 120-200ms
+ */
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas,
+    "Liberation Mono", Menlo, Courier, "PingFang SC", "Microsoft YaHei";
+
+  --text-xs: 12px;
+  --text-xs--line-height: 18px;
+  --text-sm: 13px;
+  --text-sm--line-height: 20px;
+  --text-base: 14px;
+  --text-base--line-height: 22px;
+  --text-lg: 16px;
+  --text-lg--line-height: 24px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 30px;
+
+  /* 中性灰蓝阶（DSH neutral-bluish） */
+  --color-base: #ffffff;
+  --color-fill-50: #f9fafb;
+  --color-fill-60: #f5f6f7;
+  --color-fill-75: #f1f3f5;
+  --color-fill-100: #ebeef2;
+  --color-fill-150: #e9ecf2;
+
+  /* 墨阶文字 */
+  --color-ink: #0f1115;
+  --color-ink-2: #61666b;
+  --color-ink-3: #81858c;
+  --color-caption: #adb2b8;
+
+  /* 分层墨线（rgba 黑四档） */
+  --color-line-1: rgba(0, 0, 0, 0.04);
+  --color-line-2: rgba(0, 0, 0, 0.1);
+  --color-line-3: rgba(0, 0, 0, 0.12);
+  --color-line-4: rgba(0, 0, 0, 0.16);
+
+  /* 品牌蓝（DSH deepseek 系）：只做信息强调，不做主按钮 */
+  --color-accent: #4176e6;
+  --color-accent-strong: #3b66c9;
+  --color-accent-soft: #edf3fe;
+  --color-accent-border: #c9dafc;
+
+  /* hover 墨色叠加 */
+  --color-hover: rgba(38, 49, 72, 0.06);
+  --color-hover-strong: rgba(38, 49, 72, 0.1);
+
+  --ease-dsh: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@layer base {
+  html {
+    font-size: 100%;
+  }
+  body {
+    @apply bg-base text-ink-2 font-sans text-base antialiased;
+  }
+  ::selection {
+    background: rgba(65, 118, 230, 0.18);
+  }
+  *:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d6d8dc;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #c3c6cb;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* ---- 表面：白面板 + 墨线 + 极淡阴影（DSH shadow-lv2）---- */
+  .panel {
+    @apply bg-base border border-line-2 rounded-[8px];
+    box-shadow:
+      0 4px 12px 0 rgba(0, 0, 0, 0.02),
+      0 2px 8px 0 rgba(0, 0, 0, 0.04);
+  }
+  .panel-flat {
+    @apply bg-base border border-line-2 rounded-[8px];
+  }
+  .panel-hover {
+    transition: border-color 150ms var(--ease-dsh), box-shadow 150ms var(--ease-dsh);
+  }
+  .panel-hover:hover {
+    border-color: var(--color-line-3);
+    box-shadow:
+      0 4px 12px 0 rgba(0, 0, 0, 0.03),
+      0 4px 16px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  /* ---- 按钮：主按钮近黑（DSH brand-primary），品牌蓝不进按钮 ---- */
+  .btn,
+  .btn-primary,
+  .btn-ghost,
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 h-8 px-3.5 text-sm font-medium
+      rounded-[6px] border transition-all duration-150 select-none
+      disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap;
+    transition-timing-function: var(--ease-dsh);
+  }
+  .btn-primary {
+    @apply bg-ink text-white border-transparent;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #43454a;
+  }
+  .btn-primary:active:not(:disabled),
+  .btn-ghost:active:not(:disabled),
+  .btn-danger:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+  .btn-ghost {
+    @apply bg-base border-line-3 text-ink-2;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    @apply text-ink;
+    background: var(--color-hover);
+    border-color: var(--color-line-4);
+  }
+  .btn-danger {
+    @apply bg-base border-line-3 text-red-600;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: rgba(236, 19, 19, 0.05);
+    border-color: rgba(224, 49, 49, 0.3);
+  }
+  .btn-sm {
+    @apply h-7 px-2.5 text-xs;
+  }
+
+  /* ---- 状态徽章：语义色点 + 浅底（已发布=安静的绿，待人洗=琥珀，已接入=灰）---- */
+  .badge,
+  .badge-published,
+  .badge-review,
+  .badge-ingested,
+  .badge-failed,
+  .badge-accent,
+  .badge-neutral {
+    @apply inline-flex items-center gap-1.5 h-5 px-2 text-[11px] font-medium rounded-[4px]
+      border whitespace-nowrap;
+  }
+  .badge::before,
+  .badge-published::before,
+  .badge-review::before,
+  .badge-ingested::before,
+  .badge-failed::before,
+  .badge-accent::before,
+  .badge-neutral::before {
+    content: "";
+    @apply w-1 h-1 rounded-full shrink-0;
+  }
+  .badge-published {
+    @apply text-emerald-800 border-emerald-200/70;
+    background: #e6faed;
+  }
+  .badge-published::before {
+    @apply bg-emerald-500;
+  }
+  .badge-review {
+    @apply text-amber-800 border-amber-200/70;
+    background: #fef5e7;
+  }
+  .badge-review::before {
+    background: #f59e0b;
+  }
+  .badge-ingested {
+    @apply text-ink-2 border-line-3;
+    background: var(--color-fill-100);
+  }
+  .badge-ingested::before {
+    @apply bg-caption;
+  }
+  .badge-failed {
+    @apply text-red-700 border-red-200/70;
+    background: #fef2f2;
+  }
+  .badge-failed::before {
+    background: #ec1313;
+  }
+  .badge-accent {
+    @apply text-accent-strong border-accent-border/60 bg-accent-soft;
+  }
+  .badge-accent::before {
+    @apply bg-accent;
+  }
+  .badge-neutral {
+    @apply text-ink-3 border-line-3 bg-base;
+  }
+  .badge-neutral::before {
+    @apply bg-caption;
+  }
+
+  /* ---- 引用芯片：资产ID · vN（mono 11px，品牌蓝语义）---- */
+  .cite-chip {
+    @apply inline-flex items-center gap-1 h-[22px] px-2 text-[11px] font-mono tabular-nums
+      bg-accent-soft text-accent-strong border border-transparent rounded-[4px]
+      hover:bg-base hover:border-accent-border cursor-pointer transition-colors duration-150;
+    transition-timing-function: var(--ease-dsh);
+  }
+
+  /* ---- 表格：高密度（~30px 行），表头与侧栏同色形成呼应 ---- */
+  .table-base {
+    @apply w-full border-collapse;
+    font-size: 12.5px;
+  }
+  .table-base th {
+    @apply text-left text-xs font-medium text-ink-3 px-3 py-2
+      border-b border-line-2 whitespace-nowrap;
+    background: var(--color-fill-50);
+  }
+  .table-base td {
+    @apply px-3 py-1.5 border-b border-line-1 align-middle h-8;
+  }
+  .table-base tbody tr {
+    transition: background-color 100ms var(--ease-dsh);
+  }
+  .table-base tbody tr:hover {
+    background: var(--color-hover);
+  }
+  .table-base tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* ---- 输入：透明底 + 墨线，聚焦换蓝边不加环 ---- */
+  .input {
+    @apply h-8 px-2.5 text-sm bg-base border border-line-2 rounded-[6px] text-ink
+      placeholder:text-caption hover:border-line-3
+      focus:border-accent focus:outline-none
+      disabled:bg-fill-60 disabled:text-caption transition-colors duration-150;
+    transition-timing-function: var(--ease-dsh);
+  }
+
+  /* ---- 分段控件（筛选 tabs）---- */
+  .seg {
+    @apply inline-flex rounded-[8px] p-1 gap-0.5;
+    background: var(--color-fill-100);
+  }
+  .seg-tab {
+    @apply h-6 px-3 text-xs rounded-[6px] text-ink-3 transition-all duration-150
+      hover:text-ink-2 whitespace-nowrap;
+    transition-timing-function: var(--ease-dsh);
+  }
+  .seg-tab-active {
+    @apply bg-base text-ink font-medium;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  /* ---- 侧栏导航：底 #F9FAFB，选中 = 灰底 + 2px 品牌蓝左标 + 500 字重 ---- */
+  .nav-link {
+    @apply relative flex items-center gap-2.5 h-8 mx-2 px-3 rounded-[6px] text-[13px] text-ink-2
+      transition-colors duration-150;
+    transition-timing-function: var(--ease-dsh);
+  }
+  .nav-link:hover {
+    background: var(--color-hover);
+    @apply text-ink;
+  }
+  .nav-link-active {
+    background: var(--color-fill-100);
+    @apply text-ink font-medium;
+  }
+  .nav-link-active:hover {
+    background: var(--color-fill-100);
+  }
+  .nav-link-active::before {
+    content: "";
+    @apply absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-full bg-accent;
+  }
+  .nav-group {
+    @apply px-5 pt-4 pb-1 text-[11px] font-medium text-caption tracking-[0.06em];
+  }
+
+  /* ---- 对话气泡：顾客=品牌蓝浅底胶囊（DSH 用户气泡），客服=白卡 ---- */
+  .bubble-customer {
+    @apply max-w-[80%] rounded-[16px] px-3.5 py-2.5 text-sm text-ink;
+    background: var(--color-accent-soft);
+  }
+  .bubble-agent {
+    @apply max-w-[80%] rounded-[16px] bg-base border border-line-2 px-3.5 py-2.5 text-sm text-ink;
+  }
+
+  /* ---- 流式输出：typing 三点（填住首字延迟）、尾部块状光标（CSS-only）---- */
+  .typing-dots {
+    @apply inline-flex items-center gap-1 h-5;
+  }
+  .typing-dots span {
+    @apply w-1.5 h-1.5 rounded-full bg-caption;
+    animation: dsh-typing 1.2s var(--ease-dsh) infinite;
+  }
+  .typing-dots span:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+  .typing-dots span:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+  @keyframes dsh-typing {
+    0%,
+    60%,
+    100% {
+      opacity: 0.35;
+      transform: translateY(0);
+    }
+    30% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
+  .stream-caret {
+    @apply inline-block w-[7px] h-[15px] ml-0.5 align-[-2px] rounded-[1px];
+    background: var(--color-accent);
+    animation: dsh-caret 0.9s steps(1) infinite;
+  }
+  @keyframes dsh-caret {
+    0%,
+    49% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .typing-dots span,
+    .stream-caret {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  /* ---- 输入卡（DSH composer）：自增高 textarea + 圆形发送/停止 ---- */
+  .msg-composer {
+    @apply flex items-end gap-2 p-2 rounded-[12px] border border-line-2 bg-base;
+    transition: border-color 150ms var(--ease-dsh);
+  }
+  .msg-composer:focus-within {
+    border-color: var(--color-accent);
+  }
+  .msg-composer textarea {
+    @apply flex-1 resize-none bg-transparent border-0 outline-none text-sm text-ink
+      placeholder:text-caption leading-6 px-1.5 py-1 max-h-[120px];
+  }
+  .send-btn {
+    @apply w-[34px] h-[34px] rounded-full flex items-center justify-center shrink-0
+      transition-all duration-150 select-none;
+    background: var(--color-accent);
+    color: #fff;
+    transition-timing-function: var(--ease-dsh);
+  }
+  .send-btn:hover:not(:disabled) {
+    background: var(--color-accent-strong);
+  }
+  .send-btn:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .send-btn:disabled {
+    background: var(--color-fill-100);
+    color: var(--color-caption);
+  }
+
+  /* ---- 工具调用条（库存查询等，非 RAG）：灰底 mono ---- */
+  .tool-bar {
+    @apply inline-flex items-center gap-2 h-7 px-2.5 rounded-[6px] border border-line-2
+      text-[11px] text-ink-3;
+    background: var(--color-fill-60);
+  }
+
+  /* ---- 步骤轨迹 ---- */
+  .step-row {
+    @apply flex gap-3 px-4 py-2.5 border-b border-line-1 last:border-b-0;
+  }
+
+  /* ---- 统计卡（总览）：白面板墨线，大数字近黑 ---- */
+  .stat-card {
+    @apply bg-base border border-line-2 rounded-[8px] p-4 cursor-pointer;
+    box-shadow:
+      0 4px 12px 0 rgba(0, 0, 0, 0.02),
+      0 2px 8px 0 rgba(0, 0, 0, 0.04);
+    transition: border-color 150ms var(--ease-dsh), box-shadow 150ms var(--ease-dsh);
+  }
+  .stat-card:hover {
+    border-color: var(--color-line-3);
+    box-shadow:
+      0 4px 12px 0 rgba(0, 0, 0, 0.03),
+      0 4px 16px 0 rgba(0, 0, 0, 0.05);
+  }
+  .stat-value {
+    @apply text-2xl font-semibold tabular-nums text-ink tracking-tight;
+  }
+  .stat-label {
+    @apply text-xs font-medium text-ink-3;
+  }
+}

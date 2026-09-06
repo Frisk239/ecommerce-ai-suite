@@ -1,0 +1,23 @@
+# Local study clones; catalog is reference/README.md
+reference/*/
+!reference/README.md
+
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Env & local data (compose volumes, local object store)
+.env
+.env.*
+!.env.example
+data/
+
+# Slice Owner working artifacts (specs/tickets stay local; source of truth = docs/)
+.scratch/
