@@ -27,6 +27,7 @@ class AssetOut(BaseModel):
     title: str | None
     kind: str
     status: str
+    source_kind: str  # 0025 来源（血缘第一环）：登记端点语义定值
     product: ProductRef | None
     last_error: str | None
     current_published_version_no: int | None
@@ -74,6 +75,7 @@ def to_asset_out(
         title=asset.title,
         kind=asset.kind,
         status=asset.status,
+        source_kind=asset.source_kind,
         product=(
             ProductRef(id=product.id, name=product.name, category=product.category)
             if product

@@ -18,7 +18,7 @@ import { api } from '../api/endpoints'
 import { resolveFieldValue, toFieldView, type FieldView } from '../api/fields'
 import type { AssetVersion, Product } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
-import { formatDateTime } from '../labels'
+import { formatDateTime, formatAssetId, sourceKindLabel } from '../labels'
 import { ErrorBanner, SuccessBanner } from '../components/Banner'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { LoadingHint } from '../components/Loading'
@@ -402,7 +402,7 @@ export default function AssetDetailPage() {
               failed={detail.status === 'ingested' && detail.last_error !== null}
             />
             <KindChip kind={detail.kind} />
-            <span className="font-mono text-sm font-normal text-ink-3">A-{detail.id}</span>
+            <span className="font-mono text-sm font-normal text-ink-3">{formatAssetId(detail.id)}</span>
           </span>
         }
         desc={
@@ -557,12 +557,18 @@ export default function AssetDetailPage() {
               <dl className="space-y-1.5 text-[13px]">
                 <div className="flex gap-3">
                   <dt className="w-20 shrink-0 pt-0.5 text-xs text-ink-3">资产 ID</dt>
-                  <dd className="min-w-0 font-mono text-xs text-ink-2">A-{detail.id}</dd>
+                  <dd className="min-w-0 font-mono text-xs text-ink-2">{formatAssetId(detail.id)}</dd>
                 </div>
                 <div className="flex gap-3">
                   <dt className="w-20 shrink-0 pt-0.5 text-xs text-ink-3">种类</dt>
                   <dd className="min-w-0 text-ink-2">
                     <KindChip kind={detail.kind} />
+                  </dd>
+                </div>
+                <div className="flex gap-3">
+                  <dt className="w-20 shrink-0 pt-0.5 text-xs text-ink-3">来源</dt>
+                  <dd className="min-w-0 text-ink-2" title={detail.source_kind}>
+                    {sourceKindLabel(detail.source_kind)}
                   </dd>
                 </div>
                 <div className="flex gap-3">
@@ -672,7 +678,7 @@ export default function AssetDetailPage() {
 
       <ConfirmDialog
         open={confirmOpen}
-        title={`发布 A-${detail.id} · v${activeVersion?.version_no ?? '—'}`}
+        title={`发布 ${formatAssetId(detail.id)} · v${activeVersion?.version_no ?? '—'}`}
         body={confirmBody}
         confirmLabel="确认发布"
         busy={publishing}

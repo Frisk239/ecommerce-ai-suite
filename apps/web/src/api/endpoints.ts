@@ -6,6 +6,8 @@ import type {
   AssetListItem,
   AssetVersion,
   AuditEntry,
+  KnowledgeGap,
+  KnowledgeGapStatus,
   Operator,
   Product,
   ServiceAnswerComplete,
@@ -49,6 +51,10 @@ export const api = {
   listProducts: () => request<Product[]>('/products'),
   getProduct: (productId: number) => request<Product>(`/products/${productId}`),
   listAudit: (assetId: number) => request<AuditEntry[]>(`/audit?assetId=${assetId}`),
+
+  // 知识缺口（只读列表：产生随拒答、解决随发布，无创建/关闭端点）
+  listKnowledgeGaps: (status: KnowledgeGapStatus = 'open') =>
+    request<KnowledgeGap[]>(`/knowledge-gaps?status=${status}`),
 
   // 客服会话（预览与顾客接口同一引擎；传输用 SSE，不用 EventSource）
   createServiceSession: () =>
