@@ -35,7 +35,7 @@ const TABS: { status: AssetStatus; label: string; emptyTitle: string; emptyHint:
     label: '已发布',
     emptyTitle: '还没有已发布的资产',
     emptyHint:
-      '待人洗的资产补齐必填字段并确认机洗值后即可发布；发布后写回商品规格，并进入检索供引用。',
+      '待人洗的资产补齐必填字段并确认机洗值后即可发布；发布后写回商品规格，成为线上口径。',
   },
 ]
 

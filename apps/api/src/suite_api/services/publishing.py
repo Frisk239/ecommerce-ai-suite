@@ -33,7 +33,7 @@ def machine_value(extracted: dict[str, Any], field: str) -> str | None:
 def resolve_field_value(
     extracted: dict[str, Any], confirmed: dict[str, Any], field: str
 ) -> str | None:
-    """发布取值：confirmed 优先，其次 extracted 中非弃权值。"""
+    """合并取值口径：confirmed 优先，其次 extracted 中非弃权值（单字段查询用）。"""
     return confirmed_value(confirmed, field) or machine_value(extracted, field)
 
 
@@ -72,10 +72,16 @@ def publishable_values(
     extracted: dict[str, Any],
     confirmed: dict[str, Any],
 ) -> dict[str, str]:
-    """写回商品的字段值（0010）：schema 内所有可取到值的字段，confirmed 优先。"""
+    """写回商品的字段值（0010 写回语义）：confirmed 的键 ∩ schema 的键。
+
+    只写操作者确认（机洗值转确认）或补填（人填值）落下的字段；未确认的
+    机洗值不写回，商品该字段保持旧值。extracted 仅为保持三参调用签名保留，
+    不参与写回。必填闸门（missing/unconfirmed 两类 422）见 evaluate_publish_gate，
+    不受此处影响。
+    """
     values: dict[str, str] = {}
     for field in schema_field_names(spec_schema):
-        value = resolve_field_value(extracted, confirmed, field)
+        value = confirmed_value(confirmed, field)
         if value is not None:
             values[field] = value
     return values

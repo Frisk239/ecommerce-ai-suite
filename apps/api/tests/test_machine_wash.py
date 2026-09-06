@@ -63,6 +63,13 @@ def test_shelf_life_abstains() -> None:
     assert extract_shelf_life("保质期见包装") is None
 
 
+def test_shelf_life_skips_date_traps() -> None:
+    # 日期陷阱：日期类片段（生产日期/出厂日期/批号/日期 + 数字年月日）不是保质期
+    assert extract_shelf_life("生产日期：2026年8月1日，保质期：12个月") == "12个月"
+    assert extract_shelf_life("生产日期 2026 年 6 月，保质期 90日") == "90日"
+    assert extract_shelf_life("出厂日期：2026年8月1日") is None  # 只有日期：弃权
+
+
 # ---------- 材质（禁止裸通配） ----------
 
 
@@ -74,6 +81,7 @@ def test_shelf_life_abstains() -> None:
         ("材质是钛钢，经久耐用", "钛钢"),
         ("杯身采用304不锈钢材质制成", "304不锈钢"),  # 后缀式，剥离引导动词
         ("钛钢材质", "钛钢"),
+        ("材质：316不锈钢", "316不锈钢"),  # 分隔式过黑名单后的回归：正常值照抽
     ],
 )
 def test_material_explicit_patterns(text: str, expected: str) -> None:
@@ -87,6 +95,8 @@ def test_material_explicit_patterns(text: str, expected: str) -> None:
         "材质牌号未标注，详见吊牌",
         "材质信息详见外包装",
         "高硼硅玻璃，双层结构",  # 有材质词但无显式声明模式：弃权而非裸通配
+        "材质：未标注材质信息",  # 分隔式同过否定词黑名单：以「未标注」开头，弃权
+        "材质为不详",  # 分隔式命中「不详」：弃权
         "",
     ],
 )

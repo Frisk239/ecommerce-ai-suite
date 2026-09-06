@@ -79,10 +79,23 @@ def test_empty_string_confirmed_value_is_not_a_value() -> None:
     assert "净含量" in missing
 
 
-def test_publishable_values_cover_schema_fields_with_values() -> None:
-    extracted = {"净含量": {"value": "550ml", "source": "machine"}, "材质": {"abstained": True}}
-    confirmed = {"材质": {"value": "钛钢", "source": "human"}, "颜色": {"value": "青", "source": "human"}}
-    values = publishable_values(_MIXED_SCHEMA, extracted, confirmed)
-    # 写回 = schema 内可取值字段（0010）；schema 外（如「品牌」）不写。
-    # _MIXED_SCHEMA 含非必填「颜色」：confirmed 有值也一并写回。
-    assert values == {"净含量": "550ml", "颜色": "青"}
+def test_publishable_values_only_write_confirmed_fields() -> None:
+    # 写回 = confirmed 的键 ∩ schema 的键（0010：发布只写操作者确认过的字段）。
+    # 未确认的机洗值不写回——含非必填字段，商品该字段保持旧值。
+    extracted = {
+        "净含量": {"value": "550ml", "source": "machine"},  # 必填，未确认
+        "颜色": {"value": "青", "source": "machine"},  # 非必填，未确认
+    }
+    confirmed = {"材质": {"value": "钛钢", "source": "human"}}  # schema 外：不写
+    assert publishable_values(_MIXED_SCHEMA, extracted, confirmed) == {}
+
+    # 确认必填后发布：净含量写回；颜色（非必填）仍未确认，不写回
+    confirmed = {**confirmed, "净含量": {"value": "550ml", "source": "human"}}
+    assert publishable_values(_MIXED_SCHEMA, extracted, confirmed) == {"净含量": "550ml"}
+
+    # 操作者再确认颜色（机洗值转确认）：非必填字段也一并写回
+    confirmed = {**confirmed, "颜色": {"value": "青", "source": "human"}}
+    assert publishable_values(_MIXED_SCHEMA, extracted, confirmed) == {
+        "净含量": "550ml",
+        "颜色": "青",
+    }

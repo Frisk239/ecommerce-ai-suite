@@ -3,10 +3,12 @@
 纯函数、无框架依赖（便于单测）。规则（任务锁定的正则口径）：
 
 - 净含量 ``(\\d+(?:\\.\\d+)?)\\s*(ml|毫升|l|升|g|克|kg|千克)``，大小写不敏感；
-- 保质期 ``(\\d+)\\s*(天|日|个月|月|年)``，"12个月" 优先整体（alternation 中
-  "个月" 排在 "月" 前）；
+- 保质期 ``(\\d+)\\s*(个月|天|日|月|年)``，"12个月" 优先整体（alternation 中
+  "个月" 排在 "月" 前）；日期陷阱（生产日期/出厂日期/批号/日期 + 数字年月日）
+  先预扫剔除，避免把「2026年」当保质期；
 - 材质：只认显式分隔符模式「材质：X」「材质为X」「材质是X」「X材质」；
   禁止裸通配——原型第五轮教训：「未标注材质牌号」被抽成「牌号」。
+  分隔式与后缀式共用同一否定词黑名单（未标注/不详…），命中即弃权；
   后缀式 X 若是引导动词（未标注/说明/采用…）或剥离动词后为空，则弃权。
 
 字段集合 = 商品 spec_schema 的 keys；未知字段名（未来类目扩展）一律弃权，
@@ -29,6 +31,12 @@ _NET_CONTENT_RE = re.compile(
 )
 # "个月" 必须排在 "月" 前：保质期 12 个月要整体抽出 "12个月"，不是 "12月"
 _SHELF_LIFE_RE = re.compile(r"(\d+)\s*(个月|天|日|月|年)")
+# 日期陷阱（保质期正则负向后行的等价实现）：「生产日期：2026年8月1日」类片段
+# 会被全文 search 抽成保质期（"2026年"，甚至年月日中段的 "8月"），先剔除再匹配
+_DATE_TRAP_RE = re.compile(
+    r"(?:生产日期|出厂日期|生产批号|批号|日期)\s*[:：]?\s*\d+\s*年"
+    r"(?:\s*\d+\s*月)?(?:\s*\d+\s*日)?"
+)
 
 # 显式分隔式：「材质：X」「材质为X」「材质是X」；X 到首个空白/标点为止
 _MATERIAL_DELIMITED_RE = re.compile(
@@ -37,10 +45,11 @@ _MATERIAL_DELIMITED_RE = re.compile(
 # 后缀式：「X材质」；X 限定汉字/字母/数字，非贪婪取最短
 _MATERIAL_SUFFIX_RE = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9]{1,12}?)材质")
 
-# X 命中这些引导词 = 不是显式材质声明，弃权而不是硬抽（防「未标注材质牌号」类误抽）
+# X 命中这些引导/否定词 = 不是显式材质声明，弃权而不是硬抽（防「未标注材质牌号」类误抽）
 _MATERIAL_BLOCKLIST = {
     "标注",
     "未标注",
+    "不详",
     "说明",
     "描述",
     "注明",
@@ -73,17 +82,31 @@ def extract_net_content(text: str) -> str | None:
 
 
 def extract_shelf_life(text: str) -> str | None:
-    match = _SHELF_LIFE_RE.search(text)
+    match = _SHELF_LIFE_RE.search(_DATE_TRAP_RE.sub("", text))
     if not match:
         return None
     return f"{match.group(1)}{match.group(2)}"
+
+
+def _hits_material_blocklist(candidate: str) -> bool:
+    """否定词黑名单命中：值是引导词本身，或以多字否定词开头。
+
+    「材质：未标注材质信息」「材质为不详」同「未标注材质牌号」一样不是显式
+    材质声明——弃权而非硬抽（0009 禁止编造）。单字引导词（该/本/此…）只做
+    精确匹配，避免误伤以其开头的正常材质词。
+    """
+    if candidate in _MATERIAL_BLOCKLIST:
+        return True
+    return any(
+        len(word) > 1 and candidate.startswith(word) for word in _MATERIAL_BLOCKLIST
+    )
 
 
 def _clean_material_candidate(candidate: str) -> str | None:
     """后缀式清洗：把「杯身采用304不锈钢」里的动词当分隔符，取最后一段材质词。
 
     多字动词做分割（动词前是主语「杯身」，不是材质）；单字系词只剥头，
-    避免把材质名中段截断。清洗后为空或命中引导词黑名单 -> 弃权。
+    避免把材质名中段截断。清洗后为空或命中否定词黑名单 -> 弃权。
     """
     for word in _MATERIAL_LEADING_WORDS:
         if word in candidate:
@@ -92,16 +115,20 @@ def _clean_material_candidate(candidate: str) -> str | None:
         while candidate.startswith(single) and len(candidate) > 1:
             candidate = candidate[1:]
     candidate = candidate.strip()
-    if not candidate or candidate in _MATERIAL_BLOCKLIST:
+    if not candidate or _hits_material_blocklist(candidate):
         return None
     return candidate
 
 
 def extract_material(text: str) -> str | None:
-    # 1) 显式分隔式优先（材质：X / 材质为X / 材质是X）
+    # 1) 显式分隔式优先（材质：X / 材质为X / 材质是X）；值过同一否定词黑名单，
+    #    命中（「未标注」「不详」及其开头词）即弃权
     match = _MATERIAL_DELIMITED_RE.search(text)
     if match:
-        return match.group(1).strip() or None
+        candidate = match.group(1).strip()
+        if not candidate or _hits_material_blocklist(candidate):
+            return None
+        return candidate
     # 2) 后缀式（X材质）：动词分割 + 黑名单，命不中显式声明就弃权
     match = _MATERIAL_SUFFIX_RE.search(text)
     if not match:

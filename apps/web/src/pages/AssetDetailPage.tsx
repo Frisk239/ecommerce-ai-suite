@@ -359,14 +359,14 @@ export default function AssetDetailPage() {
           <div>该资产挂了商品，但当前没有可写回的规格字段值。</div>
         )
       ) : (
-        <div>此资产未挂商品：发布不写回规格，仅进入检索索引。</div>
+        <div>此资产未挂商品：发布不写回规格，只作为已发布内容存在。</div>
       )}
       <div>
         v{activeVersion?.version_no ?? '—'} 将成为当前已发布版本
         {currentPublishedNo !== null
           ? `（线上版本从 v${currentPublishedNo} 前移）`
           : '（该资产的第一个已发布版本）'}
-        ，此后可被检索、引用与导出。
+        ，此后成为线上口径，可被引用与导出。
       </div>
     </div>
   )
@@ -417,7 +417,7 @@ export default function AssetDetailPage() {
                     {detail.last_error ?? '尚未安排机洗。'}
                   </div>
                   <div className="mt-0.5 text-xs text-ink-3">
-                    只有治理台能看到这条资产；检索不会命中它。
+                    只有治理台能看到这条资产，不会出现在任何对外表面。
                   </div>
                 </div>
                 <span className="flex-1" />
@@ -510,7 +510,7 @@ export default function AssetDetailPage() {
                   </div>
                 ) : (
                   <div className="text-xs leading-5 text-ink-3">
-                    未挂商品：发布后进入检索索引，可被引用；不写回规格。
+                    未挂商品：发布后成为已发布内容，可被引用；不写回规格。
                   </div>
                 )}
                 {publishGate !== null ? (
