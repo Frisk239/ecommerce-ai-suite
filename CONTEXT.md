@@ -2,7 +2,7 @@
 
 商家侧电商 Agent 体系：八块业务能力共用数据中台。本产品给商家用，不给购物者开店。
 
-推进：先 `docs/product-phase.md`（`prototype/` mock 控制台），再 `docs/slices.md` 工程刀。一刀一条可演示路径；近几刀可排，关刀后重排。不一次铺开八块。
+推进：产品阶段已验收冻结（`prototype/` 交互规格，2026-09-06 intake 有条件通过）；工程刀按 `docs/slices.md`。第 1 刀脚手架已交付 `feat/scaffold`（单仓 apps/api + apps/web + packages/platform，compose 三服务，健康检查绿）；第 2 刀候选 A 治理发布写回 / B 客服引用，待短对齐。一刀一条可演示路径，不一次铺开八块。
 
 ## Language
 
