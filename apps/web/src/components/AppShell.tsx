@@ -1,4 +1,4 @@
-// 顶栏壳（本刀无侧栏：只做顶栏 + 两个导航入口；不预建八模块空占位）。
+// 顶栏壳（本刀无侧栏：只做顶栏 + 导航入口；不预建八模块空占位）。
 
 import { NavLink } from 'react-router-dom'
 import { Database, SignOut } from '@phosphor-icons/react'
@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext'
 const NAV_ITEMS = [
   { to: '/platform/assets', label: '资产' },
   { to: '/platform/products', label: '商品' },
+  { to: '/service', label: '客服' },
 ]
 
 export default function AppShell({ children }: { children: ReactNode }) {

@@ -1,5 +1,5 @@
-// 路由表（本刀四路由 + 404）：/login、/platform/assets、/platform/assets/:id、
-// /platform/products；/ 重定向资产列表。路径结构按后续八页预留，不预建空入口。
+// 路由表：/login、/platform/assets、/platform/assets/:id、/platform/products、
+// /service（客服预览）、404；/ 重定向资产列表。路径结构按后续八页预留，不预建空入口。
 
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
@@ -9,6 +9,7 @@ import AssetsListPage from './pages/AssetsListPage'
 import LoginPage from './pages/LoginPage'
 import NotFoundPage from './pages/NotFoundPage'
 import ProductsPage from './pages/ProductsPage'
+import ServicePage from './pages/ServicePage'
 
 function RequireOperator() {
   const { operator, bootstrapping } = useAuth()
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/platform/assets" element={<AssetsListPage />} />
             <Route path="/platform/assets/:id" element={<AssetDetailPage />} />
             <Route path="/platform/products" element={<ProductsPage />} />
+            <Route path="/service" element={<ServicePage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>

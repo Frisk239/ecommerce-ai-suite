@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -111,4 +112,64 @@ class AuditLog(Base):
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
     version_no: Mapped[int] = mapped_column()
     action: Mapped[str] = mapped_column(String(20))  # "publish" | "confirm"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RetrievalChunk(Base):
+    """ADR 0023：已发布资产版本的切块（CONTEXT「检索索引」派生视图，不是中台对象）。
+
+    只在发布事务内写入（0004/CONTEXT「已发布」词条：发布时切块入索引，
+    索引里只有已发布）；发布事务外无写入路径。待人洗/已接入内容绝不出现在此表。
+    """
+
+    __tablename__ = "retrieval_chunks"
+    __table_args__ = (
+        Index("ix_retrieval_chunks_asset_id", "asset_id"),
+        Index("ix_retrieval_chunks_asset_id_version_no", "asset_id", "version_no"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
+    version_no: Mapped[int] = mapped_column()
+    seq: Mapped[int] = mapped_column()  # 同一 (asset_id, version_no) 内的切块序号
+    chunk: Mapped[str] = mapped_column(Text)
+
+
+class ServiceSession(Base):
+    """ADR 0023：客服会话=运行态实体，不是第三个中台对象（CONTEXT「会话」Avoid）。
+
+    回流登记后 status=registered 并经 registered_asset_id 指向登记出的
+    kind=dialogue 资产；closed_at 在会话终结（本刀=回流登记）时落值。
+    """
+
+    __tablename__ = "service_sessions"
+    __table_args__ = (Index("ix_service_sessions_status", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # active | closed | registered——运行态流转
+    status: Mapped[str] = mapped_column(String(20))
+    registered_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ServiceMessage(Base):
+    """ADR 0023 会话消息；引用带版本（0007），拒答/转人工显性（0018）。
+
+    citations 仅 agent 消息携带 ``[{asset_id, version_no}]``；kind 是回答的
+    属性（answer/refusal），customer 消息为 NULL；handoff 与 refusal 同消息
+    显性标记（0018：无证据拒答时一并转人工）。同一会话旧消息的引用不随
+    后续发布漂移（回放按当时版本，ADR 0023）。
+    """
+
+    __tablename__ = "service_messages"
+    __table_args__ = (Index("ix_service_messages_session_id", "session_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("service_sessions.id"))
+    role: Mapped[str] = mapped_column(String(10))  # customer | agent
+    content: Mapped[str] = mapped_column(Text)
+    citations: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    kind: Mapped[str | None] = mapped_column(String(10))  # answer | refusal（仅 agent）
+    handoff: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

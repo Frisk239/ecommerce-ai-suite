@@ -104,4 +104,87 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 }
 
-export { request }
+// ---------- SSE 通道（客服发问用） ----------
+// EventSource 不支持 POST，长流也不能套 15s 超时：这里是独立于 request 的第二条
+// 通道。约定与 request 一致——credentials include、错误结构化为 ApiError、
+// 建立连接时的 401（首个事件前）照常广播 auth-expired。abort 由调用方signal
+// 触发，静默返回（「停止」是前端表达，不是错误）。
+
+export interface SseEvent {
+  event: string
+  data: Record<string, unknown>
+}
+
+/** 解析一段已按空行切开的原始事件块：event: 行 + data: 行（多行 data 以 \n 拼接）。 */
+function parseSseBlock(block: string): SseEvent | null {
+  let event = 'message'
+  const dataLines: string[] = []
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice('event:'.length).trim()
+    else if (line.startsWith('data:')) dataLines.push(line.slice('data:'.length).replace(/^ /, ''))
+  }
+  if (dataLines.length === 0) return null
+  try {
+    return { event, data: JSON.parse(dataLines.join('\n')) as Record<string, unknown> }
+  } catch {
+    return null
+  }
+}
+
+async function streamSse(
+  path: string,
+  body: unknown,
+  onEvent: (evt: SseEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  let resp: Response
+  try {
+    resp = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    })
+  } catch {
+    if (signal.aborted) return
+    throw new ApiError('网络请求失败或超时，请重试', 0, null)
+  }
+  if (!resp.ok || !resp.body) {
+    let detail: unknown = null
+    try {
+      detail = (await resp.json()) as unknown
+      if (typeof detail === 'object' && detail !== null && 'detail' in detail) {
+        detail = (detail as { detail: unknown }).detail
+      }
+    } catch {
+      detail = null
+    }
+    if (resp.status === 401) emitAuthExpired()
+    throw new ApiError(detailToMessage(detail, resp.status), resp.status, detail)
+  }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      // 兼容 CRLF：后端用 \n，代理/服务器异常时统一剥 \r 再按空行切事件
+      for (;;) {
+        const sep = buffer.indexOf('\n\n')
+        if (sep === -1) break
+        const block = buffer.slice(0, sep).replace(/\r/g, '')
+        buffer = buffer.slice(sep + 2)
+        const evt = parseSseBlock(block)
+        if (evt !== null) onEvent(evt)
+      }
+    }
+  } catch {
+    if (signal.aborted) return
+    throw new ApiError('网络请求失败或超时，请重试', 0, null)
+  }
+}
+
+export { request, streamSse }

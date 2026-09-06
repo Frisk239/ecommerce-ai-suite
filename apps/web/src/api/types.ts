@@ -70,3 +70,51 @@ export interface AuditEntry {
   action: string
   created_at: string
 }
+
+// ---------- 客服会话（routes/service.py 契约） ----------
+
+/** 会话状态：active=进行中（可发问/可回流）；registered=已回流登记（只读）。 */
+export type ServiceSessionStatus = 'active' | 'registered'
+
+export interface ServiceSession {
+  id: number
+  status: ServiceSessionStatus
+  created_at: string
+  closed_at: string | null
+  registered_asset_id: number | null
+}
+
+export interface ServiceSessionSummary extends ServiceSession {
+  first_question: string | null
+  message_count: number
+}
+
+/** 引用（CONTEXT 词条：指向一条证据 = 资产 ID + 版本号，检索用当前已发布版）。 */
+export interface ServiceCitation {
+  asset_id: number
+  version_no: number
+}
+
+export interface ServiceMessage {
+  id: number
+  role: 'customer' | 'agent'
+  content: string
+  /** 仅 agent 消息有（refusal 为空数组，customer 为 null）。 */
+  citations: ServiceCitation[] | null
+  /** answer | refusal（仅 agent 消息）。 */
+  kind: 'answer' | 'refusal' | null
+  handoff: boolean | null
+  created_at: string
+}
+
+export interface ServiceSessionDetail extends ServiceSession {
+  messages: ServiceMessage[]
+}
+
+/** SSE complete 事件的负载（与后端 event_stream 尾事件一致）。 */
+export interface ServiceAnswerComplete {
+  message_id: number
+  citations: ServiceCitation[]
+  kind: 'answer' | 'refusal'
+  handoff: boolean
+}

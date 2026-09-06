@@ -16,13 +16,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import Asset, AssetVersion, AuditLog, Operator, Product
+from suite_api.models import Asset, AssetVersion, AuditLog, Operator, Product, RetrievalChunk
 from suite_api.services.machine_wash import MachineWashError, run_machine_wash
 from suite_api.services.publishing import (
     evaluate_publish_gate,
     publishable_values,
     schema_field_names,
 )
+from suite_api.services.retrieval import ChunkingError, index_chunks_for_version
 from suite_platform.storage import ObjectStorage
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
@@ -340,8 +341,9 @@ def publish(
     asset_id: int,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
 ) -> AssetDetail:
-    """发布：API 层再校验闸门 -> 单事务（版本/指针/写回/审计）。"""
+    """发布：API 层再校验闸门 -> 单事务（版本/切块入索引/指针/写回/审计）。"""
     asset = _get_asset_or_404(db, asset_id)
     if asset.status != PENDING_REVIEW:
         raise HTTPException(
@@ -363,10 +365,27 @@ def publish(
                 "unconfirmed": unconfirmed,  # 待确认字段（机洗有值未确认）
             },
         )
-    # 单事务：版本 published -> 资产指针前移 -> 商品写回 -> 审计一行（0005/0006/0010）
+    # 单事务：版本 published -> 切块入索引（发布的一部分，CONTEXT「已发布」词条）
+    # -> 资产指针前移 -> 商品写回 -> 审计一行（0005/0006/0010）。
+    # 切块失败（字节不可读/非 UTF-8）整体回滚：索引没写就不算发布成功（0004）。
+    try:
+        index_chunks = index_chunks_for_version(
+            storage, version.object_key, asset.kind, confirmed
+        )
+    except ChunkingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"无法切块入检索索引，发布已中止: {exc}",
+        ) from exc
     version.published_at = datetime.now(UTC)
     asset.status = PUBLISHED
     asset.current_published_version_id = version.id
+    db.add_all(
+        RetrievalChunk(
+            asset_id=asset.id, version_no=version.version_no, seq=seq, chunk=chunk
+        )
+        for seq, chunk in enumerate(index_chunks)
+    )
     if product is not None:
         new_values = dict(product.spec_values)
         for field, value in publishable_values(schema, extracted, confirmed).items():
