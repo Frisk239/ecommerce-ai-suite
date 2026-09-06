@@ -18,6 +18,9 @@ RUN uv sync --frozen --no-dev --no-install-workspace --project apps/api
 # 2) 再拷成员源码：editable 安装 suite-platform 与 suite-api
 COPY packages/platform/src packages/platform/src
 COPY apps/api/src apps/api/src
+# 迁移资产：应用启动 lifespan 程序化跑 alembic upgrade head（路径基于 apps/api）
+COPY apps/api/alembic.ini apps/api/
+COPY apps/api/migrations apps/api/migrations
 RUN uv sync --frozen --no-dev --project apps/api
 
 EXPOSE 8000

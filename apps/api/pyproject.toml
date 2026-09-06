@@ -1,13 +1,17 @@
 [project]
 name = "suite-api"
 version = "0.1.0"
-description = "电商 AI 套件 FastAPI 单体（本刀仅脚手架 + /health）"
+description = "电商 AI 套件 FastAPI 单体（治理发布写回刀：登录/登记/机洗/人洗/发布）"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.118",
     "uvicorn[standard]>=0.37",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.4",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "bcrypt>=4.2",
+    "python-multipart>=0.0.20",
     "suite-platform",
 ]
 

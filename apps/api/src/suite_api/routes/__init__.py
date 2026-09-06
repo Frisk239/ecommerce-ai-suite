@@ -1,1 +1,1 @@
-"""路由模块。本刀仅 health；后续业务刀按模块逐个挂进来。"""
+"""路由模块：health / auth / assets / products / audit（治理发布写回刀）。"""
