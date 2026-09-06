@@ -2,6 +2,7 @@ import type {
   Asset,
   ClipCandidate,
   CoachScenario,
+  KnowledgeGap,
   MaterialTask,
   ModelConfig,
   OpsRun,
@@ -37,26 +38,14 @@ export function makeSeed() {
     },
   ]
 
-  // 底座模型：客服页的「基座 / 微调」开关读这份配置
   const models: ModelConfig[] = [
     {
       id: 'M-01',
-      name: '通用基座 · qwen3-32b-instruct',
-      type: 'base',
-      provider: '自托管 vLLM',
-      endpoint: 'http://gpu-node-2:8000/v1',
+      name: 'grok-4',
+      provider: 'xAI',
+      endpoint: 'https://api.x.ai/v1',
       params: { temperature: 0.3, maxTokens: 1024 },
       createdAt: '2026-08-01 10:00',
-    },
-    {
-      id: 'M-02',
-      name: '类目微调 · 客服口吻适配',
-      type: 'finetuned',
-      provider: '自托管 vLLM · LoRA 适配层',
-      endpoint: 'http://gpu-node-2:8000/v1',
-      params: { temperature: 0.4, maxTokens: 1024 },
-      source: '导出 E-001（已发布对话与政策资产）',
-      createdAt: '2026-09-01 15:30',
     },
   ]
 
@@ -67,7 +56,8 @@ export function makeSeed() {
       title: '高山天然饮用水 · 规格文档',
       state: '已发布',
       productId: 'P-0001',
-      source: '操作者上传 规格-饮用水-v1.docx',
+      sourceKind: '上传',
+      sourceNote: '规格-饮用水-v1.docx',
       createdAt: '2026-08-18 10:12',
       machineWash: { status: 'done' },
       publishedV: 1,
@@ -91,7 +81,8 @@ export function makeSeed() {
       title: '钛钢保温杯 · 规格文档',
       state: '待人洗',
       productId: 'P-0002',
-      source: '操作者上传 供应商提供-保温杯规格.docx',
+      sourceKind: '上传',
+      sourceNote: '供应商提供-保温杯规格.docx',
       createdAt: '2026-09-02 16:40',
       machineWash: { status: 'done' },
       versions: [
@@ -114,7 +105,8 @@ export function makeSeed() {
       kind: '文档',
       title: '供应商资质 · 扫描件',
       state: '已接入',
-      source: '对接微信文件 · 供应商群',
+      sourceKind: '上传',
+      sourceNote: '供应商群扫描件',
       createdAt: '2026-09-04 09:20',
       machineWash: {
         status: 'failed',
@@ -127,7 +119,8 @@ export function makeSeed() {
       kind: '文档',
       title: '售后与退换货政策',
       state: '已发布',
-      source: '操作者录入',
+      sourceKind: '上传',
+      sourceNote: '售后政策原文',
       createdAt: '2026-08-10 11:05',
       machineWash: { status: 'done' },
       publishedV: 1,
@@ -147,7 +140,8 @@ export function makeSeed() {
       kind: '对话',
       title: '售前咨询 · 保温时长与容量',
       state: '已发布',
-      source: '客服会话回流 #S-1024',
+      sourceKind: '会话回流',
+      sourceNote: 'S-1024',
       createdAt: '2026-08-22 15:02',
       machineWash: { status: 'done' },
       publishedV: 1,
@@ -167,7 +161,8 @@ export function makeSeed() {
       kind: '对话',
       title: '顾客反馈 · 饮用水口感发甜',
       state: '待人洗',
-      source: '客服会话回流 #S-1077',
+      sourceKind: '会话回流',
+      sourceNote: 'S-1077',
       createdAt: '2026-09-03 14:26',
       machineWash: { status: 'done' },
       versions: [
@@ -188,7 +183,7 @@ export function makeSeed() {
       id: 'T-0001',
       productId: 'P-0002',
       brief: '钛钢保温杯 · 种草图文（小红书）',
-      status: '已完成',
+      status: '待质检',
       output: {
         title: '通勤党的冬天续命杯',
         body:
@@ -318,5 +313,15 @@ export function makeSeed() {
     },
   ]
 
-  return { products, assets, models, materialTasks, clips, opsRun, coachScenarios }
+  const knowledgeGaps: KnowledgeGap[] = [
+    {
+      id: 'G-0001',
+      question: '这杯能装开水吗？',
+      productId: 'P-0002',
+      createdAt: '2026-09-05 11:20',
+      status: 'open',
+    },
+  ]
+
+  return { products, assets, models, materialTasks, clips, opsRun, coachScenarios, knowledgeGaps }
 }

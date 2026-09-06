@@ -6,8 +6,7 @@ import Confirm from '../components/Confirm'
 import { dispatch, useStore } from '../store/store'
 import type { ModelConfig } from '../store/types'
 
-// 模型配置：操作者在这里管理客服可用的底座（基座 / 微调）、接入地址与推理参数。
-// 「设为客服底座」与客服页的基座/微调开关读同一份激活状态。
+// 模型配置：厂商 Chat API 接入。不训练、不切微调底座（ADR 0028）。
 
 function ParamRow({ k, v }: { k: string; v: string }) {
   return (
@@ -45,11 +44,7 @@ function ModelCard({ model, active }: { model: ModelConfig; active: boolean }) {
         <span className="text-[15px] font-semibold text-ink tracking-tight">
           {model.name}
         </span>
-        {model.type === 'finetuned' ? (
-          <span className="badge-accent">微调</span>
-        ) : (
-          <span className="badge-neutral">基座</span>
-        )}
+        <span className="badge-neutral">{model.provider}</span>
         {active && (
           <span className="badge-published">
             <CheckCircle size={11} weight="fill" />
@@ -76,7 +71,7 @@ function ModelCard({ model, active }: { model: ModelConfig; active: boolean }) {
           <PencilSimple size={13} />
           编辑
         </button>
-        {!active && model.type !== 'base' && (
+        {!active && (
           <button className="btn-danger btn-sm" onClick={() => setConfirming(true)}>
             <TrashSimple size={13} />
             删除
@@ -94,12 +89,6 @@ function ModelCard({ model, active }: { model: ModelConfig; active: boolean }) {
           <ParamRow k="max tokens" v={String(model.params.maxTokens)} />
         </div>
       </div>
-
-      {model.source && (
-        <div className="mt-3 text-xs text-ink-3 bg-fill-60 border border-line-2 rounded-[6px] px-2.5 py-1.5">
-          血缘：{model.source}
-        </div>
-      )}
 
       {editing && (
         <div className="mt-3 pt-3 border-t border-line-1 space-y-2">
@@ -161,7 +150,7 @@ function ModelCard({ model, active }: { model: ModelConfig; active: boolean }) {
       <Confirm
         open={confirming}
         title={`删除底座「${model.name}」？`}
-        body="删除后客服不可再切换到这个底座；导出血缘记录保留。"
+        body="删除后客服不再使用这个接入。至少保留一个厂商模型。"
         confirmLabel="确认删除"
         danger
         onCancel={() => setConfirming(false)}
@@ -178,8 +167,7 @@ function AddModelForm() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     name: '',
-    type: 'base' as 'base' | 'finetuned',
-    provider: '自托管 vLLM',
+    provider: 'xAI',
     endpoint: '',
     temperature: 0.3,
     maxTokens: 1024,
@@ -191,7 +179,6 @@ function AddModelForm() {
       type: 'ADD_MODEL',
       input: {
         name: form.name.trim(),
-        type: form.type,
         provider: form.provider.trim() || '未标注',
         endpoint: form.endpoint.trim(),
         params: { temperature: form.temperature, maxTokens: form.maxTokens },
@@ -218,24 +205,13 @@ function AddModelForm() {
           <span className="text-xs text-ink-3">名称</span>
           <input
             className="input w-full mt-1"
-            placeholder="如：通用基座 · glm-4.7-air"
+            placeholder="如：grok-4"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
         </label>
         <label className="block">
-          <span className="text-xs text-ink-3">类型</span>
-          <select
-            className="input w-full mt-1"
-            value={form.type}
-            onChange={(e) => setForm({ ...form, type: e.target.value as 'base' | 'finetuned' })}
-          >
-            <option value="base">基座</option>
-            <option value="finetuned">微调</option>
-          </select>
-        </label>
-        <label className="block">
-          <span className="text-xs text-ink-3">提供方 / 部署方式</span>
+          <span className="text-xs text-ink-3">提供方</span>
           <input
             className="input w-full mt-1"
             value={form.provider}
@@ -290,7 +266,7 @@ export default function Models() {
     <div className="p-4 lg:p-6 max-w-[960px]">
       <PageHeader
         title="模型配置"
-        desc="管理客服可用的底座模型：接入地址、推理参数、启用哪个。微调底座来自「模型微调」的导出训练产物；客服页的基座/微调开关切换的就是这里激活的底座。"
+        desc="厂商 Chat API 接入。本产品不训练模型、不切微调底座。客服推理走这里激活的接入。"
         actions={
           <Link to="/service" className="btn-ghost">
             去 AI 客服试用
