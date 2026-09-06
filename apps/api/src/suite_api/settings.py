@@ -7,7 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(extra="ignore")
+    # 环境变量优先；本地开发可 cp .env.example .env 覆盖（README 的说明依赖此处）
+    model_config = SettingsConfigDict(extra="ignore", env_file=".env")
 
     database_url: str = "postgresql://suite:suite@localhost:5432/suite"
     storage_root: Path = Path("./data/objects")
