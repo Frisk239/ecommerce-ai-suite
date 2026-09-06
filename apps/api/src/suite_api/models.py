@@ -146,7 +146,7 @@ class ServiceSession(Base):
     __table_args__ = (Index("ix_service_sessions_status", "status"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # active | closed | registered——运行态流转
+    # active -> registered（结束即回流登记，一步完成，无仅结束态）
     status: Mapped[str] = mapped_column(String(20))
     registered_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

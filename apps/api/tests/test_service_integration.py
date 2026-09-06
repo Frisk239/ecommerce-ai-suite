@@ -17,13 +17,15 @@ from typing import Any
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from suite_api.models import Asset, AssetVersion, RetrievalChunk
+from suite_api.models import Asset, AssetVersion, RetrievalChunk, ServiceMessage
 
 ApiFixture = tuple[TestClient, Path]
 
 _CUP_DOC = "钛钢保温杯产品说明\n净含量：480ml\n材质牌号未标注，详见吊牌。".encode()
 _RETURN_DOC = "保修与退货政策\n七天无理由退货；退货需保持吊牌完整。".encode()
 _POINTER_DOC = "专用刻度杯说明\n刻度容量：300ml".encode()
+# 「回放锚定」为本测试独有关键词，不与其他已发布块串台（同 module 库共享）
+_DISCONNECT_DOC = "断连落库验证说明\n回放锚定：77ml".encode()
 
 
 def _login(client: TestClient) -> None:
@@ -233,6 +235,45 @@ def test_version_follows_published_pointer(api: ApiFixture) -> None:
             )
         ).all()
         assert v1_chunks, "v1 块仍在表里（旧引用可回放），只是不再命中"
+
+
+def test_sse_disconnect_still_persists_full_answer(api: ApiFixture) -> None:
+    """断连=客户端停止订阅（ask 路由 docstring 锁定的取舍）：读首个 thinking
+    事件后即中断迭代、关闭响应，customer 消息与 agent 消息（完整回答文本 +
+    citations）仍都已落库——回答在流式开始前已完整组装入库，SSE 只是传输。"""
+    client, _ = api
+    _login(client)
+    resp = _upload(client, _DISCONNECT_DOC, title="断连落库文档")
+    assert resp.status_code == 201
+    asset_id = resp.json()["id"]
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+
+    sid = client.post("/api/service/sessions").json()["id"]
+    with client.stream(
+        "POST", f"/api/service/sessions/{sid}/messages", json={"content": "回放锚定是多少？"}
+    ) as stream:
+        assert stream.status_code == 200
+        first = next(stream.iter_text())
+        assert "thinking" in first  # 首个事件已到即断：delta/complete 不再读
+    # with 退出即关闭响应——对服务端即客户端断连
+
+    session_factory = client.app.state.session_factory
+    with session_factory() as db:
+        messages = list(
+            db.scalars(
+                select(ServiceMessage)
+                .where(ServiceMessage.session_id == sid)
+                .order_by(ServiceMessage.id)
+            )
+        )
+        assert [m.role for m in messages] == ["customer", "agent"]
+        customer_msg, agent_msg = messages
+        assert customer_msg.content == "回放锚定是多少？"
+        assert customer_msg.citations is None and customer_msg.kind is None
+        assert agent_msg.kind == "answer"
+        assert agent_msg.handoff is False
+        assert agent_msg.citations == [{"asset_id": asset_id, "version_no": 1}]
+        assert "回放锚定为77ml" in agent_msg.content  # 完整回答文本已落库
 
 
 # ---------- 输入校验 ----------

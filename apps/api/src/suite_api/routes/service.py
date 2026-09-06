@@ -7,15 +7,14 @@
 - 回流登记（CONTEXT「会话」词条）：会话转写字节先落对象存储（0013），再建
   kind=dialogue 资产（已接入）+ v1 版本，对话种类无规格必填（0019）、机洗无
   字段抽取直接待人洗；会话置 registered 并指向登记出的资产。登记不是 0005
-  三类治理动作，不新增审计 action。
+  三类治理动作，不新增审计 action。登记骨架与文档登记共享
+  services/registration.register_asset。
 """
 
-import hashlib
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Annotated, Any
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -24,17 +23,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import Asset, AssetVersion, Operator, ServiceMessage, ServiceSession
-from suite_api.routes.assets import INGESTED, PENDING_REVIEW, AssetDetail, _to_asset_detail
+from suite_api.models import Asset, Operator, ServiceMessage, ServiceSession
 from suite_api.services.answer import compose_answer
-from suite_api.services.machine_wash import MachineWashError, run_machine_wash
+from suite_api.services.asset_view import AssetDetail, to_asset_detail
+from suite_api.services.registration import register_asset
 from suite_api.services.retrieval import retrieve
 from suite_platform.storage import ObjectStorage
 
 router = APIRouter(prefix="/api/service", tags=["service"])
 
 ACTIVE = "active"
-CLOSED = "closed"
 REGISTERED = "registered"
 
 # UX-NOTES 二点八：检索是本产品的真实动作，比「思考中」更诚实
@@ -227,6 +225,10 @@ def ask(
     真实 LLM 逐 token 生成，服务端不存在「部分产出」，断连=客户端停止订阅，
     agent 消息仍完整入库，SSE 只是传输；中断（stopped）语义由前端表达。
 
+    双 commit 取舍：先落 customer 问句再组装落 agent 回答，两个独立 commit。
+    agent 组装失败会留下已落库的顾客问句——属可接受残留：问题真实发生过，
+    不因回答侧失败而抹掉提问记录。
+
     无命中 -> refusal 消息（0018）：固定文案 + handoff=true，不编造不闲聊。
     """
     del operator
@@ -292,7 +294,9 @@ def register_session(
 ):
     """回流登记：转写字节先落对象存储（0013 没有字节不能登记）-> 建 kind=dialogue
     资产（已接入）+ v1 版本 -> 机洗（对话无字段抽取，直接待人洗）-> 会话置
-    registered 并指向新资产。不写审计（登记不是 0005 的 publish/confirm/回滚）。
+    registered 并指向新资产。登记骨架与文档登记共享 register_asset（此处不
+    commit，会话状态变更与其并进同一事务）。不写审计（登记不是 0005 的
+    publish/confirm/回滚）。
     """
     del operator
     session = _get_session_or_404(db, session_id)
@@ -311,31 +315,21 @@ def register_session(
     # 转写：全部消息按时间拼「顾客：…/客服：…」（检索切块按行/轮消费同一格式）
     speaker = {"customer": "顾客", "agent": "客服"}
     transcript = "\n".join(f"{speaker[m.role]}：{m.content}" for m in messages)
-    data = transcript.encode("utf-8")
-    digest = hashlib.sha256(data).hexdigest()[:16]
-    object_key = f"dialogue/{uuid4().hex}/{digest}.txt"
-    storage.put_bytes(object_key, data)
-
     first_customer = next((m for m in messages if m.role == "customer"), None)
     title = _first_question(first_customer.content) if first_customer else "客服对话转写"
 
-    asset = Asset(kind="dialogue", status=INGESTED, title=title)
-    db.add(asset)
-    db.flush()  # 拿主键；与文档登记同构，机洗失败也能以 ingested + last_error 落库
-    version = AssetVersion(asset_id=asset.id, version_no=1, object_key=object_key)
-    db.add(version)
-    try:
-        # 对话种类无规格必填（0019）：字段集为空，机洗=解析转写 -> 直接待人洗
-        extracted = run_machine_wash(storage, object_key, [])
-        version.extracted_fields = extracted
-        asset.status = PENDING_REVIEW
-    except (MachineWashError, FileNotFoundError) as exc:
-        asset.status = INGESTED
-        asset.last_error = str(exc)[:500] or exc.__class__.__name__
-
+    asset = register_asset(
+        db,
+        storage,
+        kind="dialogue",
+        title=title,
+        content_bytes=transcript.encode("utf-8"),
+        filename=None,
+        product_id=None,
+    )
     session.status = REGISTERED
     session.registered_asset_id = asset.id
     session.closed_at = datetime.now(UTC)
     db.commit()
     db.refresh(asset)
-    return _to_asset_detail(db, asset)
+    return to_asset_detail(db, asset)

@@ -5,10 +5,12 @@
   拆开反而让「净含量」命中不到值）；对话转写（「顾客：…/客服：…」）按行/
   轮成块（一轮=一条证据）。块数上限 MAX_CHUNKS 防长文档炸索引。
 - 打分：无分词器、无向量（本刀工程选型，ADR 0023）下用字符二元组（bigram）
-  集合做词法匹配。score = |查询有效 bigram ∩ 块 bigram| / sqrt(块 bigram 数)：
-  分子衡量证据对查询的覆盖（覆盖越多越相关）；分母做长度归一——长块天然
-  更容易撞上查询 bigram，不归一会长块霸榜，sqrt（而非线性）是 BM25 式折中，
-  保留长证据句的些许优势。单字查询退化为 unigram（无 bigram 可言）。
+  集合做词法匹配。score = |查询有效 bigram ∩ 块有效 bigram| / sqrt(块有效
+  bigram 数)：分子衡量证据对查询的覆盖（覆盖越多越相关）；分母做长度归一——
+  长块天然更容易撞上查询 bigram，不归一会长块霸榜，sqrt（而非线性）是 BM25 式
+  折中，保留长证据句的些许优势。块侧与查询同一停用字口径：分母不含功能字
+  bigram（长块被「的了/是有」撑大分母属于纯噪音）。单字查询退化为 unigram
+  （无 bigram 可言）。
 - 停用词：bigram 含任一纯功能字（的了/是/有/怎么…）即无效。宁缺勿滥
   （0018 无证据不答）：「保温杯的净含量」只留下 保温/温杯/净含/含量 四个
   有效 bigram，跨虚词噪音（杯的/的净）不参与命中。
@@ -37,7 +39,7 @@ _LONG_SENTENCE_CHARS = 40
 _MIN_CHUNK_CHARS = 2
 
 # 「字段：值」行：短前缀 + 中英冒号 + 非空值（净含量：550毫升 / 储存条件：常温避光）。
-# 切块与回答组装共用同一口径（answer.py 引用）。
+# 切块 gate 用；回答组装（answer.py）用同词表字符的捕获版 _FIELD_CAPTURE_RE。
 FIELD_LINE_RE = re.compile(r"^[\u4e00-\u9fa5A-Za-z0-9 ]{1,12}\s*[:：]\s*\S.{0,200}$")
 
 # 停用字表：纯功能字/代词/语气字。bigram 含任一即视为无效（见模块 docstring）。
@@ -162,15 +164,12 @@ def query_terms(query: str) -> frozenset[str]:
 
 
 def _chunk_terms(chunk: str) -> frozenset[str]:
-    """块侧词法单元：与查询同口径（bigram 过停用字；单字块退化 unigram）。"""
-    normalized = _normalize(chunk)
-    if not normalized:
-        return frozenset()
-    if len(normalized) == 1:
-        return frozenset({normalized})
-    return frozenset(
-        normalized[i : i + 2] for i in range(len(normalized) - 1)
-    )
+    """块侧词法单元：与查询同口径（bigram 过停用字；单字退化 unigram，停用单字为空）。
+
+    分母同样滤掉功能字 bigram：长块里堆的「的了/是有」不该参与长度归一——
+    否则功能字把 sqrt(块单元数) 撑大，长证据句被纯噪音压分。
+    """
+    return query_terms(chunk)
 
 
 def score_chunk(terms: frozenset[str], chunk: str) -> float:

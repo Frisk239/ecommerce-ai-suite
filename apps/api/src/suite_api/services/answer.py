@@ -14,11 +14,15 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from suite_api.services.retrieval import FIELD_LINE_RE  # 同口径复用「字段：值」识别
-
 REFUSAL_CONTENT = "抱歉，已发布资产里没有能回答这个问题的证据。"
 
 _MAX_EVIDENCE = 2  # 多源命中最多引 1-2 条（宁少而准，0018 宁缺勿滥）
+
+# 「字段：值」证据句提取（单一正则，判定与分组一体；原先 FIELD_LINE_RE 判定 +
+# 内联分组两段式双写，口径已合一）。字段名字符与切块同词表（中文/字母/数字，
+# 不含空格：含空格的字段行切块仍整行成块，但组装走普通句模板，与原两段式
+# 行为一致），1-12 字非贪婪；值首字符非空白、总长上限 201（对齐切块 gate）。
+_FIELD_CAPTURE_RE = re.compile(r"^([\u4e00-\u9fa5A-Za-z0-9]{1,12}?)\s*[:：]\s*(\S.{0,200})$")
 
 
 @dataclass(frozen=True)
@@ -30,7 +34,7 @@ class ComposedAnswer:
 
 
 def _document_sentence(title: str, chunk: str) -> str:
-    field_match = re.match(r"^(\S{1,12}?)\s*[:：]\s*(.+)$", chunk) if FIELD_LINE_RE.match(chunk) else None
+    field_match = _FIELD_CAPTURE_RE.match(chunk)
     if field_match:
         # 字段值句与证据句同源：字段块本身就是证据，一次陈述不复读
         return f"根据已发布的规格文档《{title}》，{field_match.group(1)}为{field_match.group(2)}。"
