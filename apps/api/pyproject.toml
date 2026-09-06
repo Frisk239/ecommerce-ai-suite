@@ -1,0 +1,22 @@
+[project]
+name = "suite-api"
+version = "0.1.0"
+description = "电商 AI 套件 FastAPI 单体（本刀仅脚手架 + /health）"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.118",
+    "uvicorn[standard]>=0.37",
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.4",
+    "suite-platform",
+]
+
+[tool.uv.sources]
+suite-platform = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/suite_api"]

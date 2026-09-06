@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的八块能力。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：无（空仓 + 领域词表/ADR 已齐）。Intake：**通过**。
+上一刀：**脚手架**（`feat/scaffold`，已推 origin 待人合并；closeout 见 `docs/progress/scaffold-impl-closeout.md`）。产品阶段已验收（intake **有条件通过**，2026-09-06，见 `docs/progress/product-phase-intake.md`）。
 
-当前阶段：**产品原型**（`docs/product-phase.md` → `prototype/`），工程刀在原型验收之后。
+当前阶段：工程刀。第 2 刀**待短对齐**（下方 A/B 候选）。
 
 ## 怎么切
 
@@ -14,15 +14,15 @@
 - 不做横向铺八个空入口。
 - 关刀后根据债务和演示缺口重排，不在开干前锁死第 4 刀以后。
 
-## 产品阶段（进行中）
+## 产品阶段（已验收）
 
-施工单：`docs/product-phase.md`。交付：`prototype/` 可点击控制台，功能 mock，浏览器验收清单全部点过。
+施工单：`docs/product-phase.md`。交付：`prototype/` 可点击控制台，功能 mock，浏览器验收清单全部点过。Intake 有条件通过（2026-09-06）；交互与状态机冻结，mock 不冻结。
 
-## 工程第 1 刀：脚手架（`feat/scaffold`，原型验收后）
+## 工程第 1 刀：脚手架（已交付，`feat/scaffold` 待人合并）
 
 技术栈见 `docs/adr/0011-fastapi-vite-react.md`。
 
-**路径：** 开发者 `compose up` 后，打开控制台壳、打到健康检查、跑通一次测试。
+**路径：** 开发者 `compose up` 后，打开控制台壳、打到健康检查、跑通一次测试。已验收：三容器绿、`/health` 200 connected、浏览器健康卡双绿、pytest 13 passed（证据见 `docs/progress/scaffold-impl-closeout.md`）。
 
 **Must：** 单仓布局、API、控制台壳、Postgres、对象存储本地适配器、环境变量样例、一条冒烟。
 
