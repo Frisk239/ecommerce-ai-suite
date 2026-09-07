@@ -41,9 +41,9 @@ export function makeSeed() {
   const models: ModelConfig[] = [
     {
       id: 'M-01',
-      name: 'grok-4',
-      provider: 'xAI',
-      endpoint: 'https://api.x.ai/v1',
+      name: 'qwen3.8-flash',
+      provider: 'OpenAI 兼容',
+      endpoint: 'https://opencode.ai/zen/go/v1',
       params: { temperature: 0.3, maxTokens: 1024 },
       createdAt: '2026-08-01 10:00',
     },

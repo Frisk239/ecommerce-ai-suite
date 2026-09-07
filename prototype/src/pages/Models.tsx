@@ -167,7 +167,7 @@ function AddModelForm() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     name: '',
-    provider: 'xAI',
+    provider: 'OpenAI 兼容',
     endpoint: '',
     temperature: 0.3,
     maxTokens: 1024,
@@ -205,7 +205,7 @@ function AddModelForm() {
           <span className="text-xs text-ink-3">名称</span>
           <input
             className="input w-full mt-1"
-            placeholder="如：grok-4"
+            placeholder="如：qwen3.8-flash"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
