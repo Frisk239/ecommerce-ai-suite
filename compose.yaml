@@ -32,6 +32,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://opencode.ai/zen/go/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen3.8-flash}
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
     ports:
       - "8000:8000"
     volumes:

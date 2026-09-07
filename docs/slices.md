@@ -46,7 +46,7 @@
 
 ## 第 5 刀（短对齐已锁主题，实现待第 4 刀合并）
 
-**MCP 只读已发布**（ADR 0001/0020/0032）：同一 FastAPI 进程 `/mcp/` Streamable HTTP；Bearer 来自 `.env`，不复用操作者 cookie；检索/取已发布（可按版本）/登记/导出；无 publish。README 给 Cursor `mcp.json`。检索索引已就绪（0017）。
+**MCP 只读已发布**（ADR 0001/0020/0032）：同一 FastAPI 进程 `/mcp/` Streamable HTTP；`MCP_BEARER_TOKEN` 空则全部 401，不复用操作者 cookie。工具：`search_published` / `get_asset` / `register_asset`（正文必填，来源=mcp_registered）/ `export_published`（元数据+该版正文）。无 publish。官方 MCP Python SDK。README 给 Cursor `mcp.json`。检索索引已就绪（0017）。
 
 ## 更后面（现在不锁顺序，各是独立刀）
 

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://opencode.ai/zen/go/v1"
     llm_model: str = "qwen3.8-flash"
 
+    # 连接层 Bearer（ADR 0032）。空则 MCP 全部 401；与操作者会话无关。
+    mcp_bearer_token: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
