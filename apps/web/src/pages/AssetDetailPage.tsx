@@ -3,7 +3,7 @@
 // 只读语义：待人洗以外状态字段不可编辑（已发布版本是只读证据）。
 
 import { useCallback, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowsClockwise,
@@ -185,6 +185,7 @@ function auditActionLabel(action: string): string {
 export default function AssetDetailPage() {
   const { id } = useParams()
   const assetId = Number(id)
+  const [searchParams] = useSearchParams()
 
   const detailFetcher = useCallback(() => {
     if (!Number.isInteger(assetId) || assetId <= 0) {
@@ -232,6 +233,14 @@ export default function AssetDetailPage() {
     currentPublishedNo !== null ? versions.find((v) => v.version_no === currentPublishedNo) ?? null : null
   const activeVersion = detail?.status === 'pending_review' ? latest : (publishedVersion ?? latest)
   const editable = detail?.status === 'pending_review' && activeVersion !== null
+
+  // 引用回放锚定（ADR 0007）：?v=N 由引用芯片带入，指向引用所指的那一版。
+  // 仅当 N 是该资产真实存在的版本时生效；无参数/无效参数时行为不变。
+  const anchorParam = searchParams.get('v')
+  const anchorVersionNo =
+    anchorParam !== null && /^\d+$/.test(anchorParam) ? Number(anchorParam) : null
+  const anchored =
+    anchorVersionNo !== null && versions.some((v) => v.version_no === anchorVersionNo)
 
   const fieldViews = useMemo<FieldView[]>(() => {
     if (activeVersion === null || product === null) return []
@@ -376,6 +385,11 @@ export default function AssetDetailPage() {
       {backLink}
 
       {publishedNote !== null ? <SuccessBanner>{publishedNote}</SuccessBanner> : null}
+      {anchored ? (
+        <div className="mb-3 text-xs leading-5 text-accent-strong">
+          正在查看 v{anchorVersionNo} · 引用回放锚定——本页由引用芯片跳入，该版本已在下方版本列表中高亮。
+        </div>
+      ) : null}
       {retryError !== null ? <ErrorBanner error={retryError} /> : null}
       {publishError !== null ? <ErrorBanner error={publishError} onRetry={() => setConfirmOpen(true)} /> : null}
 
@@ -593,10 +607,27 @@ export default function AssetDetailPage() {
                   currentPublishedNo,
                   detail.status === 'pending_review' && version === latest,
                 )
+                const isAnchored = anchored && version.version_no === anchorVersionNo
                 return (
-                  <div key={version.version_no} className="border-b border-line-1 px-4 py-2.5 last:border-b-0">
+                  <div
+                    key={version.version_no}
+                    className={
+                      isAnchored
+                        ? 'border-b border-line-1 bg-[rgba(65,118,230,0.06)] px-4 py-2.5 shadow-[inset_3px_0_0_var(--color-accent)] last:border-b-0'
+                        : 'border-b border-line-1 px-4 py-2.5 last:border-b-0'
+                    }
+                  >
                     <div className="flex items-center gap-2.5">
-                      <span className="w-7 font-mono text-xs text-ink-2">v{version.version_no}</span>
+                      <span
+                        className={`w-7 font-mono text-xs ${
+                          isAnchored ? 'font-medium text-accent-strong' : 'text-ink-2'
+                        }`}
+                      >
+                        v{version.version_no}
+                      </span>
+                      {isAnchored ? (
+                        <span className="text-[11px] font-medium text-accent-strong">引用锚定</span>
+                      ) : null}
                       <span className={`text-[11px] font-medium ${role.className}`}>{role.text}</span>
                       <span className="flex-1" />
                       <span className="text-xs text-ink-3 tabular-nums">

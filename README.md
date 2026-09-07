@@ -1,8 +1,8 @@
 # Ecommerce AI Suite
 
 商家侧电商 AI 套件：FastAPI 单体 + Vite React 控制台 + Postgres(pgvector)。
-当前刀 = **治理发布写回**（后端）：登录 → 上传规格文档挂商品 → 同步机洗抽字段（抽不到弃权）→ 待人洗确认/补填 → 发布（单事务写回商品 + 审计）。
-领域决策见 `CONTEXT.md` 与 `docs/adr/`（表结构唯一依据：ADR 0022）；范围与排期见 `docs/slices.md`。
+当前刀 = **客服引用**（后端）：发布事务切块入检索索引（ADR 0004/0023）→ 客服会话 SSE 流式回答带 `{asset_id, version_no}` 引用（0007/0018：无证据拒答+转人工）→ 会话回流登记为 kind=dialogue 资产（0013）→ 治理发布后再次命中引用（闭环）。
+领域决策见 `CONTEXT.md` 与 `docs/adr/`（表结构唯一依据：ADR 0022/0023）；范围与排期见 `docs/slices.md`。
 
 ## 快速开始（compose 一键起）
 
@@ -22,7 +22,28 @@ api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者�
 ## 登录（0016 单操作者）
 
 种子操作者 username `operator`，密码取 env `OPERATOR_PASSWORD`（默认 `operator123`，**仅开发用**）。
-`POST /api/auth/login` 成功后签发 httpOnly 签名会话 cookie；所有写接口（登记/确认/发布/机洗重试）未登录返回 401。
+`POST /api/auth/login` 成功后签发 httpOnly 签名会话 cookie；所有业务接口（登记/确认/发布/机洗重试/客服会话与回流登记）未登录返回 401。
+
+## 客服引用 API（第 3 刀，ADR 0023）
+
+```bash
+POST   /api/service/sessions                       # 新会话（active）
+GET    /api/service/sessions                       # 列表（倒序：状态+首问摘要+消息数）
+GET    /api/service/sessions/{id}                  # 详情（消息全量，含 citations/kind）
+POST   /api/service/sessions/{id}/messages         # 发问 {"content": "..."} -> SSE 流
+POST   /api/service/sessions/{id}/register         # 回流登记 -> kind=dialogue 资产（待人洗）
+```
+
+SSE 事件协议（`text/event-stream`，回答文本在流式开始前已完整组装落库，断连不产生 interrupted 消息，停止语义由前端表达）：
+
+```
+event: thinking    data: {"text": "正在检索已发布资产…"}
+event: delta       data: {"text": "..."}            # 多片，~12 字/片
+event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "version_no": 1}],
+                          "kind": "answer", "handoff": false}
+```
+
+无命中 -> `kind: "refusal"`、`handoff: true`、`citations: []`，固定文案「抱歉，已发布资产里没有能回答这个问题的证据。」（0018：不编造不闲聊）。检索只查当前已发布版本（0004/0017），切块在发布事务内写入 `retrieval_chunks`（0002 第二批迁移）。
 
 ## 本地开发
 
@@ -78,6 +99,7 @@ SUITE_TEST_DATABASE_URL=postgresql://suite:suite@localhost:5432/suite_test uv ru
 ```
 
 覆盖全链路：登录 → 上传（真写临时对象存储目录）→ 机洗抽到/弃权 → 未确认发布 422（缺项分「缺少」与「未确认」两类）→ 确认/补填 → 发布 200 → 商品 spec_values 写回带 `asset_id·version` 来源 → 审计留痕 → 未登录 401 → 机洗失败/就地重试 → 对象键形状。
+客服刀闭环：发布（切块入索引）→ 问「净含量」SSE 引用 v1 → 问待人洗独有内容 refusal+handoff → 回流登记 dialogue 资产待人洗 → 发布 → 再问命中引用该对话 → 版本跟随指针（指针前移后命中 v2 块）。
 
 web 构建校验：`cd apps/web && npm run build && npm run lint`
 

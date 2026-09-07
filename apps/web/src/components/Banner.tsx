@@ -1,5 +1,6 @@
 // 显性横幅：API 错误（红，带重试）与发布成功（安静绿）。不静默白屏。
 
+import type { ReactNode } from 'react'
 import { ArrowClockwise, CheckCircle, Warning } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 
@@ -27,7 +28,7 @@ export function ErrorBanner({
   )
 }
 
-export function SuccessBanner({ children }: { children: string }) {
+export function SuccessBanner({ children }: { children: ReactNode }) {
   return (
     <div
       role="status"

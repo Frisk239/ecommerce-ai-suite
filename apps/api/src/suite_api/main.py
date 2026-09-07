@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from suite_api.db import create_database_engine, create_session_factory, to_sqlalchemy_url
-from suite_api.routes import assets, audit, auth, health, products
+from suite_api.routes import assets, audit, auth, health, products, service
 from suite_api.services.seed import seed_startup_data
 from suite_api.settings import Settings, get_settings
 
@@ -74,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(assets.router)
     app.include_router(products.router)
     app.include_router(audit.router)
+    app.include_router(service.router)
     return app
 
 

@@ -3,26 +3,37 @@
 状态机：ingested --机洗成功--> pending_review --发布--> published；
 机洗失败停 ingested 存 last_error；已发布/已接入版本不可改（0006）。
 发布为单事务：版本 published -> 资产指针前移 -> 商品写回 -> 审计一行。
+
+登记骨架（put_bytes -> Asset/AssetVersion -> 机洗推进）与资产读视图装配
+分别在 services/registration.py 与 services/asset_view.py，供 service 路由共用。
 """
 
-import hashlib
 from datetime import UTC, datetime
-from typing import Annotated, Any
-from uuid import uuid4
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import Asset, AssetVersion, AuditLog, Operator, Product
+from suite_api.models import Asset, AssetVersion, AuditLog, Operator, Product, RetrievalChunk
+from suite_api.services.asset_view import (
+    AssetDetail,
+    AssetOut,
+    VersionOut,
+    load_products,
+    published_version_nos,
+    to_asset_detail,
+    to_asset_out,
+)
 from suite_api.services.machine_wash import MachineWashError, run_machine_wash
 from suite_api.services.publishing import (
     evaluate_publish_gate,
     publishable_values,
     schema_field_names,
 )
+from suite_api.services.registration import INGESTED, PENDING_REVIEW, register_asset
+from suite_api.services.retrieval import ChunkingError, index_chunks_for_version
 from suite_platform.storage import ObjectStorage
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
@@ -30,121 +41,8 @@ router = APIRouter(prefix="/api/assets", tags=["assets"])
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 ALLOWED_CONTENT_TYPES = {"text/plain", "text/markdown"}
 
-INGESTED = "ingested"
-PENDING_REVIEW = "pending_review"
 PUBLISHED = "published"
 _VALID_STATUSES = {INGESTED, PENDING_REVIEW, PUBLISHED}
-
-
-# ---------- 响应模型（给前端票的契约） ----------
-
-
-class ProductRef(BaseModel):
-    id: int
-    name: str
-    category: str
-
-
-class AssetOut(BaseModel):
-    id: int
-    title: str | None
-    kind: str
-    status: str
-    product: ProductRef | None
-    last_error: str | None
-    current_published_version_no: int | None
-
-
-class VersionOut(BaseModel):
-    version_no: int
-    object_key: str
-    extracted_fields: dict[str, Any]
-    confirmed_fields: dict[str, Any]
-    published_at: datetime | None
-
-
-class Publishability(BaseModel):
-    publishable: bool
-    missing: list[str]
-    unconfirmed: list[str]
-
-
-class AssetDetail(AssetOut):
-    versions: list[VersionOut]
-    publishability: Publishability
-
-
-# ---------- 查询辅助 ----------
-
-
-def _load_products(db: Session, assets: list[Asset]) -> dict[int, Product]:
-    ids = {a.product_id for a in assets if a.product_id is not None}
-    if not ids:
-        return {}
-    return {p.id: p for p in db.scalars(select(Product).where(Product.id.in_(ids)))}
-
-
-def _published_version_nos(db: Session, assets: list[Asset]) -> dict[int, int]:
-    ids = {a.current_published_version_id for a in assets if a.current_published_version_id is not None}
-    if not ids:
-        return {}
-    return {v.id: v.version_no for v in db.scalars(select(AssetVersion).where(AssetVersion.id.in_(ids)))}
-
-
-def _to_asset_out(
-    asset: Asset, products: dict[int, Product], version_nos: dict[int, int]
-) -> AssetOut:
-    product = products.get(asset.product_id) if asset.product_id is not None else None
-    return AssetOut(
-        id=asset.id,
-        title=asset.title,
-        kind=asset.kind,
-        status=asset.status,
-        product=(
-            ProductRef(id=product.id, name=product.name, category=product.category)
-            if product
-            else None
-        ),
-        last_error=asset.last_error,
-        current_published_version_no=(
-            version_nos.get(asset.current_published_version_id)
-            if asset.current_published_version_id is not None
-            else None
-        ),
-    )
-
-
-def _to_asset_detail(db: Session, asset: Asset) -> AssetDetail:
-    base = _to_asset_out(asset, _load_products(db, [asset]), _published_version_nos(db, [asset]))
-    versions = list(
-        db.scalars(
-            select(AssetVersion).where(AssetVersion.asset_id == asset.id).order_by(AssetVersion.version_no)
-        )
-    )
-    latest = versions[-1] if versions else None
-    product = db.get(Product, asset.product_id) if asset.product_id is not None else None
-    schema = dict(product.spec_schema) if product is not None else {}
-    extracted = dict(latest.extracted_fields) if latest is not None else {}
-    confirmed = dict(latest.confirmed_fields) if latest is not None else {}
-    missing, unconfirmed = evaluate_publish_gate(schema, extracted, confirmed)
-    return AssetDetail(
-        **base.model_dump(),
-        versions=[
-            VersionOut(
-                version_no=v.version_no,
-                object_key=v.object_key,
-                extracted_fields=dict(v.extracted_fields),
-                confirmed_fields=dict(v.confirmed_fields),
-                published_at=v.published_at,
-            )
-            for v in versions
-        ],
-        publishability=Publishability(
-            publishable=asset.status == PENDING_REVIEW and not missing and not unconfirmed,
-            missing=missing,
-            unconfirmed=unconfirmed,
-        ),
-    )
 
 
 def _get_asset_or_404(db: Session, asset_id: int) -> Asset:
@@ -187,7 +85,11 @@ async def register(
     db: Annotated[Session, Depends(get_db)] = None,
     storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
 ) -> AssetDetail:
-    """登记（0013 没有字节不能登记）：字节先落对象存储，再写库，再同步机洗。"""
+    """登记（0013 没有字节不能登记）：字节先落对象存储，再写库，再同步机洗。
+
+    骨架与回流登记共享 services/registration.register_asset；此处只做上传
+    入参校验（类型/大小/空文件）。
+    """
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -201,46 +103,18 @@ async def register(
     if not data:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能登记")
 
-    product = None
-    if productId is not None:
-        product = db.get(Product, productId)
-        if product is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="商品不存在")
-
-    # 对象键：documents/{uuid}/{sha256前16}.txt；防逃逸由 LocalDirectoryStorage 保证
-    digest = hashlib.sha256(data).hexdigest()[:16]
-    object_key = f"documents/{uuid4().hex}/{digest}.txt"
-    storage.put_bytes(object_key, data)
-
-    asset = Asset(
+    asset = register_asset(
+        db,
+        storage,
         kind="document",
-        status=INGESTED,
         title=title,
-        product_id=product.id if product is not None else None,
+        content_bytes=data,
+        filename=file.filename,
+        product_id=productId,
     )
-    db.add(asset)
-    db.flush()  # 拿主键，机洗失败也能以 ingested + last_error 落库
-    version = AssetVersion(
-        asset_id=asset.id,
-        version_no=1,
-        object_key=object_key,
-        extracted_fields={},
-        confirmed_fields={},
-    )
-    db.add(version)
-
-    field_names = schema_field_names(product.spec_schema) if product is not None else []
-    try:
-        extracted = run_machine_wash(storage, object_key, field_names)
-        version.extracted_fields = extracted  # JSONB 整体赋值，确保变更可追踪
-        asset.status = PENDING_REVIEW
-    except (MachineWashError, FileNotFoundError) as exc:
-        asset.status = INGESTED
-        asset.last_error = str(exc)[:500] or exc.__class__.__name__
     db.commit()
     db.refresh(asset)
-    db.refresh(version)
-    return _to_asset_detail(db, asset)
+    return to_asset_detail(db, asset)
 
 
 @router.post("/{asset_id}/retry-machine-wash", response_model=AssetDetail)
@@ -271,7 +145,7 @@ def retry_machine_wash(
     db.commit()
     db.refresh(asset)
     db.refresh(version)
-    return _to_asset_detail(db, asset)
+    return to_asset_detail(db, asset)
 
 
 @router.patch("/{asset_id}/versions/{version_no}/fields", response_model=VersionOut)
@@ -340,8 +214,9 @@ def publish(
     asset_id: int,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
 ) -> AssetDetail:
-    """发布：API 层再校验闸门 -> 单事务（版本/指针/写回/审计）。"""
+    """发布：API 层再校验闸门 -> 单事务（版本/切块入索引/指针/写回/审计）。"""
     asset = _get_asset_or_404(db, asset_id)
     if asset.status != PENDING_REVIEW:
         raise HTTPException(
@@ -363,10 +238,27 @@ def publish(
                 "unconfirmed": unconfirmed,  # 待确认字段（机洗有值未确认）
             },
         )
-    # 单事务：版本 published -> 资产指针前移 -> 商品写回 -> 审计一行（0005/0006/0010）
+    # 单事务：版本 published -> 切块入索引（发布的一部分，CONTEXT「已发布」词条）
+    # -> 资产指针前移 -> 商品写回 -> 审计一行（0005/0006/0010）。
+    # 切块失败（字节不可读/非 UTF-8）整体回滚：索引没写就不算发布成功（0004）。
+    try:
+        index_chunks = index_chunks_for_version(
+            storage, version.object_key, asset.kind, confirmed
+        )
+    except ChunkingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"无法切块入检索索引，发布已中止: {exc}",
+        ) from exc
     version.published_at = datetime.now(UTC)
     asset.status = PUBLISHED
     asset.current_published_version_id = version.id
+    db.add_all(
+        RetrievalChunk(
+            asset_id=asset.id, version_no=version.version_no, seq=seq, chunk=chunk
+        )
+        for seq, chunk in enumerate(index_chunks)
+    )
     if product is not None:
         new_values = dict(product.spec_values)
         for field, value in publishable_values(schema, extracted, confirmed).items():
@@ -386,7 +278,7 @@ def publish(
     db.commit()
     db.refresh(asset)
     db.refresh(version)
-    return _to_asset_detail(db, asset)
+    return to_asset_detail(db, asset)
 
 
 # ---------- 读接口 ----------
@@ -408,9 +300,9 @@ def list_assets(
     if status_filter is not None:
         query = query.where(Asset.status == status_filter)
     assets = list(db.scalars(query))
-    products = _load_products(db, assets)
-    version_nos = _published_version_nos(db, assets)
-    return [_to_asset_out(a, products, version_nos) for a in assets]
+    products = load_products(db, assets)
+    version_nos = published_version_nos(db, assets)
+    return [to_asset_out(a, products, version_nos) for a in assets]
 
 
 @router.get("/{asset_id}", response_model=AssetDetail)
@@ -421,4 +313,4 @@ def get_asset(
 ) -> AssetDetail:
     del operator  # 读接口同样要求登录（CONTEXT.md：控制台=登录后的人机界面）
     asset = _get_asset_or_404(db, asset_id)
-    return _to_asset_detail(db, asset)
+    return to_asset_detail(db, asset)
