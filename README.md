@@ -47,6 +47,37 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 
 拒答（0024 知识缺口）同事务落 `knowledge_gaps`（同问法精确幂等不新建），`complete.gap_id` 即缺口 id（answer 恒为 null）；`GET /api/knowledge-gaps?status=open|resolved` 看待办（全登录），「补文档」=`POST /api/assets/register` 带可选表单字段 `knowledgeGapId`（来源 `source_kind` 由端点定值：上传=upload、回流=session_backflow），发布事务内缺口自动 resolved 并指向该资产。
 
+## MCP 连接层（第 5 刀，ADR 0032）
+
+外部 Agent（Cursor / Claude / 官方 SDK 客户端）经 Streamable HTTP 连同一份中台，端点 `http://localhost:8000/mcp/`。
+
+- **鉴权**：`Authorization: Bearer <MCP_BEARER_TOKEN>`，与操作者登录会话完全隔离（不读 cookie）。token 未配置或为空时所有 MCP 调用一律 401；本地开发默认值见 `.env.example`（`dev-mcp-bearer`，生产必换）。
+- **四工具**（没有 publish——发布只属于治理台操作者）：
+
+  | 工具 | 语义 |
+  | --- | --- |
+  | `search_published(query)` | 检索当前已发布切块（与客服同一索引），返回 `{asset_id, version_no, title, chunk, score}` |
+  | `get_asset(asset_id, version?)` | 取已发布资产正文；不传 version=当前指针版，传 version=历史已发布版；待人洗/已接入一律拒绝 |
+  | `register_asset(content, title?, product_id?)` | 登记文档（必须带正文），来源固定 `mcp_registered`，落为已接入等治理台处理 |
+  | `export_published()` | 全部当前已发布资产，含该版正文全文 |
+
+- **冒烟**（需先有已发布资产）：
+
+  ```bash
+  docker compose up -d --build api
+  MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py
+  # 可选参数：search 关键词、asset_id、version
+  MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py 保温杯 1 1
+  ```
+
+- **Cursor mcp.json**：
+
+  ```json
+  {"mcpServers":{"ecommerce-suite":{"url":"http://localhost:8000/mcp/","headers":{"Authorization":"Bearer <token>"}}}}
+  ```
+
+- compose 端口：本机 5432 被其他项目占用时，`.env` 设 `PG_PORT`（如 `PG_PORT=5433`）后 `docker compose up -d db`，`DATABASE_URL` / `SUITE_TEST_DATABASE_URL` 同步指向该端口。
+
 ## 本地开发
 
 前置：Python 3.12+（uv 自动管理）、Node 24+、[uv](https://docs.astral.sh/uv/)。

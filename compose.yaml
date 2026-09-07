@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: suite
       POSTGRES_DB: suite
     ports:
-      - "5432:5432"
+      - "${PG_PORT:-5432}:5432"  # 本机 5432 被占时 .env 设 PG_PORT 覆盖（默认不变）
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

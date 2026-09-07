@@ -6,7 +6,7 @@
 """
 
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 from alembic import command
@@ -14,6 +14,7 @@ from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from suite_api import mcp_server
 from suite_api.db import create_database_engine, create_session_factory, to_sqlalchemy_url
 from suite_api.routes import assets, audit, auth, health, knowledge_gaps, products, service
 from suite_api.services.seed import seed_startup_data
@@ -53,10 +54,20 @@ async def lifespan(app: FastAPI):
         seed_startup_data(engine, settings.operator_password)
     except Exception:  # noqa: BLE001 - 启动期迁移/种子失败不吞日志，但不拦 /health 语义
         logger.exception("启动迁移/种子失败：业务接口将不可用；/health 按数据库连通性如实上报")
-    try:
-        yield
-    finally:
-        engine.dispose()
+    # MCP 会话管理器（ADR 0032）：mounted 子应用的 lifespan 不会执行，host 代跑；
+    # 失败只废 /mcp，不拖累 /api/* 与 /health
+    async with AsyncExitStack() as stack:
+        mcp_manager = getattr(app.state, "mcp_session_manager", None)
+        if mcp_manager is not None:
+            try:
+                await stack.enter_async_context(mcp_manager.run())
+            except Exception:  # noqa: BLE001 - 同上：显式留痕，不拦主服务
+                logger.exception("MCP 会话管理器启动失败：/mcp 不可用，其余接口不受影响")
+        try:
+            yield
+        finally:
+            await stack.aclose()
+    engine.dispose()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -76,6 +87,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(audit.router)
     app.include_router(service.router)
     app.include_router(knowledge_gaps.router)
+    # MCP 连接层（ADR 0032）：官方 SDK Streamable HTTP 挂 /mcp 前缀，对外端点
+    # /mcp/；Bearer 闸门在子应用层，/api/* 与 /health 不经过它。session
+    # manager 由 lifespan 代跑（见 lifespan 内 AsyncExitStack）。
+    app.mount("/mcp", mcp_server.build_mcp_app(app))
     return app
 
 

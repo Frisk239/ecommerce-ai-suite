@@ -20,29 +20,42 @@ def request_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
-def get_engine(request: Request) -> Engine:
-    engine = getattr(request.app.state, "engine", None)
+def ensure_engine(app) -> Engine:
+    """engine/session_factory 惰性装配（app.state）：lifespan 已建则复用。
+
+    公开给两类调用方：请求侧 get_db（经 get_engine）与 MCP 连接层工具
+    （无 Request 对象，凭 host app 引用走同一装配口径）。
+    """
+    engine = getattr(app.state, "engine", None)
     if engine is None:
-        engine = create_database_engine(request.app.state.settings.database_url)
-        request.app.state.engine = engine
-        request.app.state.session_factory = create_session_factory(engine)
+        engine = create_database_engine(app.state.settings.database_url)
+        app.state.engine = engine
+        app.state.session_factory = create_session_factory(engine)
     return engine
 
 
+def get_engine(request: Request) -> Engine:
+    return ensure_engine(request.app)
+
+
 def get_db(request: Request) -> Generator[Session, None, None]:
-    get_engine(request)
+    ensure_engine(request.app)
     with request.app.state.session_factory() as session:
         yield session
 
 
-def get_storage(request: Request):
-    storage = getattr(request.app.state, "storage", None)
+def ensure_storage(app):
+    storage = getattr(app.state, "storage", None)
     if storage is None:
         from suite_platform.storage import LocalDirectoryStorage
 
-        storage = LocalDirectoryStorage(request.app.state.settings.storage_root)
-        request.app.state.storage = storage
+        storage = LocalDirectoryStorage(app.state.settings.storage_root)
+        app.state.storage = storage
     return storage
+
+
+def get_storage(request: Request):
+    return ensure_storage(request.app)
 
 
 def get_current_operator(
