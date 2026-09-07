@@ -18,7 +18,7 @@
 import secrets
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy import select
 from starlette.datastructures import Headers
@@ -58,15 +58,20 @@ class BearerGateMiddleware:
             return
         expected = self.settings.mcp_bearer_token
         presented = Headers(scope=scope).get("authorization", "")
-        ok = bool(expected) and presented.startswith("Bearer ")
+        scheme, _, token = presented.partition(" ")
+        ok = bool(expected) and scheme.lower() == "bearer" and bool(token)
         if ok:
             # compare_digest 防时序侧信道；按字节比（token 理论上可含非 ASCII）
             ok = secrets.compare_digest(
-                presented[len("Bearer ") :].encode("utf-8"), expected.encode("utf-8")
+                token.encode("utf-8"), expected.encode("utf-8")
             )
         if not ok:
             detail = "MCP 未授权：缺少或错误的 Bearer token（MCP_BEARER_TOKEN 未配置时同样拒绝）"
-            response = JSONResponse({"detail": detail}, status_code=401)
+            response = JSONResponse(
+                {"detail": detail},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
             await response(scope, receive, send)
             return
         await self.app(scope, receive, send)
@@ -164,21 +169,26 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
         """
         if not content.strip():
             raise ValueError("登记必须带正文：只给标题的空壳登记被拒绝（ADR 0013）")
-        with _db_session() as session:
-            asset = registration.register_asset(
-                session,
-                ensure_storage(host),
-                kind="document",
-                title=title or None,
-                content_bytes=content.encode("utf-8"),
-                filename=f"mcp-{uuid4().hex}.txt",
-                product_id=product_id,
-                source_kind="mcp_registered",
-            )
-            session.commit()
-            session.refresh(asset)
-            out = to_asset_out(asset, load_products(session, [asset]), published_version_nos(session, [asset]))
-            return out.model_dump(mode="json")
+        try:
+            with _db_session() as session:
+                asset = registration.register_asset(
+                    session,
+                    ensure_storage(host),
+                    kind="document",
+                    title=title or None,
+                    content_bytes=content.encode("utf-8"),
+                    filename=f"mcp-{uuid4().hex}.txt",
+                    product_id=product_id,
+                    source_kind="mcp_registered",
+                )
+                session.commit()
+                session.refresh(asset)
+                out = to_asset_out(asset, load_products(session, [asset]), published_version_nos(session, [asset]))
+                return out.model_dump(mode="json")
+        except HTTPException as exc:
+            # registration 骨架抛 FastAPI 语义（如挂错商品 404）——转成工具
+            # 错误文案，别把 HTTP 状态码语义泄给外部 Agent。
+            raise ValueError(f"登记失败：{exc.detail}") from exc
 
     @mcp.tool()
     def export_published() -> list[dict]:

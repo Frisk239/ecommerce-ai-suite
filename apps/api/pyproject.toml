@@ -13,7 +13,7 @@ dependencies = [
     "bcrypt>=4.2",
     "python-multipart>=0.0.20",
     "suite-platform",
-    "mcp>=1.9.4,<2",
+    "mcp>=1.10,<2",  # 1.10 起 Streamable HTTP 修复 CVE-2025-53365
 ]
 
 [tool.uv.sources]

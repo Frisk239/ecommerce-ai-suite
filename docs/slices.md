@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**知识缺口闭环**（`feat/knowledge-gap`，closeout 见 `docs/progress/knowledge-gap-closeout.md`）。客服引用已关刀；治理发布写回与脚手架已合并 main。
+上一刀：**MCP 只读已发布**（`feat/mcp-readonly`，closeout 见 `docs/progress/mcp-readonly-closeout.md`）。前四刀（脚手架/治理发布写回/客服引用/知识缺口闭环）已全部合并 main。
 
-当前阶段：工程刀。第 4 刀已交付（stack 于 PR #5，待人合并）。第 5 刀主题已锁（见下）。
+当前阶段：工程刀。第 5 刀已交付待 PR。下一刀从「更后面」表挑（修订流 / 厂商生成 / 顾客通道），短对齐再定。
 
 ## 怎么切
 
@@ -44,7 +44,7 @@
 
 **Out：** 修订关缺口、MCP、厂商 Chat API、顾客通道、微调。
 
-## 第 5 刀（短对齐已锁主题，实现待第 4 刀合并）
+## 第 5 刀：MCP 只读已发布（已交付，`feat/mcp-readonly` 待 PR）
 
 **MCP 只读已发布**（ADR 0001/0020/0032）：同一 FastAPI 进程 `/mcp/` Streamable HTTP；`MCP_BEARER_TOKEN` 空则全部 401，不复用操作者 cookie。工具：`search_published` / `get_asset` / `register_asset`（正文必填，来源=mcp_registered）/ `export_published`（元数据+该版正文）。无 publish。官方 MCP Python SDK。README 给 Cursor `mcp.json`。检索索引已就绪（0017）。
 
