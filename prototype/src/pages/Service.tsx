@@ -62,14 +62,6 @@ function MessageBubble({ m, prev }: { m: ChatMessage; prev?: ChatMessage }) {
         {!grouped && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-accent-strong">AI 客服</span>
-            {m.model?.type === 'finetuned' && (
-              <span
-                className="badge-accent"
-                title={`来自模型配置：${m.model.name}${m.model.source ? `（${m.model.source}）` : ''}`}
-              >
-                微调底座 · {m.model.name}
-              </span>
-            )}
             {m.refused && (
               <span className="badge-failed">
                 <Prohibit size={11} />
@@ -81,6 +73,15 @@ function MessageBubble({ m, prev }: { m: ChatMessage; prev?: ChatMessage }) {
                 <HandArrowUp size={11} />
                 已转人工
               </span>
+            )}
+            {m.gapId && (
+              <Link
+                to={`/platform/assets?state=知识缺口`}
+                className="badge-accent hover:underline"
+                title="已记入治理台知识缺口，不是资产"
+              >
+                知识缺口 {m.gapId}
+              </Link>
             )}
           </div>
         )}
@@ -170,21 +171,9 @@ export default function Service() {
     <div className="p-4 lg:p-6">
       <PageHeader
         title="AI 客服"
-        desc="操作者预览顾客对话。回答带 资产ID · vN 引用，只命中已发布；无证据则拒答转人工；库存走工具查询；结束后会话回流登记。"
+        desc="操作者预览顾客对话。只引已发布；无证据则拒答转人工并记下知识缺口；库存走工具；结束可回流登记。"
         actions={
           <>
-            <div className="seg">
-              {(['base', 'finetuned'] as const).map((m) => (
-                <button
-                  key={m}
-                  className={`seg-tab ${activeModel.type === m ? 'seg-tab-active' : ''}`}
-                  onClick={() => dispatch({ type: 'SWITCH_MODEL', model: m })}
-                  title={m === 'base' ? '切到基座底座' : '切到微调底座；在「模型配置」里管理'}
-                >
-                  {m === 'base' ? '基座' : '微调'}
-                </button>
-              ))}
-            </div>
             <button
               className="btn-primary"
               disabled={!!session}
@@ -280,15 +269,9 @@ export default function Service() {
               </button>
             ) : (
               <>
-                <span
-                  className="inline-flex items-center gap-1"
-                  title={activeModel.source ?? activeModel.provider}
-                >
+                <span className="inline-flex items-center gap-1" title={activeModel.provider}>
                   <GearSix size={13} />
-                  底座：{activeModel.name}
-                  {activeModel.source && (
-                    <span className="text-caption">（{activeModel.source}）</span>
-                  )}
+                  {activeModel.provider} · {activeModel.name}
                 </span>
                 {session!.messages.length > 0 && !endedCurrent && !streaming && (
                   <button

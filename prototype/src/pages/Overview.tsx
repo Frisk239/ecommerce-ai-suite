@@ -2,13 +2,12 @@ import { Link } from 'react-router-dom'
 import {
   ArrowRight,
   ArrowsClockwise,
-  Brain,
   ChatCircleDots,
   CheckCircle,
   Database,
   ImageSquare,
   Tray,
-  Package,
+  PlugsConnected,
 } from '@phosphor-icons/react'
 import PageHeader from '../components/PageHeader'
 import { useStore } from '../store/store'
@@ -18,7 +17,7 @@ const LOOPS = [
     to: '/service',
     icon: ChatCircleDots,
     name: '接待闭环',
-    line: '顾客提问，客服只引已发布资产回答；会话回流登记，治理后再服务下一位顾客。',
+    line: '客服只引已发布；无证据拒答；会话可回流再治理。知识变好靠发布，不靠训练。',
     steps: [
       { label: '治理资产', to: '/platform/assets?state=待人洗' },
       { label: '带引用回答', to: '/service' },
@@ -39,15 +38,14 @@ const LOOPS = [
     ],
   },
   {
-    to: '/finetune',
-    icon: Brain,
-    name: '能力闭环',
-    line: '检索不够好时，从已发布导出微调集，训练注册为底座，把适配后的模型送回客服。',
+    to: '/connect',
+    icon: PlugsConnected,
+    name: '连接层',
+    line: '外部 Agent 经 MCP 检索、取资产、登记同一份已发布权威。导出是数据包，不是微调集。',
     steps: [
-      { label: '导出微调集', to: '/finetune' },
-      { label: '注册底座', to: '/finetune' },
-      { label: '客服切换', to: '/service' },
-      { label: '考核验证', to: '/coach' },
+      { label: '检索已发布', to: '/connect' },
+      { label: '取资产版本', to: '/connect' },
+      { label: '登记进中台', to: '/platform/assets?state=已接入' },
     ],
   },
 ]
@@ -55,9 +53,9 @@ const LOOPS = [
 export default function Overview() {
   // 选择器必须返回稳定引用（数组/原始值），不能每次构造新对象
   const assets = useStore((s) => s.assets)
-  const products = useStore((s) => s.products)
   const sessions = useStore((s) => s.sessions)
   const exports = useStore((s) => s.exports)
+  const openGaps = useStore((s) => s.knowledgeGaps.filter((g) => g.status === 'open').length)
 
   const stats = [
     {
@@ -84,10 +82,10 @@ export default function Overview() {
       tone: 'emerald' as const,
     },
     {
-      to: '/platform/products',
-      label: '商品',
-      value: products.length,
-      icon: Package,
+      to: '/platform/assets?state=知识缺口',
+      label: '知识缺口',
+      value: openGaps,
+      icon: ChatCircleDots,
       tone: 'accent' as const,
     },
   ]
@@ -104,7 +102,7 @@ export default function Overview() {
     <div className="p-4 lg:p-6 max-w-[1200px]">
       <PageHeader
         title="总览"
-        desc="八块能力共用一份被治理过的数据。三条闭环从这里一句点进真实页面，治理队列是每天的入口。"
+        desc="七块能力共用一份被治理过的数据。知识变好靠缺口和发布，不靠训练。治理队列是每天的入口。"
         actions={
           <div className="flex items-center gap-1.5 text-xs text-ink-3 font-mono tabular-nums">
             <ArrowsClockwise size={13} />

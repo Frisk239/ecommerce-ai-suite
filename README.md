@@ -40,10 +40,12 @@ SSE 事件协议（`text/event-stream`，回答文本在流式开始前已完整
 event: thinking    data: {"text": "正在检索已发布资产…"}
 event: delta       data: {"text": "..."}            # 多片，~12 字/片
 event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "version_no": 1}],
-                          "kind": "answer", "handoff": false}
+                          "kind": "answer", "handoff": false, "gap_id": null}
 ```
 
 无命中 -> `kind: "refusal"`、`handoff: true`、`citations: []`，固定文案「抱歉，已发布资产里没有能回答这个问题的证据。」（0018：不编造不闲聊）。检索只查当前已发布版本（0004/0017），切块在发布事务内写入 `retrieval_chunks`（0002 第二批迁移）。
+
+拒答（0024 知识缺口）同事务落 `knowledge_gaps`（同问法精确幂等不新建），`complete.gap_id` 即缺口 id（answer 恒为 null）；`GET /api/knowledge-gaps?status=open|resolved` 看待办（全登录），「补文档」=`POST /api/assets/register` 带可选表单字段 `knowledgeGapId`（来源 `source_kind` 由端点定值：上传=upload、回流=session_backflow），发布事务内缺口自动 resolved 并指向该资产。
 
 ## 本地开发
 
@@ -105,7 +107,7 @@ web 构建校验：`cd apps/web && npm run build && npm run lint`
 
 ## 环境变量
 
-见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`XAI_API_KEY`（本阶段不调模型，仅留位）、`XAI_BASE_URL`。
+见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`MCP_BEARER_TOKEN`（连接层独立凭证，不复用登录 cookie）。真实密钥只落到 `.env`。
 
 ## 仓库布局
 

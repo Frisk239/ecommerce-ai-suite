@@ -7,6 +7,9 @@
 回流登记 -> kind=dialogue 资产待人洗 -> 发布 -> 再问命中引用该对话（闭环）->
 版本跟随指针（发布 v2 后命中 v2 块而非 v1，0017 派生视图；修订流未做，
 测试直接造修订发布的产物验证 join 语义）。
+
+知识缺口契约组（0024/0030，第 4 刀）：拒答落缺口（精确幂等）、answer 不落、
+complete 带 gap_id、补文档登记关联 -> 发布事务内 resolved -> 同问法再问命中。
 """
 
 import json
@@ -15,9 +18,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from suite_api.models import Asset, AssetVersion, RetrievalChunk, ServiceMessage
+from suite_api.models import Asset, AssetVersion, KnowledgeGap, RetrievalChunk, ServiceMessage
 
 ApiFixture = tuple[TestClient, Path]
 
@@ -26,19 +29,33 @@ _RETURN_DOC = "保修与退货政策\n七天无理由退货；退货需保持吊
 _POINTER_DOC = "专用刻度杯说明\n刻度容量：300ml".encode()
 # 「回放锚定」为本测试独有关键词，不与其他已发布块串台（同 module 库共享）
 _DISCONNECT_DOC = "断连落库验证说明\n回放锚定：77ml".encode()
+# 缺口组独有关键词（同 module 库共享：维修网点/会员积分/发票/赠品/延保互不串台，
+# 也不与本文件此前已发布块串台）
+_SERVICE_DESK_DOC = "售后维修网点说明\n维修网点：统一寄回工厂检修".encode()
+_GIFT_DOC = "赠品口径说明\n赠品：下单随杯附送同款杯刷一支".encode()
+_EXTENDED_WARRANTY_DOC = "延保口径说明\n延保：下单一年内可补购延长保修服务".encode()
 
 
 def _login(client: TestClient) -> None:
     assert client.post("/api/auth/login", json={"username": "operator", "password": "operator123"}).status_code == 200
 
 
-def _upload(client: TestClient, content: bytes, *, product_id: int | None = None, title: str | None = None) -> Any:
+def _upload(
+    client: TestClient,
+    content: bytes,
+    *,
+    product_id: int | None = None,
+    title: str | None = None,
+    gap_id: int | None = None,
+) -> Any:
     files = {"file": ("spec.txt", content, "text/plain")}
     data: dict[str, str] = {}
     if product_id is not None:
         data["productId"] = str(product_id)
     if title is not None:
         data["title"] = title
+    if gap_id is not None:
+        data["knowledgeGapId"] = str(gap_id)
     return client.post("/api/assets/register", files=files, data=data)
 
 
@@ -76,6 +93,7 @@ def test_service_endpoints_require_login(api: ApiFixture) -> None:
     assert client.get("/api/service/sessions/1").status_code == 401
     assert client.post("/api/service/sessions/1/messages", json={"content": "你好"}).status_code == 401
     assert client.post("/api/service/sessions/1/register").status_code == 401
+    assert client.get("/api/knowledge-gaps").status_code == 401  # 缺口列表同样要登录
 
 
 # ---------- 全闭环 ----------
@@ -291,3 +309,163 @@ def test_service_input_validation(api: ApiFixture) -> None:
     assert blank.status_code == 422
     # 空会话回流：转写为空不能登记（0013 精神）
     assert client.post(f"/api/service/sessions/{sid}/register").status_code == 422
+
+
+# ---------- 知识缺口契约组（0024/0030，第 4 刀） ----------
+
+
+def test_refusal_creates_gap_and_answer_does_not(api: ApiFixture) -> None:
+    """契约（0024）：拒答产生缺口（question=顾客原问）；answer 路径不产生。
+    complete 事件：拒答带 gap_id，answer 恒为 null。本刀无工具——工具失败
+    转人工不产生缺口的契约即「只挂 refusal 路径」，由 answer 对照钉死。"""
+    client, _ = api
+    _login(client)
+    # answer 对照：自备已发布文档（不依赖此前用例的执行顺序）
+    resp = _upload(client, _SERVICE_DESK_DOC, title="维修网点说明")
+    assert resp.status_code == 201
+    assert client.post(f"/api/assets/{resp.json()['id']}/publish").status_code == 200
+    sid = client.post("/api/service/sessions").json()["id"]
+
+    answer_events = _ask(client, sid, "维修网点在哪里？")
+    answer_complete = answer_events[-1][1]
+    assert answer_complete["kind"] == "answer"
+    assert answer_complete["gap_id"] is None
+    assert all(g["question"] != "维修网点在哪里？" for g in client.get("/api/knowledge-gaps").json())
+
+    # 拒答：缺口落库（question=原问、open、不挂商品），gap_id 与列表行一致
+    refusal_events = _ask(client, sid, "会员积分怎么兑换？")
+    refusal_complete = refusal_events[-1][1]
+    assert refusal_complete["kind"] == "refusal"
+    gap_id = refusal_complete["gap_id"]
+    assert isinstance(gap_id, int)
+    gaps = client.get("/api/knowledge-gaps").json()
+    row = next(g for g in gaps if g["id"] == gap_id)
+    assert row["question"] == "会员积分怎么兑换？"
+    assert row["status"] == "open"
+    assert row["product"] is None
+    assert row["resolved_by_asset_id"] is None
+    assert row["resolved_at"] is None
+    # bad status 过滤参数 422
+    assert client.get("/api/knowledge-gaps", params={"status": "todo"}).status_code == 422
+
+
+def test_refusal_gap_exact_idempotency(api: ApiFixture) -> None:
+    """精确幂等（ADR 0030 工程裁决）：同 question 文本再拒答不新建（库内 count
+    不变、前后 gap_id 相同）；不同问法各建各的。"""
+    client, _ = api
+    _login(client)
+    question = "发票可以开企业抬头吗"
+    first = _ask(client, client.post("/api/service/sessions").json()["id"], question)
+    gap_id = first[-1][1]["gap_id"]
+
+    session_factory = client.app.state.session_factory
+    with session_factory() as db:
+        count_before = db.scalar(select(func.count()).select_from(KnowledgeGap))
+
+    second = _ask(client, client.post("/api/service/sessions").json()["id"], question)
+    assert second[-1][1]["gap_id"] == gap_id  # 复用同一缺口
+
+    with session_factory() as db:
+        assert db.scalar(select(func.count()).select_from(KnowledgeGap)) == count_before
+
+    other = _ask(client, client.post("/api/service/sessions").json()["id"], "发票丢失了能补开吗")
+    assert other[-1][1]["gap_id"] != gap_id  # 不同问法不合并（只做精确幂等）
+
+
+def test_gap_fill_register_publish_resolves(api: ApiFixture) -> None:
+    """补文档闭环（0024）：拒答 -> 缺口 open -> 带缺口登记（发布前仍 open 但已
+    指向资产）-> 发布事务内 resolved + resolved_by_asset_id -> 同问法再问命中
+    （飞轮闭环）；缺口不存在 422、已解决再关联 409。"""
+    client, _ = api
+    _login(client)
+    # 缺口不存在 -> 422（字节不落库）
+    assert _upload(client, _GIFT_DOC, title="赠品口径", gap_id=999999).status_code == 422
+
+    refusal = _ask(client, client.post("/api/service/sessions").json()["id"], "下单有赠品吗")
+    gap_id = refusal[-1][1]["gap_id"]
+
+    # 补文档：带缺口登记（预填标题只是前端便利），来源=upload（端点定值）
+    registered = _upload(
+        client, _GIFT_DOC, title="补口径 · 下单有赠品吗", gap_id=gap_id
+    )
+    assert registered.status_code == 201
+    asset_id = registered.json()["id"]
+    assert registered.json()["source_kind"] == "upload"
+    row = next(g for g in client.get("/api/knowledge-gaps").json() if g["id"] == gap_id)
+    assert row["status"] == "open"  # 登记不解决：发布事务内才置 resolved
+    assert row["resolved_by_asset_id"] == asset_id
+
+    # 发布 -> 缺口 resolved + 指向资产 + resolved_at 落值；open 待办出列
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+    resolved = next(
+        g for g in client.get("/api/knowledge-gaps", params={"status": "resolved"}).json() if g["id"] == gap_id
+    )
+    assert resolved["status"] == "resolved"
+    assert resolved["resolved_by_asset_id"] == asset_id
+    assert resolved["resolved_at"] is not None
+    assert all(g["id"] != gap_id for g in client.get("/api/knowledge-gaps").json())
+
+    # 已解决的缺口不能再关联（409）
+    assert _upload(client, _GIFT_DOC, title="赠品口径二", gap_id=gap_id).status_code == 409
+
+    # 同一问法再问：命中补上的文档（飞轮闭环；gap_id=null）
+    again = _ask(client, client.post("/api/service/sessions").json()["id"], "下单有赠品吗")
+    again_complete = again[-1][1]
+    assert again_complete["kind"] == "answer"
+    assert {"asset_id": asset_id, "version_no": 1} in again_complete["citations"]
+    assert again_complete["gap_id"] is None
+
+
+def test_open_gap_allows_only_one_pending_fill_doc(api: ApiFixture) -> None:
+    """同一 open 缺口禁止二次登记（0024 补文档独占）：拒答 -> 带 gap 登记 ->
+    再带同 gap 登记 409（且指向不被覆盖——否则首份发布时
+    resolve_gaps_for_asset 按 resolved_by_asset_id 查不到，缺口永远 open）->
+    发布首份 -> 缺口 resolved。"""
+    client, _ = api
+    _login(client)
+    refusal = _ask(client, client.post("/api/service/sessions").json()["id"], "延保服务怎么开通")
+    gap_id = refusal[-1][1]["gap_id"]
+    assert refusal[-1][1]["kind"] == "refusal"
+
+    first = _upload(client, _EXTENDED_WARRANTY_DOC, title="补口径 · 延保服务怎么开通", gap_id=gap_id)
+    assert first.status_code == 201
+    first_id = first.json()["id"]
+
+    # 二次登记同缺口 -> 409，指向仍是首份（不被静默覆盖成第二份）
+    second = _upload(client, _EXTENDED_WARRANTY_DOC, title="延保口径二", gap_id=gap_id)
+    assert second.status_code == 409
+    assert "A-" in second.json()["detail"]
+    row = next(g for g in client.get("/api/knowledge-gaps").json() if g["id"] == gap_id)
+    assert row["status"] == "open"
+    assert row["resolved_by_asset_id"] == first_id
+
+    # 发布首份 -> 缺口 resolved（指向未被覆盖，发布事务才查得到它）
+    assert client.post(f"/api/assets/{first_id}/publish").status_code == 200
+    resolved = next(
+        g
+        for g in client.get("/api/knowledge-gaps", params={"status": "resolved"}).json()
+        if g["id"] == gap_id
+    )
+    assert resolved["status"] == "resolved"
+    assert resolved["resolved_by_asset_id"] == first_id
+
+
+def test_source_kind_set_by_endpoint_semantics(api: ApiFixture) -> None:
+    """来源=登记端点语义定值（0025）：上传端点=upload、回流端点=session_backflow；
+    列表/详情响应都带 source_kind。"""
+    client, _ = api
+    _login(client)
+    up = _upload(client, "来源校验文档\n校验口径：仅上传入口".encode(), title="来源校验")
+    assert up.status_code == 201
+    assert up.json()["source_kind"] == "upload"
+    assert client.get(f"/api/assets/{up.json()['id']}").json()["source_kind"] == "upload"
+
+    sid = client.post("/api/service/sessions").json()["id"]
+    _ask(client, sid, "清仓尾货什么时候上架")  # 内容无关紧要：回流登记需要会话有消息
+    backflow = client.post(f"/api/service/sessions/{sid}/register")
+    assert backflow.status_code == 201
+    assert backflow.json()["source_kind"] == "session_backflow"
+
+    sources = {a["id"]: a["source_kind"] for a in client.get("/api/assets").json()}
+    assert sources[up.json()["id"]] == "upload"
+    assert sources[backflow.json()["id"]] == "session_backflow"

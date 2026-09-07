@@ -23,6 +23,30 @@ export function kindLabel(kind: string): string {
   return KIND_LABELS[kind] ?? kind
 }
 
+/** 来源（CONTEXT「来源」词条全枚举）：当前只会出现 upload / session_backflow，
+ * 其余为后续刀预留映射；未知值原样显示，不发明词。 */
+const SOURCE_KIND_LABELS: Record<string, string> = {
+  upload: '上传',
+  session_backflow: '会话回流',
+  clip_pick: '切片拣选',
+  material_generated: '素材生成',
+  mcp_registered: '连接层登记',
+  seed: '种子',
+}
+
+export function sourceKindLabel(kind: string): string {
+  return SOURCE_KIND_LABELS[kind] ?? kind
+}
+
+/** 界面统一 ID 展示：4 位补零（A-0001 / G-0001）；后端契约仍是裸 int。 */
+export function formatAssetId(id: number): string {
+  return `A-${String(id).padStart(4, '0')}`
+}
+
+export function formatGapId(id: number): string {
+  return `G-${String(id).padStart(4, '0')}`
+}
+
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const date = new Date(iso)

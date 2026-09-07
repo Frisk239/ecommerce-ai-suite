@@ -158,15 +158,6 @@ export default function AssetDetail() {
   }
 
   const citeV = params.get('v') ? Number(params.get('v')) : null
-  // 被谁用：会话引用 / 微调导出 / 考核场景（血缘的「下游」一侧）
-  const usedByCount =
-    fullState.sessions.reduce(
-      (n, s) =>
-        n + s.messages.filter((m) => m.citations?.some((c) => c.assetId === asset.id)).length,
-      0
-    ) +
-    fullState.exports.filter((e) => e.refs.some((r) => r.assetId === asset.id)).length +
-    fullState.coachRecords.filter((r) => r.scenarioId === asset.id).length
   const usedBy = {
     sessions: fullState.sessions.reduce(
       (n, s) =>
@@ -175,8 +166,8 @@ export default function AssetDetail() {
     ),
     exports: fullState.exports.filter((e) => e.refs.some((r) => r.assetId === asset.id)).length,
     coach: fullState.coachRecords.filter((r) => r.scenarioId === asset.id).length,
-    total: usedByCount,
   }
+  const usedByCount = usedBy.sessions + usedBy.exports + usedBy.coach
   const review = asset.versions.find((x) => x.role === 'review')
   const published = asset.versions.find((x) => x.v === asset.publishedV)
   // 正在看的版本：引用进来的版本 > 待人洗版本 > 当前已发布版本
@@ -434,7 +425,11 @@ export default function AssetDetail() {
                     )
                   }
                 />
-                <MetaRow k="来源（血缘）" v={asset.source} />
+                <MetaRow
+                  k="来源"
+                  v={asset.sourceNote ? `${asset.sourceKind} · ${asset.sourceNote}` : asset.sourceKind}
+                />
+                {asset.fillsGapId && <MetaRow k="补的缺口" v={asset.fillsGapId} mono />}
                 <MetaRow k="对象键" v={`oss://demo-bucket/${asset.id}/source`} mono />
                 <MetaRow k="登记时间" v={asset.createdAt} mono />
                 {asset.publishedV != null && (
@@ -443,7 +438,7 @@ export default function AssetDetail() {
                 <MetaRow
                   k="被谁用"
                   v={
-                    usedBy.total > 0 ? (
+                    usedByCount > 0 ? (
                       <span className="tabular-nums">
                         会话 {usedBy.sessions} · 导出 {usedBy.exports} · 考核 {usedBy.coach}
                       </span>
@@ -500,7 +495,7 @@ export default function AssetDetail() {
         title={`发布 ${asset.id} · v${review?.v}`}
         body={
           <>
-            发布后此版本进入检索索引：客服、考核、素材引用、连接层、微调导出都会以
+            发布后此版本进入检索索引：客服、考核、素材引用、连接层都会以
             <span className="font-mono"> {asset.id} · v{review?.v} </span>
             为证据。
             {asset.productId && requiredFields(asset).length > 0 && (

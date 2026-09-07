@@ -1,6 +1,6 @@
-"""SQLAlchemy 2.0 声明式模型：ADR 0022 五表的直接映射，不引入新数据语义。
+"""SQLAlchemy 2.0 声明式模型：ADR 0022/0023/0030 表的直接映射，不引入新数据语义。
 
-列集合 = ADR 0022 映射表 + 工程运行所需的最小补充（assets.product_id/title/
+列集合 = 各 ADR 映射表 + 工程运行所需的最小补充（assets.product_id/title/
 last_error：挂商品、登记标题、机洗失败原因——均为任务授权的运行状态列）。
 修订/回滚不预埋列（ADR 0022 明令禁止 speculative generality）。
 """
@@ -63,6 +63,9 @@ class Asset(Base):
     kind: Mapped[str] = mapped_column(String(20))  # 本刀仅 "document"
     # ingested=已接入 / pending_review=待人洗 / published=已发布
     status: Mapped[str] = mapped_column(String(20))
+    # 0025 来源=资产进入中台的通道，登记端点语义定值（枚举校验在应用层），
+    # 不让调用方自由填报；迁移 0003 对存量回填 'upload'
+    source_kind: Mapped[str] = mapped_column(String(20))
     title: Mapped[str | None] = mapped_column(String(200))
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     # 机洗失败原因（运行状态，非领域新语义）；成功时清空
@@ -172,4 +175,26 @@ class ServiceMessage(Base):
     citations: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     kind: Mapped[str | None] = mapped_column(String(10))  # answer | refusal（仅 agent）
     handoff: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class KnowledgeGap(Base):
+    """ADR 0024/0030：知识缺口=无证据拒答留下的待补项，可挂商品。
+
+    不是资产：不能检索、不能发布，也没有手动关闭端点——产生只随 refusal
+    （精确幂等：同 question 且 open 复用，services/knowledge_gaps），解决只随
+    发布（发布事务内置 resolved）。补文档仍是普通登记：登记时 assets.register
+    带 knowledge_gap_id 即把 resolved_by_asset_id 指向该资产（原型 fillsGapId
+    语义，缺口此时仍 open），发布事务内才置 resolved + resolved_at。
+    """
+
+    __tablename__ = "knowledge_gaps"
+    __table_args__ = (Index("ix_knowledge_gaps_status_created_at", "status", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    question: Mapped[str] = mapped_column(Text)  # 顾客原问（strip 后与 customer 消息同文）
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    status: Mapped[str] = mapped_column(String(20), server_default=text("'open'"))  # open | resolved
+    resolved_by_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

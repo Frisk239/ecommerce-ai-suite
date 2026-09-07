@@ -9,7 +9,6 @@ import Ops from './pages/Ops'
 import Materials from './pages/Materials'
 import Clips from './pages/Clips'
 import Coach from './pages/Coach'
-import Finetune from './pages/Finetune'
 import Connect from './pages/Connect'
 import Models from './pages/Models'
 
@@ -27,7 +26,7 @@ export default function App() {
           <Route path="/materials" element={<Materials />} />
           <Route path="/clips" element={<Clips />} />
           <Route path="/coach" element={<Coach />} />
-          <Route path="/finetune" element={<Finetune />} />
+          <Route path="/finetune" element={<Navigate to="/models" replace />} />
           <Route path="/connect" element={<Connect />} />
           <Route path="/models" element={<Models />} />
           <Route path="*" element={<Navigate to="/" replace />} />
