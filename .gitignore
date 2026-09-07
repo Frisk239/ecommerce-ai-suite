@@ -21,3 +21,6 @@ data/
 
 # Slice Owner working artifacts (specs/tickets stay local; source of truth = docs/)
 .scratch/
+
+# Browser tooling residue
+.playwright-cli/

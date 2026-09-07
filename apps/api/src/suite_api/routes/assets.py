@@ -102,8 +102,10 @@ async def register(
     骨架与回流登记共享 services/registration.register_asset；此处只做上传
     入参校验（类型/大小/空文件）。source_kind 固定 upload（0025：服务端按
     端点语义定值，不让调用方填报）。knowledgeGapId=「补文档」关联（0024，
-    原型 fillsGapId 语义）：缺口须存在且 open；登记后 resolved_by_asset_id
-    指向本资产（缺口仍 open，发布事务内才置 resolved）。
+    原型 fillsGapId 语义）：缺口须存在且 open，且未挂登记中的补文档——
+    同一缺口同一时间只挂一份，否则二次登记静默覆盖指向，首份发布时
+    resolve_gaps_for_asset 按 resolved_by_asset_id 查不到该缺口，永不解决；
+    登记后 resolved_by_asset_id 指向本资产（缺口仍 open，发布事务内才置 resolved）。
     """
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
@@ -131,6 +133,16 @@ async def register(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"只有待补（open）的知识缺口可以关联，当前状态: {gap.status}",
+            )
+        # open 但已挂登记中的补文档：拒绝二次登记（覆盖指向会让首份发布时
+        # resolve_gaps_for_asset 查不到该缺口，缺口永远 open）
+        if gap.resolved_by_asset_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"该缺口已有登记中的补文档 A-{gap.resolved_by_asset_id}，"
+                    "请先发布它或换一条缺口"
+                ),
             )
 
     try:

@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**客服引用**（`feat/service-citation`，closeout 见 `docs/progress/service-citation-closeout.md`）。治理发布写回与脚手架两刀已合并 main。
+上一刀：**知识缺口闭环**（`feat/knowledge-gap`，closeout 见 `docs/progress/knowledge-gap-closeout.md`）。客服引用已关刀；治理发布写回与脚手架已合并 main。
 
-当前阶段：工程刀。第 4 刀 **知识缺口闭环**（`feat/knowledge-gap`，ADR 0024/0025/0030/0031）。
+当前阶段：工程刀。第 4 刀已交付（stack 于 PR #5，待人合并）。第 5 刀主题已锁（见下）。
 
 ## 怎么切
 
@@ -36,15 +36,15 @@
 
 候选 B。检索索引（0017，发布事务切块+词法打分）+ SSE 会话引擎（0021 预览面，UX-NOTES §四冻结状态机）+ 拒答转人工（0018）+ 引用带版本锚定（0007）+ 会话回流登记对话资产（0013）。Owner 浏览器点穿闭环（问→引用→拒答→回流→发布→再问命中），集成 106 passed。证据见 `docs/progress/service-citation-closeout.md`。
 
-## 第 4 刀：知识缺口闭环（进行中）
+## 第 4 刀：知识缺口闭环（已交付，`feat/knowledge-gap` 待 PR）
 
-**路径：** 拒答 → 治理台待办 → 登记补文档（可带缺口 ID）→ 发布事务内缺口 resolved → 同一问法再问能答。
+**路径：** 拒答 → 治理台待办 → 登记补文档（可带缺口 ID）→ 发布事务内缺口 resolved → 同一问法再问能答。已验收：浏览器点穿全闭环（拒答 G-0001 → 补文档 → 发布 → 缺口已解决 → 再问命中 `A-0002 · v1`）；集成 125 passed。证据见 `docs/progress/knowledge-gap-closeout.md`。
 
 **Must：** `knowledge_gaps` 表 + `assets.source_kind`（0030）；无证据拒答才建缺口；同问法精确幂等；发布才关闭（0031）；工程 UI 能看见待办和来源种类。
 
 **Out：** 修订关缺口、MCP、厂商 Chat API、顾客通道、微调。
 
-## 第 5 刀（短对齐已锁主题，实现待关第 4 刀）
+## 第 5 刀（短对齐已锁主题，实现待第 4 刀合并）
 
 **MCP 只读已发布**（ADR 0001/0020/0032）：同一 FastAPI 进程 `/mcp/` Streamable HTTP；Bearer 来自 `.env`，不复用操作者 cookie；检索/取已发布（可按版本）/登记/导出；无 publish。README 给 Cursor `mcp.json`。检索索引已就绪（0017）。
 

@@ -29,10 +29,11 @@ _RETURN_DOC = "保修与退货政策\n七天无理由退货；退货需保持吊
 _POINTER_DOC = "专用刻度杯说明\n刻度容量：300ml".encode()
 # 「回放锚定」为本测试独有关键词，不与其他已发布块串台（同 module 库共享）
 _DISCONNECT_DOC = "断连落库验证说明\n回放锚定：77ml".encode()
-# 缺口组独有关键词（同 module 库共享：维修网点/会员积分/发票/赠品互不串台，
+# 缺口组独有关键词（同 module 库共享：维修网点/会员积分/发票/赠品/延保互不串台，
 # 也不与本文件此前已发布块串台）
 _SERVICE_DESK_DOC = "售后维修网点说明\n维修网点：统一寄回工厂检修".encode()
 _GIFT_DOC = "赠品口径说明\n赠品：下单随杯附送同款杯刷一支".encode()
+_EXTENDED_WARRANTY_DOC = "延保口径说明\n延保：下单一年内可补购延长保修服务".encode()
 
 
 def _login(client: TestClient) -> None:
@@ -413,6 +414,40 @@ def test_gap_fill_register_publish_resolves(api: ApiFixture) -> None:
     assert again_complete["kind"] == "answer"
     assert {"asset_id": asset_id, "version_no": 1} in again_complete["citations"]
     assert again_complete["gap_id"] is None
+
+
+def test_open_gap_allows_only_one_pending_fill_doc(api: ApiFixture) -> None:
+    """同一 open 缺口禁止二次登记（0024 补文档独占）：拒答 -> 带 gap 登记 ->
+    再带同 gap 登记 409（且指向不被覆盖——否则首份发布时
+    resolve_gaps_for_asset 按 resolved_by_asset_id 查不到，缺口永远 open）->
+    发布首份 -> 缺口 resolved。"""
+    client, _ = api
+    _login(client)
+    refusal = _ask(client, client.post("/api/service/sessions").json()["id"], "延保服务怎么开通")
+    gap_id = refusal[-1][1]["gap_id"]
+    assert refusal[-1][1]["kind"] == "refusal"
+
+    first = _upload(client, _EXTENDED_WARRANTY_DOC, title="补口径 · 延保服务怎么开通", gap_id=gap_id)
+    assert first.status_code == 201
+    first_id = first.json()["id"]
+
+    # 二次登记同缺口 -> 409，指向仍是首份（不被静默覆盖成第二份）
+    second = _upload(client, _EXTENDED_WARRANTY_DOC, title="延保口径二", gap_id=gap_id)
+    assert second.status_code == 409
+    assert "A-" in second.json()["detail"]
+    row = next(g for g in client.get("/api/knowledge-gaps").json() if g["id"] == gap_id)
+    assert row["status"] == "open"
+    assert row["resolved_by_asset_id"] == first_id
+
+    # 发布首份 -> 缺口 resolved（指向未被覆盖，发布事务才查得到它）
+    assert client.post(f"/api/assets/{first_id}/publish").status_code == 200
+    resolved = next(
+        g
+        for g in client.get("/api/knowledge-gaps", params={"status": "resolved"}).json()
+        if g["id"] == gap_id
+    )
+    assert resolved["status"] == "resolved"
+    assert resolved["resolved_by_asset_id"] == first_id
 
 
 def test_source_kind_set_by_endpoint_semantics(api: ApiFixture) -> None:
