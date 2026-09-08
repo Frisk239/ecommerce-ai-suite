@@ -188,3 +188,58 @@ def test_stream_chat_wraps_midstream_errors_without_leaking(monkeypatch: pytest.
         _consume()
     assert "sk-test-1234567890" not in str(excinfo.value)
     assert len(calls) == 1
+
+
+# ---------- complete_chat：流式聚合为全文（第 12 刀回流 QA 抽取用） ----------
+
+
+def _complete(monkeypatch: pytest.MonkeyPatch, chunks: list[str | None]) -> tuple[str, list[dict]]:
+    calls = _install_fake_client(monkeypatch, _FakeStream(chunks))
+
+    async def run() -> str:
+        return await llm.complete_chat("系统提示", "转写正文")
+
+    return asyncio.run(run()), calls
+
+
+def test_complete_chat_aggregates_full_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """聚合=逐块拼接的完整字符串；走 stream_chat 同一路径（stream=True、
+    None 增量跳过、messages/session 头同契约）——不另开非流式端点。"""
+    text, calls = _complete(monkeypatch, [None, "问：净含量", "是多少\n答：", "480ml"])
+    assert text == "问：净含量是多少\n答：480ml"
+    assert len(calls) == 1
+    assert calls[0]["stream"] is True
+    assert calls[0]["messages"] == [
+        {"role": "system", "content": "系统提示"},
+        {"role": "user", "content": "转写正文"},
+    ]
+    assert calls[0]["extra_headers"]["x-opencode-session"]
+
+
+def test_complete_chat_not_configured_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """空 key -> LLMNotConfigured（与 stream_chat 同门槛，不建客户端）。"""
+    monkeypatch.setattr(
+        llm,
+        "get_settings",
+        lambda: Settings(llm_api_key="", llm_base_url="http://localhost:9/v1", llm_model="m"),
+    )
+    monkeypatch.setattr(llm, "_client", None)
+
+    async def run() -> str:
+        return await llm.complete_chat("s", "u")
+
+    with pytest.raises(llm.LLMNotConfigured):
+        asyncio.run(run())
+
+
+def test_complete_chat_wraps_stream_errors_without_leaking(monkeypatch: pytest.MonkeyPatch) -> None:
+    """流中途失败 -> LLMUnavailable 通用文案（错误契约与 stream_chat 一致，不泄密）。"""
+    calls = _install_fake_client(monkeypatch, _FakeStream(["前半"], fail_on=1))
+
+    async def run() -> str:
+        return await llm.complete_chat("s", "u")
+
+    with pytest.raises(llm.LLMUnavailable) as excinfo:
+        asyncio.run(run())
+    assert "sk-test-1234567890" not in str(excinfo.value)
+    assert len(calls) == 1

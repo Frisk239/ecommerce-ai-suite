@@ -11,13 +11,23 @@
   分隔式与后缀式共用同一否定词黑名单（未标注/不详…），命中即弃权；
   后缀式 X 若是引导动词（未标注/说明/采用…）或剥离动词后为空，则弃权。
 
-字段集合 = 商品 spec_schema 的 keys；未知字段名（未来类目扩展）一律弃权，
-由人洗补填。抽取不到 → ``{abstained: true}``，禁止空字符串冒充（0009）。
+字段集合按资产种类分派（第 12 刀，ADR 0035）：
+
+- 文档类挂商品 -> 商品 spec_schema 的 keys（上面的正则注册表）；未知字段名
+  （未来类目扩展）一律弃权，由人洗补填。抽取不到 -> ``{abstained: true}``，
+  禁止空字符串冒充（0009）。
+- 种类=对话 -> 字段集只有一个 ``qa_pairs``：LLM 从转写抽问答对草稿
+  （``[{q, a}, ...]`` 结构化值）。分级：未配置模型（空 key）=降级弃权、
+  对话照常推进待人洗；已配置但失败/坏输出=机洗失败（停已接入可重试）。
 """
 
+import asyncio
+import json
 import re
 from collections.abc import Callable, Iterable
+from typing import Any
 
+from suite_api.services import llm
 from suite_platform.storage import ObjectStorage
 
 
@@ -156,16 +166,120 @@ def extract_document_fields(text: str, field_names: Iterable[str]) -> dict[str, 
     return result
 
 
+# ---------- 对话种类：LLM 抽 QA 草稿（第 12 刀，ADR 0035） ----------
+
+QA_FIELD = "qa_pairs"
+QA_FAILURE_MESSAGE = "LLM QA 抽取失败"
+
+
+def validate_qa_pairs(value: Any) -> list[dict[str, str]]:
+    """qa_pairs 值校验+归一的唯一口径：[{q, a}, ...]，逐项 q/a 非空串（trim）；
+    空数组合法（=确认「没有 QA」）。形状不合抛 ValueError——LLM 输出解析
+    （parse_qa_output，转 MachineWashError）与人洗路由（PATCH fields，转 422）
+    两侧共用，禁止两处各写一套。"""
+    if not isinstance(value, list):
+        raise ValueError("qa_pairs 须为 [{q, a}, ...] 数组（空数组=确认没有 QA）")
+    pairs: list[dict[str, str]] = []
+    for item in value:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("q"), str)
+            or not isinstance(item.get("a"), str)
+            or not item["q"].strip()
+            or not item["a"].strip()
+        ):
+            raise ValueError("qa_pairs 每项的 q/a 须为非空字符串（禁止空串冒充，0009）")
+        pairs.append({"q": item["q"].strip(), "a": item["a"].strip()})
+    return pairs
+
+_QA_SYSTEM_PROMPT = (
+    "你是电商客服知识治理助手，从客服对话转写中抽取可复用的问答对。\n"
+    "只依据转写内容回答顾客问过且有明确答复的问题；转写里没有的不要编造。\n"
+    "问句改写为顾客口吻的通用问法，答案保留客服口径的关键信息，简洁完整。\n"
+    '只输出一个 JSON 数组，形如 [{"q": "问题", "a": "回答"}]；没有可抽的问答就输出 []。'
+    "不要输出 JSON 以外的任何解释文字。"
+)
+
+
+def build_qa_prompt(transcript: str) -> str:
+    return f"客服对话转写：\n{transcript}"
+
+
+def _strip_code_fence(raw: str) -> str:
+    """剥离 ```/```json 围栏（模型常包一层；不包也兼容）。"""
+    text = raw.strip()
+    if not text.startswith("```"):
+        return text
+    text = text[3:]
+    if text.lower().startswith("json"):
+        text = text[4:]
+    text = text.strip()
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
+
+
+def parse_qa_output(raw: str) -> list[dict[str, str]]:
+    """LLM 输出 -> [{q, a}, ...]：剥围栏 -> JSON -> 逐项形状校验（q/a 非空串）。
+
+    坏 JSON / 不是数组 / 项形状不对 = 抽取失败（MachineWashError，停已接入可
+    重试，ADR 0035 分级）；合法空数组不是失败（调用方按弃权处理）。
+    """
+    try:
+        data = json.loads(_strip_code_fence(raw))
+        return validate_qa_pairs(data)
+    except (ValueError, TypeError) as exc:
+        raise MachineWashError(QA_FAILURE_MESSAGE) from exc
+
+
+def extract_qa_draft(transcript: str) -> dict:
+    """对话 QA 草稿：字段入口形状与文档机洗同构（value+source / abstained）。
+
+    - LLMNotConfigured（空 key）= 降级弃权——第 3 刀「整段转写待人洗」行为保留，
+      CI 空凭证环境零改动（不写 last_error）；
+    - LLMUnavailable/超时/坏输出 = MachineWashError，停已接入存 last_error，
+      走既有就地重试端点；
+    - 合法 [] = 对话无可抽问答，同样弃权（不加 reason 分叉，ADR 0035）。
+
+    asyncio.run 前提：LLM 分支只按 kind=dialogue 分派（见 run_machine_wash）——
+    dialogue 的登记/重试入口现均为同步 def 路由（FastAPI 线程池），线程上没有
+    运行中的事件循环，安全；文档上传登记虽是 async 路由，但 kind=document
+    永不走到这里（machine_wash_field_names 对非 dialogue 还滤掉 qa_pairs，
+    防 spec_schema 撞名）。MCP register_asset 工具同调 register_asset，现仅
+    kind=document 不触发——若未来 MCP 支持 dialogue，需先解决事件循环前提
+    （loop 线程上不可直接 asyncio.run），再加回本分支的调用方。
+    """
+    try:
+        raw = asyncio.run(llm.complete_chat(_QA_SYSTEM_PROMPT, build_qa_prompt(transcript)))
+    except llm.LLMNotConfigured:
+        return {"abstained": True}
+    except llm.LLMError as exc:
+        raise MachineWashError(QA_FAILURE_MESSAGE) from exc
+    pairs = parse_qa_output(raw)
+    if not pairs:
+        return {"abstained": True}
+    return {"value": pairs, "source": "machine"}
+
+
 def run_machine_wash(
-    storage: ObjectStorage, object_key: str, field_names: Iterable[str]
+    storage: ObjectStorage, object_key: str, field_names: Iterable[str], kind: str
 ) -> dict[str, dict]:
     """机洗入口：从对象存储读回字节（ADR 0003，字节只住对象存储）→ 文本 → 抽取。
 
     读回或解码失败抛 MachineWashError；抽取不到字段不算失败（0009 弃权）。
+    LLM QA 分支**按 kind 显式判断**（ADR 0035：kind=对话 → 字段集就是
+    qa_pairs）——只有 kind==dialogue 且字段集含 qa_pairs 才走 extract_qa_draft；
+    document 即使字段集混入 qa_pairs（如 spec_schema 撞名）也只按未知字段
+    弃权，绝不在 async 上传路由的事件循环线程上 asyncio.run。
     """
     data = storage.get_bytes(object_key)  # 键不存在会抛 FileNotFoundError，同样属机洗失败
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise MachineWashError("文档字节不是合法 UTF-8 文本，无法机洗") from exc
-    return extract_document_fields(text, field_names)
+    names = list(field_names)
+    if kind == "dialogue" and QA_FIELD in names:
+        result = extract_document_fields(text, [n for n in names if n != QA_FIELD])
+        result[QA_FIELD] = extract_qa_draft(text)
+        return result
+    return extract_document_fields(text, names)

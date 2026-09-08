@@ -1,16 +1,26 @@
-"""机洗抽取单元测试（不依赖 DB）：正则边界 + 弃权路径。
+"""机洗抽取单元测试（不依赖 DB）：正则边界 + 弃权路径 + 对话 QA 抽取（第 12 刀）。
 
 关键回归：原型第五轮教训——「未标注材质牌号」不得被抽成「牌号」；
-禁止空字符串冒充（0009 弃权必须显式）。
+禁止空字符串冒充（0009 弃权必须显式）。QA 抽取只测解析与分级（LLM 以替身注入，
+不发外网）：好 JSON=机洗值 / 合法 []=弃权 / 坏输出=MachineWashError 可重试。
 """
+
+from typing import Any
 
 import pytest
 
+from suite_api.services import llm
 from suite_api.services.machine_wash import (
+    QA_FIELD,
+    MachineWashError,
     extract_document_fields,
     extract_material,
     extract_net_content,
+    extract_qa_draft,
     extract_shelf_life,
+    parse_qa_output,
+    run_machine_wash,
+    validate_qa_pairs,
 )
 
 # ---------- 净含量 ----------
@@ -130,3 +140,154 @@ def test_abstention_is_explicit_never_empty_string() -> None:
     result = extract_document_fields("无任何规格信息", ["净含量"])
     assert result["净含量"] == {"abstained": True}
     assert "value" not in result["净含量"]  # 弃权显式留空，无 value 键可冒充
+
+
+# ---------- 对话 QA 抽取：输出解析（纯函数，三分支的好/坏侧） ----------
+
+
+def test_parse_qa_output_accepts_plain_and_fenced_json() -> None:
+    good = '[{"q": "退货要留吊牌吗", "a": "需要保持吊牌完整"}, {"q": "几天到账", "a": "3个工作日"}]'
+    expected = [{"q": "退货要留吊牌吗", "a": "需要保持吊牌完整"}, {"q": "几天到账", "a": "3个工作日"}]
+    assert parse_qa_output(good) == expected
+    assert parse_qa_output(f"```json\n{good}\n```") == expected  # 围栏剥离
+    assert parse_qa_output(f"```{good}```") == expected  # 无语言标注/无换行也剥
+    assert parse_qa_output("  \n [] \n ") == []  # 合法空数组：无可抽 QA（调用方弃权）
+    assert parse_qa_output('[{"q": " 问题 ", "a": " 回答 "}]') == [{"q": "问题", "a": "回答"}]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "这不是JSON",
+        '{"q": "对象不是数组"}',
+        "[{}]",
+        '[{"q": "有问题", "a": "  "}]',  # 答为空串=坏输出（0009 禁空串口径）
+        '[{"q": 1, "a": "答"}]',
+        "[null]",
+        "",
+    ],
+)
+def test_parse_qa_output_rejects_malformed(bad: str) -> None:
+    with pytest.raises(MachineWashError, match="LLM QA 抽取失败"):
+        parse_qa_output(bad)
+
+
+# ---------- 对话 QA 抽取：分级（未配置=弃权降级；失败/坏输出=可重试失败） ----------
+
+
+def _patch_complete_chat(monkeypatch: pytest.MonkeyPatch, result: str | None = None, error: Exception | None = None) -> list[dict[str, str]]:
+    calls: list[dict[str, str]] = []
+
+    async def fake(system_prompt: str, user_prompt: str) -> str:
+        calls.append({"system": system_prompt, "user": user_prompt})
+        if error is not None:
+            raise error
+        assert result is not None
+        return result
+
+    monkeypatch.setattr(llm, "complete_chat", fake)
+    return calls
+
+
+_TRANSCRIPT = "顾客：退货要留吊牌吗\n客服：需要保持吊牌完整才能退货"
+
+
+def test_extract_qa_draft_returns_machine_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _patch_complete_chat(
+        monkeypatch, result='```json\n[{"q": "退货要留吊牌吗", "a": "需保持吊牌完整"}]\n```'
+    )
+    entry = extract_qa_draft(_TRANSCRIPT)
+    assert entry == {"value": [{"q": "退货要留吊牌吗", "a": "需保持吊牌完整"}], "source": "machine"}
+    assert len(calls) == 1
+    assert _TRANSCRIPT in calls[0]["user"]  # 转写全文进 prompt
+    assert "JSON" in calls[0]["system"]
+
+
+def test_extract_qa_draft_empty_array_abstains(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_complete_chat(monkeypatch, result="[]")
+    assert extract_qa_draft(_TRANSCRIPT) == {"abstained": True}
+
+
+def test_extract_qa_draft_not_configured_degrades_to_abstain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """空 key（第 3 刀行为保留）：弃权降级、对话照常推进待人洗，不算失败。"""
+    _patch_complete_chat(monkeypatch, error=llm.LLMNotConfigured("未配置 LLM_API_KEY"))
+    assert extract_qa_draft(_TRANSCRIPT) == {"abstained": True}
+
+
+def test_extract_qa_draft_llm_failure_is_retryable_wash_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_complete_chat(monkeypatch, error=llm.LLMUnavailable("厂商模型暂时不可用"))
+    with pytest.raises(MachineWashError, match="LLM QA 抽取失败"):
+        extract_qa_draft(_TRANSCRIPT)
+
+
+def test_extract_qa_draft_bad_output_is_retryable_wash_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_complete_chat(monkeypatch, result="模型开始自由发挥：我觉得……")
+    with pytest.raises(MachineWashError, match="LLM QA 抽取失败"):
+        extract_qa_draft(_TRANSCRIPT)
+
+
+class _FakeStorage:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        return self._data
+
+    def put_bytes(self, object_key: str, data: bytes) -> None:  # pragma: no cover
+        raise AssertionError("机洗不写对象存储")
+
+
+def test_run_machine_wash_dialogue_field_set_uses_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_complete_chat(monkeypatch, result='[{"q": "问", "a": "答"}]')
+    result: dict[str, Any] = run_machine_wash(
+        _FakeStorage(_TRANSCRIPT.encode()), "dialogue/x/1.txt", [QA_FIELD], "dialogue"
+    )
+    assert result == {QA_FIELD: {"value": [{"q": "问", "a": "答"}], "source": "machine"}}
+
+
+def test_run_machine_wash_document_set_never_calls_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _patch_complete_chat(monkeypatch, result="[]")
+    result = run_machine_wash(
+        _FakeStorage("净含量：550毫升".encode()), "documents/x/1.txt", ["净含量"], "document"
+    )
+    assert result == {"净含量": {"value": "550毫升", "source": "machine"}}
+    assert calls == []  # 文档正则路径不触碰 LLM
+
+
+def test_run_machine_wash_dispatch_is_by_kind_not_field_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """评审必修（ADR 0035：QA 是种类级语义）：kind=document 时字段集混入
+    qa_pairs（如 spec_schema 撞名）也绝不走 extract_qa_draft——async 上传路由
+    在事件循环线程上，误触发即 asyncio.run RuntimeError。按未知字段弃权。"""
+    calls = _patch_complete_chat(monkeypatch, result='[{"q": "触发", "a": "失败"}]')
+    result = run_machine_wash(
+        _FakeStorage("净含量：550毫升".encode()),
+        "documents/x/2.txt",
+        ["净含量", QA_FIELD],
+        "document",
+    )
+    assert calls == []
+    assert result == {
+        "净含量": {"value": "550毫升", "source": "machine"},
+        QA_FIELD: {"abstained": True},  # 无正则抽取器 = 未知字段弃权
+    }
+
+
+# ---------- validate_qa_pairs：机洗解析与人洗路由共享的唯一口径 ----------
+
+
+def test_validate_qa_pairs_shape_and_errors() -> None:
+    assert validate_qa_pairs([]) == []
+    assert validate_qa_pairs([{"q": " 问 ", "a": " 答 "}]) == [{"q": "问", "a": "答"}]
+    for bad in ("不是数组", 42, None, [{"q": "缺答"}, {"q": "", "a": "答"}, "字符串项", [1]]):
+        with pytest.raises(ValueError):
+            validate_qa_pairs(bad)

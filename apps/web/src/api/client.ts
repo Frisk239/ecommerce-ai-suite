@@ -104,6 +104,39 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 }
 
+/** 纯文本响应版（版本正文端点返回 text/plain）：错误处理与 request 同契约。 */
+async function requestText(path: string, init: RequestInit = {}): Promise<string> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+  try {
+    const resp = await fetch(`${API_BASE}${path}`, {
+      credentials: 'include',
+      ...init,
+      signal: controller.signal,
+    })
+    if (!resp.ok) {
+      let detail: unknown = null
+      try {
+        const body: unknown = await resp.json()
+        detail =
+          typeof body === 'object' && body !== null && 'detail' in body
+            ? (body as { detail: unknown }).detail
+            : body
+      } catch {
+        detail = null
+      }
+      if (resp.status === 401 && !path.startsWith('/auth/login')) emitAuthExpired()
+      throw new ApiError(detailToMessage(detail, resp.status), resp.status, detail)
+    }
+    return await resp.text()
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError('网络请求失败或超时，请重试', 0, null)
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 // ---------- SSE 通道（客服发问用） ----------
 // EventSource 不支持 POST，长流也不能套 15s 超时：这里是独立于 request 的第二条
 // 通道。约定与 request 一致——credentials include、错误结构化为 ApiError、abort
@@ -191,4 +224,4 @@ async function streamSse(
   }
 }
 
-export { request, streamSse }
+export { request, requestText, streamSse }

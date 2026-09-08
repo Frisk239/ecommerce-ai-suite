@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 11 刀并发收口**（`feat/concurrency-hardening`，closeout 见 `docs/progress/concurrency-hardening-closeout.md`）：审计刀 2 P1 簇一揽子（事务边界 / SSE 释连接 / CSV 线程池 / 缺口部分唯一 / login 闸 / limiter 清扫 / retrieve 排序）。前十刀 + 审计刀 2 已合并 main。
+上一刀：**第 12 刀回流增强**（`feat/reflow-qa`，closeout 见 `docs/progress/reflow-qa-closeout.md`）：会话回流后 LLM 抽 QA 草稿（ADR 0035：qa_pairs=对话资产机洗结构化字段，只有 confirmed 进索引）→ 治理台转写查看+QA 编辑器人洗 → 发布 QA 块入检索。前十一刀 + 审计刀 2 已合并 main。
 
-当前阶段：工程刀。下一刀：**回流增强**（会话回流后 LLM 抽 QA 草稿→人洗→发布）。
+当前阶段：工程刀。下一刀：待排（候选：订单工具 / 素材切片 / 评测集，按债务与演示缺口重排）；**审计刀 3 于第 15 刀后触发**。
 
 ## 怎么切
 
@@ -90,19 +90,26 @@
 
 三路子代理（领域对账/安全密钥/工程债务）审 `7e41a3d..main` 五刀：**P0 零**（密钥纪律全链通过、领域零硬偏离、四项工程嫌疑逐一排除）；P1 聚成一簇——**「单操作者无并发」前提在顾客公开面后失效**（LLM 持连接 20s×池 15、SSE 慢连接钉池、import_csv 冻结事件循环、缺口幂等无索引、login 无限流、limiter 字典无界、retrieve 无序截断）。ADR 0030 回写 gap_id 通道分叉。证据见 `docs/progress/audit-2-closeout.md`。Intake 通过：`docs/progress/audit-2-intake.md`。
 
-## 第 11 刀：并发收口（已交付，`feat/concurrency-hardening` 待 PR）
+## 第 11 刀：并发收口（已交付已合并，PR #15）
 
 **路径：** 演示并发安全——并发顾客提问 / 并发拒答同问 / 导入不再冻事件循环。零新功能面。LLM 等待期不持 DB 事务；ask 路由 SSE 返回前释放 session；`import_csv` 同步进线程池；缺口部分唯一索引 + IntegrityError 兜底（映射 0024/0030，不新开 ADR）；login IP 闸 10/60s；limiter 空 key 清扫；retrieve 按 id 排序再截断。证据见 `docs/progress/concurrency-hardening-closeout.md`。
 
 **Must：** 既有问答事件序/文案/状态码零变化（login 429 是新路径）；不扩连接池。
 
+## 第 12 刀：回流增强（已交付，`feat/reflow-qa`）
+
+**路径：** 操作者回流有问有答的会话 → 登记请求内 LLM 从转写抽 QA 草稿（ADR 0035：`qa_pairs` = 对话资产机洗的结构化字段，值是数组，弃权单形状）→ 治理台详情页见转写正文（版本 text 端点）+ QA 编辑器（改/删/增后确认，空数组=确认没有）→ 发布 confirmed QA 对成块「问：…/答：…」入检索 → 再问同问法命中并引用对话资产版本。空 key 降级弃权（既有回流测试零改动）；LLM 坏输出停已接入走重试。评审修真 bug：LLM 分派按 kind 不按字段名（撞名 `qa_pairs` 的 document 在 async 路由会误触 asyncio.run）。集成 237 passed（基线 206 → 237）。证据见 `docs/progress/reflow-qa-closeout.md`。
+
+**Must：** 未确认草稿不进索引；转写按轮切块不变；dialogue 无必填闸门不变；Out：聚组聚类、PII 打码、必填闸门、独立 QA 资产（ADR 0035 已拒）、修订/MCP/顾客面改动。
+
 ## 更后面（现在不锁顺序，各是独立刀）
 
 | 刀 | 约束 |
 | --- | --- |
-| **回流增强** | 调研 §6 候选 2：会话回流后 LLM 抽 QA 草稿→人洗→发布；并发收口之后 |
-| **审计刀 3** | 约 5 刀后再轮（上两轮见 audit-1/audit-2 closeout） |
+| 订单工具 | 调研候选 3：只读 get_order_status + 两阶段写闸 + 显式转人工触发器（0024 缺口语义已有底） |
 | 素材 / 切片 / 考核 | 有接待飞轮和 MCP 证据后再进队。质检、候选不是资产已锁。不做微调（0028） |
+| 评测集 | golden conversations + policy edges 进 CI（0027 评测集不是考核） |
+| **审计刀 3** | **第 15 刀后触发**（上两轮见 audit-1/audit-2 closeout） |
 
 **展示约定：** 资产 ID 对外写成 `A-{id:04d}`（如 `A-0001`），库内仍是整数，避免原型口述和工程芯片对不上。
 

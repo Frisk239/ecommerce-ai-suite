@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -36,24 +37,31 @@ from suite_api.services.asset_view import (
     AssetDetail,
     AssetOut,
     VersionOut,
+    VersionTextError,
     load_products,
     published_version_nos,
+    read_version_text,
     revising_asset_ids,
     to_asset_detail,
     to_asset_out,
 )
 from suite_api.services.csv_import import CsvImportFormatError, parse_import_csv
 from suite_api.services.knowledge_gaps import load_attachable_gap, resolve_gaps_for_asset
-from suite_api.services.machine_wash import MachineWashError, run_machine_wash
+from suite_api.services.machine_wash import (
+    QA_FIELD,
+    MachineWashError,
+    run_machine_wash,
+    validate_qa_pairs,
+)
 from suite_api.services.publishing import (
     evaluate_publish_gate,
     publishable_values,
-    schema_field_names,
 )
 from suite_api.services.registration import (
     INGESTED,
     PENDING_REVIEW,
     PUBLISHED,
+    machine_wash_field_names,
     make_object_key,
     register_asset,
 )
@@ -313,7 +321,11 @@ def retry_machine_wash(
     db: Annotated[Session, Depends(get_db)] = None,
     storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
 ) -> AssetDetail:
-    """机洗失败就地重试（0012 任务不是中台对象，无任务表）：仅已接入态可重试。"""
+    """机洗失败就地重试（0012 任务不是中台对象，无任务表）：仅已接入态可重试。
+
+    与登记同口径按种类重跑：dialogue 重跑 LLM QA 抽取（LLM 故障恢复后点此推进
+    待人洗），文档重跑正则抽取。成功清 last_error。
+    """
     del operator
     asset = _get_asset_or_404(db, asset_id)
     if asset.status != INGESTED:
@@ -323,9 +335,10 @@ def retry_machine_wash(
         )
     version = _latest_version_or_404(db, asset)
     product = _product_or_none(db, asset)
-    field_names = schema_field_names(product.spec_schema) if product is not None else []
+    # 字段集与登记同口径按 kind 分派：dialogue 重跑 LLM QA 抽取，文档重跑正则（第 12 刀）
+    field_names = machine_wash_field_names(asset.kind, product)
     try:
-        extracted = run_machine_wash(storage, version.object_key, field_names)
+        extracted = run_machine_wash(storage, version.object_key, field_names, asset.kind)
         version.extracted_fields = extracted
         asset.status = PENDING_REVIEW
         asset.last_error = None
@@ -337,15 +350,29 @@ def retry_machine_wash(
     return to_asset_detail(db, asset)
 
 
+def _validate_qa_pairs_payload(value: Any) -> list[dict[str, str]]:
+    """qa_pairs 人洗载荷（第 12 刀）：形状校验用 machine_wash.validate_qa_pairs
+    共享口径（与 LLM 输出解析同一函数，禁两处各写），坏形状转 422。"""
+    try:
+        return validate_qa_pairs(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
 @router.patch("/{asset_id}/versions/{version_no}/fields", response_model=VersionOut)
 def confirm_fields(
     asset_id: int,
     version_no: int,
-    body: dict[str, str],
+    body: dict[str, Any],
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> VersionOut:
-    """人洗：确认机洗值/补填弃权字段。闸门看版本未发布；已接入仍拒绝。"""
+    """人洗：确认机洗值/补填弃权字段。闸门看版本未发布；已接入仍拒绝。
+
+    合法字段集按种类分派（ADR 0035）：dialogue -> qa_pairs（数组值，逐项
+    q/a 禁空串，空数组=确认没有 QA）；文档 -> 所挂商品 spec_schema keys
+    （字符串值，禁空串仍沿用）。确认值一律 source=human。
+    """
     asset = _get_asset_or_404(db, asset_id)
     version = db.scalar(
         select(AssetVersion).where(
@@ -360,15 +387,17 @@ def confirm_fields(
             detail="只有待人洗（未发布）的版本可以确认字段，已发布/已接入/历史版本不可改",
         )
     product = _product_or_none(db, asset)
-    schema = dict(product.spec_schema) if product is not None else {}
-    allowed = schema_field_names(schema)
+    # 合法字段集与登记/机洗同一分派口径（按 kind；非 dialogue 的 qa_pairs 撞名字段同样拒绝）
+    allowed = machine_wash_field_names(asset.kind, product)
     unknown = sorted(set(body) - set(allowed))
     if unknown:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"字段不在所挂商品的规格字段集合内: {unknown}",
+            detail=f"字段不在该资产的合法字段集合内: {unknown}",
         )
-    blank = sorted(f for f, v in body.items() if not v.strip())
+    blank = sorted(
+        f for f, v in body.items() if isinstance(v, str) and not v.strip()
+    )
     if blank:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -376,7 +405,15 @@ def confirm_fields(
         )
     merged = dict(version.confirmed_fields)
     for field, value in body.items():
-        merged[field] = {"value": value.strip(), "source": "human"}  # 改动丢掉 inherited
+        if field == QA_FIELD:
+            merged[field] = {"value": _validate_qa_pairs_payload(value), "source": "human"}
+        else:
+            if not isinstance(value, str):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"字段值须为字符串（qa_pairs 除外，其为数组）: {field}",
+                )
+            merged[field] = {"value": value.strip(), "source": "human"}  # 改动丢掉 inherited
     version.confirmed_fields = merged
     # 0016：确认必填字段也留痕（谁/何时/哪版）
     db.add(
@@ -622,3 +659,33 @@ def get_asset(
     del operator  # 读接口同样要求登录（CONTEXT.md：控制台=登录后的人机界面）
     asset = _get_asset_or_404(db, asset_id)
     return to_asset_detail(db, asset)
+
+
+@router.get("/{asset_id}/versions/{version_no}/text")
+def get_version_text(
+    asset_id: int,
+    version_no: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> PlainTextResponse:
+    """版本正文（对象存储字节 UTF-8 解码，text/plain；ADR 0003 字节只住对象存储）。
+
+    操作者面人洗视图：第 12 刀起 dialogue 资产人洗必须看得见转写正文（ADR 0035
+    后果）。复用 read_version_text 服务函数（与 MCP get_asset 同一取数路径）；
+    对象缺失/非 UTF-8 属存储异常 -> 409。
+    """
+    del operator  # 读接口要求登录
+    asset = _get_asset_or_404(db, asset_id)
+    version = db.scalar(
+        select(AssetVersion).where(
+            AssetVersion.asset_id == asset.id, AssetVersion.version_no == version_no
+        )
+    )
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产版本不存在")
+    try:
+        text = read_version_text(db, storage, version)
+    except VersionTextError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PlainTextResponse(text)

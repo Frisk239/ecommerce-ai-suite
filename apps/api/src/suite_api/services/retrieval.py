@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, RetrievalChunk
+from suite_api.services.machine_wash import QA_FIELD
 from suite_platform.storage import ObjectStorage
 
 # 切块数上限：单版本切块超限即截断（防长文档/长转写把索引写爆；截断即丢尾部证据，
@@ -112,23 +113,52 @@ def read_index_text(storage: ObjectStorage, object_key: str) -> str:
         raise ChunkingError("版本字节不是合法 UTF-8 文本，无法切块入索引") from exc
 
 
+def _confirmed_entry_value(confirmed_fields: dict[str, Any], field: str) -> Any:
+    entry = confirmed_fields.get(field)
+    return entry.get("value") if isinstance(entry, dict) else None
+
+
+def qa_pair_chunks(confirmed_fields: dict[str, Any]) -> list[str]:
+    """confirmed qa_pairs -> 每对一块「问：{q}\\n答：{a}」（第 12 刀，0017 顺延）。
+
+    只有人洗确认（或修订继承）的 QA 对入索引；机洗草稿（extracted 未确认）与
+    弃权不进——0010 confirmed 才进索引。形状不合法的值直接跳过（写入端已校验，
+    这里是索引侧的防御）。
+    """
+    value = _confirmed_entry_value(confirmed_fields, QA_FIELD)
+    if not isinstance(value, list):
+        return []
+    chunks: list[str] = []
+    for pair in value:
+        if not isinstance(pair, dict):
+            continue
+        q, a = pair.get("q"), pair.get("a")
+        if isinstance(q, str) and isinstance(a, str) and q.strip() and a.strip():
+            chunks.append(f"问：{q.strip()}\n答：{a.strip()}")
+    return chunks
+
+
 def index_chunks_for_version(
     storage: ObjectStorage,
     object_key: str,
     kind: str,
     confirmed_fields: dict[str, Any],
 ) -> list[str]:
-    """发布事务用的切块入口：版本字节切块 + 确认字段的「字段名：值」块（seq 续排）。
+    """发布事务用的切块入口：版本字节切块 + 确认字段块（seq 续排）。
 
     确认字段块的目的：机洗没抽到/抽散的字段，其「字段名：值」仍可被检索
     （问「净含量」命中字段块）；只用 confirmed（写回口径同 0010：confirmed
-    才是操作者背书的值），弃权/未确认不进。行对象由调用方（发布事务）按
-    (asset_id, version_no, seq) 落库。
+    才是操作者背书的值），弃权/未确认不进。dialogue 的确认字段是 qa_pairs
+    结构化数组，每对成一块「问：…/答：…」（第 12 刀）。行对象由调用方
+    （发布事务）按 (asset_id, version_no, seq) 落库。
     """
     from suite_api.services.publishing import confirmed_value
 
     chunks = chunk_text(read_index_text(storage, object_key), kind)
     for field in sorted(confirmed_fields):
+        if field == QA_FIELD:
+            chunks.extend(qa_pair_chunks(confirmed_fields))
+            continue
         value = confirmed_value(confirmed_fields, field)
         if value is not None:
             chunks.append(f"{field}：{value}")

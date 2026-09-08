@@ -1,6 +1,6 @@
 // 端点函数表：页面只 import api.*，路径与形状集中在这一处。
 
-import { request, streamSse, type SseEvent } from './client'
+import { request, requestText, streamSse, type SseEvent } from './client'
 import type {
   AssetDetail,
   AssetListItem,
@@ -13,6 +13,7 @@ import type {
   KnowledgeGapStatus,
   Operator,
   Product,
+  QaPair,
   ServiceAnswerComplete,
   ServiceSession,
   ServiceSessionDetail,
@@ -52,11 +53,19 @@ export const api = {
     request<CsvImportReport>('/assets/import-csv', { method: 'POST', body: form }),
   retryMachineWash: (assetId: number) =>
     request<AssetDetail>(`/assets/${assetId}/retry-machine-wash`, { method: 'POST' }),
-  confirmFields: (assetId: number, versionNo: number, fields: Record<string, string>) =>
+  // 人洗确认：字符串字段值为 string；dialogue 的 qa_pairs 为 QaPair[]（ADR 0035）
+  confirmFields: (
+    assetId: number,
+    versionNo: number,
+    fields: Record<string, string | QaPair[]>,
+  ) =>
     request<AssetVersion>(`/assets/${assetId}/versions/${versionNo}/fields`, {
       method: 'PATCH',
       body: JSON.stringify(fields),
     }),
+  // 版本正文（对象存储字节 text/plain）：dialogue 人洗要看见转写（第 12 刀）
+  getVersionText: (assetId: number, versionNo: number) =>
+    requestText(`/assets/${assetId}/versions/${versionNo}/text`),
   publishAsset: (assetId: number) =>
     request<AssetDetail>(`/assets/${assetId}/publish`, { method: 'POST' }),
   openRevision: (assetId: number, knowledgeGapId?: number) =>
