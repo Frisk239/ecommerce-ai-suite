@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 12 刀回流增强**（`feat/reflow-qa`，closeout 见 `docs/progress/reflow-qa-closeout.md`）：会话回流后 LLM 抽 QA 草稿（ADR 0035：qa_pairs=对话资产机洗结构化字段，只有 confirmed 进索引）→ 治理台转写查看+QA 编辑器人洗 → 发布 QA 块入检索。前十一刀 + 审计刀 2 已合并 main。
+上一刀：**第 13 刀订单工具**（`feat/order-tools`，closeout 见 `docs/progress/order-tools-closeout.md`）：只读 `get_order_status`（ADR 0036：orders 是工具数据源不升格；`SO-\d+` 分派在代码不在 prompt；成功模板组装不调 LLM；查无/故障 kind="handoff" 转人工不检索不缺口——0018/0024 契约落地）+ SSE `tool` 事件 + 灰底 mono 工具条。前十二刀已合并 main。
 
-当前阶段：工程刀。下一刀：待排（候选：订单工具 / 素材切片 / 评测集，按债务与演示缺口重排）；**审计刀 3 于第 15 刀后触发**。
+当前阶段：工程刀。下一刀：待排（强候选：库存工具，ADR 0036 留同模式复用）；**审计刀 3 于第 15 刀后触发**。
 
 ## 怎么切
 
@@ -96,17 +96,23 @@
 
 **Must：** 既有问答事件序/文案/状态码零变化（login 429 是新路径）；不扩连接池。
 
-## 第 12 刀：回流增强（已交付，`feat/reflow-qa`）
+## 第 12 刀：回流增强（已交付已合并，PR #16）
 
 **路径：** 操作者回流有问有答的会话 → 登记请求内 LLM 从转写抽 QA 草稿（ADR 0035：`qa_pairs` = 对话资产机洗的结构化字段，值是数组，弃权单形状）→ 治理台详情页见转写正文（版本 text 端点）+ QA 编辑器（改/删/增后确认，空数组=确认没有）→ 发布 confirmed QA 对成块「问：…/答：…」入检索 → 再问同问法命中并引用对话资产版本。空 key 降级弃权（既有回流测试零改动）；LLM 坏输出停已接入走重试。评审修真 bug：LLM 分派按 kind 不按字段名（撞名 `qa_pairs` 的 document 在 async 路由会误触 asyncio.run）。集成 237 passed（基线 206 → 237）。证据见 `docs/progress/reflow-qa-closeout.md`。
 
 **Must：** 未确认草稿不进索引；转写按轮切块不变；dialogue 无必填闸门不变；Out：聚组聚类、PII 打码、必填闸门、独立 QA 资产（ADR 0035 已拒）、修订/MCP/顾客面改动。
 
+## 第 13 刀：订单工具（已交付，`feat/order-tools`）
+
+**路径：** 顾客/操作者问「我的订单 SO-1001 到哪了？」→ 命中订单号模式（分派在代码不在 prompt，ADR 0036）→ 灰底 mono 工具条 `get_order_status(SO-1001) → 已发货 · 2 个物流事件` → 模板组装回答（不调 LLM、citations 恒空）；查无 SO-9999/故障 → kind="handoff" 转人工（交接摘要、不检索、**不产生缺口**——0018/0024 契约落地）；非订单问题 commit 序列/事件序零漂移。迁移 0007 orders 表（工具数据源不升格）+消息 tool 落库回放；两通道同形状。集成 259 passed（基线 237 → 259）。证据见 `docs/progress/order-tools-closeout.md`。
+
+**Must：** 既有测试零改动绿（尤其 commit 序列契约）；Out：库存工具、email+zip、写操作、坐席队列、LLM 组织语言、MCP 订单、订单 CRUD。
+
 ## 更后面（现在不锁顺序，各是独立刀）
 
 | 刀 | 约束 |
 | --- | --- |
-| 订单工具 | 调研候选 3：只读 get_order_status + 两阶段写闸 + 显式转人工触发器（0024 缺口语义已有底） |
+| 库存工具 | 第 13 刀同模式复用（ADR 0036 入口已留）；词条「库存可 mock」兑现；_Avoid_ 用规格文档答有没有货 |
 | 素材 / 切片 / 考核 | 有接待飞轮和 MCP 证据后再进队。质检、候选不是资产已锁。不做微调（0028） |
 | 评测集 | golden conversations + policy edges 进 CI（0027 评测集不是考核） |
 | **审计刀 3** | **第 15 刀后触发**（上两轮见 audit-1/audit-2 closeout） |
