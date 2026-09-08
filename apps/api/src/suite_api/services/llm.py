@@ -7,6 +7,8 @@
   消息文本（超时/连接错误一律转通用文案）、不进任何响应。
 - `LLM_API_KEY` 为空 -> `LLMNotConfigured`（不建客户端、不发请求）：空凭证
   环境（CI/无 .env）的测试与本地未配置栈自动走降级，不炸外网。
+- 客户端按事件循环缓存（第 16 刀 P1#1）：主循环（顾客流式）与线程一次性
+  `asyncio.run` 循环（回流 QA 抽取）各用各的连接池，httpx 原语不再跨 loop。
 - prompt 组装（`build_prompts`）：中文系统提示 + 结构化证据块 + 顾客问题。
   证据块 = 检索命中的切块（发布事务入索引的切块已含「字段：值」确认字段块，
   0010：confirmed 才进索引——字段值与切块文本同路，无第二条取数），各带
@@ -14,14 +16,16 @@
   定（模型无引用决定权），系统提示明确要求模型不输出引用编号。
 """
 
+import asyncio
 import logging
 import uuid
+import weakref
 from collections.abc import AsyncIterator
 from typing import Any
 
 from openai import AsyncOpenAI
 
-from suite_api.settings import get_settings
+from suite_api.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -54,27 +58,42 @@ class LLMUnavailable(LLMError):
     通用文案，不含密钥/端点 URL；异常原文只保留在服务端日志与 cause 链。"""
 
 
-# 模块级单例：官方 AsyncOpenAI 客户端协程安全且自带 httpx 连接池，进程内复用
-# 免去每问重建 TCP/TLS；懒建（而非 import 期）保证空凭证进程不持有客户端，
-# 测试也可注入替身。密钥只在构造时从 settings 读入内存，此后不再外流。
-_client: AsyncOpenAI | None = None
+# 按事件循环懒建缓存（第 16 刀，审计刀 3 P1#1）：官方 AsyncOpenAI 自带 httpx
+# 连接池，其 anyio 原语有 loop 亲和性——进程级单例客户端被 async 路由主循环
+# （顾客面 stream_chat）与同步线程池的一次性 `asyncio.run` 循环（machine_wash
+# QA 抽取）混用，混跑随机炸 "attached to a different loop"（对外表现为顾客
+# 静默降级 LLMUnavailable）。改为每个运行中的 loop 各建一份连接池；一次性循环
+# 结束后被 GC，WeakKeyDictionary 连带条目消失，不泄漏。懒建（而非 import 期）
+# 保证空凭证进程不持有客户端；测试注入替身走 `_new_client` 构造缝。
+# 密钥只在构造时从 settings 读入内存，此后不再外流（0033）。
+_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncOpenAI] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _new_client(settings: Settings) -> AsyncOpenAI:
+    return AsyncOpenAI(
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        timeout=_TIMEOUT_SECONDS,
+        max_retries=0,
+        # 网关建议客户端自带 UA 标识（opencode.ai/docs/go）
+        default_headers={"User-Agent": "ecommerce-ai-suite/0.1"},
+    )
 
 
 def _get_client() -> AsyncOpenAI:
     settings = get_settings()
     if not settings.llm_api_key:
         raise LLMNotConfigured("未配置 LLM_API_KEY，厂商生成不可用")
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI(
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-            timeout=_TIMEOUT_SECONDS,
-            max_retries=0,
-            # 网关建议客户端自带 UA 标识（opencode.ai/docs/go）
-            default_headers={"User-Agent": "ecommerce-ai-suite/0.1"},
-        )
-    return _client
+    # 只能在运行中的循环里取（stream_chat/complete_chat 都是 async，恒满足）；
+    # 客户端与其建造循环同 loop，永不跨 loop 复用
+    loop = asyncio.get_running_loop()
+    client = _clients.get(loop)
+    if client is None:
+        client = _new_client(settings)
+        _clients[loop] = client
+    return client
 
 
 async def stream_chat(system_prompt: str, user_prompt: str) -> AsyncIterator[str]:

@@ -97,12 +97,21 @@ def test_get_order_status_not_found() -> None:
     }
 
 
-def test_get_order_status_db_error_swallowed() -> None:
+def test_get_order_status_db_error_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """P1#6 钉子：吞异常转 {error} 的对外行为不变，但捕获处必须 logger.exception
+    （异常原文进服务端日志，线上不再只剩「查询失败」）。对模块 logger 打桩——
+    不用 caplog（带 DB 跑时 alembic fileConfig 重置 root handler，采集不稳定）。"""
     session = _FakeSession(scalar_error=SQLAlchemyError("db down"))
+    seen: list[tuple[object, ...]] = []
+    monkeypatch.setattr(order_tools.logger, "exception", lambda *a: seen.append(a))
+
     result = order_tools.get_order_status(session, "SO-1001")  # type: ignore[arg-type]
     assert result == {"error": True}
     # 异常后尽力回滚恢复会话可用（handoff 消息还要在同 session 落库）
     assert session.rollback_calls == 1
+    logged = [a for a in seen if "订单工具查询订单失败" in str(a[0])]
+    assert len(logged) == 1
+    assert "SO-1001" in str(logged[0])
 
 
 # ---------- 摘要与模板组装 ----------

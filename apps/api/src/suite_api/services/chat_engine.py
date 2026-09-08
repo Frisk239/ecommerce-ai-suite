@@ -120,10 +120,12 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     （0018 失败不拿检索顶；0024 不产生缺口）。引擎级插入=操作者/顾客双通道
     自动同获（0021 同一引擎）。
 
-    0037 库存工具分派（分派序=订单号 -> 库存关键词 -> 检索）：订单号优先，
-    其次命中词表 -> 只读 get_stock、跳过检索——stock>0/==0 走事实 answer 模板
-    （0 是数据不是失败），NULL/商品未命中/故障走 kind="handoff"；同样不调
-    LLM、citations 恒空、不产生缺口。
+    0037 库存工具分派（分派序=订单号 -> 库存工具 -> 检索；第 16 刀修订）：
+    订单号优先；库存词表命中 **且** LCS 商品匹配成功（或查询故障 error）才
+    走工具、跳过检索——stock>0/==0 走事实 answer 模板（0 是数据不是失败），
+    NULL/故障走 kind="handoff"；不调 LLM、citations 恒空、不产生缺口。
+    词表命中但商品未命中 -> **回既有检索路径**（不是 handoff，不是工具；
+    归宿对齐词条：无证据拒答留缺口，0024）——裸「有货吗」不配吞掉检索。
     """
     # 1) 先落 customer 消息
     db.add(ServiceMessage(session_id=session.id, role="customer", content=question))
@@ -134,9 +136,13 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     if order_no is not None:
         return _run_order_ask(db, session, order_no)
 
-    # 1.6) 库存关键词命中 -> 库存工具路径（跳过检索，ADR 0037；订单号优先级在前）
+    # 1.6) 库存工具分派（ADR 0037 修订，第 16 刀：词表+商品匹配双前置）：
+    #      只有商品匹配成功（found）或查询故障（error）才进工具路径；
+    #      词表命中但无商品匹配（found=False）回落到下面的检索路径。
     if STOCK_KEYWORD_PATTERN.search(question):
-        return _run_stock_ask(db, session, question)
+        stock_result = query_stock(db, question)
+        if stock_result.get("found") or stock_result.get("error"):
+            return _run_stock_ask(db, session, question, stock_result)
 
     # 2) 检索当前已发布版本 -> 组装（模板回答=降级兜底，citations 选取也以它为准）
     hits = retrieve(db, question)
@@ -172,8 +178,8 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     )
     db.add(agent_message)
     # 0024：无证据拒答同事务落知识缺口（question=顾客原问，精确幂等：同文
-    # open 缺口复用不新建）。只挂 refusal 路径——工具失败转人工不产生缺口
-    # （本刀无工具，该契约由集成测试钉死）。
+    # open 缺口复用不新建）。只挂 refusal 路径——工具（0036 订单/0037 库存）
+    # 查无/故障转人工不产生缺口（handoff 分支不走本段，契约由单测+集成钉死）。
     gap: KnowledgeGap | None = None
     if answer.kind == "refusal":
         gap = record_refusal_gap(db, question)
@@ -236,16 +242,18 @@ def _run_order_ask(db: Session, session: ServiceSession, order_no: str) -> AskOu
     )
 
 
-def _run_stock_ask(db: Session, session: ServiceSession, question: str) -> AskOutcome:
+def _run_stock_ask(
+    db: Session, session: ServiceSession, question: str, result: dict[str, Any]
+) -> AskOutcome:
     """库存工具路径（customer 消息已由 run_ask 落库提交；0037=0036 同模式）。
 
-    stock>0/==0 用 kind="answer" 事实模板（0 是数据不是失败）；NULL/商品未
-    命中/DB 异常用 kind="handoff"（不复用 refusal——refusal 连带缺口，0024
-    工具失败不产生缺口）。两条分支都不检索、不调 LLM、citations 恒空（库存
-    是商品列不是资产，0002）。工具条 arg=命中商品名，未命中/异常退化用问题
-    原文；序列同订单路径（2 commit）。
+    入口由分派点把已查好的 query_stock 结果传入（found 或 error 才会到这里，
+    第 16 刀双前置）。stock>0/==0 用 kind="answer" 事实模板（0 是数据不是
+    失败）；stock NULL/DB 异常用 kind="handoff"（不复用 refusal——refusal
+    连带缺口，0024 工具失败不产生缺口）。两条分支都不检索、不调 LLM、
+    citations 恒空（库存是商品列不是资产，0002）。工具条 arg=命中商品名，
+    异常退化用问题原文（既有口径）；序列同订单路径（2 commit）。
     """
-    result = query_stock(db, question)
     found = bool(result.get("found"))
     stock = result.get("stock")
     tool_record = {

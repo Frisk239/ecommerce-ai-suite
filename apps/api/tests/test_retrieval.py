@@ -106,7 +106,9 @@ class _FakeStorage:
 
 
 def test_index_chunks_dialogue_adds_confirmed_qa_pair_blocks() -> None:
-    # 对话正文按轮块在前，confirmed qa_pairs 每对「问：/答：」一块续排
+    """块序（第 16 刀 P1#5 改序）：confirmed qa_pairs 每对「问：/答：」块排在
+    转写正文块**之前**——人洗成果价值密度高，[:MAX_CHUNKS] 截断先丢正文不丢 QA。
+    本断言按新顺序更新（旧口径「正文在前 QA 续排」是审计刀 3 P1#5 要修的行为）。"""
     transcript = "顾客：几天到账？\n客服：质检后3个工作日到账"
     confirmed = {
         "qa_pairs": {
@@ -120,9 +122,22 @@ def test_index_chunks_dialogue_adds_confirmed_qa_pair_blocks() -> None:
     chunks = index_chunks_for_version(
         _FakeStorage(transcript.encode()), "dialogue/x/1.txt", "dialogue", confirmed
     )
-    assert chunks[:2] == ["顾客：几天到账？", "客服：质检后3个工作日到账"]  # 正文块不变
-    assert chunks[2] == "问：退款几天到账\n答：质检后3个工作日到账"
-    assert chunks[3] == "问：要不要吊牌\n答：需保持吊牌完整"
+    assert chunks[0] == "问：退款几天到账\n答：质检后3个工作日到账"
+    assert chunks[1] == "问：要不要吊牌\n答：需保持吊牌完整"
+    assert chunks[2:] == ["顾客：几天到账？", "客服：质检后3个工作日到账"]  # 正文块其后
+
+
+def test_index_chunks_long_transcript_keeps_confirmed_qa_before_truncation() -> None:
+    """P1#5 钉子：>MAX_CHUNKS 行长转写 + 确认 1 对 QA -> 截断后索引里 QA 块
+    仍在（旧顺序 QA 排尾，整批静默丢失）。"""
+    transcript = "\n".join(f"顾客：轮次{i}的问题\n客服：轮次{i}的回答" for i in range(250))
+    confirmed = {"qa_pairs": {"value": [{"q": "唯一确认对", "a": "确认答案"}], "source": "human"}}
+    chunks = index_chunks_for_version(
+        _FakeStorage(transcript.encode()), "dialogue/x/long.txt", "dialogue", confirmed
+    )
+    assert len(chunks) == MAX_CHUNKS  # 截断照常发生（防炸索引口径不变）
+    assert chunks[0] == "问：唯一确认对\n答：确认答案"  # QA 块首位保住
+    assert "问：唯一确认对\n答：确认答案" in chunks
 
 
 def test_index_chunks_dialogue_skips_unconfirmed_and_empty_qa() -> None:

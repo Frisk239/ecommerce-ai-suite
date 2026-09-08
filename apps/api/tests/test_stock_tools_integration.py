@@ -6,7 +6,10 @@
 - 有货问题全事件序：thinking(查询库存中…) -> tool(get_stock(钛钢保温杯) ->
   有货 · 42 件) -> delta* -> complete（kind=answer、citations=[]、tool 同形）。
 - 无货 stock=0 ->「暂时无货」事实 answer；NULL -> handoff（不产生缺口）。
-- 「小龙虾有货吗」商品未命中 -> handoff + knowledge_gaps 计数不变。
+- 第 16 刀修订（P1#3 词表+商品双前置）：词表命中但商品未命中（「小龙虾有货吗」）
+  -> 回检索路径，无证据 refusal 落缺口（旧「未命中→handoff 不留缺口」作废）。
+- 收窄后的泛词（「保温杯还剩多少毫升」「库存政策是什么」）零接触工具走检索；
+  已发布库存政策文档可被「库存政策」问句命中（旧词表会永久吞掉它）。
 - 规格问题「保温杯的净含量是多少」零漂移：仍检索、引用已发布资产、无 tool。
 - 订单问题不受影响（thinking 仍「查询订单中…」）。
 - 顾客通道同形状（complete 有 tool、无 gap_id）。
@@ -192,29 +195,31 @@ def test_stock_null_handoff(api: ApiFixture) -> None:
         _set_stock(url, "瓶装水", 0)
 
 
-def test_stock_product_miss_handoff_no_gap(api: ApiFixture) -> None:
+def test_stock_word_hit_product_miss_falls_back_to_retrieval_refusal(api: ApiFixture) -> None:
+    """第 16 刀 P1#3 双前置（真库全链路）：词表命中（「有货」在列）但 LCS 商品
+    未命中 -> 回既有检索路径，不是 handoff 不是工具；此时发布集无小龙虾证据 ->
+    refusal + 缺口（0024 留缺口归宿；旧「未命中→handoff 不留缺口」作废）。"""
     client, _ = api
     gaps_before = _gaps_count(client)
     sid = client.post("/api/service/sessions").json()["id"]
 
     events = _ask(client, sid, "小龙虾有货吗")
     kinds = [event for event, _ in events]
-    assert kinds[1] == "tool"
-    assert events[1][1] == {"name": "get_stock", "arg": "小龙虾有货吗", "result": "未找到商品"}
+    assert "tool" not in kinds  # 工具零接触：不回 handoff
+    assert events[0][1] == {"text": "正在检索已发布资产…"}  # 检索状态行
     complete = events[-1][1]
-    assert complete["kind"] == "handoff"
+    assert complete["kind"] == "refusal"
     assert complete["handoff"] is True
     assert complete["citations"] == []
-    assert complete["gap_id"] is None
-    streamed = "".join(d["text"] for e, d in events if e == "delta")
-    assert streamed == "没有找到对应商品，已转人工。"
+    assert complete["tool"] is None
+    assert complete["gap_id"] is not None  # 拒答留缺口（0024）
 
-    assert _gaps_count(client) == gaps_before  # 不检索不缺口（0018/0024）
+    assert _gaps_count(client) == gaps_before + 1
 
     detail = client.get(f"/api/service/sessions/{sid}").json()
     agent_msg = next(m for m in detail["messages"] if m["role"] == "agent")
-    assert agent_msg["kind"] == "handoff"
-    assert agent_msg["tool"]["result"] == "未找到商品"
+    assert agent_msg["kind"] == "refusal"
+    assert agent_msg["tool"] is None
 
 
 # ---------- 零漂移：规格问题仍检索 / 订单问题仍是订单工具 ----------
@@ -252,6 +257,53 @@ def test_spec_question_still_retrieves(api: ApiFixture) -> None:
     stock_events = _ask(client, sid, "钛钢保温杯有货吗？")
     assert stock_events[-1][1]["citations"] == []
     assert stock_events[1][1]["name"] == "get_stock"
+
+
+# ---------- 第 16 刀 P1#3：词表收窄后误伤问句回检索（集成钉） ----------
+
+
+def test_stock_policy_question_hits_published_policy_doc(api: ApiFixture) -> None:
+    """「库存政策是什么」不再被词表吞掉：登记+发布库存政策文档后，该问句走
+    检索并命中引用（旧词表含「库存」时此问句永远到不了检索——审计刀 3 P1#3）。"""
+    client, _ = api
+    _login(client)
+    policy_doc = "库存政策说明\n库存：现货商品付款后48小时内发货；预售商品以详情页时效为准。".encode()
+    registered = client.post(
+        "/api/assets/register",
+        files={"file": ("policy.txt", policy_doc, "text/plain")},
+        data={"title": "库存政策说明"},
+    )
+    assert registered.status_code == 201
+    policy_id: int = registered.json()["id"]
+    assert client.post(f"/api/assets/{policy_id}/publish").status_code == 200
+
+    sid = client.post("/api/service/sessions").json()["id"]
+    events = _ask(client, sid, "库存政策是什么")
+    kinds = [event for event, _ in events]
+    assert "tool" not in kinds  # 泛词「库存」不再分派工具
+    assert events[0][1] == {"text": "正在检索已发布资产…"}
+    complete = events[-1][1]
+    assert complete["kind"] == "answer"
+    assert {"asset_id": policy_id, "version_no": 1} in complete["citations"]
+
+
+def test_remaining_capacity_question_retrieves_not_stock_tool(api: ApiFixture) -> None:
+    """「保温杯还剩多少毫升」是规格问句（含「剩」+商品名）：词表收窄后零接触
+    库存工具、走检索（命中上一用例已发布的保温杯规格文档）——旧词表下会被
+    误答「有货 42 件」，正是词条 _Avoid_「用规格文档回答有没有货」的反向误伤。"""
+    client, _ = api
+    _login(client)
+    sid = client.post("/api/service/sessions").json()["id"]
+    events = _ask(client, sid, "保温杯还剩多少毫升？")
+    kinds = [event for event, _ in events]
+    assert "tool" not in kinds  # 库存工具零接触
+    assert events[0][1] == {"text": "正在检索已发布资产…"}
+    complete = events[-1][1]
+    assert complete["kind"] == "answer"  # 检索命中（既有已发布规格文档），非库存模板
+    assert complete["tool"] is None
+    assert complete["citations"]  # 证据来自检索引用（0007）
+    streamed = "".join(d["text"] for e, d in events if e == "delta")
+    assert "有货" not in streamed  # 绝不出现「有货 N 件」
 
 
 def test_order_question_still_order_tool(api: ApiFixture) -> None:

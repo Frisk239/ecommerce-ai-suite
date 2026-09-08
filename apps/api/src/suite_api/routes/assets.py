@@ -137,13 +137,21 @@ def _unpublished_version(db: Session, asset: Asset) -> AssetVersion | None:
 
 
 def _inherit_confirmed(confirmed: dict[str, Any]) -> dict[str, Any]:
-    """复制确认字段：有值的条目标 inherited，发布闸门视同已确认、不逼重存。"""
+    """复制确认字段：有值的条目标 inherited，发布闸门视同已确认、不逼重存。
+
+    值两类形状（ADR 0035）：str（文档字段）非空白才算有值；list（dialogue 的
+    qa_pairs 数组）非空数组才算有值——第 16 刀 P2 修正：数组值同样打 inherited
+    标签，前端 QA 面板据此显示「继承自已发布版」（此前空标显示「已确认」，
+    口径与 str 值不一致）。
+    """
     out: dict[str, Any] = {}
     for field, entry in confirmed.items():
         if isinstance(entry, dict):
             copied = dict(entry)
             value = copied.get("value")
             if isinstance(value, str) and value.strip():
+                copied["inherited"] = True
+            elif isinstance(value, list) and value:
                 copied["inherited"] = True
             out[field] = copied
         else:
@@ -337,8 +345,12 @@ def retry_machine_wash(
     product = _product_or_none(db, asset)
     # 字段集与登记同口径按 kind 分派：dialogue 重跑 LLM QA 抽取，文档重跑正则（第 12 刀）
     field_names = machine_wash_field_names(asset.kind, product)
+    object_key = version.object_key
+    # P1#2（第 16 刀）：前面按 404 闸门的读取已 autobegin 只读事务——dialogue
+    # 重试的 LLM 等待（≤20s）不得 idle-in-transaction 占连接（对齐登记/第 11 刀纪律）
+    db.commit()
     try:
-        extracted = run_machine_wash(storage, version.object_key, field_names, asset.kind)
+        extracted = run_machine_wash(storage, object_key, field_names, asset.kind)
         version.extracted_fields = extracted
         asset.status = PENDING_REVIEW
         asset.last_error = None

@@ -9,6 +9,7 @@
   一行摘要 ``summarize_tool_result`` 与引用芯片（青底）语义分离（UX-NOTES §6）。
 """
 
+import logging
 import re
 from typing import Any
 
@@ -17,6 +18,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from suite_api.models import Order
+
+# 吞异常转 handoff 的对外行为不变（0018：失败不拿检索顶），但线上必须能看到
+# 原因——审计刀 3 P1#6：捕获处 logger.exception（原文只进服务端日志）
+logger = logging.getLogger(__name__)
 
 # 订单号=知识型凭证（0021 顾客无账号）：单号由提问者自己给出，无内部敏感字段
 ORDER_NO_PATTERN = re.compile(r"SO-\d+", re.IGNORECASE)
@@ -38,11 +43,12 @@ def get_order_status(db: Session, order_no: str) -> dict[str, Any]:
     try:
         order = db.scalar(select(Order).where(Order.order_no == order_no))
     except SQLAlchemyError:
+        logger.exception("订单工具查询订单失败: order_no=%s", order_no)
         # 尽力恢复会话可用（连接失效等），回滚本身再失败就不管了
         try:
             db.rollback()
         except SQLAlchemyError:
-            pass
+            logger.exception("订单工具回滚失败（吞异常后会话可能不可用）")
         return {"error": True}
     if order is None:
         return {"found": False}
