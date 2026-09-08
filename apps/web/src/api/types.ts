@@ -105,6 +105,26 @@ export interface AuditEntry {
   created_at: string
 }
 
+// ---------- CSV 批量导入（routes/assets.py 契约，第 9 刀） ----------
+
+/** 导入报告的创建行：row 为 1 起数据行号（表头下一行 = 第 1 行）。 */
+export interface CsvImportCreatedRow {
+  row: number
+  asset_id: number
+  title: string
+}
+
+/** 导入报告的跳过行：行号 + 原因（空值/超长/登记失败，后端为准）。 */
+export interface CsvImportSkippedRow {
+  row: number
+  reason: string
+}
+
+export interface CsvImportReport {
+  created: CsvImportCreatedRow[]
+  skipped: CsvImportSkippedRow[]
+}
+
 // ---------- 客服会话（routes/service.py 契约） ----------
 
 /** 会话状态：active=进行中（可发问/可回流）；registered=已回流登记（只读）。 */
