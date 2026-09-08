@@ -8,6 +8,7 @@ import type {
   AuditEntry,
   CustomerAnswerComplete,
   CustomerSessionCreated,
+  CsvImportReport,
   KnowledgeGap,
   KnowledgeGapStatus,
   Operator,
@@ -46,6 +47,9 @@ export const api = {
   listAssets: () => request<AssetListItem[]>('/assets'),
   getAsset: (assetId: number) => request<AssetDetail>(`/assets/${assetId}`),
   registerAsset: (form: FormData) => request<AssetDetail>('/assets/register', { method: 'POST', body: form }),
+  // CSV 批量导入（第 9 刀）：上传通道的批量形态，逐行登记尽力而为，报告即答案
+  importCsv: (form: FormData) =>
+    request<CsvImportReport>('/assets/import-csv', { method: 'POST', body: form }),
   retryMachineWash: (assetId: number) =>
     request<AssetDetail>(`/assets/${assetId}/retry-machine-wash`, { method: 'POST' }),
   confirmFields: (assetId: number, versionNo: number, fields: Record<string, string>) =>

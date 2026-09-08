@@ -1,5 +1,5 @@
-"""治理台资产路由：登记（0013）、机洗重试（0012 就地）、人洗确认、发布（0005/0010）、
-开修订/回滚（0006）。
+"""治理台资产路由：登记（0013）、CSV 批量导入（第 9 刀，上传通道的批量形态）、
+机洗重试（0012 就地）、人洗确认、发布（0005/0010）、开修订/回滚（0006）。
 
 状态机：ingested --机洗成功--> pending_review --发布--> published；
 机洗失败停 ingested 存 last_error。开修订不改 status、不移指针（线上继续
@@ -42,6 +42,7 @@ from suite_api.services.asset_view import (
     to_asset_detail,
     to_asset_out,
 )
+from suite_api.services.csv_import import CsvImportFormatError, parse_import_csv
 from suite_api.services.knowledge_gaps import load_attachable_gap, resolve_gaps_for_asset
 from suite_api.services.machine_wash import MachineWashError, run_machine_wash
 from suite_api.services.publishing import (
@@ -73,6 +74,22 @@ class OpenRevisionIn(BaseModel):
 
 class RollbackIn(BaseModel):
     version_no: int
+
+
+class CsvCreatedRow(BaseModel):
+    row: int
+    asset_id: int
+    title: str
+
+
+class CsvSkippedRow(BaseModel):
+    row: int
+    reason: str
+
+
+class CsvImportReport(BaseModel):
+    created: list[CsvCreatedRow]
+    skipped: list[CsvSkippedRow]
 
 
 def _get_asset_or_404(db: Session, asset_id: int) -> Asset:
@@ -223,6 +240,61 @@ async def register(
     db.commit()
     db.refresh(asset)
     return to_asset_detail(db, asset)
+
+
+@router.post("/import-csv", response_model=CsvImportReport)
+async def import_csv(
+    file: Annotated[UploadFile, File()],
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> CsvImportReport:
+    """CSV 批量导入（第 9 刀数据接入）：上传通道的批量形态（0025 不新增枚举）。
+
+    解析规则在 services/csv_import.parse_import_csv（utf-8-sig / 表头须含
+    title 与 content / 行数上限 200 / 逐行空值与超长跳过）。每行独立复用
+    register_asset（0013 登记必须带字节：content 文本 UTF-8 编码即字节；
+    kind=document、不挂商品、source_kind=upload——挂商品在详情页事后处理，
+    v1 不进 CSV）。逐行 commit：尽力而为不整批回滚——登记不是发布（0005
+    单事务是发布语义），部分成功可重传补救（同 title 重传=新资产，报告可见）。
+    空批次（全跳过/空文件）不报错，报告即答案。
+    """
+    del operator  # 写接口仅要求登录，401 口径同既有写端点
+    data = await file.read()
+    try:
+        rows, skipped = parse_import_csv(data)
+    except CsvImportFormatError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    created: list[CsvCreatedRow] = []
+    failed: list[tuple[int, str]] = []  # 登记中途意外失败的行（罕见：如 DB 中断）
+    for row in rows:
+        try:
+            asset = register_asset(
+                db,
+                storage,
+                kind="document",
+                title=row.title,
+                content_bytes=row.content.encode("utf-8"),
+                filename=file.filename,
+                product_id=None,
+                source_kind="upload",
+            )
+            db.commit()  # 逐行提交：单行失败不回滚此前已成功的行
+        except Exception as exc:  # noqa: BLE001 - 尽力而为：单行意外失败记原因不弃整批
+            db.rollback()
+            failed.append((row.row, f"登记失败：{str(exc)[:200] or exc.__class__.__name__}"))
+            continue
+        created.append(CsvCreatedRow(row=row.row, asset_id=asset.id, title=row.title))
+
+    skipped_rows = [(s.row, s.reason) for s in skipped] + failed
+    skipped_rows.sort(key=lambda item: item[0])  # 报告按行号升序，方便对着文件找
+    return CsvImportReport(
+        created=created,
+        skipped=[CsvSkippedRow(row=row_no, reason=reason) for row_no, reason in skipped_rows],
+    )
 
 
 @router.post("/{asset_id}/retry-machine-wash", response_model=AssetDetail)
