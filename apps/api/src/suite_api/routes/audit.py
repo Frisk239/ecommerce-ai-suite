@@ -19,7 +19,7 @@ class AuditOut(BaseModel):
     operator_id: int
     asset_id: int
     version_no: int
-    action: str  # "publish" | "confirm"
+    action: str  # "publish" | "confirm" | "rollback"
     created_at: datetime
 
 

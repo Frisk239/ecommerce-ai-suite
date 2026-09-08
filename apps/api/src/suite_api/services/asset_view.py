@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, Product
 from suite_api.services.publishing import evaluate_publish_gate
-from suite_api.services.registration import PENDING_REVIEW
+from suite_api.services.registration import PENDING_REVIEW, PUBLISHED
 from suite_platform.storage import ObjectStorage
 
 
@@ -56,6 +56,7 @@ class AssetOut(BaseModel):
     product: ProductRef | None
     last_error: str | None
     current_published_version_no: int | None
+    revising: bool  # 指针已设且存在未发布版本（修订中；线上仍服务指针版）
 
 
 class VersionOut(BaseModel):
@@ -91,8 +92,26 @@ def published_version_nos(db: Session, assets: list[Asset]) -> dict[int, int]:
     return {v.id: v.version_no for v in db.scalars(select(AssetVersion).where(AssetVersion.id.in_(ids)))}
 
 
+def revising_asset_ids(db: Session, assets: list[Asset]) -> set[int]:
+    """指针已设且存在 published_at IS NULL 的版本 = 修订中。"""
+    ids = {a.id for a in assets if a.current_published_version_id is not None}
+    if not ids:
+        return set()
+    return set(
+        db.scalars(
+            select(AssetVersion.asset_id).where(
+                AssetVersion.asset_id.in_(ids),
+                AssetVersion.published_at.is_(None),
+            )
+        )
+    )
+
+
 def to_asset_out(
-    asset: Asset, products: dict[int, Product], version_nos: dict[int, int]
+    asset: Asset,
+    products: dict[int, Product],
+    version_nos: dict[int, int],
+    revising_ids: set[int] | None = None,
 ) -> AssetOut:
     product = products.get(asset.product_id) if asset.product_id is not None else None
     return AssetOut(
@@ -112,11 +131,17 @@ def to_asset_out(
             if asset.current_published_version_id is not None
             else None
         ),
+        revising=asset.id in (revising_ids or set()),
     )
 
 
 def to_asset_detail(db: Session, asset: Asset) -> AssetDetail:
-    base = to_asset_out(asset, load_products(db, [asset]), published_version_nos(db, [asset]))
+    base = to_asset_out(
+        asset,
+        load_products(db, [asset]),
+        published_version_nos(db, [asset]),
+        revising_asset_ids(db, [asset]),
+    )
     versions = list(
         db.scalars(
             select(AssetVersion).where(AssetVersion.asset_id == asset.id).order_by(AssetVersion.version_no)
@@ -128,6 +153,11 @@ def to_asset_detail(db: Session, asset: Asset) -> AssetDetail:
     extracted = dict(latest.extracted_fields) if latest is not None else {}
     confirmed = dict(latest.confirmed_fields) if latest is not None else {}
     missing, unconfirmed = evaluate_publish_gate(schema, extracted, confirmed)
+    can_publish = (
+        latest is not None
+        and latest.published_at is None
+        and asset.status in {PENDING_REVIEW, PUBLISHED}
+    )
     return AssetDetail(
         **base.model_dump(),
         versions=[
@@ -141,7 +171,7 @@ def to_asset_detail(db: Session, asset: Asset) -> AssetDetail:
             for v in versions
         ],
         publishability=Publishability(
-            publishable=asset.status == PENDING_REVIEW and not missing and not unconfirmed,
+            publishable=can_publish and not missing and not unconfirmed,
             missing=missing,
             unconfirmed=unconfirmed,
         ),

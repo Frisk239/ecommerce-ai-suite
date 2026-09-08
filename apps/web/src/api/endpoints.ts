@@ -46,6 +46,16 @@ export const api = {
     }),
   publishAsset: (assetId: number) =>
     request<AssetDetail>(`/assets/${assetId}/publish`, { method: 'POST' }),
+  openRevision: (assetId: number, knowledgeGapId?: number) =>
+    request<AssetDetail>(`/assets/${assetId}/revisions`, {
+      method: 'POST',
+      body: JSON.stringify(knowledgeGapId !== undefined ? { knowledge_gap_id: knowledgeGapId } : {}),
+    }),
+  rollbackAsset: (assetId: number, versionNo: number) =>
+    request<AssetDetail>(`/assets/${assetId}/rollback`, {
+      method: 'POST',
+      body: JSON.stringify({ version_no: versionNo }),
+    }),
 
   // 商品与留痕
   listProducts: () => request<Product[]>('/products'),

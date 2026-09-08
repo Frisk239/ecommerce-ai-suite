@@ -6,7 +6,27 @@
 import type { AssetStatus, KnowledgeGapStatus } from '../api/types'
 import { ASSET_STATUS_LABEL, kindLabel } from '../labels'
 
-export function StatusBadge({ status, failed = false }: { status: AssetStatus; failed?: boolean }) {
+export function StatusBadge({
+  status,
+  failed = false,
+  revising = false,
+  publishedVersionNo = null,
+}: {
+  status: AssetStatus
+  failed?: boolean
+  revising?: boolean
+  publishedVersionNo?: number | null
+}) {
+  if (revising) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="badge badge-review">待人洗 · 修订中</span>
+        {publishedVersionNo !== null ? (
+          <span className="font-mono text-xs tabular-nums text-caption">线上 v{publishedVersionNo}</span>
+        ) : null}
+      </span>
+    )
+  }
   if (status === 'published') return <span className="badge badge-published">已发布</span>
   if (status === 'pending_review') return <span className="badge badge-review">待人洗</span>
   if (failed) return <span className="badge badge-failed">已接入 · 机洗失败</span>

@@ -14,7 +14,6 @@
 import asyncio
 import json
 import os
-from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -25,7 +24,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from suite_api.main import create_app
-from suite_api.models import Asset, AssetVersion, RetrievalChunk
+from suite_api.models import AssetVersion
 from suite_api.services.asset_view import VersionTextError, read_version_text
 from suite_api.settings import Settings
 from suite_platform.storage import LocalDirectoryStorage
@@ -37,8 +36,6 @@ _BASE = "http://localhost:8000"
 _ENDPOINT = f"{_BASE}/mcp/"
 
 _V1_DOC = "钛钢保温杯产品说明\n净含量：480ml\n材质：316不锈钢。"
-_V2_DOC = "钛钢保温杯产品说明（第二版）\n净含量：500ml。"
-_V3_DRAFT = "钛钢保温杯产品说明（修订草稿）\n净含量：999ml。"
 _SECRET_DOC = "内部机密参数表：实验室批次数据，仅待人洗可见。"
 _DEMO_REGISTER = "MCP 集成测试登记文本：外部 Agent 通道写入，等待治理台人洗。"
 
@@ -212,7 +209,7 @@ def _run_with_lifespan(app, scenario):
 
 
 def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
-    app, settings, storage_root = mcp_env
+    app, settings, _storage_root = mcp_env
 
     async def scenario() -> dict:
         out: dict = {}
@@ -251,33 +248,15 @@ def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
             )
             assert up_b.status_code == 201, up_b.text
             asset_b = up_b.json()["id"]
-        out["asset_a"], out["asset_b"] = asset_a, asset_b
 
-        # -- 库内直造「修订已发布 v2 + 待人洗修订 v3」（修订流未做，同构产物） --
-        storage = LocalDirectoryStorage(storage_root)
-        v2_key, v3_key = f"documents/mcp-v2/{asset_a}.txt", f"documents/mcp-v3/{asset_a}.txt"
-        storage.put_bytes(v2_key, _V2_DOC.encode("utf-8"))
-        storage.put_bytes(v3_key, _V3_DRAFT.encode("utf-8"))
-        session_factory = app.state.session_factory
-        with session_factory() as db:
-            asset = db.get(Asset, asset_a)
-            v2 = AssetVersion(
-                asset_id=asset_a,
-                version_no=2,
-                object_key=v2_key,
-                published_at=datetime.now(UTC),
-            )
-            v3 = AssetVersion(asset_id=asset_a, version_no=3, object_key=v3_key)
-            db.add_all([v2, v3])
-            db.flush()
-            db.add_all(
-                [
-                    RetrievalChunk(asset_id=asset_a, version_no=2, seq=0, chunk="钛钢保温杯产品说明第二版"),
-                    RetrievalChunk(asset_id=asset_a, version_no=2, seq=1, chunk="净含量：500ml"),
-                ]
-            )
-            asset.current_published_version_id = v2.id  # 指针前移到 v2
-            db.commit()
+            # 真开修订 → 发布 v2 → 再开修订留下未发布 v3（未发布拒绝用）
+            rev = await api.post(f"/api/assets/{asset_a}/revisions")
+            assert rev.status_code == 201, rev.text
+            pub2 = await api.post(f"/api/assets/{asset_a}/publish")
+            assert pub2.status_code == 200, pub2.text
+            rev3 = await api.post(f"/api/assets/{asset_a}/revisions")
+            assert rev3.status_code == 201, rev3.text
+        out["asset_a"], out["asset_b"] = asset_a, asset_b
 
         # -- MCP：四工具 --
         async with _mcp_session(app, settings) as (read, write, _):
@@ -358,16 +337,15 @@ def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
     assert {"asset_id", "version_no", "title", "chunk", "score"} <= set(first)
     assert out["secret_search"] == []
 
-    # get：默认=当前指针版；历史已发布版可取；v3 待人洗 / B 已接入拒绝且不泄漏
+    # get：默认=当前指针版；历史已发布版可取；v3 未发布修订 / B 已接入拒绝且不泄漏
     assert out["get_current"]["version_no"] == 2
-    assert "500ml" in out["get_current"]["content"]
+    assert "480ml" in out["get_current"]["content"]
     assert out["get_current"]["source_kind"] == "upload"
     assert out["get_v1"]["version_no"] == 1
     assert "480ml" in out["get_v1"]["content"]
     assert out["get_v3_is_error"] and "已发布" in str(out["get_v3_text"])
-    assert "999ml" not in str(out["get_v3_text"])  # 未发布内容不泄漏
+    assert "实验室" not in str(out["get_v3_text"])  # 未发布/待人洗内容不泄漏
     assert out["get_b_is_error"] and out["get_b_v1_is_error"]
-    assert "实验室" not in str(out["get_v3_text"])
 
     # register：落已接入/待人洗 + source_kind=mcp_registered + 治理队列可见
     assert not out["register_is_error"]
@@ -385,7 +363,7 @@ def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
     a_entries = [e for e in exported if e["asset_id"] == out["asset_a"]]
     assert len(a_entries) == 1
     assert a_entries[0]["version_no"] == 2
-    assert a_entries[0]["content"] == _V2_DOC
+    assert a_entries[0]["content"] == _V1_DOC
     assert {e["asset_id"] for e in exported} == {out["asset_a"]}
     assert all("实验室" not in e["content"] for e in exported)
     assert {"asset_id", "version_no", "title", "kind", "source_kind", "content"} <= set(exported[0])

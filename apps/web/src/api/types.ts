@@ -31,6 +31,7 @@ export interface AssetListItem {
   product: ProductRef | null
   last_error: string | null
   current_published_version_no: number | null
+  revising: boolean
 }
 
 // ---------- 知识缺口（routes/knowledge_gaps.py 契约） ----------
@@ -53,8 +54,11 @@ export interface KnowledgeGap {
   resolved_at: string | null
 }
 
-/** 字段值三形状：机洗 {value,source:"machine"} / 弃权 {abstained:true} / 人洗 {value,source:"human"} */
-export type FieldEntry = { value: string; source: 'machine' | 'human' } | { abstained: true }
+/** 字段值三形状：机洗 {value,source:"machine"} / 弃权 {abstained:true} / 人洗 {value,source:"human"}。
+ * 修订继承的确认值带 inherited，改动后丢掉。 */
+export type FieldEntry =
+  | { value: string; source: 'machine' | 'human'; inherited?: boolean }
+  | { abstained: true }
 
 export interface AssetVersion {
   version_no: number
