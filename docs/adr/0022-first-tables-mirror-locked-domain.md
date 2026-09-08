@@ -10,7 +10,7 @@
 | `products` | 0002 商品；0019 必填=文档×商品规格字段 | id、name、category、spec_schema JSONB（类目驱动：食品=净含量+保质期，器皿=净含量+材质）、spec_values JSONB（当前写回值 + 来源 `asset_id·version`） |
 | `assets` | 0002 资产三态；0006 当前已发布版本指针 | id、kind（本刀仅 document）、status（ingested/pending_review/published，映射已接入/待人洗/已发布）、current_published_version_id 可空指针（0006：身份稳定指针可前移）；另含 `title`（展示名，登记时可选）与 `last_error`（机洗失败原因，0012 就地重试的运行状态）两列运行属性，不承载新领域语义 |
 | `asset_versions` | 0006 资产版本=不可变快照；0003 对象键；0009 弽权 | id、asset_id、version_no、object_key（每版一把键不复用 0003）、extracted_fields JSONB（值或显式 `{abstained: true}`，禁止空字符串冒充 0009）、confirmed_fields JSONB（操作者确认/补填值）、published_at 可空；**行不可变**：进入 published 后禁止 UPDATE |
-| `audit_log` | 0005/0016 审计=谁/何时/对哪条资产哪一版做了什么 | id、operator_id、asset_id、version_no、action（publish/confirm）、created_at；append-only，不进检索 |
+| `audit_log` | 0005/0016 审计=谁/何时/对哪条资产哪一版做了什么 | id、operator_id、asset_id、version_no、action（publish/confirm/rollback——rollback 系第 6 刀经 0016 落地后补记）、created_at；append-only，不进检索 |
 
 ## 语义对照要点（不许偏）
 

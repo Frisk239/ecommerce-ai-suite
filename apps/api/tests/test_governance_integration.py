@@ -539,6 +539,50 @@ def test_rollback_moves_pointer_writes_back_and_audits(api: ApiFixture) -> None:
     assert client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 3}).status_code == 409
 
 
+def test_rollback_clears_fields_absent_from_target_version(api: ApiFixture) -> None:
+    """ADR 0034：写回按版本全量。v2 独有字段（非必填「颜色」）在回滚 v1 后清除，
+    不残留 v2 口径；本资产覆盖过的字段恢复 v1 值。"""
+    client, _ = api
+    _login(client)
+    water_id = _product_id_by_name(client, "瓶装水")
+    # 种子 schema 全必填：测试内给商品加一个非必填字段，构造 v2 独有字段场景
+    from suite_api.models import Product
+
+    with client.app.state.session_factory() as db:
+        product = db.get(Product, water_id)
+        schema = dict(product.spec_schema)
+        schema["颜色"] = {"required": False}
+        product.spec_schema = schema
+        db.commit()
+
+    published = _confirm_and_publish_water(client, title="瓶装水规格·全量写回")
+    asset_id = published["id"]
+
+    assert client.post(f"/api/assets/{asset_id}/revisions").status_code == 201
+    assert (
+        client.patch(
+            f"/api/assets/{asset_id}/versions/2/fields",
+            json={"净含量": "600毫升", "保质期": "18个月", "颜色": "透明蓝"},
+        ).status_code
+        == 200
+    )
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+
+    spec_v2 = client.get(f"/api/products/{water_id}").json()["spec_values"]
+    assert spec_v2["颜色"] == {
+        "value": "透明蓝",
+        "source": {"asset_id": asset_id, "version": 2},
+    }
+
+    rolled = client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 1})
+    assert rolled.status_code == 200
+    spec_v1 = client.get(f"/api/products/{water_id}").json()["spec_values"]
+    # 本资产 v2 独有字段被清除，不残留旧口径（ADR 0034）
+    assert "颜色" not in spec_v1
+    assert spec_v1["净含量"]["value"] == "550毫升"
+    assert spec_v1["净含量"]["source"] == {"asset_id": asset_id, "version": 1}
+
+
 def test_open_revision_associates_knowledge_gap(api: ApiFixture) -> None:
     """0031：已发布规格上开修订并挂缺口；发布事务内 resolved；二次挂 409。"""
     client, _ = api
