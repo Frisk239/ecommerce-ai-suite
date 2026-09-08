@@ -113,6 +113,34 @@ def test_login_rate_limit_429(api: ApiFixture) -> None:
         client.app.state.login_limiter = original
 
 
+def test_login_rate_limit_ignores_xff(api: ApiFixture) -> None:
+    """登录闸只信 TCP 对端：换自报 X-Forwarded-For 换不了账（不复用顾客 XFF）。"""
+    client, _ = api
+    original = client.app.state.login_limiter
+    client.app.state.login_limiter = SlidingWindowLimiter(2, 60.0)
+    try:
+        assert (
+            _login(client, password="wrong").status_code == 401
+        )
+        assert (
+            client.post(
+                "/api/auth/login",
+                json={"username": "operator", "password": "wrong"},
+                headers={"X-Forwarded-For": "203.0.113.9"},
+            ).status_code
+            == 401
+        )
+        blocked = client.post(
+            "/api/auth/login",
+            json={"username": "operator", "password": "operator123"},
+            headers={"X-Forwarded-For": "198.51.100.7"},
+        )
+        assert blocked.status_code == 429
+        assert blocked.headers.get("retry-after") is not None
+    finally:
+        client.app.state.login_limiter = original
+
+
 def test_forged_cookie_rejected(api: ApiFixture) -> None:
     # 防伪造：手造的票据（改操作者/假签名）验不过（签名细节由 sessions 单测覆盖）
     client, _ = api

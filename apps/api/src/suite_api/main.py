@@ -26,7 +26,12 @@ from suite_api.routes import (
     products,
     service,
 )
-from suite_api.services.rate_limit import CustomerRateLimits, SlidingWindowLimiter
+from suite_api.services.rate_limit import (
+    LOGIN_IP_LIMIT,
+    LOGIN_WINDOW_SECONDS,
+    CustomerRateLimits,
+    SlidingWindowLimiter,
+)
 from suite_api.services.seed import seed_startup_data
 from suite_api.settings import Settings, get_settings
 
@@ -102,7 +107,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(customer.router)
     app.state.customer_rate_limits = CustomerRateLimits()
     # 登录 IP 闸（10/60s，成功也计；测试可换成大阈值/假时钟）。只信 TCP 对端。
-    app.state.login_limiter = SlidingWindowLimiter(10, 60)
+    app.state.login_limiter = SlidingWindowLimiter(LOGIN_IP_LIMIT, LOGIN_WINDOW_SECONDS)
 
     # MCP 连接层（ADR 0032）：官方 SDK Streamable HTTP 挂 /mcp 前缀，对外端点
     # /mcp/；Bearer 闸门在子应用层，/api/* 与 /health 不经过它。session

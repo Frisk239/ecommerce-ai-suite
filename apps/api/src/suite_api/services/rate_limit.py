@@ -1,7 +1,9 @@
-"""顾客通道限流（ADR 0033：按会话限流、每 IP 托底；不做无令牌狂刷）。
+"""进程内滑动窗口限流（ADR 0033 顾客三闸 + 操作者登录闸）。
 
-进程内滑动窗口：单 uvicorn 进程=compose 现状（ADR 0016 单店口径），多副本
-分布式限流属部署演进，本刀不做中间件依赖。三道闸（spec Must 4）：
+单 uvicorn 进程=compose 现状（ADR 0016 单店口径），多副本分布式限流属
+部署演进，本刀不做中间件依赖。``SlidingWindowLimiter`` 被两处挂到
+``app.state``：顾客 ``CustomerRateLimits`` 三闸，以及登录
+``login_limiter``（10/60s，只信 TCP 对端）。顾客三闸（spec Must 4）：
 
 - 会话发问 ≤10/60s：令牌本身就是会话级身份（0021），同会话狂刷在此拦；
 - IP 发问 ≤30/60s：托底——换会话（重签令牌）刷不过这道；
@@ -81,6 +83,8 @@ SESSION_ASK_LIMIT = 10
 IP_ASK_LIMIT = 30
 IP_CREATE_LIMIT = 5
 WINDOW_SECONDS = 60.0
+LOGIN_IP_LIMIT = 10
+LOGIN_WINDOW_SECONDS = 60.0
 
 
 class CustomerRateLimits:

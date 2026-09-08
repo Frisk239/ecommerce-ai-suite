@@ -22,6 +22,19 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # 并发窗口曾能落重复 open 同问：先留 id 最小的一条，再建部分唯一。
+    op.execute(
+        sa.text(
+            """
+            DELETE FROM knowledge_gaps AS dup
+            USING knowledge_gaps AS keep
+            WHERE dup.status = 'open'
+              AND keep.status = 'open'
+              AND dup.question = keep.question
+              AND dup.id > keep.id
+            """
+        )
+    )
     op.create_index(
         "uq_knowledge_gaps_open_question",
         "knowledge_gaps",
