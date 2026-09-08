@@ -127,13 +127,27 @@ def _inherit_confirmed(confirmed: dict[str, Any]) -> dict[str, Any]:
 
 
 def _write_back_product(product: Product | None, asset: Asset, version: AssetVersion) -> None:
+    """按版本全量写回（ADR 0034）：商品上「本资产写过的字段」与该资产
+    当前已发布版一致——新版写回集覆盖，本资产旧版写过而新版没有的字段清除；
+    其他资产写回的字段不受影响。发布与回滚共用，指针与商品口径不漂。"""
     if product is None:
         return
     schema = dict(product.spec_schema)
-    new_values = dict(product.spec_values)
-    for field, value in publishable_values(
+    writable = publishable_values(
         schema, dict(version.extracted_fields), dict(version.confirmed_fields)
-    ).items():
+    )
+    new_values = {
+        field: entry
+        for field, entry in dict(product.spec_values).items()
+        # 只清本资产自己写的旧字段；他资产写回的保持
+        if not (
+            isinstance(entry, dict)
+            and isinstance(entry.get("source"), dict)
+            and entry["source"].get("asset_id") == asset.id
+            and field not in writable
+        )
+    }
+    for field, value in writable.items():
         new_values[field] = {
             "value": value,
             "source": {"asset_id": asset.id, "version": version.version_no},

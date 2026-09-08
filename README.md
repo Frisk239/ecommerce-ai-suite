@@ -34,18 +34,34 @@ POST   /api/service/sessions/{id}/messages         # 发问 {"content": "..."} -
 POST   /api/service/sessions/{id}/register         # 回流登记 -> kind=dialogue 资产（待人洗）
 ```
 
-SSE 事件协议（`text/event-stream`，回答文本在流式开始前已完整组装落库，断连不产生 interrupted 消息，停止语义由前端表达）：
+SSE 事件协议（`text/event-stream`，回答文本在流式开始前已完整收全落库，断连不产生 interrupted 消息，停止语义由前端表达）：
 
 ```
 event: thinking    data: {"text": "正在检索已发布资产…"}
+event: thinking    data: {"text": "正在生成回答…"}     # 仅模型路径；拒答/降级不出现
 event: delta       data: {"text": "..."}            # 多片，~12 字/片
 event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "version_no": 1}],
-                          "kind": "answer", "handoff": false, "gap_id": null}
+                          "kind": "answer", "handoff": false, "gap_id": null, "fallback": false}
 ```
 
 无命中 -> `kind: "refusal"`、`handoff: true`、`citations: []`，固定文案「抱歉，已发布资产里没有能回答这个问题的证据。」（0018：不编造不闲聊）。检索只查当前已发布版本（0004/0017），切块在发布事务内写入 `retrieval_chunks`（0002 第二批迁移）。
 
 拒答（0024 知识缺口）同事务落 `knowledge_gaps`（同问法精确幂等不新建），`complete.gap_id` 即缺口 id（answer 恒为 null）；`GET /api/knowledge-gaps?status=open|resolved` 看待办（全登录），「补文档」=`POST /api/assets/register` 带可选表单字段 `knowledgeGapId`（来源 `source_kind` 由端点定值：上传=upload、回流=session_backflow），发布事务内缺口自动 resolved 并指向该资产。
+
+## 厂商生成（第 7 刀，ADR 0033）
+
+检索命中已发布证据时，回答由厂商大模型流式生成（OpenAI 兼容 Chat Completions，`openai` 官方包配 `base_url`）；证据块（命中切块含确认字段值，各带「来源：A-{id}·v{N}」标注）与顾客问题进 prompt。三个环境变量只写本机 `.env`（密钥不入库、不进日志/响应）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `LLM_API_KEY` | 厂商密钥；**为空时不建客户端、不发请求**，自动降级为证据组装模板回答 |
+| `LLM_BASE_URL` | OpenAI 兼容端点（默认 `https://opencode.ai/zen/go/v1`） |
+| `LLM_MODEL` | 模型名（默认 `qwen3.8-flash`） |
+
+- **无证据不调模型**（0018）：拒答+转人工路径原样，防编造也省调用。
+- **降级**：LLM 未配置/超时（20s，重试 0 次）/网络失败/空产出 -> 复用 `answer.py` 证据组装模板回答，走同一 delta 流，`complete` 事件带 `fallback: true`，前端显示「模板回退」徽章（诚实标注，不装作模型回答）；错误细节只进服务端日志且不含密钥。
+- **引用服务端定**（0007）：`citations` 恒由检索命中确定，模型无引用决定权；系统提示明确要求模型不输出引用编号。
+- 回答先收全再落库再流式：断连仍完整落库（契约不变）。
 
 ## MCP 连接层（第 5 刀，ADR 0032）
 

@@ -11,13 +11,13 @@
 complete 带 gap_id、补文档登记关联 -> 发布事务内 resolved -> 同问法再问命中。
 """
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
+from sse_helpers import parse_sse_events
 
 from suite_api.models import KnowledgeGap, RetrievalChunk, ServiceMessage
 
@@ -58,19 +58,6 @@ def _upload(
     return client.post("/api/assets/register", files=files, data=data)
 
 
-def _parse_events(raw: str) -> list[tuple[str, dict]]:
-    """解析 SSE 文本为 [(event, data)]。"""
-    events: list[tuple[str, dict]] = []
-    for block in raw.strip().split("\n\n"):
-        if not block:
-            continue
-        lines = block.splitlines()
-        event = next(line.removeprefix("event: ") for line in lines if line.startswith("event: "))
-        data = json.loads(next(line.removeprefix("data: ") for line in lines if line.startswith("data: ")))
-        events.append((event, data))
-    return events
-
-
 def _ask(client: TestClient, session_id: int, question: str) -> list[tuple[str, dict]]:
     with client.stream(
         "POST", f"/api/service/sessions/{session_id}/messages", json={"content": question}
@@ -78,7 +65,7 @@ def _ask(client: TestClient, session_id: int, question: str) -> list[tuple[str, 
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
         raw = "".join(resp.iter_text())
-    return _parse_events(raw)
+    return parse_sse_events(raw)
 
 
 # ---------- 鉴权：会话/消息/检索全部需登录 ----------
