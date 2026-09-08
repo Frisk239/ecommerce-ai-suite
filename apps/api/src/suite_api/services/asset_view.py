@@ -95,10 +95,14 @@ def load_product_names(db: Session, product_ids: set[int]) -> dict[int, str]:
 
 
 def published_version_nos(db: Session, assets: list[Asset]) -> dict[int, int]:
-    ids = {a.current_published_version_id for a in assets if a.current_published_version_id is not None}
+    ids = {
+        a.current_published_version_id for a in assets if a.current_published_version_id is not None
+    }
     if not ids:
         return {}
-    return {v.id: v.version_no for v in db.scalars(select(AssetVersion).where(AssetVersion.id.in_(ids)))}
+    return {
+        v.id: v.version_no for v in db.scalars(select(AssetVersion).where(AssetVersion.id.in_(ids)))
+    }
 
 
 def revising_asset_ids(db: Session, assets: list[Asset]) -> set[int]:
@@ -153,7 +157,9 @@ def to_asset_detail(db: Session, asset: Asset) -> AssetDetail:
     )
     versions = list(
         db.scalars(
-            select(AssetVersion).where(AssetVersion.asset_id == asset.id).order_by(AssetVersion.version_no)
+            select(AssetVersion)
+            .where(AssetVersion.asset_id == asset.id)
+            .order_by(AssetVersion.version_no)
         )
     )
     latest = versions[-1] if versions else None

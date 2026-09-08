@@ -58,9 +58,7 @@ def ensure_mcp_operator_id(session) -> int:  # noqa: ANN001 - SQLAlchemy Session
     唯一约束兜底——首插撞 IntegrityError 时 SAVEPOINT 回滚插入再查已有行
     （先例 services/knowledge_gaps.record_refusal_gap）；不可 session.rollback()：
     会把同一次 export 尚未提交的留痕行一并丢掉。"""
-    operator = session.scalar(
-        select(Operator).where(Operator.username == MCP_OPERATOR_USERNAME)
-    )
+    operator = session.scalar(select(Operator).where(Operator.username == MCP_OPERATOR_USERNAME))
     if operator is None:
         operator = Operator(
             username=MCP_OPERATOR_USERNAME, password_hash=_MCP_OPERATOR_UNLOGINABLE_HASH
@@ -102,7 +100,9 @@ def _mask_fields_map(fields: dict) -> dict:
         if name == QA_FIELD and isinstance(value, list):
             return [
                 {**p, "q": redact(p["q"]), "a": redact(p["a"])}
-                if isinstance(p, dict) and isinstance(p.get("q"), str) and isinstance(p.get("a"), str)
+                if isinstance(p, dict)
+                and isinstance(p.get("q"), str)
+                and isinstance(p.get("a"), str)
                 else p
                 for p in value
             ]
@@ -137,9 +137,7 @@ class BearerGateMiddleware:
         ok = bool(expected) and scheme.lower() == "bearer" and bool(token)
         if ok:
             # compare_digest 防时序侧信道；按字节比（token 理论上可含非 ASCII）
-            ok = secrets.compare_digest(
-                token.encode("utf-8"), expected.encode("utf-8")
-            )
+            ok = secrets.compare_digest(token.encode("utf-8"), expected.encode("utf-8"))
         if not ok:
             detail = "MCP 未授权：缺少或错误的 Bearer token（MCP_BEARER_TOKEN 未配置时同样拒绝）"
             response = JSONResponse(
@@ -189,13 +187,14 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
             hits = retrieve(session, query)
             asset_ids = {hit["asset_id"] for hit in hits}
             titles = (
-                {a.id: a.title for a in session.scalars(select(Asset).where(Asset.id.in_(asset_ids)))}
+                {
+                    a.id: a.title
+                    for a in session.scalars(select(Asset).where(Asset.id.in_(asset_ids)))
+                }
                 if asset_ids
                 else {}
             )
-            return [
-                {**hit, "title": _mask_title(titles.get(hit["asset_id"]))} for hit in hits
-            ]
+            return [{**hit, "title": _mask_title(titles.get(hit["asset_id"]))} for hit in hits]
 
     @mcp.tool()
     def get_asset(asset_id: int, version: int | None = None) -> dict:
@@ -267,7 +266,9 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 )
                 session.commit()
                 session.refresh(asset)
-                out = to_asset_out(asset, load_products(session, [asset]), published_version_nos(session, [asset]))
+                out = to_asset_out(
+                    asset, load_products(session, [asset]), published_version_nos(session, [asset])
+                )
                 return out.model_dump(mode="json")
         except HTTPException as exc:
             # registration 骨架抛 FastAPI 语义（如挂错商品 404）——转成工具

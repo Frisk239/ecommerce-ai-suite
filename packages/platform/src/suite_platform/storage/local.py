@@ -25,12 +25,7 @@ class LocalDirectoryStorage:
             raise ValueError(_SEP_ERROR.format(key=key))
         pure = PurePosixPath(key)
         win = PureWindowsPath(key)
-        if (
-            pure.is_absolute()
-            or ".." in pure.parts
-            or win.is_absolute()
-            or win.drive != ""
-        ):
+        if pure.is_absolute() or ".." in pure.parts or win.is_absolute() or win.drive != "":
             raise ValueError(_ESCAPE_ERROR.format(key=key))
         target = self._root.joinpath(*pure.parts)
         if not target.resolve().is_relative_to(self._root.resolve()):

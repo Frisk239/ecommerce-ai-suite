@@ -29,7 +29,12 @@ _URL_ENV = "SUITE_TEST_DATABASE_URL"
 
 
 def _login(client: TestClient) -> None:
-    assert client.post("/api/auth/login", json={"username": "operator", "password": "operator123"}).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _ask(client: TestClient, session_id: int, question: str) -> list[tuple[str, dict]]:
@@ -134,7 +139,11 @@ def test_order_three_statuses_render(api: ApiFixture) -> None:
     client, _ = api
     _login(client)
     sid = client.post("/api/service/sessions").json()["id"]
-    expected = {"SO-1001": ("已发货 · 2 个物流事件", "已发货"), "SO-1002": ("运输中 · 2 个物流事件", "运输中"), "SO-1003": ("已签收 · 3 个物流事件", "已签收")}
+    expected = {
+        "SO-1001": ("已发货 · 2 个物流事件", "已发货"),
+        "SO-1002": ("运输中 · 2 个物流事件", "运输中"),
+        "SO-1003": ("已签收 · 3 个物流事件", "已签收"),
+    }
     for order_no, (summary, status) in expected.items():
         events = _ask(client, sid, f"订单 {order_no} 现在什么情况？")
         assert events[1][1]["result"] == summary

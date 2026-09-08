@@ -36,7 +36,12 @@ _EXTENDED_WARRANTY_DOC = "延保口径说明\n延保：下单一年内可补购�
 
 
 def _login(client: TestClient) -> None:
-    assert client.post("/api/auth/login", json={"username": "operator", "password": "operator123"}).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _upload(
@@ -77,7 +82,9 @@ def test_service_endpoints_require_login(api: ApiFixture) -> None:
     assert client.post("/api/service/sessions").status_code == 401
     assert client.get("/api/service/sessions").status_code == 401
     assert client.get("/api/service/sessions/1").status_code == 401
-    assert client.post("/api/service/sessions/1/messages", json={"content": "你好"}).status_code == 401
+    assert (
+        client.post("/api/service/sessions/1/messages", json={"content": "你好"}).status_code == 401
+    )
     assert client.post("/api/service/sessions/1/register").status_code == 401
     assert client.get("/api/knowledge-gaps").status_code == 401  # 缺口列表同样要登录
 
@@ -172,7 +179,10 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
     assert closed["registered_asset_id"] == dialogue_id
     assert closed["closed_at"] is not None
     # 已登记会话不能再发问/再登记
-    assert client.post(f"/api/service/sessions/{sid}/messages", json={"content": "再问"}).status_code == 409
+    assert (
+        client.post(f"/api/service/sessions/{sid}/messages", json={"content": "再问"}).status_code
+        == 409
+    )
     assert client.post(f"/api/service/sessions/{sid}/register").status_code == 409
 
     # 登记不是 0005 治理动作：审计不因回流新增 action 类型（publish/confirm/rollback）
@@ -295,7 +305,10 @@ def test_service_input_validation(api: ApiFixture) -> None:
     client, _ = api
     _login(client)
     assert client.get("/api/service/sessions/999999").status_code == 404
-    assert client.post("/api/service/sessions/999999/messages", json={"content": "你好"}).status_code == 404
+    assert (
+        client.post("/api/service/sessions/999999/messages", json={"content": "你好"}).status_code
+        == 404
+    )
     assert client.post("/api/service/sessions/999999/register").status_code == 404
 
     sid = client.post("/api/service/sessions").json()["id"]
@@ -324,7 +337,9 @@ def test_refusal_creates_gap_and_answer_does_not(api: ApiFixture) -> None:
     answer_complete = answer_events[-1][1]
     assert answer_complete["kind"] == "answer"
     assert answer_complete["gap_id"] is None
-    assert all(g["question"] != "维修网点在哪里？" for g in client.get("/api/knowledge-gaps").json())
+    assert all(
+        g["question"] != "维修网点在哪里？" for g in client.get("/api/knowledge-gaps").json()
+    )
 
     # 拒答：缺口落库（question=原问、open、不挂商品），gap_id 与列表行一致
     refusal_events = _ask(client, sid, "会员积分怎么兑换？")
@@ -390,7 +405,8 @@ def test_refusal_gap_question_masked_on_exit(api: ApiFixture) -> None:
     # 第 27 刀交接摘要的问句段同口径出口掩（先掩后截）——agent 消息文本呈
     # 掩码；customer 消息本身按既有豁免口径裸存（同问句回显不新增暴露面）。
     agent_msg = next(
-        m for m in client.get(f"/api/service/sessions/{sid}").json()["messages"]
+        m
+        for m in client.get(f"/api/service/sessions/{sid}").json()["messages"]
         if m["role"] == "agent"
     )
     assert "1********78" in agent_msg["content"]
@@ -454,9 +470,7 @@ def test_gap_fill_register_publish_resolves(api: ApiFixture) -> None:
     gap_id = refusal[-1][1]["gap_id"]
 
     # 补文档：带缺口登记（预填标题只是前端便利），来源=upload（端点定值）
-    registered = _upload(
-        client, _GIFT_DOC, title="补口径 · 下单有赠品吗", gap_id=gap_id
-    )
+    registered = _upload(client, _GIFT_DOC, title="补口径 · 下单有赠品吗", gap_id=gap_id)
     assert registered.status_code == 201
     asset_id = registered.json()["id"]
     assert registered.json()["source_kind"] == "upload"
@@ -467,7 +481,9 @@ def test_gap_fill_register_publish_resolves(api: ApiFixture) -> None:
     # 发布 -> 缺口 resolved + 指向资产 + resolved_at 落值；open 待办出列
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
     resolved = next(
-        g for g in client.get("/api/knowledge-gaps", params={"status": "resolved"}).json() if g["id"] == gap_id
+        g
+        for g in client.get("/api/knowledge-gaps", params={"status": "resolved"}).json()
+        if g["id"] == gap_id
     )
     assert resolved["status"] == "resolved"
     assert resolved["resolved_by_asset_id"] == asset_id
@@ -496,7 +512,9 @@ def test_open_gap_allows_only_one_pending_fill_doc(api: ApiFixture) -> None:
     gap_id = refusal[-1][1]["gap_id"]
     assert refusal[-1][1]["kind"] == "refusal"
 
-    first = _upload(client, _EXTENDED_WARRANTY_DOC, title="补口径 · 延保服务怎么开通", gap_id=gap_id)
+    first = _upload(
+        client, _EXTENDED_WARRANTY_DOC, title="补口径 · 延保服务怎么开通", gap_id=gap_id
+    )
     assert first.status_code == 201
     first_id = first.json()["id"]
 

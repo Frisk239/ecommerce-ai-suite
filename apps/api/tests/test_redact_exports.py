@@ -64,9 +64,12 @@ ApiFixture = tuple[TestClient, Path]
 
 
 def _login(client: TestClient) -> None:
-    assert client.post(
-        "/api/auth/login", json={"username": "operator", "password": "operator123"}
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _ask(client: TestClient, session_id: int, question: str) -> list[tuple[str, dict]]:
@@ -94,7 +97,9 @@ def _patch_complete_chat(
     return calls
 
 
-def _patch_stream(monkeypatch: pytest.MonkeyPatch, pieces: list[str] | None = None) -> list[dict[str, str]]:
+def _patch_stream(
+    monkeypatch: pytest.MonkeyPatch, pieces: list[str] | None = None
+) -> list[dict[str, str]]:
     calls: list[dict[str, str]] = []
 
     async def fake_stream(system_prompt: str, user_prompt: str) -> Any:
@@ -193,7 +198,10 @@ def test_mask_title_masks_pii_and_passes_clean() -> None:
     title 虽已在源头收掩（上方 _first_question 用例），但切片 title=
     transcript[:60] 裸转写截断（services/clips.py）、素材/上传 title 非净源，
     出口侧统一兜底（双保险取一）。None/空/净值原样（幂等，不伤既有断言）。"""
-    assert _mask_title(f"转写首问：我的电话{API_PHONE}能改吗") == f"转写首问：我的电话{MASKED_PHONE}能改吗"
+    assert (
+        _mask_title(f"转写首问：我的电话{API_PHONE}能改吗")
+        == f"转写首问：我的电话{MASKED_PHONE}能改吗"
+    )
     assert _mask_title("盲盒可以指定款式吗") == "盲盒可以指定款式吗"
     assert _mask_title(None) is None
     assert _mask_title("") == ""
@@ -203,7 +211,9 @@ def test_first_question_masks_title_at_source() -> None:
     """评审处置件 2：回流 title/会话摘要在 _first_question 源头收口——先掩
     后截（跨 60 字边界的号码不会被拦腰留下裸号前缀），无 PII 输入逐字节
     不变（不破坏既有标题断言）。"""
-    assert _first_question(f"我的手机号{API_PHONE}还能改绑吗") == f"我的手机号{MASKED_PHONE}还能改绑吗"
+    assert (
+        _first_question(f"我的手机号{API_PHONE}还能改绑吗") == f"我的手机号{MASKED_PHONE}还能改绑吗"
+    )
     boundary = "x" * 55 + API_PHONE + "尾" * 20
     out = _first_question(boundary)
     assert "13812" not in out and API_PHONE not in out  # 先截后掩的事故形态不许出现
@@ -254,7 +264,9 @@ def test_assemble_lineage_samples_masked() -> None:
         source_kind="dialogue_reflow",
         product_id=None,
         audit_rows=[],
-        citation_rows=[(3, f"顾客：{API_PHONE}能改地址吗", [{"asset_id": 7, "version_no": 1}], now)],
+        citation_rows=[
+            (3, f"顾客：{API_PHONE}能改地址吗", [{"asset_id": 7, "version_no": 1}], now)
+        ],
         citations_total=1,
         coach_rows=[(9, f"题面带{API_PHONE}", {"asset_id": 7, "version_no": 1}, now)],
         version_fields={},
@@ -371,7 +383,9 @@ def test_coaching_inputs_and_records_masked(
 
     questions = client.get("/api/coach/questions").json()
     fallback = next(
-        q for q in questions if q["key"]["asset_id"] == asset_id and q["key"]["source"] == "transcript"
+        q
+        for q in questions
+        if q["key"]["asset_id"] == asset_id and q["key"]["source"] == "transcript"
     )
     # 兜底题面推导侧掩码（出口 3 第一点：题库列表与下游消费者拿到的都是掩码）。
     # 注意 asset_title 不在五出口地图内（登记侧标题行为第 12 刀既有语义，出口
@@ -495,7 +509,9 @@ def test_mcp_export_and_search_masked(mcp_env: Any) -> None:
                 exported = await session.call_tool("export_published", {})
                 assert not exported.isError
                 out["export"] = _mcp_payload(exported)
-                searched = await session.call_tool("search_published", {"query": "顾客电话原路退回"})
+                searched = await session.call_tool(
+                    "search_published", {"query": "顾客电话原路退回"}
+                )
                 assert not searched.isError
                 out["search"] = _mcp_payload(searched)
                 # 评审处置件 1（第六出口）：含号资产 get_asset -> 响应无裸号

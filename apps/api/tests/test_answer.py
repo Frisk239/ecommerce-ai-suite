@@ -51,7 +51,11 @@ def test_multi_source_takes_top_two_with_own_citations() -> None:
         _hit(9, 1, "客服：净含量为480ml。", score=1.2),
         _hit(4, 1, "低分证据不应出现", score=0.3),
     ]
-    meta = {3: {"kind": "document", "title": "保温杯规格文档"}, 9: {"kind": "dialogue", "title": "对话"}, 4: {"kind": "document", "title": "别的"}}
+    meta = {
+        3: {"kind": "document", "title": "保温杯规格文档"},
+        9: {"kind": "dialogue", "title": "对话"},
+        4: {"kind": "document", "title": "别的"},
+    }
     answer = compose_answer(hits, meta)
     assert answer.content.count("\n") == 1  # 只取分数最高两条，各占一行
     assert "规格文档《保温杯规格文档》" in answer.content
@@ -83,8 +87,7 @@ def test_refusal_content_constant_is_stable() -> None:
 def test_handoff_summary_operator_with_gap_ref() -> None:
     content = build_refusal_handoff_content("登山绳可以定制长度吗", gap_id=7)
     assert content == (
-        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
-        "问句摘要：登山绳可以定制长度吗\n缺口：G-0007"
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：登山绳可以定制长度吗\n缺口：G-0007"
     )
     assert content.startswith(REFUSAL_CONTENT)  # 常量结构不变，摘要段追加
 
@@ -92,9 +95,7 @@ def test_handoff_summary_operator_with_gap_ref() -> None:
 def test_handoff_summary_without_gap_id_has_no_gap_line() -> None:
     # 顾客通道（run_ask expose_gap_id=False → 传 None）：带问句摘要、不带缺口段
     content = build_refusal_handoff_content("会员生日礼怎么领？")
-    assert content == (
-        "抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：会员生日礼怎么领？"
-    )
+    assert content == ("抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：会员生日礼怎么领？")
 
 
 def test_handoff_summary_truncates_and_masks() -> None:

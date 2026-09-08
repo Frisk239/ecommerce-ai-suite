@@ -36,7 +36,12 @@ _UNKEYED_TEMPLATE = "根据已发布的规格文档《密钥缺席口径备注�
 
 
 def _login(client: TestClient) -> None:
-    assert client.post("/api/auth/login", json={"username": "operator", "password": "operator123"}).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _upload_and_publish(client: TestClient, content: bytes, title: str) -> int:
@@ -96,7 +101,9 @@ def _agent_content(client: TestClient, session_id: int) -> str:
 # ---------- 模型路径：真 token 流 + 服务端定 citations ----------
 
 
-def test_vendor_stream_answer_citations_and_prompts(api: ApiFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_vendor_stream_answer_citations_and_prompts(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client, _ = api
     _login(client)
     asset_id = _upload_and_publish(client, _VENDOR_DOC, "厂商生成验证说明")
@@ -134,7 +141,9 @@ def test_vendor_stream_answer_citations_and_prompts(api: ApiFixture, monkeypatch
 # ---------- 降级路径 ----------
 
 
-def test_vendor_failure_falls_back_to_template(api: ApiFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_vendor_failure_falls_back_to_template(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """LLM 失败 -> answer.py 模板回答 + fallback=true；无「正在生成」thinking。"""
     client, _ = api
     _login(client)

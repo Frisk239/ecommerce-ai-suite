@@ -211,12 +211,13 @@ def test_summarize_stock_result() -> None:
         )
         == "有货 · 42 件"
     )
-    assert stock_tools.summarize_stock_result({"found": True, "product_name": "瓶装水", "stock": 0}) == (
-        "暂时无货"
-    )
     assert stock_tools.summarize_stock_result(
-        {"found": True, "product_name": "瓶装水", "stock": None}
-    ) == "未设置"
+        {"found": True, "product_name": "瓶装水", "stock": 0}
+    ) == ("暂时无货")
+    assert (
+        stock_tools.summarize_stock_result({"found": True, "product_name": "瓶装水", "stock": None})
+        == "未设置"
+    )
     assert stock_tools.summarize_stock_result({"found": False}) == "未找到商品"
     assert stock_tools.summarize_stock_result({"error": True}) == "查询失败"
 
@@ -227,22 +228,22 @@ def test_render_stock_answer_templates() -> None:
         == "钛钢保温杯有货，当前库存 42 件。"
     )
     # stock==0 是事实数据不是失败：正常回答分支
-    assert stock_tools.render_stock_answer({"found": True, "product_name": "瓶装水", "stock": 0}) == (
-        "瓶装水暂时无货。"
-    )
+    assert stock_tools.render_stock_answer(
+        {"found": True, "product_name": "瓶装水", "stock": 0}
+    ) == ("瓶装水暂时无货。")
 
 
 def test_render_stock_handoff_content() -> None:
-    assert stock_tools.render_stock_handoff_content(
-        {"found": True, "product_name": "钛钢保温杯", "stock": None}
-    ) == "钛钢保温杯库存未设置，已转人工。"
     assert (
-        stock_tools.render_stock_handoff_content({"found": False})
-        == "没有找到对应商品，已转人工。"
+        stock_tools.render_stock_handoff_content(
+            {"found": True, "product_name": "钛钢保温杯", "stock": None}
+        )
+        == "钛钢保温杯库存未设置，已转人工。"
     )
     assert (
-        stock_tools.render_stock_handoff_content({"error": True}) == "库存查询失败，已转人工。"
+        stock_tools.render_stock_handoff_content({"found": False}) == "没有找到对应商品，已转人工。"
     )
+    assert stock_tools.render_stock_handoff_content({"error": True}) == "库存查询失败，已转人工。"
 
 
 # ---------- run_ask 分派（MagicMock db，不碰真库） ----------
@@ -451,9 +452,7 @@ def _stock_outcome() -> AskOutcome:
 
     return AskOutcome(
         agent_message=message,
-        answer=ComposedAnswer(
-            content=message.content, citations=[], kind="answer", handoff=False
-        ),
+        answer=ComposedAnswer(content=message.content, citations=[], kind="answer", handoff=False),
         gap=None,
         generated=False,
         fallback=False,
@@ -496,9 +495,7 @@ def test_sse_stream_order_thinking_not_regressed() -> None:
     message.id = 77
     outcome = AskOutcome(
         agent_message=message,
-        answer=ComposedAnswer(
-            content=message.content, citations=[], kind="answer", handoff=False
-        ),
+        answer=ComposedAnswer(content=message.content, citations=[], kind="answer", handoff=False),
         gap=None,
         generated=False,
         fallback=False,

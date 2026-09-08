@@ -100,14 +100,17 @@ class _MemoryStorage:
 
 def test_transcript_bytes_is_timecode_prefixed_text() -> None:
     candidate = _candidate()
-    assert transcript_bytes(candidate) == (
-        f"[00:02:14-00:02:52] {candidate.transcript}"
-    ).encode()
+    assert transcript_bytes(candidate) == (f"[00:02:14-00:02:52] {candidate.transcript}").encode()
 
 
 @pytest.mark.parametrize(
     ("kind", "prefix"),
-    [("video", "clips"), ("dialogue", "dialogue"), ("document", "documents"), ("material", "documents")],
+    [
+        ("video", "clips"),
+        ("dialogue", "dialogue"),
+        ("document", "documents"),
+        ("material", "documents"),
+    ],
 )
 def test_make_object_key_prefix_dispatch(kind: str, prefix: str) -> None:
     key = make_object_key(kind, b"x")
@@ -128,7 +131,9 @@ def test_video_field_set_is_empty_even_with_product() -> None:
 
 def test_pick_candidates_registers_video_assets() -> None:
     c1 = _candidate(1)
-    c2 = _candidate(2, timecode_start="00:14:05", timecode_end="00:14:38", transcript="整箱24瓶带走。")
+    c2 = _candidate(
+        2, timecode_start="00:14:05", timecode_end="00:14:38", transcript="整箱24瓶带走。"
+    )
     db = _FakeClipDb([c1, c2], product=_product())
     storage = _MemoryStorage()
 

@@ -32,7 +32,7 @@ from suite_api.services.machine_wash import (
         ("净含量：550毫升", "550毫升"),
         ("净含量 500 ML", "500ML"),  # 大小写不敏感，保留原文单位形态
         ("净含量：1.5L", "1.5L"),
- ("净含量：2升", "2升"),
+        ("净含量：2升", "2升"),
         ("净含量 330ml（以标签为准）", "330ml"),
         ("净含量：500克", "500克"),
         ("净含量：0.75千克", "0.75千克"),  # 多字符单位在前，不被截成 "75克"
@@ -147,7 +147,10 @@ def test_abstention_is_explicit_never_empty_string() -> None:
 
 def test_parse_qa_output_accepts_plain_and_fenced_json() -> None:
     good = '[{"q": "退货要留吊牌吗", "a": "需要保持吊牌完整"}, {"q": "几天到账", "a": "3个工作日"}]'
-    expected = [{"q": "退货要留吊牌吗", "a": "需要保持吊牌完整"}, {"q": "几天到账", "a": "3个工作日"}]
+    expected = [
+        {"q": "退货要留吊牌吗", "a": "需要保持吊牌完整"},
+        {"q": "几天到账", "a": "3个工作日"},
+    ]
     assert parse_qa_output(good) == expected
     assert parse_qa_output(f"```json\n{good}\n```") == expected  # 围栏剥离
     assert parse_qa_output(f"```{good}```") == expected  # 无语言标注/无换行也剥
@@ -175,7 +178,9 @@ def test_parse_qa_output_rejects_malformed(bad: str) -> None:
 # ---------- 对话 QA 抽取：分级（未配置=弃权降级；失败/坏输出=可重试失败） ----------
 
 
-def _patch_complete_chat(monkeypatch: pytest.MonkeyPatch, result: str | None = None, error: Exception | None = None) -> list[dict[str, str]]:
+def _patch_complete_chat(
+    monkeypatch: pytest.MonkeyPatch, result: str | None = None, error: Exception | None = None
+) -> list[dict[str, str]]:
     calls: list[dict[str, str]] = []
 
     async def fake(system_prompt: str, user_prompt: str) -> str:

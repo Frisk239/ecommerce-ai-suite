@@ -46,6 +46,7 @@ def build_refusal_handoff_content(question: str, gap_id: int | None = None) -> s
         parts.append(f"缺口：G-{gap_id:04d}")
     return "\n".join(parts)
 
+
 # 「字段：值」证据句提取（单一正则，判定与分组一体；原先 FIELD_LINE_RE 判定 +
 # 内联分组两段式双写，口径已合一）。字段名字符与切块同词表（中文/字母/数字，
 # 不含空格：含空格的字段行切块仍整行成块，但组装走普通句模板，与原两段式

@@ -30,15 +30,15 @@ _GOOD_CSV = (
 
 def _login(client: TestClient) -> None:
     assert (
-        client.post("/api/auth/login", json={"username": "operator", "password": "operator123"}).status_code
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
         == 200
     )
 
 
 def _import_csv(client: TestClient, data: bytes, filename: str = "batch.csv") -> Any:
-    return client.post(
-        "/api/assets/import-csv", files={"file": (filename, data, "text/csv")}
-    )
+    return client.post("/api/assets/import-csv", files={"file": (filename, data, "text/csv")})
 
 
 def test_import_csv_requires_login(api: ApiFixture) -> None:

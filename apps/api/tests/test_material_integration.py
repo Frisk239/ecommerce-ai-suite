@@ -34,9 +34,12 @@ GOOD_CONTENT = (
 
 
 def _login(client: TestClient) -> None:
-    assert client.post(
-        "/api/auth/login", json={"username": "operator", "password": "operator123"}
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _material_json(title: str = GOOD_TITLE, content: str = GOOD_CONTENT) -> str:
@@ -223,9 +226,7 @@ def test_no_llm_key_fails_without_fallback(api: ApiFixture) -> None:
     client, _ = api
     _login(client)
     # 前面用例登记的素材资产数（本用例只验「失败不新增」，不验库为空）
-    material_before = len(
-        [a for a in client.get("/api/assets").json() if a["kind"] == "material"]
-    )
+    material_before = len([a for a in client.get("/api/assets").json() if a["kind"] == "material"])
     # 不 patch：conftest 空凭证进程里 complete_chat 抛 LLMNotConfigured
     task = client.post("/api/material/tasks", json={"product_id": _cup_id(client)}).json()
     assert task["status"] == "failed"
@@ -233,9 +234,7 @@ def test_no_llm_key_fails_without_fallback(api: ApiFixture) -> None:
     assert task["content"] is None
     assert task["asset_id"] is None
     # 失败不进中台（0029）：素材通道名下一个字节都没多
-    material_after = len(
-        [a for a in client.get("/api/assets").json() if a["kind"] == "material"]
-    )
+    material_after = len([a for a in client.get("/api/assets").json() if a["kind"] == "material"])
     assert material_after == material_before
 
 
@@ -251,7 +250,8 @@ def test_gate_and_error_contract(api: ApiFixture, monkeypatch: pytest.MonkeyPatc
     assert client.post("/api/material/tasks/999999/approve").status_code == 404
 
     _patch_complete_chat(
-        monkeypatch, result=_material_json(content="卖点：这款杯子很好用。")  # 缺商品名
+        monkeypatch,
+        result=_material_json(content="卖点：这款杯子很好用。"),  # 缺商品名
     )
     bad = client.post("/api/material/tasks", json={"product_id": _cup_id(client)}).json()
     assert bad["status"] == "failed"

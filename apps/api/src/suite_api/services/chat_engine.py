@@ -328,9 +328,7 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     if outcome.tool is not None:
         # 0036/0037：检索被跳过，状态行按工具名换成真实动作（订单/库存各自诚实）
         thinking = (
-            STOCK_THINKING_TEXT
-            if outcome.tool.get("name") == "get_stock"
-            else ORDER_THINKING_TEXT
+            STOCK_THINKING_TEXT if outcome.tool.get("name") == "get_stock" else ORDER_THINKING_TEXT
         )
         yield sse_event("thinking", {"text": thinking})
         yield sse_event("tool", outcome.tool)

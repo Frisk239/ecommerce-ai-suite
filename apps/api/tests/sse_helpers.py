@@ -11,6 +11,8 @@ def parse_sse_events(raw: str) -> list[tuple[str, dict]]:
             continue
         lines = block.splitlines()
         event = next(line.removeprefix("event: ") for line in lines if line.startswith("event: "))
-        data = json.loads(next(line.removeprefix("data: ") for line in lines if line.startswith("data: ")))
+        data = json.loads(
+            next(line.removeprefix("data: ") for line in lines if line.startswith("data: "))
+        )
         events.append((event, data))
     return events

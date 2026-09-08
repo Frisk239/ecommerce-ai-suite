@@ -73,9 +73,7 @@ def summarize_tool_result(result: dict[str, Any]) -> str:
 def render_order_answer(result: dict[str, Any]) -> str:
     """命中订单的确定性模板组装（0036：v1 不调 LLM，citations 恒空）。"""
     lines = [f"订单 {result['order_no']} 当前状态：{result['status']}。"]
-    item_parts = [
-        f"{item['name']} ×{item['qty']}" for item in result["items"] if item.get("name")
-    ]
+    item_parts = [f"{item['name']} ×{item['qty']}" for item in result["items"] if item.get("name")]
     if item_parts:
         lines.append("商品：" + "、".join(item_parts) + "。")
     events = result["events"]

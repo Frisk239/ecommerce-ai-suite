@@ -370,7 +370,9 @@ def _validate_qa_pairs_payload(value: Any) -> list[dict[str, str]]:
     try:
         return validate_qa_pairs(value)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
 
 
 def _mask_confirmed_value(field: str, value: Any) -> Any:
@@ -426,9 +428,7 @@ def confirm_fields(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"字段不在该资产的合法字段集合内: {unknown}",
         )
-    blank = sorted(
-        f for f, v in body.items() if isinstance(v, str) and not v.strip()
-    )
+    blank = sorted(f for f, v in body.items() if isinstance(v, str) and not v.strip())
     if blank:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

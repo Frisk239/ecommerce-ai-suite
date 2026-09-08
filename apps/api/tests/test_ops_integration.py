@@ -35,9 +35,12 @@ OPS_BODY = "早九点的热水，下午三点还烫口。钛钢保温杯，通�
 
 
 def _login(client: TestClient) -> None:
-    assert client.post(
-        "/api/auth/login", json={"username": "operator", "password": "operator123"}
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _product_id(client: TestClient, name: str) -> int:

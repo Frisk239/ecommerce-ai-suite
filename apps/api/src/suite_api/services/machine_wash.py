@@ -41,9 +41,7 @@ class MachineWashError(Exception):
 
 
 # 多字符单位排前面，避免 "500千克" 被截成 "5千克" 之类的错位匹配
-_NET_CONTENT_RE = re.compile(
-    r"(\d+(?:\.\d+)?)\s*(ml|毫升|kg|千克|l|升|g|克)", re.IGNORECASE
-)
+_NET_CONTENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(ml|毫升|kg|千克|l|升|g|克)", re.IGNORECASE)
 # "个月" 必须排在 "月" 前：保质期 12 个月要整体抽出 "12个月"，不是 "12月"
 _SHELF_LIFE_RE = re.compile(r"(\d+)\s*(个月|天|日|月|年)")
 # 日期陷阱（保质期正则负向后行的等价实现）：「生产日期：2026年8月1日」类片段
@@ -54,9 +52,7 @@ _DATE_TRAP_RE = re.compile(
 )
 
 # 显式分隔式：「材质：X」「材质为X」「材质是X」；X 到首个空白/标点为止
-_MATERIAL_DELIMITED_RE = re.compile(
-    r"材质\s*[:：为是]\s*([^\s，。,;；、()（）【】\[\]]{1,30})"
-)
+_MATERIAL_DELIMITED_RE = re.compile(r"材质\s*[:：为是]\s*([^\s，。,;；、()（）【】\[\]]{1,30})")
 # 后缀式：「X材质」；X 限定汉字/字母/数字，非贪婪取最短
 _MATERIAL_SUFFIX_RE = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9]{1,12}?)材质")
 
@@ -112,9 +108,7 @@ def _hits_material_blocklist(candidate: str) -> bool:
     """
     if candidate in _MATERIAL_BLOCKLIST:
         return True
-    return any(
-        len(word) > 1 and candidate.startswith(word) for word in _MATERIAL_BLOCKLIST
-    )
+    return any(len(word) > 1 and candidate.startswith(word) for word in _MATERIAL_BLOCKLIST)
 
 
 def _clean_material_candidate(candidate: str) -> str | None:
@@ -224,6 +218,7 @@ def validate_qa_pairs(value: Any) -> list[dict[str, str]]:
             raise ValueError("qa_pairs 每项的 q/a 须为非空字符串（禁止空串冒充，0009）")
         pairs.append({"q": item["q"].strip(), "a": item["a"].strip()})
     return pairs
+
 
 _QA_SYSTEM_PROMPT = (
     "你是电商客服知识治理助手，从客服对话转写中抽取可复用的问答对。\n"

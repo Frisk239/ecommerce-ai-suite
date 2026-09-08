@@ -106,7 +106,9 @@ def test_gate_rejects_missing_header(gate_app) -> None:
     app, _ = gate_app
 
     async def scenario() -> int:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE) as client:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as client:
             resp = await client.post("/mcp/", json=_init_request())
             return resp.status_code
 
@@ -194,7 +196,9 @@ def _mcp_session(app, settings):
     """SDK client 的 httpx 注入工厂：全链路走 ASGITransport，不开端口。"""
     factory = _client_factory(app)
     return streamablehttp_client(
-        _ENDPOINT, headers={"Authorization": f"Bearer {settings.mcp_bearer_token}"}, httpx_client_factory=factory
+        _ENDPOINT,
+        headers={"Authorization": f"Bearer {settings.mcp_bearer_token}"},
+        httpx_client_factory=factory,
     )
 
 
@@ -221,9 +225,7 @@ def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
             out["api_assets_anon"] = (await probe.get("/api/assets")).status_code
 
         # -- 治理台准备数据：已发布 A（v1 真发布）、待人洗 B（从未发布） --
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as api:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE) as api:
             login = await api.post(
                 "/api/auth/login", json={"username": "operator", "password": "operator123"}
             )
@@ -274,20 +276,14 @@ def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
 
                 got_current = await session.call_tool("get_asset", {"asset_id": asset_a})
                 out["get_current"] = _payload(got_current)
-                got_v1 = await session.call_tool(
-                    "get_asset", {"asset_id": asset_a, "version": 1}
-                )
+                got_v1 = await session.call_tool("get_asset", {"asset_id": asset_a, "version": 1})
                 out["get_v1"] = _payload(got_v1)
-                got_v3 = await session.call_tool(
-                    "get_asset", {"asset_id": asset_a, "version": 3}
-                )
+                got_v3 = await session.call_tool("get_asset", {"asset_id": asset_a, "version": 3})
                 out["get_v3_is_error"] = got_v3.isError
                 out["get_v3_text"] = _payload(got_v3)
                 got_b = await session.call_tool("get_asset", {"asset_id": asset_b})
                 out["get_b_is_error"] = got_b.isError
-                got_b_v1 = await session.call_tool(
-                    "get_asset", {"asset_id": asset_b, "version": 1}
-                )
+                got_b_v1 = await session.call_tool("get_asset", {"asset_id": asset_b, "version": 1})
                 out["get_b_v1_is_error"] = got_b_v1.isError
 
                 reg = await session.call_tool(
@@ -303,17 +299,13 @@ def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
                 out["export"] = _payload(exported)
 
         # -- 治理台队列可见 MCP 登记（source_kind=mcp_registered）--
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as api:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE) as api:
             relogin = await api.post(
                 "/api/auth/login", json={"username": "operator", "password": "operator123"}
             )
             api.cookies.set("suite_session", relogin.cookies["suite_session"])
             listed = (await api.get("/api/assets", params={"status": "pending_review"})).json()
-        out["governance_pending"] = [
-            a for a in listed if a.get("source_kind") == "mcp_registered"
-        ]
+        out["governance_pending"] = [a for a in listed if a.get("source_kind") == "mcp_registered"]
         return out
 
     out = _run_with_lifespan(app, scenario)
@@ -422,21 +414,18 @@ def test_export_published_writes_audit_trace(mcp_env: McpEnv) -> None:
             mcp_bearer_token=_TOKEN,
         )
     )
+
     # 前案（全链）的 export 也为资产 A 写过留痕：本用例只盯自己新登记的资产
     async def scenario() -> dict:
         out: dict = {}
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as api:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE) as api:
             login = await api.post(
                 "/api/auth/login", json={"username": "operator", "password": "operator123"}
             )
             assert login.status_code == 200
             api.cookies.update(login.cookies)
             # mcp 系统账号不可登录（留痕归属专用）
-            mcp_login = await api.post(
-                "/api/auth/login", json={"username": "mcp", "password": "!"}
-            )
+            mcp_login = await api.post("/api/auth/login", json={"username": "mcp", "password": "!"})
             out["mcp_login"] = mcp_login.status_code
 
             up = await api.post(
@@ -469,9 +458,7 @@ def test_export_published_writes_audit_trace(mcp_env: McpEnv) -> None:
                 # 留痕不存正文：导出结果里有 content，audit 表列里没有
                 out["exported_has_content"] = "content" in mine[0]
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as api:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE) as api:
             login = await api.post(
                 "/api/auth/login", json={"username": "operator", "password": "operator123"}
             )
@@ -533,9 +520,7 @@ def test_mcp_title_masked_on_all_three_read_exits(mcp_env: McpEnv) -> None:
 
     async def scenario() -> dict:
         out: dict = {}
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as api:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE) as api:
             login = await api.post(
                 "/api/auth/login", json={"username": "operator", "password": "operator123"}
             )

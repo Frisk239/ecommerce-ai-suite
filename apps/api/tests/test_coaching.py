@@ -44,10 +44,18 @@ class _FakeStorage:
 
 
 def _asset(asset_id: int = 7, title: str | None = "客服对话 · S-3") -> Asset:
-    return Asset(id=asset_id, kind="dialogue", status="published", source_kind="session_backflow", title=title)
+    return Asset(
+        id=asset_id,
+        kind="dialogue",
+        status="published",
+        source_kind="session_backflow",
+        title=title,
+    )
 
 
-def _version(confirmed: dict[str, Any], version_no: int = 1, object_key: str = "dialogue/k.txt") -> AssetVersion:
+def _version(
+    confirmed: dict[str, Any], version_no: int = 1, object_key: str = "dialogue/k.txt"
+) -> AssetVersion:
     return AssetVersion(
         asset_id=7,
         version_no=version_no,
@@ -113,7 +121,12 @@ def test_empty_value_or_abstain_or_missing_falls_back_to_transcript() -> None:
 
 def test_garbage_pairs_still_fall_back() -> None:
     # 全部项形状不对（q 空/非 dict）-> 展开不出题，兜底转写首问
-    bad = {"qa_pairs": {"value": [{"q": "  ", "a": "答"}, "字符串项", {"a": "无问"}], "source": "human"}}
+    bad = {
+        "qa_pairs": {
+            "value": [{"q": "  ", "a": "答"}, "字符串项", {"a": "无问"}],
+            "source": "human",
+        }
+    }
     questions = asset_questions(None, _asset(), _version(bad), STORAGE)
     assert [q["key"]["source"] for q in questions] == ["transcript"]
 
@@ -121,7 +134,9 @@ def test_garbage_pairs_still_fall_back() -> None:
 def test_machine_draft_in_extracted_is_not_a_question_source() -> None:
     # 只认 confirmed：extracted 里有值也算「未治理过的口径」，走兜底
     version = _version({})
-    version.extracted_fields = {"qa_pairs": {"value": [{"q": "草稿问", "a": "草稿答"}], "source": "machine"}}
+    version.extracted_fields = {
+        "qa_pairs": {"value": [{"q": "草稿问", "a": "草稿答"}], "source": "machine"}
+    }
     questions = asset_questions(None, _asset(), version, STORAGE)
     assert questions[0]["question"] == "盲盒可以指定款式吗"
     assert questions[0]["key"]["source"] == "transcript"
@@ -176,7 +191,16 @@ def test_normalize_key_rejects(raw: Any) -> None:
 
 
 def test_system_prompt_carries_rubric() -> None:
-    for token in ("口径准确 40", "证据贴合 30", "服务语气 30", "accurate", "evidence", "tone", "comment", "JSON"):
+    for token in (
+        "口径准确 40",
+        "证据贴合 30",
+        "服务语气 30",
+        "accurate",
+        "evidence",
+        "tone",
+        "comment",
+        "JSON",
+    ):
         assert token in SCORING_SYSTEM_PROMPT
     assert RUBRIC_MAX == {"accurate": 40, "evidence": 30, "tone": 30}
 
@@ -246,14 +270,19 @@ def test_try_score_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert score == {"accurate": 36, "evidence": 25, "tone": 28, "comment": "口径准，语气亲切"}
     assert reason is None
     assert len(calls) == 1
-    assert "题面" in calls[0]["user"] and "标准答案" in calls[0]["user"] and "作答" in calls[0]["user"]
+    assert (
+        "题面" in calls[0]["user"] and "标准答案" in calls[0]["user"] and "作答" in calls[0]["user"]
+    )
     assert "口径准确 40" in calls[0]["system"]
 
 
 @pytest.mark.parametrize(
     "kwargs, expect_in_reason",
     [
-        ({"error": llm_module.LLMNotConfigured("未配置 LLM_API_KEY，厂商生成不可用")}, "未配置 LLM_API_KEY"),
+        (
+            {"error": llm_module.LLMNotConfigured("未配置 LLM_API_KEY，厂商生成不可用")},
+            "未配置 LLM_API_KEY",
+        ),
         ({"error": llm_module.LLMUnavailable("厂商模型暂时不可用")}, "厂商模型暂时不可用"),
         ({"result": "分数是 90 分吧"}, "不是合法 JSON"),
     ],

@@ -88,8 +88,8 @@ def test_concurrent_mcp_operator_first_insert_once(api: ApiFixture) -> None:
     assert ids[0] == ids[1]
     with session_factory() as db:
         count = db.scalar(
-            select(func.count()).select_from(Operator).where(
-                Operator.username == MCP_OPERATOR_USERNAME
-            )
+            select(func.count())
+            .select_from(Operator)
+            .where(Operator.username == MCP_OPERATOR_USERNAME)
         )
         assert count == 1

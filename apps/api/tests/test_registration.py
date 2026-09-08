@@ -216,19 +216,16 @@ def test_retry_machine_wash_releases_transaction_before_llm(
         return "[]"
 
     monkeypatch.setattr(llm_module, "complete_chat", fake_complete_chat)
-    monkeypatch.setattr(
-        assets_routes, "_get_asset_or_404", lambda _db, _aid: asset
-    )
-    monkeypatch.setattr(
-        assets_routes, "_latest_version_or_404", lambda _db, _a: version
-    )
+    monkeypatch.setattr(assets_routes, "_get_asset_or_404", lambda _db, _aid: asset)
+    monkeypatch.setattr(assets_routes, "_latest_version_or_404", lambda _db, _a: version)
     monkeypatch.setattr(assets_routes, "_product_or_none", lambda _db, _a: None)
-    monkeypatch.setattr(
-        assets_routes, "to_asset_detail", lambda _db, _a: SimpleNamespace()
-    )
+    monkeypatch.setattr(assets_routes, "to_asset_detail", lambda _db, _a: SimpleNamespace())
 
     assets_routes.retry_machine_wash(
-        asset_id=1, db=db, operator=SimpleNamespace(), storage=storage  # type: ignore[arg-type]
+        asset_id=1,
+        db=db,
+        operator=SimpleNamespace(),
+        storage=storage,  # type: ignore[arg-type]
     )
 
     assert seen["in_transaction"] is False, "retry 的 LLM 调用时刻不得持有事务（P1#2）"
