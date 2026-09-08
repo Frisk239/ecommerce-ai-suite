@@ -231,11 +231,33 @@ def normalize_key(raw: Any) -> dict[str, Any] | None:
 def find_question(
     db: Session, storage: ObjectStorage, question_key: Any
 ) -> dict[str, Any]:
-    """按锚在题库里找题；找不到=404（题随修订/取消发布消失是常态，如实报）。"""
+    """按锚找题：单资产推导（debt-2 第 24 刀，不再全量 derive_questions O(N)）。
+
+    锚自带 asset_id+version_no，直接定位该资产的当前已发布版本出题再匹配
+    （题面/参照的生成函数与列表端点同源 asset_questions，同 key 同题逐字节
+    一致）；资产不存在/非 dialogue/无指针/指针版本≠锚版本=题已随修订或取消
+    发布消失——404 口径与全量时代逐字不变。
+    """
     key = normalize_key(question_key)
     if key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="题目不存在")
-    for question in derive_questions(db, storage):
+    asset = db.get(Asset, key["asset_id"])
+    version = (
+        db.get(AssetVersion, asset.current_published_version_id)
+        if asset is not None and asset.current_published_version_id is not None
+        else None
+    )
+    if (
+        asset is None
+        or asset.kind != "dialogue"  # 口径同 derive_questions：只从已发布对话出题
+        or version is None
+        or version.version_no != key["version_no"]
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="题目不存在（可能已开修订或取消发布，题库按当前已发布版本推导）",
+        )
+    for question in asset_questions(db, asset, version, storage):
         if question["key"] == key:
             return question
     raise HTTPException(

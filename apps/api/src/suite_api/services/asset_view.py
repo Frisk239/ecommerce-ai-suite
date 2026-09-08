@@ -85,6 +85,15 @@ def load_products(db: Session, assets: list[Asset]) -> dict[int, Product]:
     return {p.id: p for p in db.scalars(select(Product).where(Product.id.in_(ids)))}
 
 
+def load_product_names(db: Session, product_ids: set[int]) -> dict[int, str]:
+    """批取商品名（debt-2 第 24 刀 N+1 收口）：列表视图一次 IN 查询替代逐行
+    db.get(Product)。material/clips 列表同型消费者；单行详情端点不涉。"""
+    ids = {pid for pid in product_ids if pid is not None}
+    if not ids:
+        return {}
+    return {p.id: p.name for p in db.scalars(select(Product).where(Product.id.in_(ids)))}
+
+
 def published_version_nos(db: Session, assets: list[Asset]) -> dict[int, int]:
     ids = {a.current_published_version_id for a in assets if a.current_published_version_id is not None}
     if not ids:

@@ -121,13 +121,16 @@ def _fail(task: MaterialTask, reason: str) -> MaterialTask:
     return task
 
 
-def run_generation_task(db: Session, storage: ObjectStorage, task: MaterialTask) -> MaterialTask:
+def run_generation_task(db: Session, task: MaterialTask) -> MaterialTask:
     """queued/failed → running → pending_qc | failed（同步就地，0038）。
 
     LLM 未配置或调用失败=failed「生成不可用」（无降级模板）；坏输出=failed
     「生成结果解析失败」；规则不过=failed（last_error 记规则项）。running 先
     commit 落库可见，同时保证 LLM 等待（≤20s）不持有写事务（P1#2 同款纪律）。
     终态推进由调用方（本函数内）commit 收口。
+
+    **生成不碰字节**（debt-2 第 24 刀注记）：本函数只写 material_tasks 行，
+    对象存储触点在 approve 的 register_asset——storage 死参数已删，此说明留档。
     """
     if task.status not in (QUEUED, FAILED):
         raise HTTPException(
@@ -162,14 +165,15 @@ def run_generation_task(db: Session, storage: ObjectStorage, task: MaterialTask)
         db.commit()
         return task
 
+    title = title[:200]  # String(200) 列宽收口先于质检（debt-2：qc 与落库同一字符串）
     errors = qc_check(title, content, product.name)
     if errors:
-        task.title, task.content = title[:200], content  # 坏生成也留预览面，供人看原因
+        task.title, task.content = title, content  # 坏生成也留预览面，供人看原因
         _fail(task, "规则质检不过线：" + "；".join(errors))
         db.commit()
         return task
 
-    task.title = title[:200]  # String(200) 列宽收口，超长截断不炸库
+    task.title = title
     task.content = content
     task.last_error = None
     task.status = PENDING_QC
@@ -206,24 +210,30 @@ def approve_task(db: Session, storage: ObjectStorage, task: MaterialTask) -> Mat
     return task
 
 
-def reject_task(task: MaterialTask) -> MaterialTask:
-    """抽检打回（pending_qc → failed，原因=人工打回）：可重试再生成。"""
+def reject_task(db: Session, task: MaterialTask) -> MaterialTask:
+    """抽检打回（pending_qc → failed，原因=人工打回）：可重试再生成。
+
+    commit 收在服务层（debt-2 第 24 刀）：与 run/approve 同一转移纪律，路由层
+    不再补 commit——非法转移 409 抛在 commit 前，天然不落半途写。
+    """
     if task.status != PENDING_QC:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"只有待抽检的任务可以打回，当前状态: {task.status}",
         )
-    return _fail(task, "人工打回")
+    _fail(task, "人工打回")
+    db.commit()
+    return task
 
 
-def retry_task(db: Session, storage: ObjectStorage, task: MaterialTask) -> MaterialTask:
-    """失败重试（failed → 重跑，0038：同任务行状态回 running）：清 error 后
-    复用 run_generation_task 做新一次生成。"""
+def retry_task(db: Session, task: MaterialTask) -> MaterialTask:
+    """失败重试（failed → 直接 running 起新一次生成，0038 同任务行）：
+    run_generation_task 的 failed 入口本就放行，queued→running 的内存死转移
+    已删（debt-2 第 24 刀——queued 只在建任务落库瞬时存在，重试不再伪造它）。
+    last_error 清空由 run_generation_task 在 running commit 前一并做。"""
     if task.status != FAILED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"只有失败的任务可以重试，当前状态: {task.status}",
         )
-    task.last_error = None
-    task.status = QUEUED  # 复位排队态，重跑即新一次生成
-    return run_generation_task(db, storage, task)
+    return run_generation_task(db, task)

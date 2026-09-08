@@ -17,9 +17,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import ClipCandidate, Operator, Product
+from suite_api.models import ClipCandidate, Operator
 from suite_api.services.asset_view import (
     AssetOut,
+    load_product_names,
     load_products,
     published_version_nos,
     revising_asset_ids,
@@ -48,12 +49,6 @@ class ClipPickIn(BaseModel):
     ids: Annotated[list[int], Field(min_length=1)]
 
 
-def _product_name(db: Session, product_id: int) -> str:
-    """product_id 有 FK 保证行存在；视图仍防漂（缺名回退占位，不 500）。"""
-    product = db.get(Product, product_id)
-    return product.name if product is not None else "—"
-
-
 def _to_out(candidate: ClipCandidate, product_name: str) -> ClipCandidateOut:
     return ClipCandidateOut(
         id=candidate.id,
@@ -77,7 +72,9 @@ def list_candidates(
     """候选卡片列表（种子 mock，0039）：id 升序，已登记行带回执锚。"""
     del operator  # 读接口同样要求登录
     candidates = list(db.scalars(select(ClipCandidate).order_by(ClipCandidate.id)))
-    return [_to_out(c, _product_name(db, c.product_id)) for c in candidates]
+    # 批取商品名（debt-2 N+1）：一次 IN 查询替代逐行 db.get，先例 asset_view.load_products
+    names = load_product_names(db, {c.product_id for c in candidates})
+    return [_to_out(c, names.get(c.product_id, "—")) for c in candidates]
 
 
 @router.post("/candidates/pick", response_model=list[AssetOut])

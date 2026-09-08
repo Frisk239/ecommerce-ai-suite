@@ -10,6 +10,7 @@
   规则不过=记规则项；打回=人工打回；retry 复位重跑）。
 """
 
+import json
 from typing import Any
 
 import pytest
@@ -25,6 +26,7 @@ from suite_api.services.machine_wash import (
 )
 from suite_api.services.material import (
     FAILED,
+    MAX_TOTAL_CHARS,
     PENDING_QC,
     QUEUED,
     REGISTERED,
@@ -228,7 +230,7 @@ def test_document_field_values_are_redacted() -> None:
 @pytest.mark.parametrize("from_status", [RUNNING, PENDING_QC, REGISTERED])
 def test_run_illegal_from(from_status: str) -> None:
     with pytest.raises(HTTPException, match="409"):
-        run_generation_task(_FakeDB(_product()), None, _task(from_status))  # type: ignore[arg-type]
+        run_generation_task(_FakeDB(_product()), _task(from_status))  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("from_status", [QUEUED, RUNNING, REGISTERED])
@@ -239,33 +241,73 @@ def test_approve_illegal_from(from_status: str) -> None:
 
 @pytest.mark.parametrize("from_status", [QUEUED, RUNNING, REGISTERED])
 def test_reject_illegal_from(from_status: str) -> None:
+    db = _FakeDB(_product())
     with pytest.raises(HTTPException, match="409"):
-        reject_task(_task(from_status))
+        reject_task(db, _task(from_status))  # type: ignore[arg-type]
+    assert db.commits == 0  # 非法转移抛在 commit 前，半途写不落库
 
 
 @pytest.mark.parametrize("from_status", [QUEUED, RUNNING, PENDING_QC, REGISTERED])
 def test_retry_illegal_from(from_status: str) -> None:
     with pytest.raises(HTTPException, match="409"):
-        retry_task(None, None, _task(from_status))  # type: ignore[arg-type]
+        retry_task(None, _task(from_status))  # type: ignore[arg-type]
 
 
 def test_reject_pending_qc_marks_manual_failure() -> None:
     task = _task(PENDING_QC)
-    reject_task(task)
+    db = _FakeDB(_product())
+    reject_task(db, task)  # type: ignore[arg-type]
     assert task.status == FAILED
     assert task.last_error == "人工打回"
+    assert db.commits == 1  # debt-2：commit 收在服务层，路由层不再补
 
 
 def test_run_queued_to_pending_qc(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _patch_llm(monkeypatch, result=GOOD_OUTPUT)
     task = _task(QUEUED)
     db = _FakeDB(_product())
-    run_generation_task(db, None, task)  # type: ignore[arg-type]
+    run_generation_task(db, task)  # type: ignore[arg-type]
     assert task.status == PENDING_QC
     assert task.title == "钛钢保温杯：一杯守住温度"
     assert task.last_error is None
     assert db.commits >= 2  # running 先落库（LLM 等待不持事务），终态再收口
     assert "钛钢保温杯" in calls[0]["user"]  # 商品名进 prompt
+
+
+def test_retry_enters_run_from_failed_state_not_queued(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """debt-2 死转移收口：retry 以行真实态 failed 直接进 run（run 内推到
+    running），不再先伪造内存 queued 中间态。"""
+    seen: list[str] = []
+
+    def spy(_db: Any, t: MaterialTask) -> MaterialTask:
+        seen.append(t.status)
+        return t
+
+    monkeypatch.setattr(
+        "suite_api.services.material.run_generation_task", spy
+    )
+    task = _task(FAILED)
+    task.last_error = "人工打回"
+    retry_task(None, task)  # type: ignore[arg-type]
+    assert seen == [FAILED]
+
+
+def test_qc_uses_truncated_title_matching_persisted_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """debt-2 qc 口径：质检用截断后 title（与落库同一字符串）——原始 250 字
+    标题 + 1800 字正文总长 2050 会误判超限，按 String(200) 列宽截断后 2000
+    恰好过线，且落库标题就是参与质检的那 200 字。"""
+    long_title = "标" * 250
+    content = "钛钢保温杯" + "杯" * 1795  # 1800 字，含商品名
+    _patch_llm(monkeypatch, result=json.dumps({"title": long_title, "content": content}))
+    task = _task(QUEUED)
+    run_generation_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
+    assert task.status == PENDING_QC
+    assert task.title == "标" * 200
+    assert len(task.title) + len(task.content) == MAX_TOTAL_CHARS
 
 
 @pytest.mark.parametrize(
@@ -280,7 +322,7 @@ def test_run_llm_error_fails_without_fallback(
 ) -> None:
     _patch_llm(monkeypatch, error=error)
     task = _task(QUEUED)
-    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
+    run_generation_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
     assert task.status == FAILED
     assert "生成不可用" in task.last_error
     assert task.content is None  # 无降级模板：失败不留任何生成物
@@ -289,7 +331,7 @@ def test_run_llm_error_fails_without_fallback(
 def test_run_bad_output_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_llm(monkeypatch, result="这我写不出来。")
     task = _task(QUEUED)
-    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
+    run_generation_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
     assert task.status == FAILED
     assert "生成结果解析失败" in task.last_error
 
@@ -300,7 +342,7 @@ def test_run_qc_violation_records_rule_items(monkeypatch: pytest.MonkeyPatch) ->
         result='{"title": "好文案", "content": "完全没有商品名的正文"}',
     )
     task = _task(QUEUED)
-    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
+    run_generation_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
     assert task.status == FAILED
     assert "规则质检不过线" in task.last_error
     assert "商品名" in task.last_error
@@ -310,7 +352,7 @@ def test_retry_reruns_failed_task(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_llm(monkeypatch, result=GOOD_OUTPUT)
     task = _task(FAILED)
     task.last_error = "生成不可用：上次故障"
-    retry_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
+    retry_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
     assert task.status == PENDING_QC
     assert task.last_error is None  # 复位：旧故障原因清空
     assert "钛钢保温杯" in (task.content or "")

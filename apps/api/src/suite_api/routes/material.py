@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
 from suite_api.models import MaterialTask, Operator, Product
+from suite_api.services.asset_view import load_product_names
 from suite_api.services.material import (
     QUEUED,
     approve_task,
@@ -62,11 +63,11 @@ def _product_name(db: Session, product_id: int) -> str:
     return product.name if product is not None else "—"
 
 
-def _to_out(db: Session, task: MaterialTask) -> MaterialTaskOut:
+def _to_out(task: MaterialTask, product_name: str) -> MaterialTaskOut:
     return MaterialTaskOut(
         id=task.id,
         product_id=task.product_id,
-        product_name=_product_name(db, task.product_id),
+        product_name=product_name,
         status=task.status,
         title=task.title,
         content=task.content,
@@ -81,7 +82,6 @@ def create_task(
     body: MaterialTaskIn,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
-    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
 ) -> MaterialTaskOut:
     """建任务并**同步就地执行**生成+规则质检（0038）：返回时已是稳定态
     （pending_qc 或 failed），queued/running 只是请求内的瞬时态。"""
@@ -93,8 +93,8 @@ def create_task(
     db.add(task)
     db.commit()
     db.refresh(task)
-    run_generation_task(db, storage, task)
-    return _to_out(db, task)
+    run_generation_task(db, task)  # 生成不碰字节，无 storage（debt-2 死参数收口）
+    return _to_out(task, _product_name(db, task.product_id))
 
 
 @router.get("/tasks", response_model=list[MaterialTaskOut])
@@ -104,7 +104,9 @@ def list_tasks(
 ) -> list[MaterialTaskOut]:
     del operator  # 读接口同样要求登录
     tasks = list(db.scalars(select(MaterialTask).order_by(MaterialTask.id.desc())))
-    return [_to_out(db, t) for t in tasks]
+    # 批取商品名（debt-2 N+1）：一次 IN 查询替代逐行 db.get，先例 asset_view.load_products
+    names = load_product_names(db, {t.product_id for t in tasks})
+    return [_to_out(t, names.get(t.product_id, "—")) for t in tasks]
 
 
 @router.get("/tasks/{task_id}", response_model=MaterialTaskOut)
@@ -114,7 +116,8 @@ def get_task(
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> MaterialTaskOut:
     del operator
-    return _to_out(db, _task_or_404(db, task_id))
+    task = _task_or_404(db, task_id)
+    return _to_out(task, _product_name(db, task.product_id))
 
 
 @router.post("/tasks/{task_id}/approve", response_model=MaterialTaskOut)
@@ -128,8 +131,8 @@ def approve(
     待人洗，0029/0038）；任务 registered（终态）。"""
     del operator
     task = _task_or_404(db, task_id)
-    approve_task(db, storage, task)
-    return _to_out(db, task)
+    approve_task(db, storage, task)  # 抽检通过才碰字节：register_asset 写对象存储
+    return _to_out(task, _product_name(db, task.product_id))
 
 
 @router.post("/tasks/{task_id}/reject", response_model=MaterialTaskOut)
@@ -138,12 +141,12 @@ def reject(
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> MaterialTaskOut:
-    """抽检打回：任务 failed（原因=人工打回），不登记任何字节（0029）；可重试。"""
+    """抽检打回：任务 failed（原因=人工打回），不登记任何字节（0029）；可重试。
+    commit 在服务层 reject_task（debt-2 层次收口），路由不再补。"""
     del operator
     task = _task_or_404(db, task_id)
-    reject_task(task)
-    db.commit()
-    return _to_out(db, task)
+    reject_task(db, task)
+    return _to_out(task, _product_name(db, task.product_id))
 
 
 @router.post("/tasks/{task_id}/retry", response_model=MaterialTaskOut)
@@ -151,10 +154,10 @@ def retry(
     task_id: int,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
-    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
 ) -> MaterialTaskOut:
-    """失败重试：同任务行新一次生成（清 last_error → running → 稳定态）。"""
+    """失败重试：同任务行新一次生成（failed → running → 稳定态；不绕 queued，
+    清 last_error 在 run_generation_task 内，debt-2 死转移收口）。"""
     del operator
     task = _task_or_404(db, task_id)
-    retry_task(db, storage, task)
-    return _to_out(db, task)
+    retry_task(db, task)  # 生成不碰字节，无 storage（debt-2 死参数收口）
+    return _to_out(task, _product_name(db, task.product_id))

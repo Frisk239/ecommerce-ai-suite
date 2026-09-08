@@ -228,6 +228,78 @@ def test_assets_kind_filter_and_auth(api: ApiFixture) -> None:
     _login(client)
 
 
+# ---------- 单资产推导（debt-2）：行为等价 + prompt 逐字节 + 不走全量 ----------
+
+
+def test_find_question_single_asset_equivalence_and_prompt_unchanged(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """钉三件事：
+
+    1. 行为等价：find_question 每题结果与全量 derive_questions 里同 key 题
+       dict 逐字段相等（题面/参照字符串不动，兜底与 qa 两路都覆盖）；
+    2. 不走全量：derive_questions 换成必炸桩后，find_question 与打分链路
+       （经它找题）仍通——定位只按锚的 asset_id 推导单资产；
+    3. prompt 逐字节：同 key 同答案，打分 user prompt 与 build_score_prompt
+       对题库同一条目的输出完全相等（推导改造不动 prompt 漏斗）。
+    另钉坏锚口径不变：pair_index 越界 404、已发布非 dialogue 资产 404。
+    """
+    client, _ = api
+    _login(client)
+    a1 = _publish_dialogue(
+        client, "盲盒可以指定款式吗", [{"q": "盲盒可以指定款式吗", "a": "盲盒随机发货，不能指定"}]
+    )
+    a2 = _publish_dialogue(client, "能否顺丰发货呢", [])  # 兜底 transcript 题也进对照集
+    doc = client.post(
+        "/api/assets/register", files={"file": ("spec.txt", "材质：钛钢".encode(), "text/plain")}
+    ).json()
+    assert client.post(f"/api/assets/{doc['id']}/publish").status_code == 200
+
+    from fastapi import HTTPException
+
+    from suite_api.deps import ensure_storage
+    from suite_api.services import coaching as coaching_module
+
+    session = client.app.state.session_factory()
+    storage = ensure_storage(client.app)
+    target: dict[str, Any] = {}
+    try:
+        bank = coaching_module.derive_questions(session, storage)
+        assert {a1, a2} <= {q["key"]["asset_id"] for q in bank}
+        for q in bank:
+            assert coaching_module.find_question(session, storage, q["key"]) == q
+        target = next(q for q in bank if q["key"]["asset_id"] == a1 and q["key"]["source"] == "qa")
+        assert any(q["key"]["asset_id"] == a2 and q["key"]["source"] == "transcript" for q in bank)
+
+        with pytest.raises(HTTPException) as ei:
+            coaching_module.find_question(session, storage, {**target["key"], "pair_index": 999})
+        assert ei.value.status_code == 404
+        with pytest.raises(HTTPException) as ei:
+            coaching_module.find_question(
+                session, storage, {"asset_id": doc["id"], "version_no": 1, "source": "transcript"}
+            )
+        assert ei.value.status_code == 404  # 非 dialogue 不参与题库（口径同全量时代）
+
+        def _boom(*args: object, **kwargs: object) -> list:
+            raise AssertionError("找题路径不得再走全量 derive_questions")
+
+        monkeypatch.setattr(coaching_module, "derive_questions", _boom)
+        assert coaching_module.find_question(session, storage, target["key"]) == target
+    finally:
+        session.close()
+
+    # 作答链路经 find_question 找题：桩仍在位（derive 全量禁走），打分照旧 200
+    answer = "亲，盲盒是随机发货，暂不支持指定款式哦"
+    calls = _patch_complete_chat(monkeypatch, result=GOOD_SCORE_JSON)
+    att = client.post("/api/coach/attempts", json={"question_key": target["key"], "answer": answer})
+    assert att.status_code == 200
+    assert att.json()["status"] == "scored"
+    assert len(calls) == 1
+    assert calls[0]["user"] == coaching_module.build_score_prompt(
+        target["question"], target["standard_answer"], answer
+    )
+
+
 # ---------- 事务边界钉测：LLM 等待不 idle-in-transaction（debt-1，评审处置） ----------
 
 
