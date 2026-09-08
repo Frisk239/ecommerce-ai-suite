@@ -465,7 +465,11 @@ def publish(
             ),
         )
     product = _product_or_none(db, asset)
-    schema = dict(product.spec_schema) if product is not None else {}
+    # 必填闸门仅种类=文档且挂商品时启用（CONTEXT「必填字段」词条；0019）——
+    # 图片/视频/对话/素材没有规格必填（素材刀激活的潜伏偏离，第 17 刀修复）
+    schema: dict[str, Any] = {}
+    if asset.kind == "document" and product is not None:
+        schema = dict(product.spec_schema)
     extracted = dict(version.extracted_fields)
     confirmed = dict(version.confirmed_fields)
     missing, unconfirmed = evaluate_publish_gate(schema, extracted, confirmed)

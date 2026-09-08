@@ -123,13 +123,9 @@ def test_full_loop_generate_approve_publish_and_retrieval(
     assert extracted["材质"] == {"value": "钛钢", "source": "machine"}
     assert extracted["净含量"] == {"value": "480ml", "source": "machine"}
 
-    # 挂商品即有规格必填闸门（0010/0019 不特判）：先确认机洗值再发布
-    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 422
-    confirmed = client.patch(
-        f"/api/assets/{asset_id}/versions/1/fields",
-        json={"材质": "钛钢", "净含量": "480ml"},
-    )
-    assert confirmed.status_code == 200
+    # 必填闸门仅种类=文档且挂商品（CONTEXT「必填字段」词条）：素材没有规格
+    # 必填——机洗抽到值未确认也直接可发布（第 17 刀修复的潜伏偏离，对照
+    # 文档挂商品未确认仍 422 的既有测试 test_publish_gate）
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
 
     # 顾客问卖点 -> 命中素材正文切块并引用 v1
