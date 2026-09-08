@@ -55,8 +55,8 @@ export const api = {
   logout: () => request<{ detail: string }>('/auth/logout', { method: 'POST' }),
   me: () => request<Operator>('/auth/me'),
 
-  // 资产（kind 过滤第 19 刀加，与 status 并存：题库推导/切片汇入等按种类取数）
-  listAssets: (kind?: string) => request<AssetListItem[]>(kind ? `/assets?kind=${kind}` : '/assets'),
+  // 资产
+  listAssets: () => request<AssetListItem[]>('/assets'),
   getAsset: (assetId: number) => request<AssetDetail>(`/assets/${assetId}`),
   registerAsset: (form: FormData) => request<AssetDetail>('/assets/register', { method: 'POST', body: form }),
   // CSV 批量导入（第 9 刀）：上传通道的批量形态，逐行登记尽力而为，报告即答案

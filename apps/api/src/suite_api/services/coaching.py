@@ -16,6 +16,10 @@
 - asyncio.run 前提：消费方路由恒为同步 def（FastAPI 线程池，线程上无运行中
   事件循环），与 machine_wash QA 抽取、material 生成同一先例（第 16 刀 P1#1
   的按 loop 缓存客户端也依赖这一点）。
+- 事务边界（debt-1「LLM 等待不 idle-in-transaction」）：作答行先以未评分态
+  commit 落库、重评读行后先 commit 结束只读事务，之后才进 LLM ≤20s 等待，
+  结果由第二段事务 UPDATE 收口——先例 register_asset 机洗前 commit、material
+  running 先落库。
 """
 
 import asyncio
@@ -228,12 +232,15 @@ def find_question(
     )
 
 
-def _apply_score(record: CoachRecord) -> None:
+def _apply_score(
+    record: CoachRecord, question_text: str, standard_answer: str | None, trainee_answer: str
+) -> None:
     """对记录跑一次 LLM 打分并就地写字段（成功：score+model_name、清原因；
-    失败/未配置/坏输出：score 保持 NULL、last_error 写原因）。不抛。"""
-    score, reason = try_score(
-        record.question_text, record.standard_answer, record.trainee_answer
-    )
+    失败/未配置/坏输出：score 保持 NULL、last_error 写原因）。不抛。
+
+    prompt 三输入走**入参**而不回读 record 属性：记录行先落库后属性即过期，
+    读它会重新打开事务——LLM ≤20s 就挂成 idle-in-transaction（debt-1 纪律）。"""
+    score, reason = try_score(question_text, standard_answer, trainee_answer)
     if score is not None:
         record.score = score
         record.model_name = get_settings().llm_model
@@ -269,7 +276,12 @@ def score_attempt(
     answer: str,
 ) -> CoachRecord:
     """作答落记录 + 同步打分（0038 同款就地执行，LLM ≤20s）：返回的记录恒落库，
-    打分失败只体现在 score=NULL + last_error（不向调用方抛，HTTP 200 带未评分态）。"""
+    打分失败只体现在 score=NULL + last_error（不向调用方抛，HTTP 200 带未评分态）。
+
+    两段事务（debt-1「LLM 等待不 idle-in-transaction」，先例 register_asset 机洗
+    前 commit、material running 先落库）：推导+作答行以「未评分」态先 commit
+    （也终结 find_question 的只读事务）→ LLM 等待期间会话不持事务 → 打分结果
+    UPDATE 收口。进程崩在 LLM 等待中留未评分行——本就语义合法、可重评。"""
     question = find_question(db, storage, question_key)
     record = CoachRecord(
         operator_name=operator_name,
@@ -278,22 +290,33 @@ def score_attempt(
         standard_answer=question["standard_answer"],
         trainee_answer=answer,
     )
-    _apply_score(record)
     db.add(record)
-    db.commit()
+    db.commit()  # ① 未评分态先落库 + 释放推导事务，再等 LLM
+    _apply_score(
+        record, question["question"], question["standard_answer"], answer
+    )  # 三输入走本地变量，不回读过期属性（不重开事务）
+    db.commit()  # ② 打分结果 UPDATE 收口（新事务，毫秒级）
     db.refresh(record)
     return record
 
 
 def rescore_record(db: Session, record_id: int) -> CoachRecord:
     """未评分记录重跑打分：同 prompt 从记录字段组装（题面/标准答案快照已在行上，
-    不依赖题目仍在题库——已发布版本被修订也照评）。已评分 409（分数不可覆盖）。"""
+    不依赖题目仍在题库——已发布版本被修订也照评）。已评分 409（分数不可覆盖）。
+
+    debt-1 事务边界：读行闸门后把 prompt 三输入取进本地变量并 commit 结束只读
+    事务（行本就以未评分态落库，无需重写一次 INSERT）→ LLM 等待不持事务 →
+    结果 UPDATE 收口。"""
     record = db.get(CoachRecord, record_id)
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="考核记录不存在")
     if record.score is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已评分的记录不能重新评分")
-    _apply_score(record)
-    db.commit()
+    question_text = record.question_text
+    standard_answer = record.standard_answer
+    trainee_answer = record.trainee_answer
+    db.commit()  # ① 结束读取事务（属性已过期的行不再被 LLM 等待期触碰）
+    _apply_score(record, question_text, standard_answer, trainee_answer)
+    db.commit()  # ② 重评结果 UPDATE 收口
     db.refresh(record)
     return record

@@ -8,7 +8,11 @@
 - qa 弃权/确认空 -> 转写首问兜底题（source=transcript、standard_answer=None）；
 - 空 key（无替身）-> attempt 落未评分行（HTTP 200 + unscored + last_error），
   配好替身后 rescore 成功转 scored（last_error 清空）；
-- GET /api/assets?kind=dialogue 过滤与 status 并存；四端点未登录 401。
+- GET /api/assets?kind=dialogue 过滤与 status 并存；四端点未登录 401；
+- 事务边界钉测（debt-1 评审处置）：score_attempt / rescore_record 调
+  complete_chat 的时刻真 session.in_transaction() 恒为 False——LLM ≤20s
+  等待不 idle-in-transaction（先例 test_registration 的 _TxnRecordingDb 断言，
+  此处服务需要真查询，改用真 session 直接钉）。
 
 资产全程在空 key 环境登记（机洗 QA 降级弃权，不触网），confirmed qa_pairs
 由人洗 PATCH 直接给定（纯函数校验，不调 LLM），故造数据无需替身。
@@ -22,6 +26,7 @@ from fastapi.testclient import TestClient
 from sse_helpers import parse_sse_events
 
 from suite_api.services import llm as llm_module
+from suite_api.services.coaching import rescore_record, score_attempt
 from suite_api.settings import get_settings
 
 ApiFixture = tuple[TestClient, Path]
@@ -221,3 +226,77 @@ def test_assets_kind_filter_and_auth(api: ApiFixture) -> None:
     assert client.get("/api/coach/records").status_code == 401
     assert client.post("/api/coach/records/1/rescore").status_code == 401
     _login(client)
+
+
+# ---------- 事务边界钉测：LLM 等待不 idle-in-transaction（debt-1，评审处置） ----------
+
+
+def test_score_attempt_llm_call_not_in_transaction(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """直接喂真 session 调 score_attempt：complete_chat 时刻 in_transaction 恒 False。
+
+    find_question 的 SELECT 会 autobegin——服务必须先 commit 结束该事务再等 LLM
+    （先例 register_asset 机洗前 commit / material running 先落库）。
+    """
+    client, _ = api
+    _login(client)
+    asset_id = _publish_dialogue(
+        client, "会员积分能抵现吗", [{"q": "会员积分能抵现吗", "a": "积分暂不支持抵现"}]
+    )
+    q = _qa_question(client, asset_id)
+
+    from suite_api.deps import ensure_storage
+
+    session_factory = client.app.state.session_factory
+    seen: list[bool] = []
+
+    async def fake(_system: str, _user: str) -> str:
+        # 由服务在同一 session 上 commit 之后调用；此刻不得持事务
+        seen.append(session.in_transaction())
+        return GOOD_SCORE_JSON
+
+    monkeypatch.setattr(llm_module, "complete_chat", fake)
+    session = session_factory()
+    try:
+        record = score_attempt(
+            session, ensure_storage(client.app), "operator", q["key"], "积分暂不支持抵现"
+        )
+    finally:
+        session.close()
+    assert seen and all(flag is False for flag in seen), "complete_chat 时刻不得 idle-in-transaction"
+    assert record.id is not None  # 未评分 INSERT 先落库，打分后同 session UPDATE 收口
+    assert record.score is not None and record.model_name == get_settings().llm_model
+
+
+def test_rescore_record_llm_call_not_in_transaction(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """未评分记录走 HTTP 产生，再直接喂真 session 调 rescore_record：同钉 in_transaction False。"""
+    client, _ = api
+    _login(client)
+    asset_id = _publish_dialogue(
+        client, "礼盒能装两瓶吗", [{"q": "礼盒能装两瓶吗", "a": "标准礼盒装两瓶"}]
+    )
+    q = _qa_question(client, asset_id)
+    # 不 patch：空凭证 -> 未评分行（score NULL，可重评）
+    rec = client.post(
+        "/api/coach/attempts", json={"question_key": q["key"], "answer": "能装两瓶"}
+    ).json()
+    assert rec["status"] == "unscored"
+
+    session_factory = client.app.state.session_factory
+    seen: list[bool] = []
+
+    async def fake(_system: str, _user: str) -> str:
+        seen.append(session.in_transaction())
+        return GOOD_SCORE_JSON
+
+    monkeypatch.setattr(llm_module, "complete_chat", fake)
+    session = session_factory()
+    try:
+        record = rescore_record(session, rec["id"])
+    finally:
+        session.close()
+    assert seen and all(flag is False for flag in seen), "rescore complete_chat 时刻不得 idle-in-transaction"
+    assert record.score is not None and record.last_error is None
