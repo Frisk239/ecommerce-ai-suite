@@ -46,6 +46,13 @@ from suite_api.services.order_tools import (
     summarize_tool_result,
 )
 from suite_api.services.retrieval import retrieve
+from suite_api.services.stock_tools import (
+    STOCK_KEYWORD_PATTERN,
+    query_stock,
+    render_stock_answer,
+    render_stock_handoff_content,
+    summarize_stock_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +61,8 @@ THINKING_TEXT = "正在检索已发布资产…"
 # 第 13 刀（ADR 0036）：订单工具路径的状态行——检索被跳过，状态行必须换成
 # 真实动作（同「降级不发生成事件、不装作生成过」的诚实口径）
 ORDER_THINKING_TEXT = "查询订单中…"
+# 第 14 刀（ADR 0037）：库存工具路径的状态行（同口径，按 outcome.tool.name 区分）
+STOCK_THINKING_TEXT = "查询库存中…"
 # 第 7 刀：检索命中后走厂商模型生成（状态行随最新 thinking 事件更新——降级
 # 路径不发本事件，状态行停在检索，不装作生成过）
 GENERATING_THINKING_TEXT = "正在生成回答…"
@@ -110,6 +119,11 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     answer（不调 LLM、citations=[]），查无/故障走 kind="handoff" 转人工
     （0018 失败不拿检索顶；0024 不产生缺口）。引擎级插入=操作者/顾客双通道
     自动同获（0021 同一引擎）。
+
+    0037 库存工具分派（分派序=订单号 -> 库存关键词 -> 检索）：订单号优先，
+    其次命中词表 -> 只读 get_stock、跳过检索——stock>0/==0 走事实 answer 模板
+    （0 是数据不是失败），NULL/商品未命中/故障走 kind="handoff"；同样不调
+    LLM、citations 恒空、不产生缺口。
     """
     # 1) 先落 customer 消息
     db.add(ServiceMessage(session_id=session.id, role="customer", content=question))
@@ -119,6 +133,10 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     order_no = find_order_no(question)
     if order_no is not None:
         return _run_order_ask(db, session, order_no)
+
+    # 1.6) 库存关键词命中 -> 库存工具路径（跳过检索，ADR 0037；订单号优先级在前）
+    if STOCK_KEYWORD_PATTERN.search(question):
+        return _run_stock_ask(db, session, question)
 
     # 2) 检索当前已发布版本 -> 组装（模板回答=降级兜底，citations 选取也以它为准）
     hits = retrieve(db, question)
@@ -218,6 +236,55 @@ def _run_order_ask(db: Session, session: ServiceSession, order_no: str) -> AskOu
     )
 
 
+def _run_stock_ask(db: Session, session: ServiceSession, question: str) -> AskOutcome:
+    """库存工具路径（customer 消息已由 run_ask 落库提交；0037=0036 同模式）。
+
+    stock>0/==0 用 kind="answer" 事实模板（0 是数据不是失败）；NULL/商品未
+    命中/DB 异常用 kind="handoff"（不复用 refusal——refusal 连带缺口，0024
+    工具失败不产生缺口）。两条分支都不检索、不调 LLM、citations 恒空（库存
+    是商品列不是资产，0002）。工具条 arg=命中商品名，未命中/异常退化用问题
+    原文；序列同订单路径（2 commit）。
+    """
+    result = query_stock(db, question)
+    found = bool(result.get("found"))
+    stock = result.get("stock")
+    tool_record = {
+        "name": "get_stock",
+        "arg": result["product_name"] if found else question,
+        "result": summarize_stock_result(result),
+    }
+    if found and stock is not None:
+        kind, handoff = "answer", False
+        content = render_stock_answer(result)
+    else:
+        kind, handoff = "handoff", True
+        content = render_stock_handoff_content(result)
+        logger.info("库存工具转人工: %s %s", tool_record["arg"], tool_record["result"])
+
+    agent_message = ServiceMessage(
+        session_id=session.id,
+        role="agent",
+        content=content,
+        citations=[],
+        kind=kind,
+        handoff=handoff,
+        tool=tool_record,
+    )
+    db.add(agent_message)
+    db.commit()
+    db.refresh(agent_message)
+
+    answer = ComposedAnswer(content=content, citations=[], kind=kind, handoff=handoff)
+    return AskOutcome(
+        agent_message=agent_message,
+        answer=answer,
+        gap=None,
+        generated=False,  # 工具路径不调 LLM（0037 与 0036 同口径）
+        fallback=False,  # 模板组装是正式产出，非降级
+        tool=tool_record,
+    )
+
+
 def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iterator[str]:
     """SSE 事件序列：thinking（检索）[-> thinking（生成）] -> delta* -> complete。
 
@@ -232,7 +299,13 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     工具条数据）-> delta* -> complete（含 tool）。
     """
     if outcome.tool is not None:
-        yield sse_event("thinking", {"text": ORDER_THINKING_TEXT})
+        # 0036/0037：检索被跳过，状态行按工具名换成真实动作（订单/库存各自诚实）
+        thinking = (
+            STOCK_THINKING_TEXT
+            if outcome.tool.get("name") == "get_stock"
+            else ORDER_THINKING_TEXT
+        )
+        yield sse_event("thinking", {"text": thinking})
         yield sse_event("tool", outcome.tool)
     else:
         yield sse_event("thinking", {"text": THINKING_TEXT})

@@ -39,13 +39,15 @@ SSE 事件协议（`text/event-stream`，回答文本在流式开始前已完整
 ```
 event: thinking    data: {"text": "正在检索已发布资产…"}
 event: thinking    data: {"text": "正在生成回答…"}     # 仅模型路径；拒答/降级不出现
-event: tool        data: {"name": "get_order_status", "arg": "SO-1001", "result": "已发货 · 2 个物流事件"}   # 仅订单工具路径（第 13 刀）
+event: tool        data: {"name": "get_order_status", "arg": "SO-1001", "result": "已发货 · 2 个物流事件"}   # 仅工具路径（订单第 13 刀 / 库存第 14 刀）
 event: delta       data: {"text": "..."}            # 多片，~12 字/片
 event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "version_no": 1}],
                           "kind": "answer", "handoff": false, "gap_id": null, "fallback": false, "tool": null}
 ```
 
 订单查询带单号即命中订单工具（第 13 刀，ADR 0036）：问「我的订单 SO-1001 到哪了？」（样例单 SO-1001/1002/1003）走只读 `get_order_status`——模板组装状态回答、`citations` 恒空、`complete.tool`/`tool` 事件带工具条（两通道同形状，前端灰底 mono 参数→结果）；查无单号如 SO-9999 返回 `kind: "handoff"`、`handoff: true` 交接摘要（0018：转人工不拿检索顶，0024：不产生知识缺口）。非订单问题零漂移。
+
+库存问「有货吗」即命中库存工具（第 14 刀，ADR 0037）：问「钛钢保温杯有货吗？」（种子 mock 值：保温杯 42、瓶装水 0）命中词表（有货/没货/无货/缺货/库存/现货/剩）走只读 `get_stock`——商品名最长公共子串匹配（「保温杯」也能命中「钛钢保温杯」），模板回答「有货，当前库存 42 件。」/「暂时无货。」、同样不调 LLM、`citations` 恒空；库存未设置（stock NULL）、商品没匹配上（如「小龙虾有货吗」）或查询失败均 `kind: "handoff"` 转人工不检索不缺口。规格问题（净含量/保质期/材质）词表外，零漂移走检索。
 
 无命中 -> `kind: "refusal"`、`handoff: true`、`citations: []`，固定文案「抱歉，已发布资产里没有能回答这个问题的证据。」（0018：不编造不闲聊）。检索只查当前已发布版本（0004/0017），切块在发布事务内写入 `retrieval_chunks`（0002 第二批迁移）。
 
