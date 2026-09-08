@@ -20,10 +20,10 @@ from suite_api.services.machine_wash import MachineWashError, run_machine_wash
 from suite_api.services.publishing import schema_field_names
 from suite_platform.storage import ObjectStorage
 
-# 资产状态机前两态（登记入口）：ingested=已接入 / pending_review=待人洗。
-# 第三态 published 留在资产路由（发布动作所在地）。
+# 资产三态：ingested=已接入 / pending_review=待人洗 / published=已发布。
 INGESTED = "ingested"
 PENDING_REVIEW = "pending_review"
+PUBLISHED = "published"
 
 # 来源六枚举（0025/ADR 0030）：登记端点语义定值，调用方不可自由填报
 SOURCE_KINDS = (
@@ -34,6 +34,13 @@ SOURCE_KINDS = (
     "mcp_registered",
     "seed",
 )
+
+
+def make_object_key(kind: str, content_bytes: bytes) -> str:
+    """对象键 = {documents|dialogue}/{uuid}/{sha256前16}.txt（ADR 0003 每版一把键）。"""
+    prefix = "dialogue" if kind == "dialogue" else "documents"
+    digest = hashlib.sha256(content_bytes).hexdigest()[:16]
+    return f"{prefix}/{uuid4().hex}/{digest}.txt"
 
 
 def validate_source_kind(source_kind: str) -> str:
@@ -73,9 +80,7 @@ def register_asset(
         if product is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="商品不存在")
 
-    prefix = "dialogue" if kind == "dialogue" else "documents"
-    digest = hashlib.sha256(content_bytes).hexdigest()[:16]
-    object_key = f"{prefix}/{uuid4().hex}/{digest}.txt"
+    object_key = make_object_key(kind, content_bytes)
     storage.put_bytes(object_key, content_bytes)
 
     asset = Asset(

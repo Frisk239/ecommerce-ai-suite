@@ -27,17 +27,26 @@ export interface FieldView {
   value: string | null
   source: 'human' | 'machine' | null
   abstained: boolean
+  inherited: boolean
 }
 
 export function toFieldView(version: AssetVersion, field: string, required: boolean): FieldView {
-  const confirmed = entryValue(version.confirmed_fields[field])
+  const confirmedEntry = version.confirmed_fields[field]
+  const confirmed = entryValue(confirmedEntry)
   if (confirmed !== null) {
-    return { field, required, value: confirmed, source: 'human', abstained: false }
+    return {
+      field,
+      required,
+      value: confirmed,
+      source: 'human',
+      abstained: false,
+      inherited: confirmedEntry !== undefined && 'inherited' in confirmedEntry && confirmedEntry.inherited === true,
+    }
   }
   const extracted = version.extracted_fields[field]
   const machine = isAbstained(extracted) ? null : entryValue(extracted)
   if (machine !== null) {
-    return { field, required, value: machine, source: 'machine', abstained: false }
+    return { field, required, value: machine, source: 'machine', abstained: false, inherited: false }
   }
-  return { field, required, value: null, source: null, abstained: isAbstained(extracted) }
+  return { field, required, value: null, source: null, abstained: isAbstained(extracted), inherited: false }
 }

@@ -1,9 +1,9 @@
 """知识缺口路由（ADR 0024/0030）：治理台缺口 tab 的读列表。
 
 缺口不是资产：这里只有列表读接口——产生只随拒答（service 路由同事务落库），
-解决只随发布（assets 路由发布事务内置 resolved），补文档走普通登记
-（assets.register 带可选 knowledgeGapId）。无创建/手动关闭端点（0024：操作者
-从缺口补文档或开修订，修订流属后续刀）。
+解决只随发布（assets 路由发布事务内置 resolved），补文档走普通登记或
+已发布规格上的开修订（assets.register / revisions 带可选 knowledge_gap_id）。
+无创建/手动关闭端点（0024/0031：有已发布规格则默认开修订）。
 """
 
 from datetime import datetime

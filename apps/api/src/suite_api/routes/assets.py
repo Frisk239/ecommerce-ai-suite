@@ -1,20 +1,26 @@
-"""治理台资产路由：登记（0013）、机洗重试（0012 就地）、人洗确认、发布（0005/0010）。
+"""治理台资产路由：登记（0013）、机洗重试（0012 就地）、人洗确认、发布（0005/0010）、
+开修订/回滚（0006）。
 
 状态机：ingested --机洗成功--> pending_review --发布--> published；
-机洗失败停 ingested 存 last_error；已发布/已接入版本不可改（0006）。
-发布为单事务：版本 published -> 资产指针前移 -> 商品写回 -> 审计一行
--> 解决登记时关联的知识缺口（0024：解决动作随发布发生）。
+机洗失败停 ingested 存 last_error。开修订不改 status、不移指针（线上继续
+服务当前已发布版）；人洗闸门看版本行未发布，不要求 status==pending_review。
+发布为单事务：版本 published -> 切块入索引 -> 资产指针前移 -> 商品写回 ->
+审计一行 -> 解决关联的知识缺口（0024：解决动作随发布发生）。回滚是单独
+移指针（audit rollback），不复用 publish body。
 
 登记骨架（put_bytes -> Asset/AssetVersion -> 机洗推进）与资产读视图装配
 分别在 services/registration.py 与 services/asset_view.py，供 service 路由共用。
-source_kind（0025）与补文档缺口关联（0024）都在本路由按端点语义定值。
+source_kind（0025）与补文档/修订缺口关联（0024/0031）都在本路由按端点语义定值。
 """
 
+import copy
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
@@ -22,7 +28,6 @@ from suite_api.models import (
     Asset,
     AssetVersion,
     AuditLog,
-    KnowledgeGap,
     Operator,
     Product,
     RetrievalChunk,
@@ -33,17 +38,24 @@ from suite_api.services.asset_view import (
     VersionOut,
     load_products,
     published_version_nos,
+    revising_asset_ids,
     to_asset_detail,
     to_asset_out,
 )
-from suite_api.services.knowledge_gaps import OPEN, resolve_gaps_for_asset
+from suite_api.services.knowledge_gaps import load_attachable_gap, resolve_gaps_for_asset
 from suite_api.services.machine_wash import MachineWashError, run_machine_wash
 from suite_api.services.publishing import (
     evaluate_publish_gate,
     publishable_values,
     schema_field_names,
 )
-from suite_api.services.registration import INGESTED, PENDING_REVIEW, register_asset
+from suite_api.services.registration import (
+    INGESTED,
+    PENDING_REVIEW,
+    PUBLISHED,
+    make_object_key,
+    register_asset,
+)
 from suite_api.services.retrieval import ChunkingError, index_chunks_for_version
 from suite_platform.storage import ObjectStorage
 
@@ -52,8 +64,15 @@ router = APIRouter(prefix="/api/assets", tags=["assets"])
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 ALLOWED_CONTENT_TYPES = {"text/plain", "text/markdown"}
 
-PUBLISHED = "published"
 _VALID_STATUSES = {INGESTED, PENDING_REVIEW, PUBLISHED}
+
+
+class OpenRevisionIn(BaseModel):
+    knowledge_gap_id: int | None = None
+
+
+class RollbackIn(BaseModel):
+    version_no: int
 
 
 def _get_asset_or_404(db: Session, asset_id: int) -> Asset:
@@ -82,6 +101,53 @@ def _product_or_none(db: Session, asset: Asset) -> Product | None:
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产所挂商品不存在")
     return product
+
+
+def _unpublished_version(db: Session, asset: Asset) -> AssetVersion | None:
+    return db.scalar(
+        select(AssetVersion).where(
+            AssetVersion.asset_id == asset.id, AssetVersion.published_at.is_(None)
+        )
+    )
+
+
+def _inherit_confirmed(confirmed: dict[str, Any]) -> dict[str, Any]:
+    """复制确认字段：有值的条目标 inherited，发布闸门视同已确认、不逼重存。"""
+    out: dict[str, Any] = {}
+    for field, entry in confirmed.items():
+        if isinstance(entry, dict):
+            copied = dict(entry)
+            value = copied.get("value")
+            if isinstance(value, str) and value.strip():
+                copied["inherited"] = True
+            out[field] = copied
+        else:
+            out[field] = entry
+    return out
+
+
+def _write_back_product(product: Product | None, asset: Asset, version: AssetVersion) -> None:
+    if product is None:
+        return
+    schema = dict(product.spec_schema)
+    new_values = dict(product.spec_values)
+    for field, value in publishable_values(
+        schema, dict(version.extracted_fields), dict(version.confirmed_fields)
+    ).items():
+        new_values[field] = {
+            "value": value,
+            "source": {"asset_id": asset.id, "version": version.version_no},
+        }
+    product.spec_values = new_values
+
+
+def _can_publish(asset: Asset, version: AssetVersion) -> bool:
+    """待人洗首发，或已发布资产上的未发布修订。"""
+    if version.published_at is not None:
+        return False
+    return asset.status == PENDING_REVIEW or (
+        asset.status == PUBLISHED and asset.current_published_version_id is not None
+    )
 
 
 # ---------- 写接口（全部要求登录，401 未登录） ----------
@@ -121,29 +187,7 @@ async def register(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能登记")
 
     # 缺口关联先校验（在字节落库前失败）；预填的标题/商品只是前端便利，后端不强制
-    gap = None
-    if knowledgeGapId is not None:
-        gap = db.get(KnowledgeGap, knowledgeGapId)
-        if gap is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"知识缺口不存在: {knowledgeGapId}",
-            )
-        if gap.status != OPEN:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"只有待补（open）的知识缺口可以关联，当前状态: {gap.status}",
-            )
-        # open 但已挂登记中的补文档：拒绝二次登记（覆盖指向会让首份发布时
-        # resolve_gaps_for_asset 查不到该缺口，缺口永远 open）
-        if gap.resolved_by_asset_id is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"该缺口已有登记中的补文档 A-{gap.resolved_by_asset_id}，"
-                    "请先发布它或换一条缺口"
-                ),
-            )
+    gap = load_attachable_gap(db, knowledgeGapId) if knowledgeGapId is not None else None
 
     try:
         asset = register_asset(
@@ -206,7 +250,7 @@ def confirm_fields(
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> VersionOut:
-    """人洗：确认机洗值/补填弃权字段。只有待人洗的版本可改（0006 不可变）。"""
+    """人洗：确认机洗值/补填弃权字段。闸门看版本未发布；已接入仍拒绝。"""
     asset = _get_asset_or_404(db, asset_id)
     version = db.scalar(
         select(AssetVersion).where(
@@ -215,10 +259,10 @@ def confirm_fields(
     )
     if version is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产版本不存在")
-    if asset.status != PENDING_REVIEW or version.published_at is not None:
+    if asset.status == INGESTED or version.published_at is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="只有待人洗（未发布）的版本可以确认字段，已发布/已接入版本不可改",
+            detail="只有待人洗（未发布）的版本可以确认字段，已发布/已接入/历史版本不可改",
         )
     product = _product_or_none(db, asset)
     schema = dict(product.spec_schema) if product is not None else {}
@@ -237,7 +281,7 @@ def confirm_fields(
         )
     merged = dict(version.confirmed_fields)
     for field, value in body.items():
-        merged[field] = {"value": value.strip(), "source": "human"}
+        merged[field] = {"value": value.strip(), "source": "human"}  # 改动丢掉 inherited
     version.confirmed_fields = merged
     # 0016：确认必填字段也留痕（谁/何时/哪版）
     db.add(
@@ -268,12 +312,15 @@ def publish(
 ) -> AssetDetail:
     """发布：API 层再校验闸门 -> 单事务（版本/切块入索引/指针/写回/审计）。"""
     asset = _get_asset_or_404(db, asset_id)
-    if asset.status != PENDING_REVIEW:
+    version = _latest_version_or_404(db, asset)
+    if not _can_publish(asset, version):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"只有待人洗的资产可以发布，当前状态: {asset.status}",
+            detail=(
+                "只有待人洗的新资产或已发布资产上的未发布修订可以发布，"
+                f"当前状态: {asset.status}"
+            ),
         )
-    version = _latest_version_or_404(db, asset)
     product = _product_or_none(db, asset)
     schema = dict(product.spec_schema) if product is not None else {}
     extracted = dict(version.extracted_fields)
@@ -309,14 +356,7 @@ def publish(
         )
         for seq, chunk in enumerate(index_chunks)
     )
-    if product is not None:
-        new_values = dict(product.spec_values)
-        for field, value in publishable_values(schema, extracted, confirmed).items():
-            new_values[field] = {
-                "value": value,
-                "source": {"asset_id": asset.id, "version": version.version_no},
-            }
-        product.spec_values = new_values
+    _write_back_product(product, asset, version)
     db.add(
         AuditLog(
             operator_id=operator.id,
@@ -331,6 +371,127 @@ def publish(
     db.commit()
     db.refresh(asset)
     db.refresh(version)
+    return to_asset_detail(db, asset)
+
+
+@router.post(
+    "/{asset_id}/revisions", response_model=AssetDetail, status_code=status.HTTP_201_CREATED
+)
+def open_revision(
+    asset_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+    body: OpenRevisionIn | None = None,
+) -> AssetDetail:
+    """开修订（0006）：复制当前已发布字节到新对象键；status/指针不动。
+
+    跳过机洗：抽取与确认字段从当前已发布版继承（确认条目标 inherited）。
+    同一资产最多一个未发布版；二次开修订 409。可选 knowledge_gap_id 语义同登记。
+    """
+    del operator
+    asset = _get_asset_or_404(db, asset_id)
+    if asset.current_published_version_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="只有已发布资产可以开修订（当前没有已发布版本指针）",
+        )
+    if _unpublished_version(db, asset) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="同一资产同时最多一个未发布修订",
+        )
+    gap_id = body.knowledge_gap_id if body is not None else None
+    gap = load_attachable_gap(db, gap_id) if gap_id is not None else None
+
+    published = db.get(AssetVersion, asset.current_published_version_id)
+    if published is None:  # pragma: no cover - 指针完整性由发布事务保证
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前已发布版本缺失，无法开修订",
+        )
+    try:
+        content_bytes = storage.get_bytes(published.object_key)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前已发布版本对象缺失，无法开修订",
+        ) from exc
+    object_key = make_object_key(asset.kind, content_bytes)
+    storage.put_bytes(object_key, content_bytes)
+
+    max_no = db.scalar(
+        select(func.max(AssetVersion.version_no)).where(AssetVersion.asset_id == asset.id)
+    )
+    version = AssetVersion(
+        asset_id=asset.id,
+        version_no=(max_no or 0) + 1,
+        object_key=object_key,
+        extracted_fields=copy.deepcopy(dict(published.extracted_fields)),
+        confirmed_fields=_inherit_confirmed(copy.deepcopy(dict(published.confirmed_fields))),
+    )
+    db.add(version)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="同一资产同时最多一个未发布修订",
+        ) from exc
+    if gap is not None:
+        gap.resolved_by_asset_id = asset.id
+    db.commit()
+    db.refresh(asset)
+    return to_asset_detail(db, asset)
+
+
+@router.post("/{asset_id}/rollback", response_model=AssetDetail)
+def rollback(
+    asset_id: int,
+    body: RollbackIn,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> AssetDetail:
+    """回滚：单独移指针到曾经发布过的版本（UX-NOTES：不复用 publish body）。
+
+    目标必须有 published_at；已是当前指针 / 未知 / 未发布 / 有进行中修订 → 409。
+    写回该版确认字段；audit rollback；不删旧切块。
+    """
+    asset = _get_asset_or_404(db, asset_id)
+    if _unpublished_version(db, asset) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="有未发布修订时不能回滚，请先发布该修订",
+        )
+    target = db.scalar(
+        select(AssetVersion).where(
+            AssetVersion.asset_id == asset.id, AssetVersion.version_no == body.version_no
+        )
+    )
+    if target is None or target.published_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="只能回滚到曾经发布过的版本",
+        )
+    if target.id == asset.current_published_version_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"v{body.version_no} 已是当前已发布版本",
+        )
+    asset.current_published_version_id = target.id
+    asset.status = PUBLISHED
+    _write_back_product(_product_or_none(db, asset), asset, target)
+    db.add(
+        AuditLog(
+            operator_id=operator.id,
+            asset_id=asset.id,
+            version_no=target.version_no,
+            action="rollback",
+        )
+    )
+    db.commit()
+    db.refresh(asset)
     return to_asset_detail(db, asset)
 
 
@@ -350,12 +511,16 @@ def list_assets(
             detail=f"status 只能是 {'/'.join(sorted(_VALID_STATUSES))}",
         )
     query = select(Asset).order_by(Asset.id.desc())
-    if status_filter is not None:
+    if status_filter == PUBLISHED:
+        # 已发布口径=指针非空（含修订中：线上仍在服务）
+        query = query.where(Asset.current_published_version_id.is_not(None))
+    elif status_filter is not None:
         query = query.where(Asset.status == status_filter)
     assets = list(db.scalars(query))
     products = load_products(db, assets)
     version_nos = published_version_nos(db, assets)
-    return [to_asset_out(a, products, version_nos) for a in assets]
+    revising_ids = revising_asset_ids(db, assets)
+    return [to_asset_out(a, products, version_nos, revising_ids) for a in assets]
 
 
 @router.get("/{asset_id}", response_model=AssetDetail)

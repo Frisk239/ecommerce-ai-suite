@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**MCP 只读已发布**（`feat/mcp-readonly`，closeout 见 `docs/progress/mcp-readonly-closeout.md`）。前四刀（脚手架/治理发布写回/客服引用/知识缺口闭环）已全部合并 main。
+上一刀：**修订流 + 回滚**（`feat/revision-rollback`，closeout 见 `docs/progress/revision-rollback-closeout.md`）。前五刀（脚手架/治理发布写回/客服引用/知识缺口闭环/MCP 只读）已全部合并 main。
 
-当前阶段：工程刀。第 5 刀已交付待 PR。下一刀从「更后面」表挑（修订流 / 厂商生成 / 顾客通道），短对齐再定。
+当前阶段：工程刀。第 6 刀已交付待 PR。下一刀从「更后面」表挑（厂商生成 / 顾客通道 / 审计刀），短对齐再定。
 
 ## 怎么切
 
@@ -44,17 +44,25 @@
 
 **Out：** 修订关缺口、MCP、厂商 Chat API、顾客通道、微调。
 
-## 第 5 刀：MCP 只读已发布（已交付，`feat/mcp-readonly` 待 PR）
+## 第 5 刀：MCP 只读已发布（已交付已合并，PR #7）
 
 **MCP 只读已发布**（ADR 0001/0020/0032）：同一 FastAPI 进程 `/mcp/` Streamable HTTP；`MCP_BEARER_TOKEN` 空则全部 401，不复用操作者 cookie。工具：`search_published` / `get_asset` / `register_asset`（正文必填，来源=mcp_registered）/ `export_published`（元数据+该版正文）。无 publish。官方 MCP Python SDK。README 给 Cursor `mcp.json`。检索索引已就绪（0017）。
+
+## 第 6 刀：修订流 + 回滚（已交付，`feat/revision-rollback` 待 PR）
+
+**路径：** 已发布资产开修订（新待人洗版，线上指针不动）→ 人洗 → 发布 vN（指针前移，客服/MCP 跟新版）→ 可回滚到曾发布过的旧版（单独移指针，audit rollback）。有已发布规格的缺口，去补默认开该资产修订（0031）。证据见 `docs/progress/revision-rollback-closeout.md`。
+
+**Must：** 部分唯一一个未发布版；status 保持 published；列表已发布=指针非空（修订中双徽章）；回滚不复用 publish。
+
+**Out：** 厂商 Chat API、顾客通道、新 MCP 工具、放弃修订、第四态。
 
 ## 更后面（现在不锁顺序，各是独立刀）
 
 | 刀 | 约束 |
 | --- | --- |
-| **修订流 + 回滚** | ADR 0006/0016。落地后：有已发布规格则缺口默认开修订关闭（0031） |
-| **厂商生成** | ADR 0033。证据约束下的 Chat API；密钥只在 `.env`；不塞进 MCP 刀 |
+| **厂商生成** | ADR 0033。证据约束下的 Chat API；密钥只在 `.env` |
 | **顾客对话通道** | ADR 0021/0033。会话令牌 + 每会话限流 + 每 IP 托底；同一引擎 |
+| **审计刀** | Slice Owner 计数线（约每 5 刀）已到；不改产品代码，三路对账后排还债 |
 | 素材 / 切片 / 考核 | 有接待飞轮和 MCP 证据后再进队。质检、候选不是资产已锁。不做微调（0028） |
 
 **展示约定：** 资产 ID 对外写成 `A-{id:04d}`（如 `A-0001`），库内仍是整数，避免原型口述和工程芯片对不上。

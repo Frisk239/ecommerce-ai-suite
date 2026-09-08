@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from suite_api.models import KnowledgeGap, RetrievalChunk
 
 ApiFixture = tuple[TestClient, Path]
 
@@ -54,6 +57,8 @@ def test_write_endpoints_require_login(api: ApiFixture) -> None:
     assert client.post("/api/assets/1/retry-machine-wash").status_code == 401
     assert client.patch("/api/assets/1/versions/1/fields", json={"净含量": "1ml"}).status_code == 401
     assert client.post("/api/assets/1/publish").status_code == 401
+    assert client.post("/api/assets/1/revisions").status_code == 401
+    assert client.post("/api/assets/1/rollback", json={"version_no": 1}).status_code == 401
 
 
 def test_read_endpoints_require_login(api: ApiFixture) -> None:
@@ -214,8 +219,12 @@ def test_machine_wash_failure_and_in_place_retry(api: ApiFixture) -> None:
     assert asset["status"] == "ingested"
     assert "UTF-8" in asset["last_error"]
 
-    # 已接入态发布被 409
+    # 已接入态发布被 409；人洗也不可改（闸门不只看 published_at）
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 409
+    assert (
+        client.patch(f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "1ml"}).status_code
+        == 409
+    )
 
     # 列表按状态过滤能找到它
     ingested = client.get("/api/assets", params={"status": "ingested"}).json()
@@ -341,3 +350,229 @@ def test_seeding_is_idempotent_across_restarts(api: ApiFixture) -> None:
     products = client.get("/api/products").json()
     assert len([p for p in products if p["name"] == "瓶装水"]) == 1
     assert len([p for p in products if p["name"] == "钛钢保温杯"]) == 1
+
+
+# ---------- 修订流 + 回滚（ADR 0006：开修订不改 status/指针；回滚单独移指针） ----------
+
+
+def _confirm_and_publish_water(client: TestClient, *, title: str) -> dict:
+    water_id = _product_id_by_name(client, "瓶装水")
+    resp = _upload(client, _WATER_DOC, product_id=water_id, title=title)
+    assert resp.status_code == 201
+    asset_id = resp.json()["id"]
+    patched = client.patch(
+        f"/api/assets/{asset_id}/versions/1/fields",
+        json={"净含量": "550毫升", "保质期": "12个月"},
+    )
+    assert patched.status_code == 200
+    published = client.post(f"/api/assets/{asset_id}/publish")
+    assert published.status_code == 200
+    return published.json()
+
+
+def test_open_revision_keeps_published_pointer_and_inherits(api: ApiFixture) -> None:
+    """开修订：新对象键 + version_no=max+1 + 继承确认（inherited）；status/指针不动。"""
+    client, storage_root = api
+    _login(client)
+    published = _confirm_and_publish_water(client, title="瓶装水规格·修订源")
+    asset_id = published["id"]
+    v1_key = published["versions"][0]["object_key"]
+    v1_bytes = (storage_root / Path(*v1_key.split("/"))).read_bytes()
+
+    opened = client.post(f"/api/assets/{asset_id}/revisions")
+    assert opened.status_code == 201
+    body = opened.json()
+    assert body["status"] == "published"  # 地雷：不得打回 pending_review
+    assert body["current_published_version_no"] == 1
+    assert body["revising"] is True
+    assert body["publishability"]["publishable"] is True  # 继承确认，不逼重存
+    versions = body["versions"]
+    assert [v["version_no"] for v in versions] == [1, 2]
+    v2 = versions[1]
+    assert v2["published_at"] is None
+    assert v2["object_key"] != v1_key
+    assert re.fullmatch(r"documents/[0-9a-f]{32}/[0-9a-f]{16}\.txt", v2["object_key"])
+    v2_bytes = (storage_root / Path(*v2["object_key"].split("/"))).read_bytes()
+    assert v2_bytes == v1_bytes
+    assert v2["extracted_fields"]["净含量"] == {"value": "550毫升", "source": "machine"}
+    assert v2["confirmed_fields"]["净含量"] == {
+        "value": "550毫升",
+        "source": "human",
+        "inherited": True,
+    }
+    assert v2["confirmed_fields"]["保质期"]["inherited"] is True
+
+    listed = client.get("/api/assets").json()
+    row = next(a for a in listed if a["id"] == asset_id)
+    assert row["revising"] is True
+    assert row["status"] == "published"
+    assert row["current_published_version_no"] == 1
+    published_tab = client.get("/api/assets", params={"status": "published"}).json()
+    assert any(a["id"] == asset_id for a in published_tab)
+    pending_tab = client.get("/api/assets", params={"status": "pending_review"}).json()
+    assert all(a["id"] != asset_id for a in pending_tab)
+
+
+def test_open_revision_rejects_unpublished_and_second_open(api: ApiFixture) -> None:
+    client, _ = api
+    _login(client)
+    pending = _upload(client, "退货政策：七日无理由。".encode(), title="待人洗不可开修订")
+    assert pending.status_code == 201
+    pending_id = pending.json()["id"]
+    assert client.post(f"/api/assets/{pending_id}/revisions").status_code == 409
+
+    published = _confirm_and_publish_water(client, title="瓶装水规格·二次修订")
+    asset_id = published["id"]
+    first = client.post(f"/api/assets/{asset_id}/revisions")
+    assert first.status_code == 201
+    second = client.post(f"/api/assets/{asset_id}/revisions")
+    assert second.status_code == 409
+
+
+def test_confirm_fields_allows_unpublished_revision_on_published_asset(
+    api: ApiFixture,
+) -> None:
+    """人洗闸门看版本行未发布，不要求 asset.status==pending_review。"""
+    client, _ = api
+    _login(client)
+    published = _confirm_and_publish_water(client, title="瓶装水规格·人洗修订")
+    asset_id = published["id"]
+    assert client.post(f"/api/assets/{asset_id}/revisions").status_code == 201
+
+    # 已发布 v1 仍不可改
+    assert (
+        client.patch(f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "1ml"}).status_code
+        == 409
+    )
+    # 未发布 v2 可改；改动丢掉 inherited
+    patched = client.patch(
+        f"/api/assets/{asset_id}/versions/2/fields", json={"净含量": "600毫升"}
+    )
+    assert patched.status_code == 200
+    entry = patched.json()["confirmed_fields"]["净含量"]
+    assert entry["value"] == "600毫升"
+    assert entry["source"] == "human"
+    assert entry.get("inherited") in (None, False)
+
+
+def test_publish_revision_moves_pointer_and_writes_back(api: ApiFixture) -> None:
+    client, _ = api
+    _login(client)
+    published = _confirm_and_publish_water(client, title="瓶装水规格·发布 v2")
+    asset_id = published["id"]
+    water_id = published["product"]["id"]
+    assert client.post(f"/api/assets/{asset_id}/revisions").status_code == 201
+    patched = client.patch(
+        f"/api/assets/{asset_id}/versions/2/fields", json={"净含量": "600毫升"}
+    )
+    assert patched.status_code == 200
+
+    published_v2 = client.post(f"/api/assets/{asset_id}/publish")
+    assert published_v2.status_code == 200
+    body = published_v2.json()
+    assert body["status"] == "published"
+    assert body["current_published_version_no"] == 2
+    assert body["revising"] is False
+    assert body["versions"][1]["published_at"] is not None
+
+    product = client.get(f"/api/products/{water_id}").json()
+    assert product["spec_values"]["净含量"] == {
+        "value": "600毫升",
+        "source": {"asset_id": asset_id, "version": 2},
+    }
+    audit = client.get("/api/audit", params={"assetId": asset_id}).json()
+    publish_rows = [row for row in audit if row["action"] == "publish"]
+    assert [row["version_no"] for row in publish_rows] == [2, 1]  # 倒序
+
+    # 发布后不可再发（无未发布修订）
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 409
+
+
+def test_rollback_moves_pointer_writes_back_and_audits(api: ApiFixture) -> None:
+    client, _ = api
+    _login(client)
+    published = _confirm_and_publish_water(client, title="瓶装水规格·回滚")
+    asset_id = published["id"]
+    water_id = published["product"]["id"]
+    assert client.post(f"/api/assets/{asset_id}/revisions").status_code == 201
+    assert (
+        client.patch(
+            f"/api/assets/{asset_id}/versions/2/fields", json={"净含量": "600毫升"}
+        ).status_code
+        == 200
+    )
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+
+    rolled = client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 1})
+    assert rolled.status_code == 200
+    body = rolled.json()
+    assert body["status"] == "published"
+    assert body["current_published_version_no"] == 1
+    assert body["revising"] is False
+
+    product = client.get(f"/api/products/{water_id}").json()
+    assert product["spec_values"]["净含量"] == {
+        "value": "550毫升",
+        "source": {"asset_id": asset_id, "version": 1},
+    }
+    audit = client.get("/api/audit", params={"assetId": asset_id}).json()
+    assert audit[0]["action"] == "rollback"
+    assert audit[0]["version_no"] == 1
+
+    session_factory = client.app.state.session_factory
+    with session_factory() as db:
+        v2_chunks = list(
+            db.scalars(
+                select(RetrievalChunk).where(
+                    RetrievalChunk.asset_id == asset_id, RetrievalChunk.version_no == 2
+                )
+            )
+        )
+        assert v2_chunks, "回滚不删旧切块"
+
+    # 已是当前指针 / 未知版本 / 未发布修订存在 → 409
+    assert client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 1}).status_code == 409
+    assert client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 99}).status_code == 409
+    assert client.post(f"/api/assets/{asset_id}/revisions").status_code == 201
+    assert client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 2}).status_code == 409
+    # 未发布 v3 不能当回滚目标
+    assert client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 3}).status_code == 409
+
+
+def test_open_revision_associates_knowledge_gap(api: ApiFixture) -> None:
+    """0031：已发布规格上开修订并挂缺口；发布事务内 resolved；二次挂 409。"""
+    client, _ = api
+    _login(client)
+    published = _confirm_and_publish_water(client, title="瓶装水规格·缺口修订")
+    asset_id = published["id"]
+    water_id = published["product"]["id"]
+
+    session_factory = client.app.state.session_factory
+    with session_factory() as db:
+        gap = KnowledgeGap(question="瓶装水口感如何", product_id=water_id, status="open")
+        db.add(gap)
+        db.commit()
+        gap_id = gap.id
+
+    opened = client.post(
+        f"/api/assets/{asset_id}/revisions", json={"knowledge_gap_id": gap_id}
+    )
+    assert opened.status_code == 201
+    row = next(g for g in client.get("/api/knowledge-gaps").json() if g["id"] == gap_id)
+    assert row["status"] == "open"
+    assert row["resolved_by_asset_id"] == asset_id
+
+    second = client.post(
+        f"/api/assets/{asset_id}/revisions", json={"knowledge_gap_id": gap_id}
+    )
+    assert second.status_code == 409  # 已有未发布修订，且缺口已挂
+
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+    resolved = next(
+        g
+        for g in client.get("/api/knowledge-gaps", params={"status": "resolved"}).json()
+        if g["id"] == gap_id
+    )
+    assert resolved["status"] == "resolved"
+    assert resolved["resolved_by_asset_id"] == asset_id
+    assert resolved["resolved_at"] is not None

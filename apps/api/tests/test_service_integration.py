@@ -5,8 +5,7 @@
 新会话问「净含量」-> SSE 流（thinking/delta/complete）引用 {asset_id, version:1} ->
 问待人洗独有内容（退货政策，未发布）-> refusal+handoff 无引用（0004/0018）->
 回流登记 -> kind=dialogue 资产待人洗 -> 发布 -> 再问命中引用该对话（闭环）->
-版本跟随指针（发布 v2 后命中 v2 块而非 v1，0017 派生视图；修订流未做，
-测试直接造修订发布的产物验证 join 语义）。
+版本跟随指针（开修订发布 v2 后命中 v2；回滚 v1 后引用回到 v1）。
 
 知识缺口契约组（0024/0030，第 4 刀）：拒答落缺口（精确幂等）、answer 不落、
 complete 带 gap_id、补文档登记关联 -> 发布事务内 resolved -> 同问法再问命中。
@@ -20,7 +19,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from suite_api.models import Asset, AssetVersion, KnowledgeGap, RetrievalChunk, ServiceMessage
+from suite_api.models import KnowledgeGap, RetrievalChunk, ServiceMessage
 
 ApiFixture = tuple[TestClient, Path]
 
@@ -182,9 +181,9 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
     assert client.post(f"/api/service/sessions/{sid}/messages", json={"content": "再问"}).status_code == 409
     assert client.post(f"/api/service/sessions/{sid}/register").status_code == 409
 
-    # 登记不是 0005 三类治理动作：审计不新增 action 类型
+    # 登记不是 0005 治理动作：审计不因回流新增 action 类型（publish/confirm/rollback）
     audit_actions = {row["action"] for row in client.get("/api/audit").json()}
-    assert audit_actions <= {"publish", "confirm"}
+    assert audit_actions <= {"publish", "confirm", "rollback"}
 
     # 5) 发布对话资产 -> 再问命中引用该对话（闭环；0021 同一引擎）
     dialogue_published = client.post(f"/api/assets/{dialogue_id}/publish")
@@ -208,11 +207,10 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
 
 
 def test_version_follows_published_pointer(api: ApiFixture) -> None:
-    """版本跟随指针：指针前移到 v2 后，检索命中 v2 块而非 v1（0017 派生视图）。
+    """版本跟随指针：开修订期间仍引 v1；发布 v2 后引 v2；回滚后回到 v1。
 
-    修订流未做（后续刀），此处直接造出「修订已发布」的库内产物：v2 版本行 +
-    v2 切块 + 指针前移，与发布事务产物同构，验证 retrieve 的 join 语义。
-    「刻度容量」是本资产独有关键词，不与其他已发布块串台。
+    「刻度容量」是本资产独有关键词，不与其他已发布块串台。开修订不得把
+    status 打回 pending_review（地雷：检索还滤 status==published）。
     """
     client, _ = api
     _login(client)
@@ -220,32 +218,28 @@ def test_version_follows_published_pointer(api: ApiFixture) -> None:
     asset_id = resp.json()["id"]
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
 
-    session_factory = client.app.state.session_factory
-    with session_factory() as db:
-        asset = db.get(Asset, asset_id)
-        v1 = db.get(AssetVersion, asset.current_published_version_id)
-        assert v1.version_no == 1
-        v2 = AssetVersion(asset_id=asset_id, version_no=2, object_key=v1.object_key)
-        db.add(v2)
-        db.flush()
-        db.add_all(
-            [
-                RetrievalChunk(asset_id=asset_id, version_no=2, seq=0, chunk="刻度容量：500ml"),
-                RetrievalChunk(asset_id=asset_id, version_no=2, seq=1, chunk="材质：玻璃"),
-            ]
-        )
-        asset.current_published_version_id = v2.id  # 模拟修订发布移动指针
-        db.commit()
-
     sid = client.post("/api/service/sessions").json()["id"]
-    events = _ask(client, sid, "刻度容量是多少？")
-    complete = events[-1][1]
+    v1_events = _ask(client, sid, "刻度容量是多少？")
+    assert v1_events[-1][1]["citations"] == [{"asset_id": asset_id, "version_no": 1}]
+
+    opened = client.post(f"/api/assets/{asset_id}/revisions")
+    assert opened.status_code == 201
+    assert opened.json()["status"] == "published"
+    assert opened.json()["current_published_version_no"] == 1
+    # 修订中线上仍服务 v1，不得拒答
+    still_v1 = _ask(client, client.post("/api/service/sessions").json()["id"], "刻度容量是多少？")
+    assert still_v1[-1][1]["kind"] == "answer"
+    assert still_v1[-1][1]["citations"] == [{"asset_id": asset_id, "version_no": 1}]
+
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+    v2_events = _ask(client, client.post("/api/service/sessions").json()["id"], "刻度容量是多少？")
+    complete = v2_events[-1][1]
     assert complete["kind"] == "answer"
     assert complete["citations"] == [{"asset_id": asset_id, "version_no": 2}]
-    answer = "".join(d["text"] for e, d in events if e == "delta")
-    assert "500ml" in answer  # 命中 v2 块
-    assert "300ml" not in answer  # v1 块随指针出榜，不漂移
+    answer = "".join(d["text"] for e, d in v2_events if e == "delta")
+    assert "300ml" in answer
 
+    session_factory = client.app.state.session_factory
     with session_factory() as db:
         v1_chunks = db.scalars(
             select(RetrievalChunk).where(
@@ -253,6 +247,12 @@ def test_version_follows_published_pointer(api: ApiFixture) -> None:
             )
         ).all()
         assert v1_chunks, "v1 块仍在表里（旧引用可回放），只是不再命中"
+
+    rolled = client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 1})
+    assert rolled.status_code == 200
+    assert rolled.json()["current_published_version_no"] == 1
+    back = _ask(client, client.post("/api/service/sessions").json()["id"], "刻度容量是多少？")
+    assert back[-1][1]["citations"] == [{"asset_id": asset_id, "version_no": 1}]
 
 
 def test_sse_disconnect_still_persists_full_answer(api: ApiFixture) -> None:

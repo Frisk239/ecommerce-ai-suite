@@ -5,6 +5,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
+  ArrowCounterClockwise,
   ArrowLeft,
   ArrowsClockwise,
   CheckCircle,
@@ -110,7 +111,9 @@ function FieldRow({
                   {view.value}
                 </span>
                 {view.source === 'human' ? (
-                  <span className="tag tag-confirmed">已确认</span>
+                  <span className="tag tag-confirmed">
+                    {view.inherited ? '继承自已发布版 · 已确认' : '已确认'}
+                  </span>
                 ) : (
                   <span className="tag tag-machine">机洗</span>
                 )}
@@ -179,6 +182,7 @@ function versionRoleLabel(
 function auditActionLabel(action: string): string {
   if (action === 'publish') return '发布'
   if (action === 'confirm') return '确认字段'
+  if (action === 'rollback') return '回滚'
   return action
 }
 
@@ -220,6 +224,12 @@ export default function AssetDetailPage() {
   const [publishedNote, setPublishedNote] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
   const [retryError, setRetryError] = useState<unknown>(null)
+  const [openingRevision, setOpeningRevision] = useState(false)
+  const [revisionError, setRevisionError] = useState<unknown>(null)
+  const [rollbackTarget, setRollbackTarget] = useState<number | null>(null)
+  const [rollingBack, setRollingBack] = useState(false)
+  const [rollbackError, setRollbackError] = useState<unknown>(null)
+  const [rollbackNote, setRollbackNote] = useState<string | null>(null)
 
   const reloadDetail = useCallback(() => {
     reloadDetailData()
@@ -231,8 +241,14 @@ export default function AssetDetailPage() {
   const currentPublishedNo = detail?.current_published_version_no ?? null
   const publishedVersion =
     currentPublishedNo !== null ? versions.find((v) => v.version_no === currentPublishedNo) ?? null : null
-  const activeVersion = detail?.status === 'pending_review' ? latest : (publishedVersion ?? latest)
-  const editable = detail?.status === 'pending_review' && activeVersion !== null
+  const unpublished = versions.find((v) => v.published_at === null) ?? null
+  const revising = detail?.revising === true
+  const activeVersion = revising
+    ? (unpublished ?? latest)
+    : detail?.status === 'pending_review'
+      ? latest
+      : (publishedVersion ?? latest)
+  const editable = activeVersion !== null && activeVersion.published_at === null && (revising || detail?.status === 'pending_review')
 
   // 引用回放锚定（ADR 0007）：?v=N 由引用芯片带入，指向引用所指的那一版。
   // 仅当 N 是该资产真实存在的版本时生效；无参数/无效参数时行为不变。
@@ -304,6 +320,41 @@ export default function AssetDetailPage() {
     }
   }
 
+  const openRevision = async () => {
+    if (detail === null || openingRevision) return
+    setOpeningRevision(true)
+    setRevisionError(null)
+    try {
+      await api.openRevision(detail.id)
+      reloadDetail()
+    } catch (err) {
+      setRevisionError(err)
+    } finally {
+      setOpeningRevision(false)
+    }
+  }
+
+  const rollback = async () => {
+    if (detail === null || rollbackTarget === null || rollingBack) return
+    setRollingBack(true)
+    setRollbackError(null)
+    try {
+      const updated = await api.rollbackAsset(detail.id, rollbackTarget)
+      setRollbackTarget(null)
+      setRollbackNote(
+        `已回滚：当前已发布版本回到 v${updated.current_published_version_no ?? rollbackTarget}${
+          updated.product !== null ? `，规格已按该版写回商品「${updated.product.name}」` : ''
+        }。`,
+      )
+      reloadDetail()
+    } catch (err) {
+      setRollbackTarget(null)
+      setRollbackError(err)
+    } finally {
+      setRollingBack(false)
+    }
+  }
+
   const backLink = (
     <Link
       to="/platform/assets"
@@ -350,7 +401,9 @@ export default function AssetDetailPage() {
 
   const pub = detail.publishability
   const fieldsNote = editable
-    ? '待人洗版本：机洗值可一键确认，弃权字段可补填'
+    ? revising
+      ? '修订中：继承的确认值可直接发布，改动会丢掉继承标记'
+      : '待人洗版本：机洗值可一键确认，弃权字段可补填'
     : detail.status === 'published'
       ? '当前已发布版本 · 只读（已发布字段不可编辑）'
       : '机洗未完成 · 无可编辑字段'
@@ -385,12 +438,15 @@ export default function AssetDetailPage() {
       {backLink}
 
       {publishedNote !== null ? <SuccessBanner>{publishedNote}</SuccessBanner> : null}
+      {rollbackNote !== null ? <SuccessBanner>{rollbackNote}</SuccessBanner> : null}
       {anchored ? (
         <div className="mb-3 text-xs leading-5 text-accent-strong">
           正在查看 v{anchorVersionNo} · 引用回放锚定——本页由引用芯片跳入，该版本已在下方版本列表中高亮。
         </div>
       ) : null}
       {retryError !== null ? <ErrorBanner error={retryError} /> : null}
+      {revisionError !== null ? <ErrorBanner error={revisionError} /> : null}
+      {rollbackError !== null ? <ErrorBanner error={rollbackError} /> : null}
       {publishError !== null ? <ErrorBanner error={publishError} onRetry={() => setConfirmOpen(true)} /> : null}
 
       <PageHeader
@@ -400,17 +456,21 @@ export default function AssetDetailPage() {
             <StatusBadge
               status={detail.status}
               failed={detail.status === 'ingested' && detail.last_error !== null}
+              revising={revising}
+              publishedVersionNo={currentPublishedNo}
             />
             <KindChip kind={detail.kind} />
             <span className="font-mono text-sm font-normal text-ink-3">{formatAssetId(detail.id)}</span>
           </span>
         }
         desc={
-          detail.status === 'pending_review'
-            ? '机洗已完成：确认机洗值、补填弃权字段，过发布闸门后即可发布。'
-            : detail.status === 'published'
-              ? '已发布版本是只读证据；线上内容以此版本为准。'
-              : '已接入：机洗未完成或失败，重试成功后进入待人洗。'
+          revising
+            ? `修订中：线上仍引用 v${currentPublishedNo ?? '—'}；发布修订后指针前移。`
+            : detail.status === 'pending_review'
+              ? '机洗已完成：确认机洗值、补填弃权字段，过发布闸门后即可发布。'
+              : detail.status === 'published'
+                ? '已发布版本是只读证据；线上内容以此版本为准。'
+                : '已接入：机洗未完成或失败，重试成功后进入待人洗。'
         }
       />
 
@@ -492,7 +552,7 @@ export default function AssetDetailPage() {
         <div className="space-y-4">
           <div className="panel px-4 py-4">
             <div className="mb-3 text-xs font-medium text-ink-3">治理动作</div>
-            {detail.status === 'pending_review' && activeVersion !== null ? (
+            {(detail.status === 'pending_review' || revising) && activeVersion !== null ? (
               <div className="space-y-2.5">
                 <button
                   type="button"
@@ -547,8 +607,19 @@ export default function AssetDetailPage() {
                 已接入资产需先完成机洗（上方可就地重试），才能进入人洗与发布。
               </div>
             ) : (
-              <div className="text-xs leading-5 text-ink-3">
-                当前已发布 v{currentPublishedNo ?? '—'}；这一版内容不可编辑。改动需要开新版本（修订流在后续刀交付）。
+              <div className="space-y-2.5">
+                <button
+                  type="button"
+                  className="btn btn-secondary w-full"
+                  disabled={openingRevision}
+                  onClick={() => void openRevision()}
+                >
+                  <PencilSimple aria-hidden size={14} />
+                  {openingRevision ? '开修订中…' : '开修订（新待人洗版本）'}
+                </button>
+                <div className="text-xs leading-5 text-ink-3">
+                  修订期间客服仍引用 v{currentPublishedNo ?? '—'}；修订发布后指针前移。同一资产同时只允许一个修订。
+                </div>
               </div>
             )}
 
@@ -611,8 +682,12 @@ export default function AssetDetailPage() {
                 const role = versionRoleLabel(
                   version,
                   currentPublishedNo,
-                  detail.status === 'pending_review' && version === latest,
+                  (detail.status === 'pending_review' || revising) && version === latest,
                 )
+                const canRollback =
+                  version.published_at !== null &&
+                  version.version_no !== currentPublishedNo &&
+                  !revising
                 const isAnchored = anchored && version.version_no === anchorVersionNo
                 return (
                   <div
@@ -636,9 +711,20 @@ export default function AssetDetailPage() {
                       ) : null}
                       <span className={`text-[11px] font-medium ${role.className}`}>{role.text}</span>
                       <span className="flex-1" />
-                      <span className="text-xs text-ink-3 tabular-nums">
-                        {version.published_at !== null ? formatDateTime(version.published_at) : '—'}
-                      </span>
+                      {canRollback ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setRollbackTarget(version.version_no)}
+                        >
+                          <ArrowCounterClockwise aria-hidden size={12} />
+                          回滚到此版
+                        </button>
+                      ) : (
+                        <span className="text-xs text-ink-3 tabular-nums">
+                          {version.published_at !== null ? formatDateTime(version.published_at) : '—'}
+                        </span>
+                      )}
                     </div>
                     <div
                       className="mt-1 break-all font-mono text-[11px] leading-4 text-ink-3"
@@ -684,6 +770,20 @@ export default function AssetDetailPage() {
         busy={publishing}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => void publish()}
+      />
+      <ConfirmDialog
+        open={rollbackTarget !== null}
+        title={`回滚 ${formatAssetId(detail.id)} · v${rollbackTarget ?? '—'}`}
+        body={
+          <div>
+            回滚会把当前已发布指针移回 v{rollbackTarget ?? '—'}，并按该版确认字段写回商品。
+            仍算一次发布动作；旧切块保留，客服与连接层立即跟随新指针。
+          </div>
+        }
+        confirmLabel="确认回滚"
+        busy={rollingBack}
+        onCancel={() => setRollbackTarget(null)}
+        onConfirm={() => void rollback()}
       />
     </div>
   )

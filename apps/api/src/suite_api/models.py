@@ -2,7 +2,7 @@
 
 列集合 = 各 ADR 映射表 + 工程运行所需的最小补充（assets.product_id/title/
 last_error：挂商品、登记标题、机洗失败原因——均为任务授权的运行状态列）。
-修订/回滚不预埋列（ADR 0022 明令禁止 speculative generality）。
+修订/回滚不加第四态或 in_flight 列：未发布版本用部分唯一索引约束（0004）。
 """
 
 from datetime import datetime
@@ -79,14 +79,21 @@ class Asset(Base):
 class AssetVersion(Base):
     """0006 一次不可变内容快照；0003 每版一把对象键；0009 弃权不冒充。
 
-    行不可变指进入 published 后应用层禁止再 UPDATE（本刀即全部字段，
-    published_at 的写入正是「进入 published」这个动作本身）。
+    行不可变指进入 published 后应用层禁止再 UPDATE（published_at 的写入
+    正是「进入 published」这个动作本身）。同一资产同时最多一个未发布
+    修订：部分唯一 UNIQUE (asset_id) WHERE published_at IS NULL。
     """
 
     __tablename__ = "asset_versions"
     __table_args__ = (
         UniqueConstraint("asset_id", "version_no", name="uq_asset_versions_asset_version"),
         Index("ix_asset_versions_asset_id", "asset_id"),
+        Index(
+            "uq_asset_versions_one_unpublished",
+            "asset_id",
+            unique=True,
+            postgresql_where=text("published_at IS NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -105,7 +112,7 @@ class AssetVersion(Base):
 
 
 class AuditLog(Base):
-    """0005/0016：谁/何时/对哪条资产哪一版做了 publish/confirm。append-only。"""
+    """0005/0016：谁/何时/对哪条资产哪一版做了 publish/confirm/rollback。append-only。"""
 
     __tablename__ = "audit_log"
     __table_args__ = (Index("ix_audit_log_asset_id", "asset_id"),)
@@ -114,7 +121,7 @@ class AuditLog(Base):
     operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
     version_no: Mapped[int] = mapped_column()
-    action: Mapped[str] = mapped_column(String(20))  # "publish" | "confirm"
+    action: Mapped[str] = mapped_column(String(20))  # "publish" | "confirm" | "rollback"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -62,7 +62,7 @@ def backfill_db_url() -> Iterator[str]:
 def test_upgrade_0003_backfills_legacy_assets_source_kind(backfill_db_url: str) -> None:
     cfg = _alembic_config(backfill_db_url)
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "-1")  # 回到 0002：assets 尚无 source_kind 列
+    command.downgrade(cfg, "0002")  # 回到 0002：assets 尚无 source_kind 列（head 可能已过 0003）
 
     # 0002 旧结构裸 SQL 插一行存量资产（无 source_kind 可填——列不存在）
     with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:

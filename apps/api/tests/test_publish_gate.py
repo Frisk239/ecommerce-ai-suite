@@ -79,6 +79,24 @@ def test_empty_string_confirmed_value_is_not_a_value() -> None:
     assert "净含量" in missing
 
 
+def test_inherited_confirmed_counts_as_confirmed() -> None:
+    # 修订继承已确认值（标 inherited）不逼重存：闸门视同已确认
+    extracted = {
+        "净含量": {"value": "550ml", "source": "machine"},
+        "保质期": {"value": "12个月", "source": "machine"},
+    }
+    confirmed = {
+        "净含量": {"value": "550ml", "source": "human", "inherited": True},
+        "保质期": {"value": "12个月", "source": "human", "inherited": True},
+    }
+    missing, unconfirmed = evaluate_publish_gate(_FOOD_SCHEMA, extracted, confirmed)
+    assert (missing, unconfirmed) == ([], [])
+    assert publishable_values(_FOOD_SCHEMA, extracted, confirmed) == {
+        "净含量": "550ml",
+        "保质期": "12个月",
+    }
+
+
 def test_publishable_values_only_write_confirmed_fields() -> None:
     # 写回 = confirmed 的键 ∩ schema 的键（0010：发布只写操作者确认过的字段）。
     # 未确认的机洗值不写回——含非必填字段，商品该字段保持旧值。

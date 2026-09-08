@@ -86,16 +86,48 @@ export default function AssetsListPage() {
   const [actionError, setActionError] = useState<string | null>(null)
 
   const counts = useMemo(() => {
-    const by: Record<AssetStatus, number> = { ingested: 0, pending_review: 0, published: 0 }
-    for (const a of assets) by[a.status] += 1
-    return by
+    return {
+      ingested: assets.filter((a) => a.status === 'ingested').length,
+      pending_review: assets.filter(
+        (a) => a.status === 'pending_review' && a.current_published_version_no === null,
+      ).length,
+      published: assets.filter((a) => a.current_published_version_no !== null).length,
+    }
   }, [assets])
 
-  // 「全部」= 不筛状态（含已接入/待人洗/已发布全量）
+  // 「全部」= 不筛状态；已发布=指针非空（含修订中）；待人洗=纯新待办（无指针）
   const filtered = useMemo(() => {
     if (activeTab === '全部' || activeTab === '知识缺口') return assets
+    if (activeTab === '已发布') return assets.filter((a) => a.current_published_version_no !== null)
+    if (activeTab === '待人洗') {
+      return assets.filter((a) => a.status === 'pending_review' && a.current_published_version_no === null)
+    }
     return assets.filter((a) => a.status === TAB_TO_STATUS[activeTab])
   }, [assets, activeTab])
+
+  const fillGap = (gap: KnowledgeGap) => {
+    if (gap.product !== null) {
+      const spec = assets.find(
+        (a) =>
+          a.kind === 'document' &&
+          a.product?.id === gap.product?.id &&
+          a.current_published_version_no !== null,
+      )
+      if (spec !== undefined) {
+        void (async () => {
+          setActionError(null)
+          try {
+            const updated = await api.openRevision(spec.id, gap.id)
+            navigate(`/platform/assets/${updated.id}`)
+          } catch (err) {
+            setActionError(`开修订失败：${detailText(err)}`)
+          }
+        })()
+        return
+      }
+    }
+    openDrawer(gap)
+  }
 
   const retryWash = async (assetId: number) => {
     if (retryingId !== null) return
@@ -217,8 +249,8 @@ export default function AssetsListPage() {
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
-                          onClick={() => openDrawer(gap)}
-                          title="登记一份口径文档补上这个缺口：登记后进入已接入，发布后缺口关闭"
+                          onClick={() => fillGap(gap)}
+                          title="有已发布规格则开该资产修订；否则登记一份新文档。发布后缺口关闭"
                         >
                           去补文档
                         </button>
@@ -313,7 +345,12 @@ export default function AssetsListPage() {
                     {sourceKindLabel(asset.source_kind)}
                   </td>
                   <td>
-                    <StatusBadge status={asset.status} failed={asset.status === 'ingested' && asset.last_error !== null} />
+                    <StatusBadge
+                      status={asset.status}
+                      failed={asset.status === 'ingested' && asset.last_error !== null}
+                      revising={asset.revising}
+                      publishedVersionNo={asset.current_published_version_no}
+                    />
                   </td>
                   <td className="text-ink-2">
                     {asset.product ? (

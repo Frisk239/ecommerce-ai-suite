@@ -2,11 +2,12 @@
 
 缺口不是资产：不能检索、不能发布，也没有手动关闭端点——产生只随无证据
 拒答（0018 refusal；工具失败转人工不产生，本刀无工具，契约由集成测试钉死），
-解决只随发布（「补文档」= 带知识缺口的普通登记，发布事务内置 resolved）。
+解决只随发布（补文档=新登记或已发布规格上开修订，发布事务内置 resolved）。
 """
 
 from datetime import datetime
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,34 @@ def record_refusal_gap(db: Session, question: str) -> KnowledgeGap:
     gap = KnowledgeGap(question=question, status=OPEN)
     db.add(gap)
     db.flush()
+    return gap
+
+
+def load_attachable_gap(db: Session, gap_id: int) -> KnowledgeGap:
+    """登记/开修订挂缺口（0024/0031）：须存在且 open，且尚未挂补文档。
+
+    二次挂会覆盖 resolved_by_asset_id，首份发布时 resolve_gaps_for_asset
+    按该列查不到缺口，永远 open——故 409。调用方在拿到资产主键后再写指向。
+    """
+    gap = db.get(KnowledgeGap, gap_id)
+    if gap is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"知识缺口不存在: {gap_id}",
+        )
+    if gap.status != OPEN:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"只有待补（open）的知识缺口可以关联，当前状态: {gap.status}",
+        )
+    if gap.resolved_by_asset_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"该缺口已有登记中的补文档 A-{gap.resolved_by_asset_id}，"
+                "请先发布它或换一条缺口"
+            ),
+        )
     return gap
 
 
