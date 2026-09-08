@@ -1,10 +1,13 @@
-"""客服会话路由（ADR 0023 / 0021）：预览与顾客接口同一引擎，本刀先落 API 侧。
+"""客服会话路由（ADR 0023 / 0021）：操作者预览入口，与顾客接口同一引擎。
 
-- 新开会话 / 列表 / 详情（消息全量含 citations 与 kind）。
+- 新开会话 / 列表 / 详情（消息全量含 citations 与 kind）；列表行带 origin
+  （customer_token 非空即 customer），客服页对顾客会话显示「顾客」徽章。
 - 发问：SSE 流式回答。事件序列 thinking -> delta* -> complete（原型第四节
   冻结的交互状态机只保留 thinking/streaming/stop，传输用 SSE；35ms 逐字与
-  mock 大脑不搬）。拒答（0018 refusal）同事务落知识缺口（0024），complete
-  事件带 gap_id 供前端芯片跳转（ADR 0030：运行时返回，消息表不加列）。
+  mock 大脑不搬）。主体抽到 services/chat_engine（0021：顾客路由同调，行为
+  只差鉴权与载荷白名单），拒答（0018 refusal）同事务落知识缺口（0024），
+  complete 事件带 gap_id 供前端芯片跳转（ADR 0030：运行时返回，消息表不加列；
+  顾客版 complete 不带 gap_id）。
 - 厂商生成（第 7 刀，ADR 0033）：检索有证据才调厂商模型流式生成，引用仍由
   服务端从检索命中定（0007）；无证据拒答不调模型（0018）；LLM 未配置/失败
   降级证据组装模板，complete 事件带 fallback（运行时返回，同 gap_id 口径）。
@@ -15,9 +18,6 @@
   services/registration.register_asset（source_kind 由本端点定 session_backflow）。
 """
 
-import json
-import logging
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -28,29 +28,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import Asset, KnowledgeGap, Operator, ServiceMessage, ServiceSession
-from suite_api.services import llm
-from suite_api.services.answer import compose_answer
+from suite_api.models import Operator, ServiceMessage, ServiceSession
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
-from suite_api.services.knowledge_gaps import record_refusal_gap
+from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.registration import register_asset
-from suite_api.services.retrieval import retrieve
 from suite_platform.storage import ObjectStorage
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/service", tags=["service"])
 
 ACTIVE = "active"
 REGISTERED = "registered"
 
-# UX-NOTES 二点八：检索是本产品的真实动作，比「思考中」更诚实
-THINKING_TEXT = "正在检索已发布资产…"
-# 第 7 刀：检索命中后走厂商模型生成（状态行随最新 thinking 事件更新——降级
-# 路径不发本事件，状态行停在检索，不装作生成过）
-GENERATING_THINKING_TEXT = "正在生成回答…"
-# 服务端回答分片粒度（~10-20 字/片；打字节奏由前端呈现层控制，服务端不模拟延迟）
-_DELTA_CHARS = 12
 # 列表首问摘要长度
 _SUMMARY_CHARS = 60
 
@@ -69,6 +57,8 @@ class SessionOut(BaseModel):
 class SessionSummary(SessionOut):
     first_question: str | None
     message_count: int
+    # operator=控制台预览（无令牌）| customer=顾客通道签发（0021；token 非空即 customer）
+    origin: str
 
 
 class MessageOut(BaseModel):
@@ -123,6 +113,11 @@ def _to_message_out(message: ServiceMessage) -> MessageOut:
 
 def _first_question(content: str) -> str:
     return content[:_SUMMARY_CHARS] + ("…" if len(content) > _SUMMARY_CHARS else "")
+
+
+def _origin(session: ServiceSession) -> str:
+    # 0021：不加 origin 列，令牌非空即顾客会话（spec Must 1）
+    return "customer" if session.customer_token else "operator"
 
 
 # ---------- 会话 ----------
@@ -180,6 +175,7 @@ def list_sessions(
             registered_asset_id=s.registered_asset_id,
             first_question=_first_question(firsts[s.id]) if s.id in firsts else None,
             message_count=counts.get(s.id, 0),
+            origin=_origin(s),
         )
         for s in sessions
     ]
@@ -206,24 +202,6 @@ def get_session(
 # ---------- 发问（SSE 流式回答） ----------
 
 
-def _sse_event(event: str, data: dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-def _split_deltas(text: str) -> list[str]:
-    return [text[i : i + _DELTA_CHARS] for i in range(0, len(text), _DELTA_CHARS)]
-
-
-def _assets_meta(db: Session, hits: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
-    asset_ids = {hit["asset_id"] for hit in hits}
-    if not asset_ids:
-        return {}
-    return {
-        asset.id: {"kind": asset.kind, "title": asset.title}
-        for asset in db.scalars(select(Asset).where(Asset.id.in_(asset_ids)))
-    }
-
-
 @router.post("/sessions/{session_id}/messages")
 async def ask(
     session_id: int,
@@ -233,22 +211,9 @@ async def ask(
 ) -> StreamingResponse:
     """发问 -> SSE 流式回答（thinking -> delta* -> complete）。
 
-    取舍（任务锁定并写明）：回答文本在开始流式前已完整收全并落库——含第 7 刀
-    的厂商模型流（先收全再流，而非边流边攒）：服务端不存在「部分产出」，
-    断连=客户端停止订阅，agent 消息仍完整入库，SSE 只是传输；中断（stopped）
-    语义由前端表达。async 路由是流式收集（await llm.stream_chat）所需；同步
-    DB 调用直接在事件循环上跑（0016 单操作者单店，无并发多写场景），生成等待
-    期间 Session 空闲持连接至多 20s（超时上限），属可接受取舍。
-
-    双 commit 取舍：先落 customer 问句再组装落 agent 回答，两个独立 commit。
-    agent 组装失败会留下已落库的顾客问句——属可接受残留：问题真实发生过，
-    不因回答侧失败而抹掉提问记录。
-
-    无命中 -> refusal 消息（0018）：固定文案 + handoff=true，不编造不闲聊，
-    且不调模型（防编造省调用）。有命中 -> 厂商模型流式生成（0033）；LLM 未
-    配置/失败/空产出 -> 降级 compose_answer 模板回答，complete 带
-    fallback=true（错误细节只进服务端日志，不含密钥）。citations 恒由检索
-    命中服务端定（0007；模型无引用决定权）。
+    引擎主体在 services/chat_engine.run_ask（0021 同一引擎：本端点只做操作者
+    鉴权 + 会话状态/输入校验；先收全再流、双 commit、断连=完整落库等取舍见
+    该模块 docstring）。complete 带 gap_id（操作者口径，0030）。
     """
     del operator
     session = _get_session_or_404(db, session_id)
@@ -261,73 +226,8 @@ async def ask(
     if not question:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="消息内容不能为空")
 
-    # 1) 先落 customer 消息（每问独立检索：无多轮记忆，ADR 0023 不预埋）
-    db.add(ServiceMessage(session_id=session.id, role="customer", content=question))
-    db.commit()
-
-    # 2) 检索当前已发布版本 -> 组装（模板回答=降级兜底，citations 选取也以它为准）
-    hits = retrieve(db, question)
-    answer = compose_answer(hits, _assets_meta(db, hits))
-
-    # 2.5) 厂商生成（第 7 刀，ADR 0033）：有证据才调模型（0018 无证据不调）。
-    #      stream_chat 契约：只抛 LLMError 子类（超时/连接已转通用文案）；
-    #      空产出视同失败降级。先收全再落库再流式（断连=完整落库契约不变）。
-    generated: str | None = None
-    if answer.kind == "answer":
-        system_prompt, user_prompt = llm.build_prompts(hits, question)
-        try:
-            pieces = [piece async for piece in llm.stream_chat(system_prompt, user_prompt)]
-            generated = "".join(pieces).strip() or None
-        except llm.LLMError as exc:
-            # 错误细节只进服务端日志（llm.stream_chat 已保证消息不含密钥/端点）
-            logger.warning("厂商生成失败，降级证据组装模板: %s", type(exc).__name__)
-    fallback = answer.kind == "answer" and generated is None
-    content = generated if generated is not None else answer.content
-
-    # 3) 落 agent 消息：引用带版本（0007），拒答/转人工显性（0018）。
-    #    agent 消息 citations 恒为列表（refusal=[]），customer 消息为 None（ADR 0023「仅 agent」）
-    agent_message = ServiceMessage(
-        session_id=session.id,
-        role="agent",
-        content=content,
-        citations=answer.citations,
-        kind=answer.kind,
-        handoff=answer.handoff,
-    )
-    db.add(agent_message)
-    # 0024：无证据拒答同事务落知识缺口（question=顾客原问，精确幂等：同文
-    # open 缺口复用不新建）。只挂 refusal 路径——工具失败转人工不产生缺口
-    # （本刀无工具，该契约由集成测试钉死）。
-    gap: KnowledgeGap | None = None
-    if answer.kind == "refusal":
-        gap = record_refusal_gap(db, question)
-    db.commit()
-    db.refresh(agent_message)
-
-    # 4) SSE 传输：生成器只吐已收全文本与已落库的元数据，不碰 DB。模型路径
-    #    多一个 thinking（正在生成回答…）；降级不发（诚实标注靠 fallback）。
-    def event_stream() -> Iterator[str]:
-        yield _sse_event("thinking", {"text": THINKING_TEXT})
-        if generated is not None:
-            yield _sse_event("thinking", {"text": GENERATING_THINKING_TEXT})
-        for piece in _split_deltas(content):
-            yield _sse_event("delta", {"text": piece})
-        yield _sse_event(
-            "complete",
-            {
-                "message_id": agent_message.id,
-                "citations": answer.citations,
-                "kind": answer.kind,
-                "handoff": answer.handoff,
-                # 拒答=缺口 id（前端芯片跳治理台缺口 tab）；answer 恒为 null
-                "gap_id": gap.id if gap is not None else None,
-                # 第 7 刀：true=厂商生成失败降级模板（前端「模板回退」徽章；
-                # 运行时返回，同 gap_id 口径，消息表不加列）
-                "fallback": fallback,
-            },
-        )
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    outcome = await run_ask(db, session, question)
+    return StreamingResponse(sse_event_stream(outcome), media_type="text/event-stream")
 
 
 # ---------- 回流登记（CONTEXT「会话」：结束后由操作者回流登记为资产） ----------
@@ -346,6 +246,8 @@ def register_session(
     commit，会话状态变更与其并进同一事务）。source_kind 由本端点定值
     session_backflow（0025：服务端定，不让调用方填报）。不写审计（登记不是
     0005 的 publish/confirm/回滚）。
+
+    顾客会话同样由本端点回流（0021：回流仍是操作者动作，顾客接口不能发布）。
     """
     del operator
     session = _get_session_or_404(db, session_id)

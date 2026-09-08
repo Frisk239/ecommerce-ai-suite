@@ -56,21 +56,27 @@
 
 **Out：** 厂商 Chat API、顾客通道、新 MCP 工具、放弃修订、第四态。
 
-## 更后面（现在不锁顺序，各是独立刀）
+## 第 7 刀：厂商生成（已交付已合并，PR #9 第二段）
 
-## 第 7 刀：厂商生成（已交付，`feat/audit-1` 上 stack，PR #9 之后）
-
-**路径：** 客服检索命中 → 厂商模型流式生成（openai 官方包，20s/0 重试）→ 完整落库后 SSE 流式；citations 恒服务端定（0007）；无证据不调模型（0018）；LLM 失败/空产出降级证据模板 +「模板回退」徽章（`complete.fallback`）。Owner 验收三路径全过（真模型/拒答/降级），并揪出 opencode 网关 `x-opencode-session` 硬要求（此前「真模型」实为静默降级模板）。证据见 `docs/progress/vendor-llm-closeout.md`。
+**路径：** 客服检索命中 → 厂商模型流式生成（openai 官方包，20s/0 重试）→ 完整落库后 SSE 流式；citations 恒服务端定（0007）；无证据不调模型（0018）；LLM 失败/空产出降级证据模板 +「模板回退」徽章（`complete.fallback`）。Owner 验收揪出 opencode 网关 `x-opencode-session` 硬要求（此前「真模型」实为静默降级模板）。证据见 `docs/progress/vendor-llm-closeout.md`。
 
 **Must：** 密钥只在 `.env`（0033，测试强制空 key）；prompt 证据上限=引用上限（0007 回放口径）；断连=完整落库契约不破。
 
-**Out：** 顾客通道、多轮记忆、工具调用、评测集、真·逐 token 透传（首字延迟裁决留顾客通道前再评）。
+**Out：** 顾客通道（第 8 刀已做）、多轮记忆、工具调用、评测集、真·逐 token 透传（首字延迟裁决再评）。
+
+## 第 8 刀：顾客通道（已交付，`feat/customer-channel` 待 PR）
+
+**路径：** `/customer` 无登录签发会话令牌（Bearer，compare_digest）→ 同一引擎（chat_engine 抽取，操作者/顾客同调）流式回答+只读引用芯片；complete 不带 gap_id（载荷白名单）；操作者客服页见「顾客」徽章会话并独占回流登记；登记后顾客再问 409；三道闸限流（会话发问 10/60s、IP 发问 30/60s、IP 建会话 5/60s）429+Retry-After。迁移 0005 `customer_token`（映射 0021/0023，未新开 ADR）。证据见 `docs/progress/customer-channel-closeout.md`。
+
+**Must：** 顾客不登录不用操作者 cookie（0021/0033，fetch credentials:omit）；顾客端点无 GET/列表/回流（0021 锁死）；操作者侧既有测试零改动（引擎抽取零行为漂移）。
+
+**Out：** 顾客账号、多轮记忆、令牌过期/吊销 UI、分布式限流、XFF 信任模式可配置（安全面议题进下一刀）。
 
 ## 更后面（现在不锁顺序，各是独立刀）
 
 | 刀 | 约束 |
 | --- | --- |
-| **顾客对话通道** | ADR 0021/0033。会话令牌 + 每会话限流 + 每 IP 托底；同一引擎 |
+| **安全面收口** | XFF 第一跳伪造（直连只信 remote addr 可配置）、限流先于鉴权替他人耗配额、404/401 存在性探测——见 customer-channel-closeout 遗留 |
 | **审计刀 2** | 约 5 刀后再轮（上轮见 `docs/progress/audit-1-closeout.md`）；不改产品代码，三路对账后排还债 |
 | 素材 / 切片 / 考核 | 有接待飞轮和 MCP 证据后再进队。质检、候选不是资产已锁。不做微调（0028） |
 

@@ -16,7 +16,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from suite_api import mcp_server
 from suite_api.db import create_database_engine, create_session_factory, to_sqlalchemy_url
-from suite_api.routes import assets, audit, auth, health, knowledge_gaps, products, service
+from suite_api.routes import (
+    assets,
+    audit,
+    auth,
+    customer,
+    health,
+    knowledge_gaps,
+    products,
+    service,
+)
+from suite_api.services.rate_limit import CustomerRateLimits
 from suite_api.services.seed import seed_startup_data
 from suite_api.settings import Settings, get_settings
 
@@ -87,6 +97,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(audit.router)
     app.include_router(service.router)
     app.include_router(knowledge_gaps.router)
+    # 顾客通道（ADR 0021/0033）：无操作者鉴权，Bearer 令牌 + 两级限流在路由内；
+    # 限流器挂 app.state（测试可替换为小阈值/假时钟实例）
+    app.include_router(customer.router)
+    app.state.customer_rate_limits = CustomerRateLimits()
     # MCP 连接层（ADR 0032）：官方 SDK Streamable HTTP 挂 /mcp 前缀，对外端点
     # /mcp/；Bearer 闸门在子应用层，/api/* 与 /health 不经过它。session
     # manager 由 lifespan 代跑（见 lifespan 内 AsyncExitStack）。

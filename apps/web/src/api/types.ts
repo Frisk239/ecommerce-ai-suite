@@ -121,6 +121,9 @@ export interface ServiceSession {
 export interface ServiceSessionSummary extends ServiceSession {
   first_question: string | null
   message_count: number
+  /** 会话来源（ADR 0021）：operator=控制台预览；customer=顾客通道 /customer
+   * 签发（后端判据：customer_token 非空，不加 origin 列）。 */
+  origin: 'operator' | 'customer'
 }
 
 /** 引用（CONTEXT 词条：指向一条证据 = 资产 ID + 版本号，检索用当前已发布版）。 */
@@ -157,3 +160,15 @@ export interface ServiceAnswerComplete {
   gap_id: number | null
   fallback?: boolean
 }
+
+// ---------- 顾客通道（routes/customer.py 契约，ADR 0021/0033） ----------
+
+/** POST /customer/sessions 签发：令牌只在此响应完整出现一次，顾客侧自行保存。 */
+export interface CustomerSessionCreated {
+  session_id: number
+  token: string
+}
+
+/** 顾客版 SSE complete：事件序与操作者版相同，但 gap_id 被服务端载荷白名单
+ * 裁剪（顾客不暴露内部缺口 id）——类型上即不存在该字段。 */
+export type CustomerAnswerComplete = Omit<ServiceAnswerComplete, 'gap_id'>

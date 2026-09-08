@@ -6,6 +6,8 @@ import type {
   AssetListItem,
   AssetVersion,
   AuditEntry,
+  CustomerAnswerComplete,
+  CustomerSessionCreated,
   KnowledgeGap,
   KnowledgeGapStatus,
   Operator,
@@ -21,6 +23,13 @@ export interface AskHandlers {
   onThinking: (text: string) => void
   onDelta: (text: string) => void
   onComplete: (payload: ServiceAnswerComplete) => void
+}
+
+/** 顾客发问的 SSE 回调：同状态机，complete 载荷无 gap_id（服务端白名单裁剪）。 */
+export interface CustomerAskHandlers {
+  onThinking: (text: string) => void
+  onDelta: (text: string) => void
+  onComplete: (payload: CustomerAnswerComplete) => void
 }
 
 export const api = {
@@ -87,5 +96,32 @@ export const api = {
         }
       },
       signal,
+    ),
+
+  // 顾客通道（ADR 0021/0033）：无登录，Bearer 会话令牌；同一引擎、同事件序，
+  // complete 不带 gap_id。顾客无列表/详情/回流端点。
+  createCustomerSession: () =>
+    request<CustomerSessionCreated>('/customer/sessions', { method: 'POST' }),
+  askCustomer: (
+    sessionId: number,
+    token: string,
+    content: string,
+    handlers: CustomerAskHandlers,
+    signal: AbortSignal,
+  ) =>
+    streamSse(
+      `/customer/sessions/${sessionId}/messages`,
+      { content },
+      (evt: SseEvent) => {
+        if (evt.event === 'thinking' && typeof evt.data.text === 'string') {
+          handlers.onThinking(evt.data.text)
+        } else if (evt.event === 'delta' && typeof evt.data.text === 'string') {
+          handlers.onDelta(evt.data.text)
+        } else if (evt.event === 'complete') {
+          handlers.onComplete(evt.data as unknown as CustomerAnswerComplete)
+        }
+      },
+      signal,
+      { Authorization: `Bearer ${token}` },
     ),
 }
