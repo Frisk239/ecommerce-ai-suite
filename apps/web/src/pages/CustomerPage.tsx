@@ -187,22 +187,25 @@ export default function CustomerPage() {
 
       <section className="panel flex min-h-0 flex-1 flex-col overflow-hidden" style={{ minHeight: 420 }}>
         {session === null ? (
-          <Empty
-            icon={<ChatCircleDots aria-hidden size={26} />}
-            title="开始咨询"
-            hint="无需注册登录：点击开始，服务端为这段对话签发一次性会话身份。"
-            action={
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => void startSession()}
-                disabled={creating}
-              >
-                <ChatCircleDots aria-hidden size={14} />
-                {creating ? '创建中…' : '开始咨询'}
-              </button>
-            }
-          />
+          /* 空态在面板内垂直居中：顾客页是产品门面，内容别吊在顶上 */
+          <div className="flex flex-1 items-center justify-center">
+            <Empty
+              icon={<ChatCircleDots aria-hidden size={26} />}
+              title="开始咨询"
+              hint="无需注册登录：点击开始，服务端为这段对话签发一次性会话身份。"
+              action={
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void startSession()}
+                  disabled={creating}
+                >
+                  <ChatCircleDots aria-hidden size={14} />
+                  {creating ? '创建中…' : '开始咨询'}
+                </button>
+              }
+            />
+          </div>
         ) : (
           <>
             {/* 消息流（共享 MessageBubble；引用芯片只读——顾客不进控制台） */}

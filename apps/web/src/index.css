@@ -577,6 +577,15 @@
   .table-gov tbody tr.row-click:hover {
     background: var(--color-hover);
   }
+  /* 行尾箭头 hover 才现（StaffDesk「hover 才现的次级操作」）；键盘聚焦行同样可见 */
+  .table-gov .row-caret {
+    opacity: 0;
+    transition: opacity 150ms var(--ease-dsh);
+  }
+  .table-gov tr.row-click:hover .row-caret,
+  .table-gov tr.row-click:focus-within .row-caret {
+    opacity: 1;
+  }
 
   /* ---------- 引用芯片（hover 上浮 + 描边） ---------- */
   .cite-chip {
@@ -800,9 +809,9 @@
     box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
   }
 
-  /* ---------- 登录页微光 ---------- */
+  /* ---------- 登录页：白画布，不设装饰光（锚：品牌蓝仅语义、分层靠墨线） ---------- */
   .login-page {
-    background: radial-gradient(640px 320px at 50% 14%, rgba(65, 118, 230, 0.09), transparent 70%);
+    background: var(--color-canvas);
   }
 }
 

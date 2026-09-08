@@ -608,9 +608,10 @@ export default function AssetDetailPage() {
               </div>
             ) : (
               <div className="space-y-2.5">
+                {/* 已发布无在开修订时这是页面唯一主动作：近黑主钮（锚：主按钮近黑） */}
                 <button
                   type="button"
-                  className="btn btn-secondary w-full"
+                  className="btn btn-primary w-full"
                   disabled={openingRevision}
                   onClick={() => void openRevision()}
                 >

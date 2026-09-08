@@ -420,7 +420,8 @@ export default function AssetsListPage() {
                         {retryingId === asset.id ? '重试中…' : '重试机洗'}
                       </button>
                     ) : (
-                      <span className="flex items-center justify-end text-caption">
+                      /* 行尾箭头 hover 才现（StaffDesk 手法：次级导航线索不与数据抢注意） */
+                      <span className="row-caret flex items-center justify-end text-caption">
                         <CaretRight aria-hidden size={13} />
                       </span>
                     )}
