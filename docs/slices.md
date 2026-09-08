@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 23 刀总览页+连接层演示页**（`feat/overview-connect`，closeout 见 `docs/progress/overview-connect-closeout.md`）：`/` 去 redirect 落总览（三故事线步进卡+统计带），`/connect` 四工具卡+无 publish 红条+检索试玩+取版预览+mcp.json 占位复制——纯前端零后端改动。第 16–22 刀+审计刀 4 已合并 main。
+上一刀：**第 24 刀后端债池刀**（`feat/debt-2`，closeout 见 `docs/progress/debt-2-closeout.md`）：GIN 索引（citations/question_key）+题库单资产推导+N+1 批取+material 四小条——行为零变化，audit-4 P1 后端清零。第 16–23 刀+审计刀 4 已合并 main。
 
-当前阶段：工程刀。下一刀：**第 24 刀债池刀**（audit-4 P1：GIN 索引/题库单资产推导/N+1/material 四小条/前端收口按性价比挑）；审计刀 5 于第 25 刀后触发。
+当前阶段：工程刀。下一刀：**第 25 刀前端收口刀**（UiMessage/ask 双闭包/Link 复用/action-error 组件化）；**其后触发审计刀 5**。
 
 ## 怎么切
 
@@ -155,6 +155,10 @@
 **Out：** 血缘表/写路径/引用计数列/MCP 导出留痕（无留痕表记 debt）/跨资产图。
 
 ## 更后面（现在不锁顺序，各是独立刀）
+
+## 第 24 刀：后端债池刀（已交付，`feat/debt-2`）
+
+**路径：** 行为零变化——迁移 0013 GIN（citations/question_key jsonb_path_ops，血缘/考核大表索引面）；题库按锚单资产推导（prompt 逐字节等价）；material/clips 列表批取消 N+1；material 四小条（retry 死转移/qc 同串/storage 死参数/reject commit 层次）。集成 491 passed（基线 485 → 491）。证据见 `docs/progress/debt-2-closeout.md`。
 
 ## 第 23 刀：总览页+连接层演示页（已交付，`feat/overview-connect`）
 
