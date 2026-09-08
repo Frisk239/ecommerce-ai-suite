@@ -90,6 +90,46 @@ def test_seed_clips_shape_and_idempotent(api: ApiFixture) -> None:
     assert _clip_count(url) == before  # 幂等：按 (timecode_start, transcript) 跳过
 
 
+# ---------- 列表批取（debt-2 N+1 收口） ----------
+
+
+def test_candidates_list_batches_product_names(api: ApiFixture) -> None:
+    """N+1 钉测：候选列表一次 IN 查询批取商品名——请求期间对 products 的
+    SELECT 恰为 1（旧逐行 db.get 在种子跨 2 商品下为 2 次）；行为等价
+    （每行商品名与 /api/products 视图一致）。"""
+    client, _ = api
+    _login(client)
+    from sqlalchemy import event
+
+    session = client.app.state.session_factory()
+    engine = session.get_bind()
+    product_selects: list[str] = []
+
+    def _listen(
+        conn: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        del conn, cursor, parameters, context, executemany
+        if "FROM products" in statement:
+            product_selects.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _listen)
+    try:
+        rows = _candidates(client)
+    finally:
+        event.remove(engine, "before_cursor_execute", _listen)
+        session.close()
+
+    assert len(rows) >= 3 and len({r["product_id"] for r in rows}) >= 2
+    assert len(product_selects) == 1  # 批取：全列表只一条 products 查询
+    name_by_id = {p["id"]: p["name"] for p in client.get("/api/products").json()}
+    assert all(r["product_name"] == name_by_id[r["product_id"]] for r in rows)
+
+
 # ---------- 全闭环：拣选 → 登记 → 发布 → 检索引用 → 汇入视图 ----------
 
 

@@ -170,6 +170,52 @@ def test_reject_retry_then_approve(api: ApiFixture, monkeypatch: pytest.MonkeyPa
     assert again["asset_id"] is not None
 
 
+# ---------- 列表批取（debt-2 N+1 收口） ----------
+
+
+def test_list_tasks_batches_product_names(api: ApiFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """N+1 钉测：任务列表一次 IN 查询批取商品名——请求期间对 products 的
+    SELECT 恰为 1（旧逐行 db.get 在多商品任务下为 N 次）；行为等价
+    （每行商品名与 /api/products 视图一致）。"""
+    client, _ = api
+    _login(client)
+    _patch_complete_chat(monkeypatch, result=_material_json())
+    products = client.get("/api/products").json()
+    assert len(products) >= 2
+    for p in products[:2]:  # 跨两个商品建任务，批取才有判别力
+        assert client.post("/api/material/tasks", json={"product_id": p["id"]}).status_code == 201
+
+    from sqlalchemy import event
+
+    session = client.app.state.session_factory()
+    engine = session.get_bind()
+    product_selects: list[str] = []
+
+    def _listen(
+        conn: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        del conn, cursor, parameters, context, executemany
+        if "FROM products" in statement:
+            product_selects.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _listen)
+    try:
+        listed = client.get("/api/material/tasks").json()
+    finally:
+        event.remove(engine, "before_cursor_execute", _listen)
+        session.close()
+
+    assert len({t["product_id"] for t in listed}) >= 2
+    assert len(product_selects) == 1  # 批取：全列表只一条 products 查询
+    name_by_id = {p["id"]: p["name"] for p in products}
+    assert all(t["product_name"] == name_by_id[t["product_id"]] for t in listed)
+
+
 # ---------- 空 key：failed 不降级、不进中台 ----------
 
 
