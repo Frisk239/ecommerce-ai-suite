@@ -9,10 +9,11 @@ clips/；真视频切出/ASR 是部署刀的事）。
 单向状态机：pending → registered，候选行记 ``registered_asset_id`` 回执锚
 （同 MaterialTask.asset_id 先例）；已登记再拣选 409，不可撤销不可重切（Out）。
 
-批量原子性：先整批校验（任一 id 不存在 404 / 任一已登记 409），再逐候选登记
-——校验在第一个字节落库之前，批量含已登记则整体 409、事务不落。逐候选
-register_asset 内部各自 commit（P1#2 纪律：机洗不持事务；video 字段集为空、
-机洗纯本地，不触发这段 LLM 等待）。
+拒绝原子性（不是全批回滚）：先整批校验（任一 id 不存在 404 / 任一已登记
+409）——校验在第一个字节落库之前，批量含已登记则整体 409、事务不落。
+但逐候选 register_asset 内部各自 commit（P1#2 纪律：机洗不持事务；video
+字段集为空、机洗纯本地，不触发这段 LLM 等待）——第 k 个候选写字节失败时
+前 k-1 资产已落库、该候选仍 pending 可重拣（与「登记失败不挡字节」同形）。
 """
 
 from fastapi import HTTPException, status
