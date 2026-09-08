@@ -19,9 +19,14 @@ class Settings(BaseSettings):
     session_secret: str = "dev-insecure-session-secret"
     session_ttl_seconds: int = 7 * 24 * 3600
 
-    # xAI 只留配置占位：本阶段不建模型客户端、不发任何请求（见 docs/slices.md 排期）
-    xai_api_key: str = ""
-    xai_base_url: str = "https://api.x.ai/v1"
+    # OpenAI 兼容 Chat Completions（ADR 0028/0033）。密钥只从 .env 读，不入库。
+    # 未配 key 时不建客户端、不发请求。接通生成是独立刀。
+    llm_api_key: str = ""
+    llm_base_url: str = "https://opencode.ai/zen/go/v1"
+    llm_model: str = "qwen3.8-flash"
+
+    # 连接层 Bearer（ADR 0032）。空则 MCP 全部 401；与操作者会话无关。
+    mcp_bearer_token: str = ""
 
 
 @lru_cache

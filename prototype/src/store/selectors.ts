@@ -142,7 +142,7 @@ interface Reply {
   handoff?: boolean
 }
 
-function detectProduct(text: string): 'P-0001' | 'P-0002' | null {
+export function detectProduct(text: string): 'P-0001' | 'P-0002' | null {
   if (/杯|保温/.test(text)) return 'P-0002'
   if (/水|饮用/.test(text)) return 'P-0001'
   return null
@@ -151,7 +151,6 @@ function detectProduct(text: string): 'P-0001' | 'P-0002' | null {
 export function askService(state: AppState, raw: string): ChatMessage {
   const text = raw.trim()
   const activeModel = state.models.find((m) => m.id === state.activeModelId) ?? state.models[0]
-  const ft = activeModel.type === 'finetuned'
   const d = new Date()
   const at = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${d.toTimeString().slice(0, 5)}`
   let reply: Reply
@@ -162,9 +161,7 @@ export function askService(state: AppState, raw: string): ChatMessage {
   const answerFromRetrieval = (hit: RetrievalHit) => {
     const prefix =
       hit.asset.kind === '对话'
-        ? ft
-          ? '帮您翻到一条已发布的客服对话记录：'
-          : '根据已发布的客服对话记录：'
+        ? '根据已发布的客服对话记录：'
         : '根据已发布口径：'
     return {
       text: `${prefix}${hit.sentence}`,
@@ -185,9 +182,7 @@ export function askService(state: AppState, raw: string): ChatMessage {
       // 回答由商品已写回字段动态拼出，不再硬编码字段名
       const pairs = product.specSchema.map((k) => `${k} ${product.specs[k]}`).join('，')
       reply = {
-        text: ft
-          ? `帮您确认过啦：${product.name} ${pairs}。还有想了解的随时问我～`
-          : `${product.name}：${pairs}。如需其他信息请继续提问。`,
+        text: `${product.name}：${pairs}。如需其他信息请继续提问。`,
         citations: src ? [{ assetId: src.id, v: src.publishedV! }] : undefined,
       }
     } else {
@@ -197,9 +192,7 @@ export function askService(state: AppState, raw: string): ChatMessage {
       } else {
         // 索引里也没有：拒答并转人工，不幻觉（死亡三问之一）
         reply = {
-          text: ft
-            ? '这款的官方规格还在核对中，怕说错耽误您，马上请人工同事来确认。'
-            : '抱歉，该商品的官方规格仍在核对中，暂无法提供准确答复。已为您转人工核实，请留意消息。',
+          text: '抱歉，该商品的官方规格仍在核对中，暂无法提供准确答复。已为您转人工核实，请留意消息。',
           refused: true,
           handoff: true,
         }
@@ -210,16 +203,12 @@ export function askService(state: AppState, raw: string): ChatMessage {
     if (!product) {
       // 没识别到具体商品时不猜：反问澄清，避免把 A 商品的库存答给 B
       reply = {
-        text: ft
-          ? '想帮您查库存，先告诉我是哪款呀：高山天然饮用水，还是钛钢保温杯？'
-          : '请问您想查询哪款商品的库存：高山天然饮用水 550ml，或钛钢保温杯 500ml？',
+        text: '请问您想查询哪款商品的库存：高山天然饮用水 550ml，或钛钢保温杯 500ml？',
       }
     } else {
       // 库存走查询接口，不是 RAG；对顾客只说有无货，内部数量留在工具条里
       reply = {
-        text: ft
-          ? `帮您看过啦：${product.name} 目前有现货，可以直接下单～`
-          : `${product.name} 目前有现货，可以直接下单。`,
+        text: `${product.name} 目前有现货，可以直接下单。`,
         toolCall: {
           name: '查询库存',
           args: `商品 ${product.id}`,
@@ -236,17 +225,13 @@ export function askService(state: AppState, raw: string): ChatMessage {
       const hasKeywords = text.replace(/[？?！!，,。.、\s_a-zA-Z0-9]/g, '').length >= 2
       if (hasKeywords) {
         reply = {
-          text: ft
-            ? '这个问题我这边还没有可用的官方口径，不敢乱答，马上请人工同事来核实。'
-            : '该问题暂无可引用的官方口径，已为您转人工核实，请留意消息。',
+          text: '该问题暂无可引用的官方口径，已为您转人工核实，请留意消息。',
           refused: true,
           handoff: true,
         }
       } else {
         reply = {
-          text: ft
-            ? '在的呢～商品规格、库存和售后政策都可以问我。'
-            : '您可以向我询问商品规格、库存与售后政策。',
+          text: '您可以向我询问商品规格、库存与售后政策。',
         }
       }
     }
@@ -260,7 +245,7 @@ export function askService(state: AppState, raw: string): ChatMessage {
     toolCall: reply.toolCall,
     refused: reply.refused,
     handoff: reply.handoff,
-    model: { name: activeModel.name, type: activeModel.type, source: activeModel.source },
+    model: { name: activeModel.name },
     at,
   }
 }

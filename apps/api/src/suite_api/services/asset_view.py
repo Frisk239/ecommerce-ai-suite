@@ -14,6 +14,31 @@ from sqlalchemy.orm import Session
 from suite_api.models import Asset, AssetVersion, Product
 from suite_api.services.publishing import evaluate_publish_gate
 from suite_api.services.registration import PENDING_REVIEW
+from suite_platform.storage import ObjectStorage
+
+
+class VersionTextError(Exception):
+    """版本正文读取失败（对象缺失/非 UTF-8）：MCP get_asset/export 用的服务层错误，
+    与检索切块的 ChunkingError 分开（消费方不同：一个中断发布事务，一个冒泡成
+    工具错误）。"""
+
+
+def read_version_text(session: Session, storage: ObjectStorage, version: AssetVersion) -> str:
+    """从对象存储读回该版本字节并按 UTF-8 解码（ADR 0003：字节只住对象存储）。
+
+    session 与其他服务函数同构（调用方都在会话内），读取本身只依赖对象键。
+    decode 失败给明确错误，不静默替换字符（外部 Agent 拿到的正文必须与
+    登记字节一致）。
+    """
+    del session  # 读取只走对象存储；参数保留对齐服务层签名（调用方无需特判）
+    try:
+        data = storage.get_bytes(version.object_key)
+    except FileNotFoundError as exc:
+        raise VersionTextError(f"版本对象缺失，无法读取正文: {version.object_key}") from exc
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise VersionTextError("版本字节不是合法 UTF-8 文本，无法读取正文") from exc
 
 
 class ProductRef(BaseModel):
@@ -27,6 +52,7 @@ class AssetOut(BaseModel):
     title: str | None
     kind: str
     status: str
+    source_kind: str  # 0025 来源（血缘第一环）：登记端点语义定值
     product: ProductRef | None
     last_error: str | None
     current_published_version_no: int | None
@@ -74,6 +100,7 @@ def to_asset_out(
         title=asset.title,
         kind=asset.kind,
         status=asset.status,
+        source_kind=asset.source_kind,
         product=(
             ProductRef(id=product.id, name=product.name, category=product.category)
             if product

@@ -1,8 +1,8 @@
 // 唯一的 mock store：模块级内存状态 + localStorage 持久化。
-// 客服、考核、素材、切片、微调、连接层读的都是这一份（禁止各页私藏 JSON）。
+// 客服、考核、素材、切片、连接层读的都是这一份（禁止各页私藏 JSON）。
 import { useSyncExternalStore } from 'react'
 import { makeSeed } from './seed'
-import { askService, requiredFieldsOfVersion } from './selectors'
+import { askService, detectProduct, requiredFieldsOfVersion } from './selectors'
 import type {
   Asset,
   AssetKind,
@@ -10,12 +10,13 @@ import type {
   CoachRecord,
   ClipCandidate,
   ExportRecord,
+  KnowledgeGap,
   MaterialTask,
   ModelConfig,
   OpsRun,
   Product,
   ServiceSession,
-  TrainingTask,
+  SourceKind,
 } from './types'
 
 export interface AppState {
@@ -24,21 +25,21 @@ export interface AppState {
   sessions: ServiceSession[]
   currentSessionId: string | null
   models: ModelConfig[]
-  activeModelId: string // 当前客服底座（客服页基座/微调开关也写这里）
+  activeModelId: string
   materialTasks: MaterialTask[]
   clips: ClipCandidate[]
   opsRun: OpsRun
   opsFailedOnce: boolean
   exports: ExportRecord[]
-  trainingTasks: TrainingTask[]
-  lastRegisteredId: string | null // 最近一次连接层登记产生的资产 ID
+  knowledgeGaps: KnowledgeGap[]
+  lastRegisteredId: string | null
   coachScenarios: ReturnType<typeof makeSeed>['coachScenarios']
   coachRecords: CoachRecord[]
   nextAssetSeq: number
+  nextGapSeq: number
 }
 
-// 领域结构再变更（导出冻结 refs / ops output），升 key 让旧缓存自动重置
-const STORAGE_KEY = 'eas-prototype-v3'
+const STORAGE_KEY = 'eas-prototype-v4'
 
 function initialState(): AppState {
   const seed = makeSeed()
@@ -54,11 +55,12 @@ function initialState(): AppState {
     opsRun: seed.opsRun,
     opsFailedOnce: false,
     exports: [],
-    trainingTasks: [],
+    knowledgeGaps: seed.knowledgeGaps,
     lastRegisteredId: null,
     coachScenarios: seed.coachScenarios,
     coachRecords: [],
     nextAssetSeq: 7,
+    nextGapSeq: 2,
   }
 }
 
@@ -163,9 +165,21 @@ function extractFieldFromText(key: string, text: string): string | null {
   return null
 }
 
+function nextGapId(draft: AppState) {
+  return `G-${String(draft.nextGapSeq++).padStart(4, '0')}`
+}
+
 function registerAsset(
   draft: AppState,
-  input: { kind: AssetKind; title: string; source: string; content: string; productId?: string }
+  input: {
+    kind: AssetKind
+    title: string
+    sourceKind: SourceKind
+    sourceNote?: string
+    content: string
+    productId?: string
+    fillsGapId?: string
+  },
 ): Asset {
   const id = nextAssetId(draft)
   const asset: Asset = {
@@ -173,16 +187,37 @@ function registerAsset(
     kind: input.kind,
     title: input.title,
     state: '已接入',
-    source: input.source,
-    // 原始内容保存在资产上（真实系统里是对象键指向的字节），机洗从它生成工作版本
+    sourceKind: input.sourceKind,
     sourceContent: input.content,
     createdAt: now(),
     machineWash: { status: 'pending' },
     versions: [],
+    ...(input.sourceNote ? { sourceNote: input.sourceNote } : {}),
     ...(input.productId ? { productId: input.productId } : {}),
+    ...(input.fillsGapId ? { fillsGapId: input.fillsGapId } : {}),
   }
   draft.assets.unshift(asset)
+  if (input.fillsGapId) {
+    const gap = draft.knowledgeGaps.find((g) => g.id === input.fillsGapId)
+    if (gap && gap.status === 'open') gap.filledAssetId = id
+  }
   return asset
+}
+
+function openKnowledgeGap(
+  draft: AppState,
+  input: { question: string; sessionId?: string; productId?: string },
+): KnowledgeGap {
+  const gap: KnowledgeGap = {
+    id: nextGapId(draft),
+    question: input.question,
+    createdAt: now(),
+    status: 'open',
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.productId ? { productId: input.productId } : {}),
+  }
+  draft.knowledgeGaps.unshift(gap)
+  return gap
 }
 
 // 运维 Agent「调素材中心」步骤对应的任务：首次调用时创建，失败/重试引用同一个 ID
@@ -198,7 +233,7 @@ function ensureOpsTask(draft: AppState): MaterialTask {
     id,
     productId: draft.opsRun.productId,
     brief: '钛钢保温杯 · 投放文案（运营 Agent 发起）',
-    status: '已完成',
+    status: '待质检',
     origin: 'ops',
     output: {
       title: '通勤党的冬天续命杯',
@@ -252,8 +287,10 @@ export type Action =
   | { type: 'OPEN_REVISION'; assetId: string }
   | { type: 'MACHINE_WASH'; assetId: string }
   | { type: 'TRANSCRIBE_SOURCE'; assetId: string; content: string }
-  | { type: 'REGISTER_MANUAL'; kind: AssetKind; title: string; content: string; productId?: string }
+  | { type: 'REGISTER_MANUAL'; kind: AssetKind; title: string; content: string; productId?: string; fillsGapId?: string }
   | { type: 'CREATE_MATERIAL_TASK'; productId: string; brief: string }
+  | { type: 'QC_PASS'; taskId: string }
+  | { type: 'QC_REJECT'; taskId: string }
   | { type: 'REGISTER_MATERIAL'; taskId: string }
   | { type: 'REGISTER_CLIPS'; clipIds: string[] }
   | { type: 'NEW_SESSION' }
@@ -261,7 +298,6 @@ export type Action =
   | { type: 'STREAM_TICK'; sessionId: string; msgId: string }
   | { type: 'STREAM_STOP' }
   | { type: 'END_SESSION' }
-  | { type: 'SWITCH_MODEL'; model: 'base' | 'finetuned' }
   | { type: 'SET_ACTIVE_MODEL'; id: string }
   | { type: 'ADD_MODEL'; input: Omit<ModelConfig, 'id' | 'createdAt'> }
   | { type: 'UPDATE_MODEL'; id: string; patch: Partial<Pick<ModelConfig, 'name' | 'endpoint' | 'provider' | 'params'>> }
@@ -271,7 +307,6 @@ export type Action =
   | { type: 'OPS_RESET' }
   | { type: 'OPS_DELIVER' }
   | { type: 'CREATE_EXPORT'; assetIds: string[] }
-  | { type: 'REGISTER_TRAINED_MODEL'; taskId: string }
   | { type: 'SAVE_COACH'; scenarioId: string; scores: { dim: string; score: number }[]; dialog: { role: 'customer' | 'trainee'; text: string }[] }
   | { type: 'CONNECT_REGISTER'; title: string; content: string; productId?: string }
 
@@ -316,6 +351,13 @@ export function dispatch(action: Action) {
         target.role = 'published'
         asset.publishedV = action.v
         asset.state = '已发布'
+        if (asset.fillsGapId) {
+          const gap = draft.knowledgeGaps.find((g) => g.id === asset.fillsGapId)
+          if (gap) {
+            gap.status = 'filled'
+            gap.filledAssetId = asset.id
+          }
+        }
         if (asset.productId) {
           const product = draft.products.find((p) => p.id === asset.productId)
           if (product) {
@@ -402,9 +444,11 @@ export function dispatch(action: Action) {
         registerAsset(draft, {
           kind: action.kind,
           title: action.title.trim(),
-          source: '操作者登记 · 治理台',
+          sourceKind: '上传',
+          sourceNote: '治理台登记',
           content: action.content.trim(),
           ...(action.productId ? { productId: action.productId } : {}),
+          ...(action.fillsGapId ? { fillsGapId: action.fillsGapId } : {}),
         })
         break
       }
@@ -418,7 +462,7 @@ export function dispatch(action: Action) {
           id,
           productId: action.productId,
           brief: action.brief.trim(),
-          status: '已完成',
+          status: '待质检',
           output: {
             title: action.brief.trim().split('·').pop()?.trim() || action.brief.trim(),
             body: `围绕「${action.brief.trim()}」生成的投放文案草稿：卖点取自所引已发布资产，口径与中台一致。确认无误后可登记为资产进入治理。`,
@@ -428,13 +472,26 @@ export function dispatch(action: Action) {
         break
       }
 
+      case 'QC_PASS': {
+        const task = draft.materialTasks.find((t) => t.id === action.taskId)
+        if (task && (task.status === '待质检' || task.status === '已打回')) task.status = '已完成'
+        break
+      }
+
+      case 'QC_REJECT': {
+        const task = draft.materialTasks.find((t) => t.id === action.taskId)
+        if (task && task.status === '待质检' && !task.registeredAssetId) task.status = '已打回'
+        break
+      }
+
       case 'REGISTER_MATERIAL': {
         const task = draft.materialTasks.find((t) => t.id === action.taskId)
-        if (!task || task.registeredAssetId) break
+        if (!task || task.registeredAssetId || task.status !== '已完成') break
         const asset = registerAsset(draft, {
           kind: '素材',
           title: `素材 · ${task.output?.title ?? task.brief}`,
-          source: `素材中心回流 ${task.id}`,
+          sourceKind: '素材生成',
+          sourceNote: task.id,
           content: task.output?.body ?? '',
           productId: task.productId,
         })
@@ -449,25 +506,12 @@ export function dispatch(action: Action) {
           const asset = registerAsset(draft, {
             kind: '视频',
             title: `直播切片 · ${clip.topic} ${clip.timecode}`,
-            source: `直播切片拣选 ${clip.id}`,
+            sourceKind: '切片拣选',
+            sourceNote: clip.id,
             content: clip.transcript,
             productId: clip.productId,
           })
           clip.registeredAssetId = asset.id
-          // 切片汇入素材中心（goal.md：切片先进素材，成品再进中台）——运营与素材页同源可见
-          draft.materialTasks.unshift({
-            id: `T-${String(draft.materialTasks.length + 1).padStart(4, '0')}`,
-            productId: clip.productId,
-            brief: `直播切片 · ${clip.topic}`,
-            status: '已完成',
-            origin: 'clip',
-            output: {
-              title: `切片 · ${clip.topic} ${clip.timecode}`,
-              body: clip.transcript,
-              refs: [],
-            },
-            registeredAssetId: asset.id,
-          })
         }
         break
       }
@@ -495,7 +539,14 @@ export function dispatch(action: Action) {
         }
         s.messages.push(customerMsg)
         const reply = askService(draft, action.text)
-        // 流式：先推空消息（thinking 态），完整文本挂 pendingFull，由流式引擎逐字揭示
+        if (reply.refused && !reply.toolCall) {
+          const gap = openKnowledgeGap(draft, {
+            question: action.text,
+            sessionId: s.id,
+            ...(detectProduct(action.text) ? { productId: detectProduct(action.text)! } : {}),
+          })
+          reply.gapId = gap.id
+        }
         const full = reply.text
         s.messages.push({ ...reply, text: '', streaming: true, pendingFull: full })
         startStream(s.id, reply.id)
@@ -528,21 +579,14 @@ export function dispatch(action: Action) {
         const asset = registerAsset(draft, {
           kind: '对话',
           title: `客服会话回流 ${s.id}`,
-          source: `AI 客服 ${s.id}`,
+          sourceKind: '会话回流',
+          sourceNote: s.id,
           content: s.messages
             .map((m) => `${m.role === 'customer' ? '顾客' : '客服'}：${m.text}`)
             .join('\n'),
         })
         s.registeredAssetId = asset.id
         draft.currentSessionId = null
-        break
-      }
-
-      // 客服页「基座 / 微调」开关：切到该类型的当前第一个底座
-      // 客服页「基座 / 微调」开关：切到该类型最新注册的底座（训练产物注册后立即可用）
-      case 'SWITCH_MODEL': {
-        const target = [...draft.models].reverse().find((m) => m.type === action.model)
-        if (target) draft.activeModelId = target.id
         break
       }
 
@@ -566,7 +610,7 @@ export function dispatch(action: Action) {
       case 'REMOVE_MODEL': {
         // 当前客服底座不可删，至少保留一个基座
         if (action.id === draft.activeModelId) break
-        if (draft.models.filter((m) => m.type === 'base').length <= 1 && draft.models.find((m) => m.id === action.id)?.type === 'base') break
+        if (draft.models.length <= 1) break
         draft.models = draft.models.filter((m) => m.id !== action.id)
         break
       }
@@ -593,10 +637,9 @@ export function dispatch(action: Action) {
         } else if (step.key === 'compose') {
           step.status = 'done'
           // 投放文案跟「当时已发布」的素材/切片走：正文取自它们的已发布版，不是写死的
-          const usable = draft.materialTasks
-            .filter((t) => t.registeredAssetId)
-            .map((t) => draft.assets.find((a) => a.id === t.registeredAssetId))
-            .filter((a): a is Asset => !!a && a.publishedV != null)
+          const usable = draft.assets.filter(
+            (a) => a.publishedV != null && (a.kind === '素材' || a.kind === '视频'),
+          )
           const refs = usable.map((a) => ({ assetId: a.id, v: a.publishedV! }))
           const product = draft.products.find((p) => p.id === run.productId)
           const firstBody = usable[0]?.versions.find((x) => x.v === usable[0].publishedV)?.content ?? ''
@@ -652,34 +695,6 @@ export function dispatch(action: Action) {
           size: `${(refs.length * 46 + 18).toFixed(0)} KB`,
         }
         draft.exports.unshift(rec)
-        // 导出后自动生成 mock 训练任务（原型不实现真实训练），产物待注册为微调底座
-        draft.trainingTasks.unshift({
-          id: `TR-${String(draft.trainingTasks.length + 1).padStart(2, '0')}`,
-          exportId: rec.id,
-          assetCount: action.assetIds.length,
-          modelName: `类目微调 · 客服口吻适配 v${draft.trainingTasks.length + 1}`,
-          status: '已完成',
-          createdAt: now(),
-        })
-        break
-      }
-
-      // 把训练产物注册为微调底座（模型配置页/微调页可点）
-      case 'REGISTER_TRAINED_MODEL': {
-        const task = draft.trainingTasks.find((t) => t.id === action.taskId)
-        if (!task || task.registeredModelId) break
-        const id = `M-${String(draft.models.length + 1).padStart(2, '0')}`
-        draft.models.push({
-          id,
-          name: task.modelName,
-          type: 'finetuned',
-          provider: '自托管 vLLM · LoRA 适配层',
-          endpoint: 'http://gpu-node-2:8000/v1',
-          params: { temperature: 0.4, maxTokens: 1024 },
-          source: `导出 ${task.exportId}（${task.assetCount} 条已发布资产，版本已冻结）`,
-          createdAt: now(),
-        })
-        task.registeredModelId = id
         break
       }
 
@@ -703,7 +718,8 @@ export function dispatch(action: Action) {
         const asset = registerAsset(draft, {
           kind: '文档',
           title: action.title,
-          source: '连接层 · 外部 Agent 登记',
+          sourceKind: '连接层登记',
+          sourceNote: '外部 Agent',
           content: action.content,
           ...(action.productId ? { productId: action.productId } : {}),
         })

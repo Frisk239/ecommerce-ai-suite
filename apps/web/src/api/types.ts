@@ -13,14 +13,44 @@ export interface ProductRef {
 
 export type AssetStatus = 'ingested' | 'pending_review' | 'published'
 
+/** 来源（CONTEXT「来源」词条，0025 血缘第一环）：登记端点按语义定值，前端不填报。 */
+export type AssetSourceKind =
+  | 'upload'
+  | 'session_backflow'
+  | 'clip_pick'
+  | 'material_generated'
+  | 'mcp_registered'
+  | 'seed'
+
 export interface AssetListItem {
   id: number
   title: string | null
   kind: string
   status: AssetStatus
+  source_kind: AssetSourceKind
   product: ProductRef | null
   last_error: string | null
   current_published_version_no: number | null
+}
+
+// ---------- 知识缺口（routes/knowledge_gaps.py 契约） ----------
+
+export type KnowledgeGapStatus = 'open' | 'resolved'
+
+export interface GapProductRef {
+  id: number
+  name: string
+}
+
+/** 缺口不是资产：无检索/发布路径，解决只随发布发生（resolved_by_asset_id 指向那版资产）。 */
+export interface KnowledgeGap {
+  id: number
+  question: string
+  product: GapProductRef | null
+  status: KnowledgeGapStatus
+  resolved_by_asset_id: number | null
+  created_at: string
+  resolved_at: string | null
 }
 
 /** 字段值三形状：机洗 {value,source:"machine"} / 弃权 {abstained:true} / 人洗 {value,source:"human"} */
@@ -111,10 +141,13 @@ export interface ServiceSessionDetail extends ServiceSession {
   messages: ServiceMessage[]
 }
 
-/** SSE complete 事件的负载（与后端 event_stream 尾事件一致）。 */
+/** SSE complete 事件的负载（与后端 event_stream 尾事件一致）。
+ * gap_id 仅 refusal 时非空（ADR 0030：运行时返回，消息表不加列——重载会话后
+ * 芯片不重现，属契约口径）。 */
 export interface ServiceAnswerComplete {
   message_id: number
   citations: ServiceCitation[]
   kind: 'answer' | 'refusal'
   handoff: boolean
+  gap_id: number | null
 }

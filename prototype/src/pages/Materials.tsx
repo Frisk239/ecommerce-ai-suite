@@ -71,6 +71,7 @@ export default function Materials() {
   const tasks = useStore((s) => s.materialTasks)
   const products = useStore((s) => s.products)
   const allAssets = useStore((s) => s.assets)
+  const clipAssets = allAssets.filter((a) => a.kind === '视频' && a.sourceKind === '切片拣选')
   const [creating, setCreating] = useState(false)
 
   return (
@@ -78,7 +79,7 @@ export default function Materials() {
       {creating && <NewTaskForm onClose={() => setCreating(false)} />}
       <PageHeader
         title="素材中心"
-        desc="按商品生成文案与图。成品不是聊天窗口里的一次性输出：登记成资产后可被治理、检索、复用。"
+        desc="生成任务须质检过线才登记。切片汇入是已登记视频资产的视图，不是生成任务。"
         actions={
           <button className="btn-primary" onClick={() => setCreating(true)}>
             <Plus size={14} />
@@ -111,12 +112,15 @@ export default function Materials() {
                   {t.status === '已完成' ? (
                     <span className="badge-published">
                       <CheckCircle size={11} weight="fill" />
-                      生成完成
+                      质检通过
                     </span>
+                  ) : t.status === '待质检' ? (
+                    <span className="badge-review">待质检</span>
+                  ) : t.status === '已打回' ? (
+                    <span className="badge-failed">已打回</span>
                   ) : (
                     <span className="badge-review">生成中</span>
                   )}
-                  {t.origin === 'clip' && <span className="badge-neutral">直播切片汇入</span>}
                   {t.origin === 'ops' && <span className="badge-neutral">运营发起</span>}
                   <span className="flex-1" />
                   <span className="text-xs text-caption font-mono tabular-nums">
@@ -163,6 +167,32 @@ export default function Materials() {
                           : '未发布，客服还不能用；到治理台人洗发布后进入检索。'}
                       </span>
                     </>
+                  ) : t.status === '待质检' ? (
+                    <>
+                      <button
+                        className="btn-primary"
+                        onClick={() => dispatch({ type: 'QC_PASS', taskId: t.id })}
+                      >
+                        抽检通过
+                      </button>
+                      <button
+                        className="btn-ghost btn-sm"
+                        onClick={() => dispatch({ type: 'QC_REJECT', taskId: t.id })}
+                      >
+                        打回
+                      </button>
+                      <span className="text-xs text-caption">过线才登记。打回则不进中台。</span>
+                    </>
+                  ) : t.status === '已打回' ? (
+                    <>
+                      <button
+                        className="btn-ghost btn-sm"
+                        onClick={() => dispatch({ type: 'QC_PASS', taskId: t.id })}
+                      >
+                        改判通过
+                      </button>
+                      <span className="text-xs text-caption">已打回，未登记。</span>
+                    </>
                   ) : (
                     <>
                       <button
@@ -174,7 +204,7 @@ export default function Materials() {
                         登记到中台
                       </button>
                       <span className="text-xs text-caption">
-                        登记后进入已接入状态，等待治理；不直接发布。
+                        登记后进入已接入，等待治理；不直接发布。
                       </span>
                     </>
                   )}
@@ -184,6 +214,31 @@ export default function Materials() {
           })}
         </div>
       )}
+
+      <div className="mt-8">
+        <div className="text-sm font-semibold text-ink mb-2">直播切片汇入</div>
+        <p className="text-xs text-caption mb-3">
+          来源=切片拣选、种类=视频的已登记资产。不是生成任务。运营只引用其中已发布的。
+        </p>
+        {clipAssets.length === 0 ? (
+          <div className="panel px-4 py-3 text-sm text-caption">还没有拣选登记的视频资产。</div>
+        ) : (
+          <div className="panel overflow-hidden">
+            <ul className="divide-y divide-line-1">
+              {clipAssets.map((a) => (
+                <li key={a.id} className="px-4 py-2.5 flex items-center gap-2 text-sm">
+                  <Link to={`/platform/assets/${a.id}`} className="font-mono text-accent-strong hover:underline">
+                    {a.id}
+                  </Link>
+                  <span className="text-ink">{a.title}</span>
+                  <span className="flex-1" />
+                  <span className="text-xs text-caption">{a.state}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

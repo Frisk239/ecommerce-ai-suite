@@ -3,6 +3,9 @@
 
 export type AssetKind = '文档' | '图片' | '视频' | '对话' | '素材'
 
+/** 资产进入中台的通道（ADR 0025） */
+export type SourceKind = '上传' | '会话回流' | '切片拣选' | '素材生成' | '连接层登记' | '种子'
+
 // 资产状态只有三态（ADR 0004）
 export type AssetState = '已接入' | '待人洗' | '已发布'
 
@@ -33,8 +36,10 @@ export interface Asset {
   title: string
   state: AssetState
   productId?: string // 可挂商品，也可独立存在
-  source: string // 血缘：从哪来
+  sourceKind: SourceKind
+  sourceNote?: string // 文件名、会话 ID 等补充，不代替种类
   sourceContent?: string // 登记时的原始内容（mock 对应对象键指向的字节）
+  fillsGapId?: string // 从哪条知识缺口补进来的
   createdAt: string
   machineWash: { status: 'pending' | 'done' | 'failed'; reason?: string }
   versions: AssetVersion[]
@@ -53,16 +58,25 @@ export interface Product {
   stockUnit: string // 瓶 / 只（库存单位，查询接口口径）
 }
 
-// 底座模型配置：客服等模块通过「设为客服底座」选择当前使用的模型
+// 厂商 Chat API 接入（ADR 0028：不训练、不切微调底座）
 export interface ModelConfig {
   id: string // M-01
   name: string
-  type: 'base' | 'finetuned'
-  provider: string // 提供方/部署方式
+  provider: string
   endpoint: string
   params: { temperature: number; maxTokens: number }
-  source?: string // 微调模型的血缘（来自哪次导出）
   createdAt: string
+}
+
+/** 无证据拒答留下的待补项（ADR 0024）。不是资产。 */
+export interface KnowledgeGap {
+  id: string // G-0001
+  question: string
+  sessionId?: string
+  productId?: string
+  createdAt: string
+  status: 'open' | 'filled'
+  filledAssetId?: string
 }
 
 export interface Citation {
@@ -78,7 +92,8 @@ export interface ChatMessage {
   toolCall?: { name: string; args: string; result: string }
   refused?: boolean // 检索无命中 → 拒答，不幻觉
   handoff?: boolean // 转人工
-  model?: { name: string; type: 'base' | 'finetuned'; source?: string }
+  gapId?: string // 因此次拒答记下的知识缺口
+  model?: { name: string }
   streaming?: boolean // 正在逐字输出（thinking=未出首字）
   pendingFull?: string // 流式的完整文本（刷新时兜底补全）
   interrupted?: boolean // 操作者点了停止，保留部分文本
@@ -96,8 +111,9 @@ export interface MaterialTask {
   id: string
   productId: string
   brief: string
-  status: '生成中' | '已完成'
-  origin?: 'ops' | 'clip' // 运营 Agent 编排发起 / 直播切片汇入
+  /** 待质检=生成完未过线；已打回=抽检不通过不登记；已完成=过线可登记（ADR 0029） */
+  status: '生成中' | '待质检' | '已打回' | '已完成'
+  origin?: 'ops'
   output?: { title: string; body: string; refs: Citation[] }
   registeredAssetId?: string
 }
@@ -136,17 +152,6 @@ export interface ExportRecord {
   // 导出时冻结的 资产ID · 版本号（ADR 0007：回放依据当时的版本，指针前移不漂移）
   refs: { assetId: string; v: number }[]
   size: string
-}
-
-// mock 训练任务：由导出自动生成（原型不实现真实训练），产物可注册为微调底座
-export interface TrainingTask {
-  id: string
-  exportId: string
-  assetCount: number
-  modelName: string
-  status: '已完成'
-  createdAt: string
-  registeredModelId?: string
 }
 
 export interface CoachScenario {

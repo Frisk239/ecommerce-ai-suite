@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
-  Brain,
   ChatCircleDots,
   Database,
   FilmSlate,
@@ -28,7 +27,6 @@ const NAV = [
   { to: '/materials', label: '素材中心', icon: ImageSquare, group: null },
   { to: '/clips', label: '直播切片', icon: FilmSlate, group: null },
   { to: '/coach', label: '销售考核', icon: GraduationCap, group: null },
-  { to: '/finetune', label: '模型微调', icon: Brain, group: null },
   { to: '/connect', label: '连接层', icon: PlugsConnected, group: '对外' },
   { to: '/models', label: '模型配置', icon: GearSix, group: '配置' },
 ]

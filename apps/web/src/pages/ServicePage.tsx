@@ -21,8 +21,10 @@ import { useApiData } from '../hooks/useApiData'
 import {
   SERVICE_SESSION_STATUS_LABEL,
   ASSET_STATUS_LABEL,
+  formatAssetId,
   formatDate,
   formatDateTime,
+  formatGapId,
   formatTime,
 } from '../labels'
 import { ErrorBanner, SuccessBanner } from '../components/Banner'
@@ -55,6 +57,9 @@ interface UiMessage {
   stopped: boolean
   /** thinking 事件带来的检索状态行文案。 */
   thinkingText: string | null
+  /** 拒答时 complete 事件带回的知识缺口 id（ADR 0030：只在运行时返回，
+   * 服务器消息列表不含此列——重载后芯片不重现，属契约口径）。 */
+  gapId: number | null
 }
 
 function toUi(m: {
@@ -78,6 +83,7 @@ function toUi(m: {
     streaming: false,
     stopped: false,
     thinkingText: null,
+    gapId: null,
   }
 }
 
@@ -120,6 +126,15 @@ function MessageBubble({ m, prev }: { m: UiMessage; prev?: UiMessage }) {
                 <HandArrowUp aria-hidden size={11} />
                 已转人工
               </span>
+            )}
+            {m.kind === 'refusal' && m.gapId !== null && (
+              <Link
+                to="/platform/assets?status=知识缺口"
+                className="badge badge-review font-mono transition-colors duration-150 hover:brightness-110"
+                title="已记入治理台知识缺口，不是资产"
+              >
+                知识缺口 {formatGapId(m.gapId)}
+              </Link>
             )}
           </div>
         )}
@@ -296,6 +311,7 @@ export default function ServicePage() {
         streaming: false,
         stopped: false,
         thinkingText: null,
+        gapId: null,
       },
       {
         key: agentKey,
@@ -309,6 +325,7 @@ export default function ServicePage() {
         streaming: true,
         stopped: false,
         thinkingText: null,
+        gapId: null,
       },
     ])
     const controller = new AbortController()
@@ -340,6 +357,7 @@ export default function ServicePage() {
                       handoff: payload.handoff,
                       streaming: false,
                       stopped: false,
+                      gapId: payload.gap_id ?? null,
                     }
                   : m,
               ),
@@ -401,7 +419,7 @@ export default function ServicePage() {
             <ArrowUDownLeft aria-hidden size={14} className="shrink-0" />
             已回流登记为
             <Link to={`/platform/assets/${registered.assetId}`} className="font-mono underline">
-              A-{registered.assetId}
+              {formatAssetId(registered.assetId)}
             </Link>
             （{ASSET_STATUS_LABEL[registered.assetStatus]}）· 治理台可见；客服检索暂不可见，发布后可被引用
           </span>
@@ -466,7 +484,7 @@ export default function ServicePage() {
                       <div className="mt-0.5 text-[11px] tabular-nums text-caption">
                         {s.message_count} 条消息
                         {s.status === 'registered' && s.registered_asset_id !== null && (
-                          <> · 已回流 A-{s.registered_asset_id}</>
+                          <> · 已回流 {formatAssetId(s.registered_asset_id)}</>
                         )}
                       </div>
                     </button>
@@ -534,7 +552,7 @@ export default function ServicePage() {
                     to={`/platform/assets/${session.registered_asset_id}`}
                     className="ml-1 font-mono underline"
                   >
-                    A-{session.registered_asset_id}
+                    {formatAssetId(session.registered_asset_id)}
                   </Link>
                 </span>
               )}

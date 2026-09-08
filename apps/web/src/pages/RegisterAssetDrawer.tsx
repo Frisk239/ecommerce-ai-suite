@@ -1,13 +1,17 @@
 // 登记资产抽屉：选商品（可不挂）+ 可选标题 + 上传文件（.txt/.md ≤ 2MB）。
 // 前端只做类型/大小校验，415/413/422 以 API 返回文案为准；成功后直达资产详情。
+// 从知识缺口「去补文档」进入时带 gap：标题预填「补口径 · 原问」、商品预选、
+// 提交附 knowledgeGapId（登记只关联，缺口关闭发生在发布事务里）——列表页用
+// key 区分实例，预填只落在初始 state，普通登记路径不受影响。
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FileText, X } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
-import type { Product } from '../api/types'
+import type { KnowledgeGap, Product } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
+import { formatGapId } from '../labels'
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
@@ -25,7 +29,15 @@ function validateFile(file: File): string | null {
   return null
 }
 
-export default function RegisterAssetDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function RegisterAssetDrawer({
+  open,
+  onClose,
+  gap,
+}: {
+  open: boolean
+  onClose: () => void
+  gap?: KnowledgeGap
+}) {
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -36,8 +48,8 @@ export default function RegisterAssetDrawer({ open, onClose }: { open: boolean; 
   const productsQ = useApiData(productsFetcher)
   const products = productsQ.state.phase === 'ok' ? productsQ.state.data : []
 
-  const [productId, setProductId] = useState('')
-  const [title, setTitle] = useState('')
+  const [productId, setProductId] = useState(gap?.product != null ? String(gap.product.id) : '')
+  const [title, setTitle] = useState(gap !== undefined ? `补口径 · ${gap.question}` : '')
   const [file, setFile] = useState<File | null>(null)
   const [fieldError, setFieldError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -85,6 +97,7 @@ export default function RegisterAssetDrawer({ open, onClose }: { open: boolean; 
     form.append('file', file)
     if (productId !== '') form.append('productId', productId)
     if (title.trim() !== '') form.append('title', title.trim())
+    if (gap !== undefined) form.append('knowledgeGapId', String(gap.id))
     try {
       const detail = await api.registerAsset(form)
       onClose()
@@ -101,20 +114,37 @@ export default function RegisterAssetDrawer({ open, onClose }: { open: boolean; 
   }
 
   return (
-    <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="登记资产">
+    <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={gap !== undefined ? `补缺口 ${formatGapId(gap.id)}` : '登记资产'}>
       <div className="modal-backdrop absolute inset-0" onClick={onClose} aria-hidden />
       <aside className="drawer-panel absolute inset-y-0 right-0 flex w-full max-w-md flex-col">
         <div className="flex items-center gap-2 border-b border-line-2 px-4 py-3">
-          <div className="flex-1 text-[14px] font-semibold text-ink">登记资产</div>
+          <div className="flex-1 text-[14px] font-semibold text-ink">
+            {gap !== undefined ? `补缺口 ${formatGapId(gap.id)}` : '登记资产'}
+          </div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="关闭登记表单">
             <X aria-hidden size={14} />
           </button>
         </div>
 
         <form className="flex-1 space-y-4 overflow-y-auto px-4 py-4" onSubmit={submit} noValidate>
-          <p className="text-xs leading-5 text-ink-3">
-            登记即把文件字节写入对象存储并进入已接入；机洗成功直接到待人洗，失败会停在已接入并给出原因。
-          </p>
+          {gap !== undefined ? (
+            <div className="rounded-[6px] border border-[rgba(154,91,6,0.25)] bg-[rgba(154,91,6,0.05)] px-3 py-2 text-xs leading-5 text-warn">
+              补缺口 {formatGapId(gap.id)}：登记后进入已接入，发布后缺口关闭。
+            </div>
+          ) : (
+            <p className="text-xs leading-5 text-ink-3">
+              登记即把文件字节写入对象存储并进入已接入（来源=上传）；机洗成功直接到待人洗，失败会停在已接入并给出原因。
+            </p>
+          )}
+
+          {gap !== undefined ? (
+            <div className="rounded-[6px] border border-line-2 bg-surface px-3 py-2 text-xs leading-5 text-ink-2">
+              顾客原问：<span className="text-ink">{gap.question}</span>
+              {gap.product !== null ? (
+                <span className="text-ink-3">（挂商品：{gap.product.name}）</span>
+              ) : null}
+            </div>
+          ) : null}
 
           <label className="block">
             <span className="field-label">挂载商品</span>

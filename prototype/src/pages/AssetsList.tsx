@@ -5,17 +5,18 @@ import PageHeader from '../components/PageHeader'
 import Empty from '../components/Empty'
 import { KindBadge, StateBadgeWithRevision } from '../components/StateBadge'
 import { dispatch, useStore } from '../store/store'
-import type { AssetKind, AssetState } from '../store/types'
+import type { AssetKind, KnowledgeGap } from '../store/types'
 
-const TABS: (AssetState | '全部')[] = ['全部', '待人洗', '已接入', '已发布']
+const TABS = ['全部', '待人洗', '已接入', '已发布', '知识缺口'] as const
+type ListTab = (typeof TABS)[number]
 
 // 治理台自己的登记入口：供应商文档等直接写入中台，落入已接入
-function RegisterForm({ onClose }: { onClose: () => void }) {
+function RegisterForm({ onClose, gap }: { onClose: () => void; gap?: KnowledgeGap }) {
   const products = useStore((s) => s.products)
   const [kind, setKind] = useState<AssetKind>('文档')
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(gap ? `补口径 · ${gap.question}` : '')
   const [content, setContent] = useState('')
-  const [productId, setProductId] = useState('')
+  const [productId, setProductId] = useState(gap?.productId ?? '')
 
   const submit = () => {
     if (!title.trim() || !content.trim()) return
@@ -25,6 +26,7 @@ function RegisterForm({ onClose }: { onClose: () => void }) {
       title: title.trim(),
       content: content.trim(),
       ...(productId ? { productId } : {}),
+      ...(gap ? { fillsGapId: gap.id } : {}),
     })
     onClose()
   }
@@ -33,7 +35,9 @@ function RegisterForm({ onClose }: { onClose: () => void }) {
     <div className="panel p-4 mb-4 space-y-2.5">
       <div className="flex items-center gap-2">
         <div className="text-sm font-semibold text-ink">登记资产</div>
-        <span className="text-xs text-caption">登记后进入已接入，机洗完成后到待人洗</span>
+        <span className="text-xs text-caption">
+          {gap ? `补缺口 ${gap.id}：登记后进入已接入，发布后缺口关闭` : '登记后进入已接入，机洗完成后到待人洗。来源=上传'}
+        </span>
         <span className="flex-1" />
         <button className="btn-ghost btn-sm" onClick={onClose} aria-label="关闭登记表单">
           <X size={13} />
@@ -99,16 +103,20 @@ function RegisterForm({ onClose }: { onClose: () => void }) {
 
 export default function AssetsList() {
   const assets = useStore((s) => s.assets)
+  const gaps = useStore((s) => s.knowledgeGaps)
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const state = (params.get('state') as AssetState | null) ?? '全部'
+  const state = (params.get('state') as ListTab | null) ?? '全部'
+  const fillingGapId = params.get('gap')
+  const fillingGap = gaps.find((g) => g.id === fillingGapId)
   const [q, setQ] = useState('')
-  const [registering, setRegistering] = useState(false)
+  const [registering, setRegistering] = useState(!!fillingGap)
 
   // 口径对齐（ADR 0006）：「已发布」tab = 线上在服务（publishedV，含修订中的线上版，
   // 行内徽章显示修订状态）；「待人洗」tab = 纯新待办（修订中的资产不在这里重复出现，
   // 它的待办在已发布 tab 的「待人洗·修订中」徽章上）。总览计数同口径，数字不再对不上。
   const filtered = useMemo(() => {
+    if (state === '知识缺口') return []
     return assets.filter((a) => {
       if (state === '已发布' && a.publishedV == null) return false
       if (state === '待人洗' && !(a.state === '待人洗' && a.publishedV == null)) return false
@@ -118,21 +126,35 @@ export default function AssetsList() {
     })
   }, [assets, state, q])
 
-  const countOf = (t: AssetState | '全部') =>
+  const countOf = (t: ListTab) =>
     t === '全部'
       ? assets.length
       : t === '已发布'
         ? assets.filter((a) => a.publishedV != null).length
         : t === '待人洗'
           ? assets.filter((a) => a.state === '待人洗' && a.publishedV == null).length
-          : assets.filter((a) => a.state === '已接入').length
+          : t === '知识缺口'
+            ? gaps.filter((g) => g.status === 'open').length
+            : assets.filter((a) => a.state === '已接入').length
 
   return (
     <div className="p-4 lg:p-6">
-      {registering && <RegisterForm onClose={() => setRegistering(false)} />}
+      {registering && (
+        <RegisterForm
+          gap={fillingGap}
+          onClose={() => {
+            setRegistering(false)
+            if (fillingGapId) {
+              const next = new URLSearchParams(params)
+              next.delete('gap')
+              setParams(next)
+            }
+          }}
+        />
+      )}
       <PageHeader
         title="中台 · 资产"
-        desc="被治理后可检索、可引用、可导出的内容。三态：已接入（机洗未完成或失败）→ 待人洗（等人补）→ 已发布（Agent 可用）。发布权只在治理台。"
+        desc="三态：已接入 → 待人洗 → 已发布。知识缺口不是资产：拒答后在这里排队，人补文档再发布。"
         actions={
           <button className="btn-primary" onClick={() => setRegistering(true)}>
             <Plus size={14} />
@@ -169,7 +191,58 @@ export default function AssetsList() {
         </div>
       </PageHeader>
 
-      {filtered.length === 0 ? (
+      {state === '知识缺口' ? (
+        <div className="panel overflow-hidden">
+          {gaps.length === 0 ? (
+            <Empty title="没有知识缺口" hint="客服无证据拒答时会记一条待办。不是工单，也不是资产。" />
+          ) : (
+            <table className="table-base">
+              <thead>
+                <tr>
+                  <th className="w-24">缺口</th>
+                  <th>顾客原问</th>
+                  <th className="w-32">商品</th>
+                  <th className="w-24">状态</th>
+                  <th className="w-36">时间</th>
+                  <th className="w-28"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {gaps.map((g) => (
+                  <tr key={g.id}>
+                    <td className="font-mono text-xs tabular-nums">{g.id}</td>
+                    <td className="text-sm">{g.question}</td>
+                    <td className="font-mono text-xs">{g.productId ?? '—'}</td>
+                    <td>
+                      {g.status === 'open' ? (
+                        <span className="badge-review">待补</span>
+                      ) : (
+                        <Link to={`/platform/assets/${g.filledAssetId}`} className="badge-published hover:underline">
+                          已补 {g.filledAssetId}
+                        </Link>
+                      )}
+                    </td>
+                    <td className="text-xs text-caption tabular-nums">{g.createdAt}</td>
+                    <td>
+                      {g.status === 'open' && (
+                        <button
+                          className="btn-primary btn-sm"
+                          onClick={() => {
+                            setParams({ state: '知识缺口', gap: g.id })
+                            setRegistering(true)
+                          }}
+                        >
+                          去补文档
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="panel">
           <Empty
             icon={<MagnifyingGlass size={28} />}
@@ -191,6 +264,7 @@ export default function AssetsList() {
                   <th className="w-24">资产 ID</th>
                   <th>标题</th>
                   <th className="w-20">种类</th>
+                  <th className="w-24">来源</th>
                   <th className="w-44">状态</th>
                   <th className="w-32">挂载商品</th>
                   <th className="w-36">登记时间</th>
@@ -217,6 +291,7 @@ export default function AssetsList() {
                     <td>
                       <KindBadge kind={a.kind} />
                     </td>
+                    <td className="text-xs text-ink-3">{a.sourceKind}</td>
                     <td>
                       <StateBadgeWithRevision asset={a} />
                     </td>
@@ -247,7 +322,9 @@ export default function AssetsList() {
                 </div>
                 <div className="mt-1.5 text-sm font-medium text-ink">{a.title}</div>
                 <div className="mt-1 text-xs text-caption tabular-nums">
-                  {a.productId ? `挂载 ${a.productId} · ` : ''}
+                  {a.sourceKind}
+                  {a.productId ? ` · 挂载 ${a.productId}` : ''}
+                  {' · '}
                   {a.createdAt}
                 </div>
               </Link>

@@ -29,7 +29,7 @@ export default function Clips() {
     <div className="p-4 lg:p-6">
       <PageHeader
         title="直播切片"
-        desc="一场直播自动切出候选片段，转写与商品标签由机洗完成。人工拣选后登记进中台，作为可治理的视频资产。"
+        desc="候选不是资产。拣选时切开独立片段，登记为视频、已接入。源录像不进中台。素材中心用视图展示这些视频，不造生成任务。"
         actions={
           <>
             <span className="text-xs text-caption tabular-nums">
@@ -115,7 +115,7 @@ export default function Clips() {
       )}
 
       <div className="mt-4 text-xs text-caption">
-        登记后的切片是中台视频资产（已接入）：未发布前客服检索不到，运营 Agent 也只能引用已发布素材。
+        登记后是种类=视频的中台资产（已接入）。未发布前客服检索不到。素材中心「切片汇入」列出这些视频，不另造任务。
       </div>
     </div>
   )

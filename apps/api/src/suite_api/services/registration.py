@@ -4,6 +4,9 @@ put_bytes -> Asset(ingested) -> flush 拿主键 -> AssetVersion(v1) -> 同步机
 try/except（成功推进 pending_review；失败停 ingested 存 last_error，照样落库）。
 路由层只保留各自的入参校验与外围状态（如会话置 registered）；本函数不
 commit——事务边界归调用方（回流登记要把会话状态变更并进同一事务）。
+
+source_kind（0025）：登记必填来源种类，由调用端点按语义定值（上传=upload、
+回流=session_backflow），不让调用方自由填报；坏值 ValueError，路由层转 422。
 """
 
 import hashlib
@@ -22,6 +25,25 @@ from suite_platform.storage import ObjectStorage
 INGESTED = "ingested"
 PENDING_REVIEW = "pending_review"
 
+# 来源六枚举（0025/ADR 0030）：登记端点语义定值，调用方不可自由填报
+SOURCE_KINDS = (
+    "upload",
+    "session_backflow",
+    "clip_pick",
+    "material_generated",
+    "mcp_registered",
+    "seed",
+)
+
+
+def validate_source_kind(source_kind: str) -> str:
+    """来源枚举校验（纯函数便于单测）：坏值 ValueError，路由层转 422。"""
+    if source_kind not in SOURCE_KINDS:
+        raise ValueError(
+            f"来源种类必须是 {'/'.join(SOURCE_KINDS)} 之一，收到: {source_kind!r}"
+        )
+    return source_kind
+
 
 def register_asset(
     db: Session,
@@ -32,9 +54,11 @@ def register_asset(
     content_bytes: bytes,
     filename: str | None,
     product_id: int | None,
+    source_kind: str,
 ) -> Asset:
     """登记资产 + v1 版本（含同步机洗推进），返回 asset（未 commit）。
 
+    - source_kind 必填（0025），入口先校验——坏值在任何字节落库前失败。
     - 字节先落对象存储，对象键 = {documents|dialogue}/{uuid}/{sha256前16}.txt；
       filename 不参与键（ADR 0003 每版一把键，扩展名固定 .txt），仅作为登记
       入口的来源信息保留在签名里。
@@ -42,6 +66,7 @@ def register_asset(
       -> 空集，机洗只解析文本 -> 直接待人洗。
     - product_id 给了但不存在 -> 404（在字节落库前失败，与路由原校验同口径）。
     """
+    validate_source_kind(source_kind)
     product = None
     if product_id is not None:
         product = db.get(Product, product_id)
@@ -58,6 +83,7 @@ def register_asset(
         status=INGESTED,
         title=title,
         product_id=product.id if product is not None else None,
+        source_kind=source_kind,
     )
     db.add(asset)
     db.flush()  # 拿主键，机洗失败也能以 ingested + last_error 落库

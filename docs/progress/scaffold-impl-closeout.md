@@ -9,7 +9,7 @@
 
 - **单仓布局**：`apps/api`（suite_api，FastAPI + psycopg3 + pydantic-settings）、`apps/web`（Vite + React 19 + TS 单页健康壳，Tailwind v4 + oxlint）、`packages/platform`（suite_platform：ObjectStorage Protocol + LocalDirectoryStorage）；根 uv workspace + compose.yaml 三服务（pgvector/pg16 healthcheck、api、web）。
 - **路径**：`docker compose up` → `localhost:5173` 健康卡双绿（真实调 `/api/health`）→ `uv run pytest` 绿。
-- 无业务对象/表/ORM/MCP/登录；XAI 配置留位不建客户端。Out 十条全守住（Spec 评审子代理逐条核对）。
+- 无业务对象/表/ORM/MCP/登录；LLM 配置留位不建客户端。Out 十条全守住（Spec 评审子代理逐条核对）。
 
 ## 路径验收证据（Owner 亲跑，命令输出原文摘录）
 

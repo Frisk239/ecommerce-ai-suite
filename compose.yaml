@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: suite
       POSTGRES_DB: suite
     ports:
-      - "5432:5432"
+      - "${PG_PORT:-5432}:5432"  # 本机 5432 被占时 .env 设 PG_PORT 覆盖（默认不变）
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -29,6 +29,10 @@ services:
     environment:
       DATABASE_URL: postgresql://suite:suite@db:5432/suite
       STORAGE_ROOT: /data/objects
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://opencode.ai/zen/go/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen3.8-flash}
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
     ports:
       - "8000:8000"
     volumes:

@@ -2,10 +2,12 @@
 
 状态机：ingested --机洗成功--> pending_review --发布--> published；
 机洗失败停 ingested 存 last_error；已发布/已接入版本不可改（0006）。
-发布为单事务：版本 published -> 资产指针前移 -> 商品写回 -> 审计一行。
+发布为单事务：版本 published -> 资产指针前移 -> 商品写回 -> 审计一行
+-> 解决登记时关联的知识缺口（0024：解决动作随发布发生）。
 
 登记骨架（put_bytes -> Asset/AssetVersion -> 机洗推进）与资产读视图装配
 分别在 services/registration.py 与 services/asset_view.py，供 service 路由共用。
+source_kind（0025）与补文档缺口关联（0024）都在本路由按端点语义定值。
 """
 
 from datetime import UTC, datetime
@@ -16,7 +18,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import Asset, AssetVersion, AuditLog, Operator, Product, RetrievalChunk
+from suite_api.models import (
+    Asset,
+    AssetVersion,
+    AuditLog,
+    KnowledgeGap,
+    Operator,
+    Product,
+    RetrievalChunk,
+)
 from suite_api.services.asset_view import (
     AssetDetail,
     AssetOut,
@@ -26,6 +36,7 @@ from suite_api.services.asset_view import (
     to_asset_detail,
     to_asset_out,
 )
+from suite_api.services.knowledge_gaps import OPEN, resolve_gaps_for_asset
 from suite_api.services.machine_wash import MachineWashError, run_machine_wash
 from suite_api.services.publishing import (
     evaluate_publish_gate,
@@ -81,6 +92,7 @@ async def register(
     file: Annotated[UploadFile, File()],
     productId: Annotated[int | None, Form()] = None,
     title: Annotated[str | None, Form()] = None,
+    knowledgeGapId: Annotated[int | None, Form()] = None,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
     storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
@@ -88,7 +100,12 @@ async def register(
     """登记（0013 没有字节不能登记）：字节先落对象存储，再写库，再同步机洗。
 
     骨架与回流登记共享 services/registration.register_asset；此处只做上传
-    入参校验（类型/大小/空文件）。
+    入参校验（类型/大小/空文件）。source_kind 固定 upload（0025：服务端按
+    端点语义定值，不让调用方填报）。knowledgeGapId=「补文档」关联（0024，
+    原型 fillsGapId 语义）：缺口须存在且 open，且未挂登记中的补文档——
+    同一缺口同一时间只挂一份，否则二次登记静默覆盖指向，首份发布时
+    resolve_gaps_for_asset 按 resolved_by_asset_id 查不到该缺口，永不解决；
+    登记后 resolved_by_asset_id 指向本资产（缺口仍 open，发布事务内才置 resolved）。
     """
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
@@ -103,15 +120,48 @@ async def register(
     if not data:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能登记")
 
-    asset = register_asset(
-        db,
-        storage,
-        kind="document",
-        title=title,
-        content_bytes=data,
-        filename=file.filename,
-        product_id=productId,
-    )
+    # 缺口关联先校验（在字节落库前失败）；预填的标题/商品只是前端便利，后端不强制
+    gap = None
+    if knowledgeGapId is not None:
+        gap = db.get(KnowledgeGap, knowledgeGapId)
+        if gap is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"知识缺口不存在: {knowledgeGapId}",
+            )
+        if gap.status != OPEN:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"只有待补（open）的知识缺口可以关联，当前状态: {gap.status}",
+            )
+        # open 但已挂登记中的补文档：拒绝二次登记（覆盖指向会让首份发布时
+        # resolve_gaps_for_asset 查不到该缺口，缺口永远 open）
+        if gap.resolved_by_asset_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"该缺口已有登记中的补文档 A-{gap.resolved_by_asset_id}，"
+                    "请先发布它或换一条缺口"
+                ),
+            )
+
+    try:
+        asset = register_asset(
+            db,
+            storage,
+            kind="document",
+            title=title,
+            content_bytes=data,
+            filename=file.filename,
+            product_id=productId,
+            source_kind="upload",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    if gap is not None:
+        gap.resolved_by_asset_id = asset.id
     db.commit()
     db.refresh(asset)
     return to_asset_detail(db, asset)
@@ -275,6 +325,9 @@ def publish(
             action="publish",
         )
     )
+    # 0024：发布事务内解决登记时关联的知识缺口（open -> resolved + 指向本资产）。
+    # 解决动作随发布发生，无独立手动关闭端点；发布失败整体回滚，缺口保持 open。
+    resolve_gaps_for_asset(db, asset.id, resolved_at=version.published_at)
     db.commit()
     db.refresh(asset)
     db.refresh(version)

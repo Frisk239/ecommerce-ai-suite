@@ -3,12 +3,13 @@
 - 新开会话 / 列表 / 详情（消息全量含 citations 与 kind）。
 - 发问：SSE 流式回答。事件序列 thinking -> delta* -> complete（原型第四节
   冻结的交互状态机只保留 thinking/streaming/stop，传输用 SSE；35ms 逐字与
-  mock 大脑不搬）。
+  mock 大脑不搬）。拒答（0018 refusal）同事务落知识缺口（0024），complete
+  事件带 gap_id 供前端芯片跳转（ADR 0030：运行时返回，消息表不加列）。
 - 回流登记（CONTEXT「会话」词条）：会话转写字节先落对象存储（0013），再建
   kind=dialogue 资产（已接入）+ v1 版本，对话种类无规格必填（0019）、机洗无
   字段抽取直接待人洗；会话置 registered 并指向登记出的资产。登记不是 0005
   三类治理动作，不新增审计 action。登记骨架与文档登记共享
-  services/registration.register_asset。
+  services/registration.register_asset（source_kind 由本端点定 session_backflow）。
 """
 
 import json
@@ -23,9 +24,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import Asset, Operator, ServiceMessage, ServiceSession
+from suite_api.models import Asset, KnowledgeGap, Operator, ServiceMessage, ServiceSession
 from suite_api.services.answer import compose_answer
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
+from suite_api.services.knowledge_gaps import record_refusal_gap
 from suite_api.services.registration import register_asset
 from suite_api.services.retrieval import retrieve
 from suite_platform.storage import ObjectStorage
@@ -261,6 +263,12 @@ def ask(
         handoff=answer.handoff,
     )
     db.add(agent_message)
+    # 0024：无证据拒答同事务落知识缺口（question=顾客原问，精确幂等：同文
+    # open 缺口复用不新建）。只挂 refusal 路径——工具失败转人工不产生缺口
+    # （本刀无工具，该契约由集成测试钉死）。
+    gap: KnowledgeGap | None = None
+    if answer.kind == "refusal":
+        gap = record_refusal_gap(db, question)
     db.commit()
     db.refresh(agent_message)
 
@@ -276,6 +284,8 @@ def ask(
                 "citations": answer.citations,
                 "kind": answer.kind,
                 "handoff": answer.handoff,
+                # 拒答=缺口 id（前端芯片跳治理台缺口 tab）；answer 恒为 null
+                "gap_id": gap.id if gap is not None else None,
             },
         )
 
@@ -295,8 +305,9 @@ def register_session(
     """回流登记：转写字节先落对象存储（0013 没有字节不能登记）-> 建 kind=dialogue
     资产（已接入）+ v1 版本 -> 机洗（对话无字段抽取，直接待人洗）-> 会话置
     registered 并指向新资产。登记骨架与文档登记共享 register_asset（此处不
-    commit，会话状态变更与其并进同一事务）。不写审计（登记不是 0005 的
-    publish/confirm/回滚）。
+    commit，会话状态变更与其并进同一事务）。source_kind 由本端点定值
+    session_backflow（0025：服务端定，不让调用方填报）。不写审计（登记不是
+    0005 的 publish/confirm/回滚）。
     """
     del operator
     session = _get_session_or_404(db, session_id)
@@ -318,15 +329,21 @@ def register_session(
     first_customer = next((m for m in messages if m.role == "customer"), None)
     title = _first_question(first_customer.content) if first_customer else "客服对话转写"
 
-    asset = register_asset(
-        db,
-        storage,
-        kind="dialogue",
-        title=title,
-        content_bytes=transcript.encode("utf-8"),
-        filename=None,
-        product_id=None,
-    )
+    try:
+        asset = register_asset(
+            db,
+            storage,
+            kind="dialogue",
+            title=title,
+            content_bytes=transcript.encode("utf-8"),
+            filename=None,
+            product_id=None,
+            source_kind="session_backflow",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     session.status = REGISTERED
     session.registered_asset_id = asset.id
     session.closed_at = datetime.now(UTC)
