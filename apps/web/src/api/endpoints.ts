@@ -7,6 +7,9 @@ import type {
   AssetVersion,
   AuditEntry,
   ClipCandidate,
+  CoachQuestion,
+  CoachQuestionKey,
+  CoachRecord,
   CustomerAnswerComplete,
   CustomerSessionCreated,
   CsvImportReport,
@@ -52,8 +55,8 @@ export const api = {
   logout: () => request<{ detail: string }>('/auth/logout', { method: 'POST' }),
   me: () => request<Operator>('/auth/me'),
 
-  // 资产
-  listAssets: () => request<AssetListItem[]>('/assets'),
+  // 资产（kind 过滤第 19 刀加，与 status 并存：题库推导/切片汇入等按种类取数）
+  listAssets: (kind?: string) => request<AssetListItem[]>(kind ? `/assets?kind=${kind}` : '/assets'),
   getAsset: (assetId: number) => request<AssetDetail>(`/assets/${assetId}`),
   registerAsset: (form: FormData) => request<AssetDetail>('/assets/register', { method: 'POST', body: form }),
   // CSV 批量导入（第 9 刀）：上传通道的批量形态，逐行登记尽力而为，报告即答案
@@ -126,6 +129,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ids }),
     }),
+
+  // 销售考核（第 19 刀/ADR 0040）：题库从已发布对话动态推导；作答/重评请求内
+  // 同步 LLM 打分（≤20s，超时宽同素材生成）。打分失败不抛：200 + unscored 态。
+  listCoachQuestions: () => request<CoachQuestion[]>('/coach/questions'),
+  createCoachAttempt: (questionKey: CoachQuestionKey, answer: string) =>
+    request<CoachRecord>(
+      '/coach/attempts',
+      {
+        method: 'POST',
+        body: JSON.stringify({ question_key: questionKey, answer }),
+      },
+      30_000,
+    ),
+  listCoachRecords: () => request<CoachRecord[]>('/coach/records'),
+  rescoreCoachRecord: (recordId: number) =>
+    request<CoachRecord>(`/coach/records/${recordId}/rescore`, { method: 'POST' }, 30_000),
 
   // 客服会话（预览与顾客接口同一引擎；传输用 SSE，不用 EventSource）
   createServiceSession: () =>
