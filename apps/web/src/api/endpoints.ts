@@ -11,6 +11,7 @@ import type {
   CsvImportReport,
   KnowledgeGap,
   KnowledgeGapStatus,
+  MaterialTask,
   Operator,
   Product,
   QaPair,
@@ -93,6 +94,22 @@ export const api = {
   // 知识缺口（只读列表：产生随拒答、解决随发布，无创建/关闭端点）
   listKnowledgeGaps: (status: KnowledgeGapStatus = 'open') =>
     request<KnowledgeGap[]>(`/knowledge-gaps?status=${status}`),
+
+  // 素材中心（第 17 刀/ADR 0038）：任务不是中台对象；建任务请求内同步执行
+  // LLM 生成+规则质检（≤20s，同回流机洗的等待面），返回即稳定态。全部操作者鉴权。
+  createMaterialTask: (productId: number) =>
+    request<MaterialTask>('/material/tasks', {
+      method: 'POST',
+      body: JSON.stringify({ product_id: productId }),
+    }),
+  listMaterialTasks: () => request<MaterialTask[]>('/material/tasks'),
+  getMaterialTask: (taskId: number) => request<MaterialTask>(`/material/tasks/${taskId}`),
+  approveMaterialTask: (taskId: number) =>
+    request<MaterialTask>(`/material/tasks/${taskId}/approve`, { method: 'POST' }),
+  rejectMaterialTask: (taskId: number) =>
+    request<MaterialTask>(`/material/tasks/${taskId}/reject`, { method: 'POST' }),
+  retryMaterialTask: (taskId: number) =>
+    request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }),
 
   // 客服会话（预览与顾客接口同一引擎；传输用 SSE，不用 EventSource）
   createServiceSession: () =>

@@ -1,6 +1,15 @@
 // 界面用词与格式化（CONTEXT.md 词表：已接入/待人洗/已发布；不用「用户」「草稿」「未审核」）。
 
-import type { AssetStatus, ServiceSessionStatus } from './api/types'
+import type { AssetStatus, MaterialTaskStatus, ServiceSessionStatus } from './api/types'
+
+/** 素材任务五态（第 17 刀/ADR 0038）：与资产三态分词表——任务不是中台对象。 */
+export const MATERIAL_TASK_STATUS_LABEL: Record<MaterialTaskStatus, string> = {
+  queued: '排队',
+  running: '进行中',
+  pending_qc: '待抽检',
+  registered: '已登记',
+  failed: '失败',
+}
 
 export const ASSET_STATUS_LABEL: Record<AssetStatus, string> = {
   ingested: '已接入',
@@ -17,6 +26,7 @@ export const SERVICE_SESSION_STATUS_LABEL: Record<ServiceSessionStatus, string> 
 const KIND_LABELS: Record<string, string> = {
   document: '文档',
   dialogue: '对话',
+  material: '素材',
 }
 
 export function kindLabel(kind: string): string {
@@ -45,6 +55,11 @@ export function formatAssetId(id: number): string {
 
 export function formatGapId(id: number): string {
   return `G-${String(id).padStart(4, '0')}`
+}
+
+/** 素材任务 ID 展示（同 A-/G- 口径补零；后端契约仍是裸 int）。 */
+export function formatTaskId(id: number): string {
+  return `M-${String(id).padStart(4, '0')}`
 }
 
 export function formatDateTime(iso: string | null | undefined): string {

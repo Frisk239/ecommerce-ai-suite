@@ -1,5 +1,6 @@
 // 操作台壳（视觉优化刀）：固定左侧栏（分组：数据中台靠前）+ 顶栏面包屑 + 内容列。
-// 路由行为不变：/login 与 /customer 不进此壳；此处只做布局与视觉，不新增路由。
+// 路由行为不变：/login 与 /customer 不进此壳；新页面入口只加 NAV/面包屑条目
+// （第 17 刀起含素材中心）。
 
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
@@ -7,6 +8,7 @@ import {
   ChatCircleDots,
   Database,
   List,
+  Megaphone,
   Package,
   SignOut,
   Storefront,
@@ -18,7 +20,8 @@ import { useAuth } from '../auth/AuthContext'
 const NAV = [
   { to: '/platform/assets', label: '中台 · 资产', icon: Database, group: '数据中台' },
   { to: '/platform/products', label: '中台 · 商品', icon: Package, group: null },
-  { to: '/service', label: 'AI 客服', icon: ChatCircleDots, group: '业务能力' },
+  { to: '/material', label: '素材中心', icon: Megaphone, group: '业务能力' },
+  { to: '/service', label: 'AI 客服', icon: ChatCircleDots, group: null },
 ] as const
 
 function useCrumb(): string | null {
@@ -26,6 +29,7 @@ function useCrumb(): string | null {
   if (pathname.startsWith('/platform/assets/')) return '数据中台 / 中台 · 资产 / 详情'
   if (pathname.startsWith('/platform/assets')) return '数据中台 / 中台 · 资产'
   if (pathname.startsWith('/platform/products')) return '数据中台 / 中台 · 商品'
+  if (pathname.startsWith('/material')) return '业务能力 / 素材中心'
   if (pathname.startsWith('/service')) return '业务能力 / AI 客服'
   return null
 }
