@@ -55,9 +55,6 @@ _SEED_LIKE: list[Product] = [_product(1, "瓶装水"), _product(2, "钛钢保温
         "瓶装水没货了吗",
         "现在是无货状态？",
         "这个缺货吗？",
-        "库存还剩多少？",
-        "有现货吗",
-        "还剩下几件？",
     ],
 )
 def test_stock_pattern_hits(question: str) -> None:
@@ -72,6 +69,12 @@ def test_stock_pattern_hits(question: str) -> None:
         "材质是什么？",
         "怎么退货？",
         "我的订单 SO-1001 到哪了？",
+        # 第 16 刀词表收窄（P1#3）：通用词与「剩」不再是分派词——
+        "库存还剩多少？",  # 无商品名的泛问回检索
+        "有现货吗",  # 「现货」吞已发布政策文档，已去
+        "还剩下几件？",  # 「剩」误伤规格问句，已去
+        "保温杯还剩多少毫升",  # 规格问句含「剩」：不命中，回检索不误答有货
+        "库存政策是什么",  # 含「库存」的政策问句：不命中，政策文档可被检索命中
         "",
     ],
 )
@@ -157,11 +160,20 @@ class _BoomProduct:
         raise SQLAlchemyError("db down")
 
 
-def test_get_stock_db_error_swallowed() -> None:
+def test_get_stock_db_error_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """P1#6 钉子：吞异常转 {error} 的对外行为不变，但捕获处必须 logger.exception
+    （原文只进服务端日志，线上不再只剩「查询失败」）。对模块 logger 打桩断言
+    调用形状——不用 caplog：带 DB 跑时 alembic fileConfig 会重置 root handler，
+    跨模块采集顺序不稳定。"""
     db = _FakeDb()
-    assert stock_tools.get_stock(db, _BoomProduct()) == {"error": True}  # type: ignore[arg-type]
+    seen: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(stock_tools.logger, "exception", lambda *a: seen.append(a))
+
+    result = stock_tools.get_stock(db, _BoomProduct())  # type: ignore[arg-type]
+    assert result == {"error": True}
     # 异常后尽力回滚恢复会话可用（handoff 消息还要在同 session 落库）
     assert db.rollback_calls == 1
+    assert any("库存工具读取商品库存失败" in str(a[0]) for a in seen)
 
 
 def test_query_stock_hit_and_miss() -> None:
@@ -178,10 +190,15 @@ def test_query_stock_hit_and_miss() -> None:
     }
 
 
-def test_query_stock_list_error_swallowed() -> None:
+def test_query_stock_list_error_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
     db = _FakeDb(scalars_error=SQLAlchemyError("db down"))
-    assert stock_tools.query_stock(db, "保温杯有货吗") == {"error": True}  # type: ignore[arg-type]
+    seen: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(stock_tools.logger, "exception", lambda *a: seen.append(a))
+
+    result = stock_tools.query_stock(db, "保温杯有货吗")  # type: ignore[arg-type]
+    assert result == {"error": True}
     assert db.rollback_calls == 1
+    assert any("库存工具列取商品失败" in str(a[0]) for a in seen)  # P1#6
 
 
 # ---------- 摘要与五分支模板 ----------
@@ -302,7 +319,7 @@ def test_run_ask_stock_null_handoff_without_gap(monkeypatch: pytest.MonkeyPatch)
     calls = _guards(monkeypatch)
     _stub_stock(monkeypatch, {"found": True, "product_name": "钛钢保温杯", "stock": None})
 
-    outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "库存还有多少？"))
+    outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "钛钢保温杯有货吗？"))
 
     assert calls == {"retrieve": 0, "gap": 0, "llm": 0}
     assert outcome.answer.kind == "handoff"
@@ -312,28 +329,61 @@ def test_run_ask_stock_null_handoff_without_gap(monkeypatch: pytest.MonkeyPatch)
     assert outcome.tool["result"] == "未设置"
 
 
-def test_run_ask_stock_product_miss_handoff(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _guards(monkeypatch)
+def test_run_ask_stock_word_hit_product_miss_falls_back_to_retrieval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """第 16 刀 P1#3 双前置：词表命中但 LCS 商品未命中 -> **回既有检索路径**
+    （不是 handoff，不是工具）；归宿对齐词条——检索无证据走 refusal 落缺口。"""
     _stub_stock(monkeypatch, {"found": False})
+    retrieve_calls: list[str] = []
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.retrieve",
+        lambda _db, question, **_k: (retrieve_calls.append(question), [])[1],
+    )
+    monkeypatch.setattr("suite_api.services.chat_engine.assets_meta", lambda *_a, **_k: {})
+    monkeypatch.setattr("suite_api.services.chat_engine.record_refusal_gap", lambda *_a, **_k: None)
 
-    outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "小龙虾有货吗"))
+    async def _no_llm(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("降级路径不该调 LLM")
+        yield ""  # pragma: no cover
 
-    assert calls == {"retrieve": 0, "gap": 0, "llm": 0}
-    assert outcome.answer.kind == "handoff"
-    assert outcome.agent_message.content == "没有找到对应商品，已转人工。"
-    assert outcome.tool == {"name": "get_stock", "arg": "小龙虾有货吗", "result": "未找到商品"}
+    monkeypatch.setattr("suite_api.services.chat_engine.llm.stream_chat", _no_llm)
+
+    outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "还有货吗"))
+
+    assert retrieve_calls == ["还有货吗"]  # 词表命中但无商品匹配 -> 检索被调
+    assert outcome.tool is None  # 工具零接触（不回工具）
+    assert outcome.answer.kind == "refusal"  # 检索空 -> 既有拒答（0018，留缺口口径）
 
 
 def test_run_ask_stock_error_handoff(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _guards(monkeypatch)
     _stub_stock(monkeypatch, {"error": True})
 
-    outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "有没有现货？"))
+    outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "瓶装水没货了吗？"))
 
     assert calls == {"retrieve": 0, "gap": 0, "llm": 0}
     assert outcome.answer.kind == "handoff"
     assert outcome.agent_message.content == "库存查询失败，已转人工。"
     assert outcome.tool["result"] == "查询失败"
+
+
+def test_run_ask_narrowed_words_never_touch_stock_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """词表收窄误伤钉（P1#3）：「保温杯还剩多少毫升」（规格问句含「剩」+商品名）
+    与「库存政策是什么」（通用词政策问）都必须零接触库存工具，走既有检索。"""
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.query_stock",
+        lambda *_a, **_k: pytest.fail("收窄后的词不得调用库存工具"),
+    )
+    monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: [])
+    monkeypatch.setattr("suite_api.services.chat_engine.assets_meta", lambda *_a, **_k: {})
+
+    for question in ("保温杯还剩多少毫升？", "库存政策是什么"):
+        outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), question))
+        assert outcome.tool is None
+        assert outcome.answer.kind == "refusal"  # 检索空 -> 既有拒答路径原样
 
 
 def test_run_ask_order_takes_priority_over_stock(

@@ -520,6 +520,31 @@ def test_confirm_fields_allows_unpublished_revision_on_published_asset(
     assert entry.get("inherited") in (None, False)
 
 
+def test_inherit_confirmed_tags_array_values() -> None:
+    """第 16 刀 P2：开修订继承确认字段时，数组值（dialogue 的 qa_pairs）与 str
+    值同口径打 inherited 标签——前端 QA 面板据此显示「继承自已发布版」。
+    空数组（确认「没有 QA」）= 无值，不打（与 str 的空白值同口径）。纯函数，
+    无 DB。"""
+    from suite_api.routes.assets import _inherit_confirmed
+
+    out = _inherit_confirmed(
+        {
+            "qa_pairs": {
+                "value": [{"q": "退款几天到账", "a": "质检后3个工作日"}],
+                "source": "human",
+            },
+            "材质": {"value": "钛钢", "source": "human"},
+            "净含量": {"value": "  ", "source": "human"},
+            "保质期": {"value": [], "source": "human"},
+        }
+    )
+    assert out["qa_pairs"]["inherited"] is True
+    assert out["qa_pairs"]["value"] == [{"q": "退款几天到账", "a": "质检后3个工作日"}]
+    assert out["材质"]["inherited"] is True
+    assert "inherited" not in out["净含量"]
+    assert "inherited" not in out["保质期"]
+
+
 def test_publish_revision_moves_pointer_and_writes_back(api: ApiFixture) -> None:
     client, _ = api
     _login(client)

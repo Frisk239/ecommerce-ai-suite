@@ -1,9 +1,16 @@
 """登记共享服务（0013 没有字节不能登记）：文档登记与会话回流登记的同一骨架。
 
-put_bytes -> Asset(ingested) -> flush 拿主键 -> AssetVersion(v1) -> 同步机洗
-try/except（成功推进 pending_review；失败停 ingested 存 last_error，照样落库）。
-路由层只保留各自的入参校验与外围状态（如会话置 registered）；本函数不
-commit——事务边界归调用方（回流登记要把会话状态变更并进同一事务）。
+put_bytes -> Asset(ingested) -> flush 拿主键 -> AssetVersion(v1) -> **commit**
+-> 同步机洗 try/except（成功推进 pending_review；失败停 ingested 存
+last_error，终态由调用方最后一次 commit 收口）。路由层只保留各自的入参
+校验与外围状态（如会话置 registered）。
+
+事务边界（第 16 刀，审计刀 3 P1#2，对齐第 11 刀 run_ask 纪律）：机洗在
+dialogue 时会调 LLM 抽取 QA（至多 20s）——登记行（字节+Asset+版本）先
+commit 落库释放连接，机洗绝不在持有写事务的状态下跑（不 idle-in-transaction
+占池）。先提交的只是 ingested 态：「登记失败不挡字节」语义不变（机洗失败
+停已接入可重试，重试端点重跑）；推进待人洗/记 last_error 的终态仍并进调用方
+事务（回流登记与会话状态变更同批提交）。
 
 source_kind（0025）：登记必填来源种类，由调用端点按语义定值（上传=upload、
 回流=session_backflow），不让调用方自由填报；坏值 ValueError，路由层转 422。
@@ -85,6 +92,7 @@ def register_asset(
       （LLM 抽 QA 草稿；未配置模型=弃权降级照常待人洗，失败=停已接入可重试）；
       文档挂商品 -> spec_schema keys；文档不挂商品 -> 空集直接待人洗。
     - product_id 给了但不存在 -> 404（在字节落库前失败，与路由原校验同口径）。
+    - 机洗前 commit（P1#2）：LLM 等待至多 20s，不得 idle-in-transaction 占连接。
     """
     validate_source_kind(source_kind)
     product = None
@@ -104,7 +112,7 @@ def register_asset(
         source_kind=source_kind,
     )
     db.add(asset)
-    db.flush()  # 拿主键，机洗失败也能以 ingested + last_error 落库
+    db.flush()  # 拿主键（版本行要 asset_id）
     version = AssetVersion(
         asset_id=asset.id,
         version_no=1,
@@ -114,7 +122,15 @@ def register_asset(
     )
     db.add(version)
 
+    # 字段集在 commit 前算完（读 product.spec_schema 会 autobegin，别把只读
+    # 事务留进机洗窗口）
     field_names = machine_wash_field_names(kind, product)
+    # P1#2（第 16 刀）：登记行先提交——机洗（dialogue 含 LLM ≤20s）不持有
+    # 事务；成功/失败的终态推进在下一个 autobegin 事务里，由调用方 commit 收口。
+    # 两段式的代价：登记行 commit 后、调用方收口前进程崩溃，last_error 可能
+    # 未落库（资产停 ingested，可经 retry 端点推进——「登记失败不挡字节」不破）
+    db.commit()
+
     try:
         extracted = run_machine_wash(storage, object_key, field_names, kind)
         version.extracted_fields = extracted  # JSONB 整体赋值，确保变更可追踪

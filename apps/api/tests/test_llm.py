@@ -5,6 +5,8 @@ prompt 组装不触碰凭证。
 """
 
 import asyncio
+import weakref
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace as NS
 from typing import Any
 
@@ -77,13 +79,17 @@ def test_stream_chat_without_key_raises_not_configured(monkeypatch: pytest.Monke
         "get_settings",
         lambda: Settings(llm_api_key="", llm_base_url="http://localhost:9/v1", llm_model="m"),
     )
-    monkeypatch.setattr(llm, "_client", None)
+    monkeypatch.setattr(llm, "_clients", weakref.WeakKeyDictionary())
     with pytest.raises(llm.LLMNotConfigured):
         _consume()
 
 
 def _install_fake_client(monkeypatch: pytest.MonkeyPatch, create_result: Any) -> list[dict]:
-    """注入替身 openai 客户端（绕过 settings/网络），返回 create 调用参数记录。"""
+    """注入替身 openai 客户端（绕过 settings/网络），返回 create 调用参数记录。
+
+    第 16 刀 P1#1 后真客户端按事件循环懒建，替身注入缝从 `_client` 单例改到
+    `_new_client` 构造器（每 loop 首次调用各建一个替身实例，替身无 httpx 原语、
+    与 loop 无关，跨 loop 共用无碍）。"""
     calls: list[dict] = []
 
     class Completions:
@@ -97,7 +103,8 @@ def _install_fake_client(monkeypatch: pytest.MonkeyPatch, create_result: Any) ->
     class Client:
         chat = Chat()
 
-    monkeypatch.setattr(llm, "_client", Client())
+    monkeypatch.setattr(llm, "_new_client", lambda _settings: Client())
+    monkeypatch.setattr(llm, "_clients", weakref.WeakKeyDictionary())
     monkeypatch.setattr(
         llm,
         "get_settings",
@@ -168,7 +175,8 @@ def test_stream_chat_wraps_create_errors_without_leaking(monkeypatch: pytest.Mon
     class Client:
         chat = Chat()
 
-    monkeypatch.setattr(llm, "_client", Client())
+    monkeypatch.setattr(llm, "_new_client", lambda _settings: Client())
+    monkeypatch.setattr(llm, "_clients", weakref.WeakKeyDictionary())
     monkeypatch.setattr(
         llm,
         "get_settings",
@@ -223,7 +231,7 @@ def test_complete_chat_not_configured_raises(monkeypatch: pytest.MonkeyPatch) ->
         "get_settings",
         lambda: Settings(llm_api_key="", llm_base_url="http://localhost:9/v1", llm_model="m"),
     )
-    monkeypatch.setattr(llm, "_client", None)
+    monkeypatch.setattr(llm, "_clients", weakref.WeakKeyDictionary())
 
     async def run() -> str:
         return await llm.complete_chat("s", "u")
@@ -243,3 +251,60 @@ def test_complete_chat_wraps_stream_errors_without_leaking(monkeypatch: pytest.M
         asyncio.run(run())
     assert "sk-test-1234567890" not in str(excinfo.value)
     assert len(calls) == 1
+
+
+# ---------- P1#1（第 16 刀）：按事件循环缓存客户端，混跑测试钉 ----------
+
+
+def test_clients_are_per_event_loop_mixed_stream_and_complete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同进程混跑钉死：先在事件循环 A 跑 stream_chat（流式两次只建一次客户端），
+    再在工作线程一次性 `asyncio.run` 循环 B 跑 complete_chat（machine_wash QA
+    抽取的形状）。真 httpx/anyio 连接原语有 loop 亲和——替身以「构造 loop 绑定」
+    模拟：跨 loop 调用即抛 "attached to a different loop"。旧单例客户端在循环 B
+    必炸（审计刀 3 P1#1 事故面）；修复后每 loop 各建各用，两轮都成功。"""
+    built: list[int] = []
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.bound_loop = id(asyncio.get_running_loop())
+
+        async def create(self, **_kwargs: Any) -> Any:
+            if id(asyncio.get_running_loop()) != self.bound_loop:
+                raise RuntimeError(
+                    "Event loop is closed / bound to a different loop "
+                    "— 客户端跨事件循环复用（原事故）"
+                )
+            return _FakeStream(["净含量", "为480ml"])
+
+    def fake_new_client(_settings: Settings) -> Any:
+        client = FakeClient()
+        client.chat = NS(completions=client)  # 与真 openai 形状对齐
+        built.append(client.bound_loop)
+        return client
+
+    monkeypatch.setattr(llm, "_new_client", fake_new_client)
+    monkeypatch.setattr(llm, "_clients", weakref.WeakKeyDictionary())
+    monkeypatch.setattr(
+        llm,
+        "get_settings",
+        lambda: Settings(
+            llm_api_key="sk-test-1234567890", llm_base_url="http://localhost:9/v1", llm_model="m"
+        ),
+    )
+
+    async def stream_twice() -> list[str]:
+        first = [p async for p in llm.stream_chat("s", "u1")]
+        second = [p async for p in llm.stream_chat("s", "u2")]
+        return first + second
+
+    pieces_main = asyncio.run(stream_twice())
+    assert pieces_main == ["净含量", "为480ml"] * 2
+    assert built == [built[0]], "同一 loop 内复用缓存客户端，不重建"
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        full = pool.submit(lambda: asyncio.run(llm.complete_chat("s", "转写"))).result()
+
+    assert full == "净含量为480ml"  # 线程一次性循环里 complete_chat 成功且无 loop 亲和错误
+    assert len(built) == 2 and built[0] != built[1], "两个事件循环各建一份客户端"

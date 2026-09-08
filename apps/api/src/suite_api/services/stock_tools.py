@@ -1,19 +1,21 @@
-"""库存工具（ADR 0037）：只读 get_stock + 模板组装回答（0036 同模式第二实例）。
+"""库存工具（ADR 0037，第 16 刀修订）：只读 get_stock + 模板组装回答。
 
-- 分派词表在代码：``STOCK_KEYWORD_PATTERN`` 命中才进库存路径（订单号优先，
-  第 13 刀在先）；词表外问题走既有检索路径零漂移。误伤代价低：商品未命中
-  即转人工，与无证据拒答转人工同归宿（0037）。
+- 分派双前置（第 16 刀）：``STOCK_KEYWORD_PATTERN``（收窄为 有货/没货/无货/
+  缺货）**且** ``match_product`` 商品匹配成功才进库存路径（订单号优先，第 13
+  刀在先）；词表命中但商品未命中 -> 回既有检索路径（归宿对齐词条：无证据
+  拒答留缺口，0018/0024），不再转人工；词表外问题走既有检索路径零漂移。
 - ``match_product`` 纯代码商品匹配：商品名与问题最长公共子串（按字符）≥2 字
   命中，多命中取最长 LCS、平手取 id 小——不做 NLP/LLM/分词库/别名表。
 - ``get_stock`` 只读 products.stock 列（工具数据源，不是中台对象，0002 不升
   格）：返回 ``{found, product_name, stock}``，``stock=None`` 即未设置；DB 异常
   捕获为 ``{error: True}`` 不向上炸——转人工由引擎 handoff 分支表达，失败不拿
-  检索顶（0018，吞异常+尽力回滚同 order 模式）。
+  检索顶（0018，吞异常+尽力回滚同 order 模式，异常进服务端日志 P1#6）。
 - 回答用确定性模板（v1 不调 LLM）：stock>0「有货」含件数；stock==0「暂时无货」
-  是事实数据不是失败（正常 answer）；NULL/未命中/异常 → kind="handoff"。
+  是事实数据不是失败（正常 answer）；NULL/异常 → kind="handoff"。
   工具条一行摘要 ``summarize_stock_result`` 与引用芯片语义分离（UX-NOTES §6）。
 """
 
+import logging
 import re
 from typing import Any
 
@@ -23,9 +25,16 @@ from sqlalchemy.orm import Session
 
 from suite_api.models import Product
 
-# 词表分派（0037）：规格类词（净含量/保质期/材质）刻意不在列——规格问题必须
-# 零漂移走检索；词条 _Avoid_「用规格文档回答有没有货」自此闭环
-STOCK_KEYWORD_PATTERN = re.compile("有货|没货|无货|缺货|库存|现货|剩")
+# 吞异常转 handoff 的对外行为不变（0018：失败不拿检索顶），但线上必须能看到
+# 原因——审计刀 3 P1#6：捕获处 logger.exception（原文只进服务端日志）
+logger = logging.getLogger(__name__)
+
+# 词表分派（0037；第 16 刀修订 P1#3 收窄）：只留「到货状态」四类直陈词。
+# 去掉「库存/现货」——通用词吞掉已发布的政策文档（「库存政策是什么」命中即
+# 跳过检索，政策永远查不到）；去掉「剩」——「保温杯还剩多少毫升」这类规格问句
+# 含商品名会被 LCS 命中误答「有货」。规格类词（净含量/保质期/材质）本就不在列。
+# 收窄后仍要求商品匹配前置（chat_engine 分派处）：裸「有货吗」无商品名回检索。
+STOCK_KEYWORD_PATTERN = re.compile("有货|没货|无货|缺货")
 
 # 商品名与问题最长公共子串的最小命中长度（中文字符计）
 _MATCH_MIN_LCS = 2
@@ -76,10 +85,12 @@ def get_stock(db: Session, product: Product) -> dict[str, Any]:
         name = product.name
         stock = product.stock
     except SQLAlchemyError:
+        # 尽力恢复会话可用（属性访问可能触发惰性加载，连接失效等）
+        logger.exception("库存工具读取商品库存失败: product_id=%s", getattr(product, "id", None))
         try:
             db.rollback()
         except SQLAlchemyError:
-            pass
+            logger.exception("库存工具回滚失败（吞异常后会话可能不可用）")
         return {"error": True}
     return {"found": True, "product_name": name, "stock": stock}
 
@@ -91,10 +102,11 @@ def query_stock(db: Session, question: str) -> dict[str, Any]:
     try:
         products = list(db.scalars(select(Product).order_by(Product.id)))
     except SQLAlchemyError:
+        logger.exception("库存工具列取商品失败: question=%s", question)
         try:
             db.rollback()
         except SQLAlchemyError:
-            pass
+            logger.exception("库存工具回滚失败（吞异常后会话可能不可用）")
         return {"error": True}
     product = match_product(question, products)
     if product is None:

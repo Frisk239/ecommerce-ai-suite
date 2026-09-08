@@ -144,20 +144,25 @@ def index_chunks_for_version(
     kind: str,
     confirmed_fields: dict[str, Any],
 ) -> list[str]:
-    """发布事务用的切块入口：版本字节切块 + 确认字段块（seq 续排）。
+    """发布事务用的切块入口：confirmed 块 + 版本字节切块（seq 续排）。
 
     确认字段块的目的：机洗没抽到/抽散的字段，其「字段名：值」仍可被检索
     （问「净含量」命中字段块）；只用 confirmed（写回口径同 0010：confirmed
     才是操作者背书的值），弃权/未确认不进。dialogue 的确认字段是 qa_pairs
     结构化数组，每对成一块「问：…/答：…」（第 12 刀）。行对象由调用方
     （发布事务）按 (asset_id, version_no, seq) 落库。
+
+    块序（第 16 刀 P1#5）：confirmed qa_pairs 块排在转写正文块**之前**——
+    确认过的 QA 是人洗成果、价值密度最高，而块表截断在 [:MAX_CHUNKS]：
+    长转写（>200 轮）下 QA 排尾会被静默截掉，排首则任何截断先丢正文。
+    其余确认字段块仍续在正文块后（与第 12 刀口径一致）。
     """
     from suite_api.services.publishing import confirmed_value
 
-    chunks = chunk_text(read_index_text(storage, object_key), kind)
+    chunks = qa_pair_chunks(confirmed_fields)
+    chunks.extend(chunk_text(read_index_text(storage, object_key), kind))
     for field in sorted(confirmed_fields):
         if field == QA_FIELD:
-            chunks.extend(qa_pair_chunks(confirmed_fields))
             continue
         value = confirmed_value(confirmed_fields, field)
         if value is not None:

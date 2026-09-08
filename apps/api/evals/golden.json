@@ -55,9 +55,9 @@
     "expect": { "tool": "stock", "tool_summary_contains": "暂时无货" }
   },
   {
-    "id": "stock-miss-handoff",
-    "question": "小龙虾现货有没有？",
-    "expect": { "tool": "stock", "tool_summary_contains": "未找到商品", "handoff": true }
+    "id": "stock-miss-refuse-via-retrieval",
+    "question": "小龙虾有货吗？",
+    "expect": { "refuse": true }
   },
   {
     "id": "edge-order-priority-over-stock-keyword",
