@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 22 刀运营 Agent**（`feat/ops-agent`，closeout 见 `docs/progress/ops-agent-closeout.md`）——**能力 7/7 里程碑**：三步轨迹（读商品→生成草稿无降级→组装引用已发布素材，refs 冻结）+失败续跑（done 不重跑）+投放=渠道动作不改三态（ADR 0041）；MCP export 留痕（血缘「导出」环垫底）。第 16–21 刀+审计刀 4 已合并 main。
+上一刀：**第 23 刀总览页+连接层演示页**（`feat/overview-connect`，closeout 见 `docs/progress/overview-connect-closeout.md`）：`/` 去 redirect 落总览（三故事线步进卡+统计带），`/connect` 四工具卡+无 publish 红条+检索试玩+取版预览+mcp.json 占位复制——纯前端零后端改动。第 16–22 刀+审计刀 4 已合并 main。
 
-当前阶段：工程刀。下一刀：**第 23 刀总览页+连接层演示页**（七块入口观感）；审计刀 5 于第 25 刀后触发。
+当前阶段：工程刀。下一刀：**第 24 刀债池刀**（audit-4 P1：GIN 索引/题库单资产推导/N+1/material 四小条/前端收口按性价比挑）；审计刀 5 于第 25 刀后触发。
 
 ## 怎么切
 
@@ -155,6 +155,10 @@
 **Out：** 血缘表/写路径/引用计数列/MCP 导出留痕（无留痕表记 debt）/跨资产图。
 
 ## 更后面（现在不锁顺序，各是独立刀）
+
+## 第 23 刀：总览页+连接层演示页（已交付，`feat/overview-connect`）
+
+**路径：** 登录落 `/` 总览（接待闭环/内容闭环/连接层三故事线步进卡——原型冻结文案转工程路由；统计带待人洗/已接入/已发布/缺口/会话）；侧栏「连接层」→ `/connect` 四 MCP 工具卡+「没有 publish（0005）」红条+检索试玩命中芯片+取版预览 mono+mcp.json 占位复制（零真值）。纯前端零后端改动。485 基线不变。证据见 `docs/progress/overview-connect-closeout.md`。
 
 ## 第 22 刀：运营 Agent（已交付，`feat/ops-agent`）——能力 7/7
 
