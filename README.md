@@ -62,6 +62,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 - **降级**：LLM 未配置/超时（20s，重试 0 次）/网络失败/空产出 -> 复用 `answer.py` 证据组装模板回答，走同一 delta 流，`complete` 事件带 `fallback: true`，前端显示「模板回退」徽章（诚实标注，不装作模型回答）；错误细节只进服务端日志且不含密钥。
 - **引用服务端定**（0007）：`citations` 恒由检索命中确定，模型无引用决定权；系统提示明确要求模型不输出引用编号。
 - 回答先收全再落库再流式：断连仍完整落库（契约不变）。
+- **回流机洗抽 QA**（第 12 刀，ADR 0035）：配置 `LLM_API_KEY` 后，回流登记（`POST /api/service/sessions/{id}/register`）会在请求内同步等待一次 QA 抽取生成（≤20s）；LLM 失败则资产停已接入、就地重试端点可重跑，未配置则 `qa_pairs` 弃权照常待人洗。
 
 ## 顾客通道（第 8 刀，ADR 0021/0033）
 

@@ -16,7 +16,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, Product
-from suite_api.services.machine_wash import MachineWashError, run_machine_wash
+from suite_api.services.machine_wash import QA_FIELD, MachineWashError, run_machine_wash
 from suite_api.services.publishing import schema_field_names
 from suite_platform.storage import ObjectStorage
 
@@ -52,6 +52,14 @@ def validate_source_kind(source_kind: str) -> str:
     return source_kind
 
 
+def machine_wash_field_names(kind: str, product: Product | None) -> list[str]:
+    """机洗字段集按资产种类分派（第 12 刀，ADR 0035）：对话 -> 仅 qa_pairs
+    （LLM 抽取）；文档挂商品 -> 商品 spec_schema 的 keys；文档不挂商品 -> 空集。"""
+    if kind == "dialogue":
+        return [QA_FIELD]
+    return schema_field_names(product.spec_schema) if product is not None else []
+
+
 def register_asset(
     db: Session,
     storage: ObjectStorage,
@@ -69,8 +77,9 @@ def register_asset(
     - 字节先落对象存储，对象键 = {documents|dialogue}/{uuid}/{sha256前16}.txt；
       filename 不参与键（ADR 0003 每版一把键，扩展名固定 .txt），仅作为登记
       入口的来源信息保留在签名里。
-    - 机洗字段集由所挂商品推导：不挂商品（如 dialogue，0019 无规格必填）
-      -> 空集，机洗只解析文本 -> 直接待人洗。
+    - 机洗字段集按种类分派（machine_wash_field_names）：dialogue -> qa_pairs
+      （LLM 抽 QA 草稿；未配置模型=弃权降级照常待人洗，失败=停已接入可重试）；
+      文档挂商品 -> spec_schema keys；文档不挂商品 -> 空集直接待人洗。
     - product_id 给了但不存在 -> 404（在字节落库前失败，与路由原校验同口径）。
     """
     validate_source_kind(source_kind)
@@ -101,7 +110,7 @@ def register_asset(
     )
     db.add(version)
 
-    field_names = schema_field_names(product.spec_schema) if product is not None else []
+    field_names = machine_wash_field_names(kind, product)
     try:
         extracted = run_machine_wash(storage, object_key, field_names)
         version.extracted_fields = extracted  # JSONB 整体赋值，确保变更可追踪

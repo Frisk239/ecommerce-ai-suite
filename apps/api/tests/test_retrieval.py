@@ -9,6 +9,7 @@ from suite_api.services.retrieval import (
     chunk_dialogue,
     chunk_document,
     chunk_text,
+    index_chunks_for_version,
     query_terms,
     retrieve,
     score_chunk,
@@ -91,6 +92,65 @@ def test_chunk_text_dispatches_by_kind() -> None:
     assert chunk_text(text, "dialogue") == [text]
     assert chunk_text(text, "document") == [text]  # 字段行整行成块，句号不拆
     assert chunk_text("第一句。第二句。", "document") == ["第一句", "第二句"]
+
+
+# ---------- 发布切块：确认字段块 + QA 对块（第 12 刀） ----------
+
+
+class _FakeStorage:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        return self._data
+
+
+def test_index_chunks_dialogue_adds_confirmed_qa_pair_blocks() -> None:
+    # 对话正文按轮块在前，confirmed qa_pairs 每对「问：/答：」一块续排
+    transcript = "顾客：几天到账？\n客服：质检后3个工作日到账"
+    confirmed = {
+        "qa_pairs": {
+            "value": [
+                {"q": "退款几天到账", "a": "质检后3个工作日到账"},
+                {"q": "要不要吊牌", "a": "需保持吊牌完整"},
+            ],
+            "source": "human",
+        }
+    }
+    chunks = index_chunks_for_version(
+        _FakeStorage(transcript.encode()), "dialogue/x/1.txt", "dialogue", confirmed
+    )
+    assert chunks[:2] == ["顾客：几天到账？", "客服：质检后3个工作日到账"]  # 正文块不变
+    assert chunks[2] == "问：退款几天到账\n答：质检后3个工作日到账"
+    assert chunks[3] == "问：要不要吊牌\n答：需保持吊牌完整"
+
+
+def test_index_chunks_dialogue_skips_unconfirmed_and_empty_qa() -> None:
+    transcript = "顾客：保修多久\n客服：整机一年"
+    # 机洗草稿未确认（confirmed 无该字段）：不成块（0010 confirmed 才进索引）
+    with_draft_only = index_chunks_for_version(
+        _FakeStorage(transcript.encode()), "dialogue/x/2.txt", "dialogue", {}
+    )
+    assert not any(c.startswith("问：") for c in with_draft_only)
+    # 确认「没有 QA」（空数组）：发布闸门可过、无 QA 块
+    empty_confirmed = {"qa_pairs": {"value": [], "source": "human"}}
+    chunks = index_chunks_for_version(
+        _FakeStorage(transcript.encode()), "dialogue/x/3.txt", "dialogue", empty_confirmed
+    )
+    assert chunks == ["顾客：保修多久", "客服：整机一年"]
+
+
+def test_index_chunks_document_confirmed_field_blocks_unchanged() -> None:
+    # 文档确认字段仍走「字段名：值」单行块；QA 块逻辑只认 qa_pairs
+    confirmed = {
+        "净含量": {"value": "550毫升", "source": "human"},
+        "qa_pairs": {"value": [{"q": "怪", "a": "怪"}], "source": "human"},  # 不该出现在文档
+    }
+    chunks = index_chunks_for_version(
+        _FakeStorage("产品说明。".encode()), "documents/x/1.txt", "document", confirmed
+    )
+    assert "净含量：550毫升" in chunks
+    assert "问：怪\n答：怪" in chunks  # 按字段值成块（防御口径，文档链路不产生此字段）
 
 
 # ---------- 查询词法单元 ----------

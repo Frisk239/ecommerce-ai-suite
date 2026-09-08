@@ -109,6 +109,15 @@ async def stream_chat(system_prompt: str, user_prompt: str) -> AsyncIterator[str
         raise LLMUnavailable("厂商模型暂时不可用") from exc
 
 
+async def complete_chat(system_prompt: str, user_prompt: str) -> str:
+    """聚合流式输出为完整字符串（第 12 刀回流 QA 抽取：就地同步要全文）。
+
+    不另开非流式调用——走同一 stream_chat（同端点、同 20s/0 重试、同网关
+    session 头、同 LLMError 错误契约），行为与顾客面生成完全一致。
+    """
+    return "".join([piece async for piece in stream_chat(system_prompt, user_prompt)])
+
+
 def build_prompts(hits: list[dict[str, Any]], question: str) -> tuple[str, str]:
     """组装 (system_prompt, user_prompt)：证据块各带「来源：A-{id}·v{N}」标注。
 

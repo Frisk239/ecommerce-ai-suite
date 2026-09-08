@@ -12,10 +12,12 @@
   服务端从检索命中定（0007）；无证据拒答不调模型（0018）；LLM 未配置/失败
   降级证据组装模板，complete 事件带 fallback（运行时返回，同 gap_id 口径）。
 - 回流登记（CONTEXT「会话」词条）：会话转写字节先落对象存储（0013），再建
-  kind=dialogue 资产（已接入）+ v1 版本，对话种类无规格必填（0019）、机洗无
-  字段抽取直接待人洗；会话置 registered 并指向登记出的资产。登记不是 0005
-  三类治理动作，不新增审计 action。登记骨架与文档登记共享
-  services/registration.register_asset（source_kind 由本端点定 session_backflow）。
+  kind=dialogue 资产（已接入）+ v1 版本，对话种类无规格必填（0019）、机洗=
+  LLM 从转写抽 qa_pairs 草稿（第 12 刀/ADR 0035：未配置模型=弃权降级照常待人洗；
+  已配置但失败=停已接入可重试，登记请求内同步等待 ≤20s）；会话置 registered
+  并指向登记出的资产。登记不是 0005 三类治理动作，不新增审计 action。登记骨架
+  与文档登记共享 services/registration.register_asset（source_kind 由本端点定
+  session_backflow）。
 """
 
 from datetime import UTC, datetime
@@ -250,7 +252,8 @@ def register_session(
     storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
 ):
     """回流登记：转写字节先落对象存储（0013 没有字节不能登记）-> 建 kind=dialogue
-    资产（已接入）+ v1 版本 -> 机洗（对话无字段抽取，直接待人洗）-> 会话置
+    资产（已接入）+ v1 版本 -> 机洗=LLM 抽 QA 草稿推进待人洗（未配置模型=弃权
+    降级；LLM 失败=停已接入存 last_error，可经重试端点重跑，ADR 0035）-> 会话置
     registered 并指向新资产。登记骨架与文档登记共享 register_asset（此处不
     commit，会话状态变更与其并进同一事务）。source_kind 由本端点定值
     session_backflow（0025：服务端定，不让调用方填报）。不写审计（登记不是
