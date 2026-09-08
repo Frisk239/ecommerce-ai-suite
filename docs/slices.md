@@ -150,7 +150,7 @@
 
 ## 第 20 刀：血缘视图（已交付，`feat/lineage`）
 
-**路径：** 资产详情「血缘」折叠面板：头部汇总「引用 N · 写回 N · 考核 N」；引用样例（问句+版本+会话+时间，JSONB containment 下推限 10）；写回（publish+rollback——0034 回滚也写回，每条带发布/回滚徽章与按版 confirmed_fields 派生的字段名）；考核（题面+版本+时间）。`GET /api/assets/{id}/lineage` 固定 4 查询；零新表零写路径（0026 派生视图）。评审实修两个 P1（回滚写回丢失+fields 派生）+发布 v2→回滚 v1 全链路集成。集成 446 passed（基线 428 → 446）。证据见 `docs/progress/lineage-closeout.md`。
+**路径：** 资产详情「血缘」折叠面板：头部汇总「引用 N · 写回 N · 考核 N」；引用样例（问句+版本+会话+时间，JSONB containment 下推限 10）；写回（publish+rollback——0034 回滚也写回，每条带发布/回滚徽章与按版 confirmed_fields 派生的字段名）；考核（题面+版本+时间）。`GET /api/assets/{id}/lineage` 固定 5 查询；零新表零写路径（0026 派生视图）。评审实修两个 P1（回滚写回丢失+fields 派生）+发布 v2→回滚 v1 全链路集成。集成 446 passed（基线 428 → 446）。证据见 `docs/progress/lineage-closeout.md`。
 
 **Out：** 血缘表/写路径/引用计数列/MCP 导出留痕（无留痕表记 debt）/跨资产图。
 

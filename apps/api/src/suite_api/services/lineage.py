@@ -32,6 +32,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, aliased
 
 from suite_api.models import Asset, AssetVersion, AuditLog, CoachRecord, Operator, ServiceMessage
+from suite_api.services.machine_wash import redact
 
 # 引用样例上限（spec Must 1：样例 10 + 总计数）；问句/题面截断口径同
 # service 会话列表的 first_question 摘要（60 字符 + 省略号）
@@ -44,6 +45,14 @@ WRITEBACK_ACTIONS = frozenset({"publish", "rollback"})
 
 
 def _summary(text: str) -> str:
+    """样例摘要（引用问句/考核题面共用的 60 字截断点）。
+
+    0038 修订（第 21 刀，审计刀 4 P0 簇出口 5）：字节不动、出口必掩——顾客
+    问句在 service_messages 按原文落库（中台表，不在打码回写范围），血缘
+    展示是它跨出治理台的出口：截断前先过 redact（先掩后截，防止手机号恰好
+    被 60 字边界拦腰截断后漏掩；coach 题面新链路已掩，redact 幂等无害）。
+    """
+    text = redact(text)
     return text[:_SUMMARY_CHARS] + ("…" if len(text) > _SUMMARY_CHARS else "")
 
 

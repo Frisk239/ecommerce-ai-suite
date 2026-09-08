@@ -144,9 +144,17 @@ def build_prompts(hits: list[dict[str, Any]], question: str) -> tuple[str, str]:
 
     hits=retrieve() 结果（分数降序）。prompt 只含命中切块文本与顾客问题，
     不触碰任何凭证（单测钉死：组装结果不含密钥）。
+
+    0038 修订（第 21 刀，审计刀 4 P0 簇出口 1）：字节不动、出口必掩——证据
+    chunk 已在 retrieve 返回处统一 redact（收口点见 services/retrieval.py，
+    本函数不再对 chunk 重复掩）；此处单独掩顾客问句行：厂商 prompt 是进程
+    边界，顾客手打的手机号/邮箱也不该裸送厂商。函数内导入避开
+    machine_wash↔llm 的模块级循环（machine_wash 顶层 import llm）。
     """
+    from suite_api.services.machine_wash import redact
+
     lines = ["已发布证据："]
     for hit in hits[:_MAX_PROMPT_EVIDENCE]:
         lines.append(f"[来源：A-{hit['asset_id']}·v{hit['version_no']}] {hit['chunk']}")
-    lines.append(f"顾客问题：{question}")
+    lines.append(f"顾客问题：{redact(question)}")
     return SYSTEM_PROMPT, "\n".join(lines)

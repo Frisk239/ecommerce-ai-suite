@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, RetrievalChunk
-from suite_api.services.machine_wash import QA_FIELD
+from suite_api.services.machine_wash import QA_FIELD, redact
 from suite_platform.storage import ObjectStorage
 
 # 切块数上限：单版本切块超限即截断（防长文档/长转写把索引写爆；截断即丢尾部证据，
@@ -250,8 +250,15 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
         .order_by(RetrievalChunk.id)
         .limit(_MAX_CANDIDATE_ROWS)
     ).all()
+    # 0038 修订（第 21 刀，审计刀 4 P0 簇出口 1）：字节不动、出口必掩——
+    # 收口点裁决取「retrieve 返回处统一 redact」：单点侵入最小，且同时覆盖
+    # 两个消费者（llm.build_prompts 证据行进厂商 prompt、answer.compose_answer
+    # 降级模板行进顾客可见回答），顺带覆盖 MCP search_published 的 chunk
+    # （同属跨进程边界出口，ADR 0038 修订段「MCP 响应」口径）。打分/去重/排序
+    # 全程仍用原文块（score_chunk 吃 comprehension 的 chunk 变量，不动检索
+    # 打分）；索引行与版本字节永不回写掩码（不可变锁死，出口只现掩）。
     scored = [
-        {"asset_id": asset_id, "version_no": version_no, "chunk": chunk, "score": score}
+        {"asset_id": asset_id, "version_no": version_no, "chunk": redact(chunk), "score": score}
         for asset_id, version_no, chunk in rows
         if (score := score_chunk(terms, chunk)) > 0.0
     ]

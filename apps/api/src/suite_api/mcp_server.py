@@ -34,6 +34,7 @@ from suite_api.services.asset_view import (
     read_version_text,
     to_asset_out,
 )
+from suite_api.services.machine_wash import redact
 from suite_api.services.retrieval import retrieve
 
 # get_asset 对「取不到已发布版本」统一口径：不区分资产不存在/存在但未发布/
@@ -196,6 +197,11 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
 
         返回 [{asset_id, version_no, title, kind, source_kind, content}]，
         按资产 ID 升序。只含当前指针指向的已发布版本；待人洗与已接入不导出。
+
+        0038 修订（第 21 刀，审计刀 4 P0 簇出口 4）：字节不动、出口必掩——
+        MCP 响应跨进程边界，导出正文（版本字节原文，未掩区）返回前过
+        redact；对象键与存储字节不动。search_published 的 chunk 已在
+        retrieve 返回处统一收掩（出口 1 收口点），两条只读出口同口径。
         """
         with _db_session() as session:
             storage = ensure_storage(host)
@@ -212,7 +218,8 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                     "title": asset.title,
                     "kind": asset.kind,
                     "source_kind": asset.source_kind,
-                    "content": read_version_text(session, storage, asset_version),
+                    # 0038 修订：出口必掩（见上方 docstring；掩码不回写字节）
+                    "content": redact(read_version_text(session, storage, asset_version)),
                 }
                 for asset, asset_version in rows
             ]

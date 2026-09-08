@@ -4,7 +4,7 @@
 
 ## Standards
 
-零新表零写路径（0026 核实）；citations/question_key JSONB containment 真下推（编译断言+行为验证双钉）；固定 4 查询无 N+1；UI 用词/token 合规。
+零新表零写路径（0026 核实）；citations/question_key JSONB containment 真下推（编译断言+行为验证双钉）；固定 5 查询无 N+1；UI 用词/token 合规。
 
 **P1×1（已实修）**：writebacks 只取 publish——回滚也写回（0034），回滚写回事件丢失。实修：`WRITEBACK_ACTIONS={publish,rollback}`+每条带 `action`（UI「发布写回/回滚写回」徽章）。
 
