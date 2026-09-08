@@ -124,9 +124,10 @@ def _request(xff: str | None, peer: str, *, trust_proxy: bool) -> Request:
 
 
 def test_client_ip_direct_mode_ignores_xff() -> None:
-    """直连默认（fail-closed）：XFF 完全忽略——多跳/单跳自报头都换不了 IP 闸 key。"""
+    """直连默认（fail-closed）：XFF 完全忽略——多跳/单跳/无头都只看 TCP 对端。"""
     req = _request("203.0.113.7, 10.0.0.1", peer="192.0.2.1", trust_proxy=False)
     assert client_ip(req) == "192.0.2.1"
+    assert client_ip(_request(None, peer="198.51.100.2", trust_proxy=False)) == "198.51.100.2"
 
 
 def test_client_ip_trust_mode_uses_first_hop() -> None:
@@ -134,3 +135,10 @@ def test_client_ip_trust_mode_uses_first_hop() -> None:
     req = _request("203.0.113.7, 10.0.0.1", peer="192.0.2.1", trust_proxy=True)
     assert client_ip(req) == "203.0.113.7"
     assert client_ip(_request(None, peer="192.0.2.1", trust_proxy=True)) == "192.0.2.1"
+
+
+def test_client_ip_blank_first_hop_falls_back_to_peer() -> None:
+    """反代模式首跳空白（畸形头「 , 10.0.0.1」）不落空串 key：空串会让全部
+    畸形请求共享一本账、脱离真实对端（评审处置 2026-09-08）。"""
+    req = _request(" , 10.0.0.1", peer="192.0.2.9", trust_proxy=True)
+    assert client_ip(req) == "192.0.2.9"

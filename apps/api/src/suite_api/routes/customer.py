@@ -56,9 +56,10 @@ def client_ip(request: Request) -> str:
     forwarded = (
         request.headers.get("x-forwarded-for") if request.app.state.settings.customer_trust_proxy else None
     )
-    if forwarded:
-        return forwarded.split(",", 1)[0].strip()
-    return request.client.host if request.client else "unknown"
+    first_hop = forwarded.split(",", 1)[0].strip() if forwarded else ""
+    # 首跳空白（如「 , 10.0.0.1」的畸形头）不落空串 key：空串会让所有畸形
+    # 请求共享同一本账、脱离真实对端口径（评审处置 2026-09-08）
+    return first_hop or (request.client.host if request.client else "unknown")
 
 
 def get_rate_limits(request: Request) -> CustomerRateLimits:
