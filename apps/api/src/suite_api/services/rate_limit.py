@@ -7,6 +7,11 @@
 - IP 发问 ≤30/60s：托底——换会话（重签令牌）刷不过这道；
 - IP 建会话 ≤5/60s：拦令牌工厂狂刷。
 
+发问双闸在路由中的次序（闸序重排的取舍）：IP 闸先于鉴权省 DB——狂刷请求
+不查会话表；会话闸后于鉴权保配额——无效令牌查得到会话但记不进它的发问账，
+真顾客的配额不会被替耗。代价是无效令牌各查一次库，IP 闸（30/60s）已把狂刷
+量挡在库前，残余量级可接受。
+
 时钟与阈值可注入（测试窗口调小/假时钟推进）；命中即记一个时间戳，超限返回
 剩余等待秒（Retry-After 头取整、至少 1s）。线程安全：FastAPI 同步路由跑
 threadpool、async 路由跑事件循环，deque 剪枝与追加加一把 threading.Lock。
@@ -73,9 +78,13 @@ class CustomerRateLimits:
         self._ip_ask = SlidingWindowLimiter(ip_ask_limit, window_seconds, clock=clock)
         self._ip_create = SlidingWindowLimiter(ip_create_limit, window_seconds, clock=clock)
 
-    def check_ask(self, session_key: str, ip: str) -> int | None:
-        """发问双闸：会话级先查（更具体），未过再查 IP 托底；返回首个命中的等待秒。"""
-        return self._session_ask.check(session_key) or self._ip_ask.check(ip)
+    def check_ask_ip(self, ip: str) -> int | None:
+        """发问 IP 托底闸：路由置于鉴权之前——狂刷（无论令牌对错）不碰库即拦。"""
+        return self._ip_ask.check(ip)
+
+    def check_ask_session(self, session_key: str) -> int | None:
+        """发问会话闸：路由置于令牌鉴权之后——无效令牌耗不了真会话的发问配额。"""
+        return self._session_ask.check(session_key)
 
     def check_create(self, ip: str) -> int | None:
         """建会话单闸：IP 托底（签发本身无鉴权，只按来源拦）。"""
