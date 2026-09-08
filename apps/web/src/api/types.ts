@@ -112,6 +112,63 @@ export interface AuditEntry {
   created_at: string
 }
 
+// ---------- 血缘视图（GET /assets/{id}/lineage 契约，第 20 刀/ADR 0026） ----------
+
+/** 血缘是派生视图（0026）：资产详情上从既有数据拼出来——无表、只读、
+ * 不进检索、不能发布。「从哪来/版本审计」由元数据与留痕面板呈现，
+ * 本契约的 usages 三块回答「被谁用过」。 */
+export interface LineageOrigin {
+  source_kind: string
+  /** assets 行不存登记时间（本刀零新列）：恒 null，如实不发明时间。 */
+  created_at: string | null
+}
+
+export interface LineageAuditEvent {
+  at: string
+  action: string // publish | confirm | rollback
+  version_no: number
+  operator: string
+}
+
+export interface LineageCitationSample {
+  session_id: number
+  /** 引用回答对应的顾客问句（后端 60 字截断）。 */
+  question: string
+  version_no: number
+  at: string
+}
+
+export interface LineageCitationsBlock {
+  /** 同条件计数：引用本资产的消息条数（样例上限之外仍如实）。 */
+  total: number
+  samples: LineageCitationSample[] // 时间倒序，最多 10 条
+}
+
+export interface LineageWriteback {
+  at: string
+  version_no: number
+  operator: string
+  product_id: number | null
+  /** fields 键不存在：audit_log 不存写回字段名（如实拼装）。 */
+}
+
+export interface LineageCoachingUsage {
+  record_id: number
+  question: string // 题面快照（截断）
+  version_no: number
+  at: string
+}
+
+export interface AssetLineage {
+  origin: LineageOrigin
+  versions_audit: LineageAuditEvent[]
+  usages: {
+    citations: LineageCitationsBlock
+    writebacks: LineageWriteback[]
+    coaching: LineageCoachingUsage[]
+  }
+}
+
 // ---------- CSV 批量导入（routes/assets.py 契约，第 9 刀） ----------
 
 /** 导入报告的创建行：row 为 1 起数据行号（表头下一行 = 第 1 行）。 */

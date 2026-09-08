@@ -4,12 +4,14 @@
 // dialogue 资产（第 12 刀/ADR 0035）：转写正文只读查看 + qa_pairs QA 对编辑器
 // （人洗必须看见转写；机洗草稿改/删/增后确认，confirmed 才在发布时成块入索引）。
 
-import { useCallback, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowCounterClockwise,
   ArrowLeft,
   ArrowsClockwise,
+  CaretDown,
+  CaretRight,
   CheckCircle,
   PencilSimple,
   Plus,
@@ -193,6 +195,148 @@ function TranscriptPanel({ assetId, versionNo }: { assetId: number; versionNo: n
           {q.state.data}
         </pre>
       ) : null}
+    </div>
+  )
+}
+
+/** 血缘分组小标（墨线分组：淡画布底 + 下缘墨线，token 对照元数据小标）。 */
+function LineageGroupTitle({ children }: { children: ReactNode }) {
+  return (
+    <div className="border-b border-line-1 bg-canvas/60 px-4 py-1 text-xs font-medium text-ink-3">
+      {children}
+    </div>
+  )
+}
+
+function LineageTime({ at }: { at: string }) {
+  return <span className="shrink-0 text-xs tabular-nums text-ink-3">{formatDateTime(at)}</span>
+}
+
+/**
+ * 血缘视图（第 20 刀/ADR 0026）：资产详情上拼出来的派生只读视图——无表、
+ * 不进检索、不能发布。「从哪来/版本与审计」已由元数据与留痕面板承担，本面板
+ * 只回答「被谁用过」：引用样例（问句+版本+时间，后端截断+计数）、写回事件
+ * （发布即写回，audit_log 不存字段名故不显示字段）、考核抽题（题面+版本+时间）。
+ * 详情加载完成后独立请求（不阻塞主栏人洗）；三块全空=「还没有被使用的记录」。
+ */
+function LineagePanel({ assetId }: { assetId: number }) {
+  const [open, setOpen] = useState(true)
+  const fetcher = useCallback(() => api.getAssetLineage(assetId), [assetId])
+  const q = useApiData(fetcher)
+  const data = q.state.phase === 'ok' ? q.state.data : null
+  const used =
+    data !== null &&
+    (data.usages.citations.total > 0 ||
+      data.usages.writebacks.length > 0 ||
+      data.usages.coaching.length > 0)
+
+  return (
+    <div className="panel">
+      <button
+        type="button"
+        className="panel-title w-full cursor-pointer bg-transparent text-left"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span>血缘</span>
+        <span className="text-xs font-normal text-ink-3">
+          {data === null
+            ? ''
+            : used
+              ? `引用 ${data.usages.citations.total} · 写回 ${data.usages.writebacks.length} · 考核 ${data.usages.coaching.length}`
+              : '未被使用'}
+        </span>
+        <span className="flex-1" />
+        {open ? <CaretDown aria-hidden size={13} /> : <CaretRight aria-hidden size={13} />}
+      </button>
+      {!open ? null : q.state.phase === 'loading' ? (
+        <div className="px-4 py-3 text-xs text-ink-3">加载血缘…</div>
+      ) : q.state.phase === 'error' ? (
+        <div className="px-4 py-3 text-[13px] leading-6 text-ink-3">
+          血缘读取失败：{detailText(q.state.error)}
+        </div>
+      ) : data === null || !used ? (
+        <div className="px-4 py-3.5 text-[13px] leading-6 text-ink-3">
+          还没有被使用的记录。
+          <span className="mt-0.5 block text-xs">客服引用、发布写回、考核抽题发生后在这里拼装。</span>
+        </div>
+      ) : (
+        <>
+          {data.usages.citations.total > 0 ? (
+            <div>
+              <LineageGroupTitle>引用 · {data.usages.citations.total}</LineageGroupTitle>
+              {data.usages.citations.samples.map((s) => (
+                <div
+                  key={`${s.session_id}-${s.at}`}
+                  className="border-b border-line-1 px-4 py-2 last:border-b-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={s.question}>
+                      {s.question}
+                    </span>
+                    <span className="font-mono text-xs text-ink-3">v{s.version_no}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <span className="font-mono text-xs text-ink-3">会话 #{s.session_id}</span>
+                    <span className="flex-1" />
+                    <LineageTime at={s.at} />
+                  </div>
+                </div>
+              ))}
+              {data.usages.citations.samples.length < data.usages.citations.total ? (
+                <div className="px-4 py-1.5 text-xs text-ink-3">
+                  共 {data.usages.citations.total} 条引用，只列最近 {data.usages.citations.samples.length} 条。
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {data.usages.writebacks.length > 0 ? (
+            <div>
+              <LineageGroupTitle>写回 · {data.usages.writebacks.length}</LineageGroupTitle>
+              {data.usages.writebacks.map((w) => (
+                <div
+                  key={`${w.at}-${w.version_no}`}
+                  className="flex items-center gap-2.5 border-b border-line-1 px-4 py-2 text-xs last:border-b-0"
+                >
+                  <span className="font-mono text-ink-2">v{w.version_no}</span>
+                  <span className="text-ink-3">
+                    {w.product_id !== null ? `商品 #${w.product_id}` : '未挂商品'}
+                  </span>
+                  <span className="text-ink-3">{w.operator}</span>
+                  <span className="flex-1" />
+                  <LineageTime at={w.at} />
+                </div>
+              ))}
+              <div className="px-4 py-1.5 text-xs text-ink-3">
+                写回随发布同事务（0010）；留痕未存字段名，不在此重列。
+              </div>
+            </div>
+          ) : null}
+          {data.usages.coaching.length > 0 ? (
+            <div>
+              <LineageGroupTitle>考核 · {data.usages.coaching.length}</LineageGroupTitle>
+              {data.usages.coaching.map((c) => (
+                <div
+                  key={c.record_id}
+                  className="border-b border-line-1 px-4 py-2 last:border-b-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={c.question}>
+                      {c.question}
+                    </span>
+                    <span className="font-mono text-xs text-ink-3">v{c.version_no}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <span className="font-mono text-xs text-ink-3">记录 #{c.record_id}</span>
+                    <span className="flex-1" />
+                    <LineageTime at={c.at} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }
@@ -943,6 +1087,9 @@ export default function AssetDetailPage() {
               ))
             )}
           </div>
+
+          {/* 血缘（第 20 刀/ADR 0026）：详情加载后独立请求的派生只读视图 */}
+          <LineagePanel assetId={detail.id} />
         </div>
       </div>
 
