@@ -106,9 +106,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 // ---------- SSE 通道（客服发问用） ----------
 // EventSource 不支持 POST，长流也不能套 15s 超时：这里是独立于 request 的第二条
-// 通道。约定与 request 一致——credentials include、错误结构化为 ApiError、
-// 建立连接时的 401（首个事件前）照常广播 auth-expired。abort 由调用方signal
-// 触发，静默返回（「停止」是前端表达，不是错误）。
+// 通道。约定与 request 一致——credentials include、错误结构化为 ApiError、abort
+// 由调用方 signal 触发，静默返回（「停止」是前端表达，不是错误）。headers 供
+// 顾客通道带 Bearer 令牌（ADR 0021）；此时建立连接的 401 是顾客令牌问题而非
+// 操作者会话失效，不广播 auth-expired。
 
 export interface SseEvent {
   event: string
@@ -136,13 +137,14 @@ async function streamSse(
   body: unknown,
   onEvent: (evt: SseEvent) => void,
   signal: AbortSignal,
+  headers?: Record<string, string>,
 ): Promise<void> {
   let resp: Response
   try {
     resp = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
       signal,
     })
@@ -160,7 +162,7 @@ async function streamSse(
     } catch {
       detail = null
     }
-    if (resp.status === 401) emitAuthExpired()
+    if (resp.status === 401 && headers === undefined) emitAuthExpired()
     throw new ApiError(detailToMessage(detail, resp.status), resp.status, detail)
   }
   const reader = resp.body.getReader()

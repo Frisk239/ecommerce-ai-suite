@@ -153,12 +153,20 @@ class ServiceSession(Base):
     """
 
     __tablename__ = "service_sessions"
-    __table_args__ = (Index("ix_service_sessions_status", "status"),)
+    __table_args__ = (
+        Index("ix_service_sessions_status", "status"),
+        # 0021 顾客通道：令牌非空即顾客会话（不加 origin 列，token 本身就是判据）
+        Index("uq_service_sessions_customer_token", "customer_token", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # active -> registered（结束即回流登记，一步完成，无仅结束态）
     status: Mapped[str] = mapped_column(String(20))
     registered_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    # 顾客会话令牌（ADR 0021/0033）：secrets.token_urlsafe(32) 存原文（spec 工程
+    # 裁决：单店内部系统，DB 泄露不在威胁模型；hash 则无法按令牌直查）；操作者
+    # 预览会话恒为 NULL——非空与否即顾客/操作者会话的唯一判据
+    customer_token: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

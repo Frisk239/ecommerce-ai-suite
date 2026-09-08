@@ -1,11 +1,13 @@
 // 路由表：/login、/platform/assets、/platform/assets/:id、/platform/products、
-// /service（客服预览）、404；/ 重定向资产列表。路径结构按后续八页预留，不预建空入口。
+// /service（客服预览）、/customer（顾客通道，无登录守卫——0021 顾客不登录，
+// 不进操作者壳）、404；/ 重定向资产列表。路径结构按后续八页预留，不预建空入口。
 
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import AppShell from './components/AppShell'
 import AssetDetailPage from './pages/AssetDetailPage'
 import AssetsListPage from './pages/AssetsListPage'
+import CustomerPage from './pages/CustomerPage'
 import LoginPage from './pages/LoginPage'
 import NotFoundPage from './pages/NotFoundPage'
 import ProductsPage from './pages/ProductsPage'
@@ -38,6 +40,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* 顾客通道（ADR 0021）：不登录、不走 RequireOperator/AppShell */}
+          <Route path="/customer" element={<CustomerPage />} />
           <Route element={<RequireOperator />}>
             <Route path="/" element={<Navigate to="/platform/assets" replace />} />
             <Route path="/platform/assets" element={<AssetsListPage />} />
