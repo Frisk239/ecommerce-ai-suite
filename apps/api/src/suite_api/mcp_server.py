@@ -21,6 +21,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -51,7 +52,12 @@ _MCP_OPERATOR_UNLOGINABLE_HASH = "!"
 
 
 def ensure_mcp_operator_id(session) -> int:  # noqa: ANN001 - SQLAlchemy Session 窄用
-    """确保系统操作者「mcp」行存在并返回 id（export 留痕的 operator 归属）。"""
+    """确保系统操作者「mcp」行存在并返回 id（export 留痕的 operator 归属）。
+
+    第 26 刀（审计刀 5 P1⑦）：check-then-insert 的并发窗口由 operators.username
+    唯一约束兜底——首插撞 IntegrityError 时 SAVEPOINT 回滚插入再查已有行
+    （先例 services/knowledge_gaps.record_refusal_gap）；不可 session.rollback()：
+    会把同一次 export 尚未提交的留痕行一并丢掉。"""
     operator = session.scalar(
         select(Operator).where(Operator.username == MCP_OPERATOR_USERNAME)
     )
@@ -59,9 +65,29 @@ def ensure_mcp_operator_id(session) -> int:  # noqa: ANN001 - SQLAlchemy Session
         operator = Operator(
             username=MCP_OPERATOR_USERNAME, password_hash=_MCP_OPERATOR_UNLOGINABLE_HASH
         )
-        session.add(operator)
-        session.flush()
+        try:
+            with session.begin_nested():
+                session.add(operator)
+                session.flush()
+        except IntegrityError:
+            # SAVEPOINT 已回滚插入；未 expunge 则后续 SELECT 的 autoflush 会再插一次
+            if operator in session:
+                session.expunge(operator)
+            operator = session.scalar(
+                select(Operator).where(Operator.username == MCP_OPERATOR_USERNAME)
+            )
+            if operator is None:  # pragma: no cover - 唯一冲突者必已提交
+                raise
     return operator.id
+
+
+def _mask_title(title: str | None) -> str | None:
+    """0038 修订补全（第 26 刀，审计刀 5 P1②）：MCP 响应 title 出口统一过
+    redact。回流 title 已在源头收掩（routes/service._first_question，21 刀处置
+    件 2），但**切片登记 title=transcript[:60] 裸转写**（services/clips.py）、
+    素材/上传 title 非净源——出口侧统一兜底（双保险取一：源头逐个掩改动面大，
+    出口一处收口与 content/chunk 同口径；redact 幂等，净 title 原样通过）。"""
+    return redact(title) if title else title
 
 
 def _mask_fields_map(fields: dict) -> dict:
@@ -70,8 +96,7 @@ def _mask_fields_map(fields: dict) -> dict:
     字符串 value 与 qa_pairs 每项 q/a；abstained 项与坏形状原样走（防御不
     改写形状）。新写入侧（机洗第 17 刀、人洗出口 2）已掩，这里是读侧对
     历史脏行的兜底收口，幂等无害；掩码不回写存储（字节不动）。
-    title 的收口在推导源头（routes/service._first_question，评审处置件 2），
-    本处不重复掩。"""
+    title 出口收掩见 _mask_title（三工具统一，第 26 刀）。"""
 
     def _mask_value(name: str, value):  # noqa: ANN001, ANN202 - JSONB 回读三态
         if name == QA_FIELD and isinstance(value, list):
@@ -157,7 +182,8 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
 
         返回 [{asset_id, version_no, title, chunk, score}]：chunk 是证据片段，
         score 越大越相关；未发布资产（已接入/待人洗）不会出现。空或纯虚词
-        查询返回空列表。
+        查询返回空列表。0038 修订补全（第 26 刀 P1②）：title 与 chunk 同为
+        跨边界文本，出口统一过 redact（见 _mask_title）。
         """
         with _db_session() as session:
             hits = retrieve(session, query)
@@ -167,7 +193,9 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 if asset_ids
                 else {}
             )
-            return [{**hit, "title": titles.get(hit["asset_id"])} for hit in hits]
+            return [
+                {**hit, "title": _mask_title(titles.get(hit["asset_id"]))} for hit in hits
+            ]
 
     @mcp.tool()
     def get_asset(asset_id: int, version: int | None = None) -> dict:
@@ -200,11 +228,11 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
             content = read_version_text(session, ensure_storage(host), asset_version)
             # 0038 修订（第 21 刀评审处置件 1：MCP get_asset=第六出口）：正文与
             # 两张字段映射表出 MCP 响应前过 redact（掩码不回写字节，对象键/
-            # 版本指针不动；与 export_published 同口径）；title 在推导源头收掩
-            # （routes/service._first_question），此处直读 assets 行即净。
+            # 版本指针不动；与 export_published 同口径）；title 出口统一过
+            # _mask_title（第 26 刀 P1②——切片 title=裸转写截断，源头非净源）。
             return {
                 "id": asset.id,
-                "title": asset.title,
+                "title": _mask_title(asset.title),
                 "kind": asset.kind,
                 "source_kind": asset.source_kind,
                 "version_no": asset_version.version_no,
@@ -277,7 +305,8 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 {
                     "asset_id": asset.id,
                     "version_no": asset_version.version_no,
-                    "title": asset.title,
+                    # 第 26 刀 P1②：title 与正文同过出口掩（三工具统一口径）
+                    "title": _mask_title(asset.title),
                     "kind": asset.kind,
                     "source_kind": asset.source_kind,
                     # 0038 修订：出口必掩（见上方 docstring；掩码不回写字节）

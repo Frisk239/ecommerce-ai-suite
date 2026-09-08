@@ -130,28 +130,41 @@ def parse_generated_output(raw: str) -> tuple[str, str]:
 
 
 def spec_selling_points(product: Product) -> list[str]:
-    """商品规格卖点行（compose 兜底正文的原料）：已写回值的「字段：值」。"""
+    """商品规格卖点行（compose 兜底正文的原料）：已写回值的「字段：值」。
+
+    0038 修订补全（第 26 刀，审计刀 5 P1③）：这些行会落进 ops_runs（非中台
+    表）的 output.body 兜底正文——落库前过 redact（coaching 落库先例：掩后
+    值进非中台表，字节不动的中台侧不受影响）。redact 幂等，净值原样通过。
+    """
     return [
-        f"{field}：{entry.get('value')}"
+        redact(f"{field}：{entry.get('value')}")
         for field, entry in dict(product.spec_values).items()
         if isinstance(entry, dict) and entry.get("value")
     ]
 
 
 def read_product_detail(product: Product) -> str:
-    """read_product 步 done 的 detail：商品名+类目+规格字段与写回值（未写回如实标）。"""
+    """read_product 步 done 的 detail：商品名+类目+规格字段与写回值（未写回如实标）。
+
+    0038 修订补全（第 26 刀 P1③）：detail 落 ops_runs.steps——落库前整串
+    过 redact（同上口径）。
+    """
     fields = dict(product.spec_schema)
     parts = [
         f"{field}：{(product.spec_values.get(field) or {}).get('value') or '未写回'}"
         for field in fields
     ]
-    return f"{product.name}（{product.category}）｜" + "，".join(parts)
+    return redact(f"{product.name}（{product.category}）｜" + "，".join(parts))
 
 
 def fallback_body(product: Product) -> str:
-    """compose 无引用时的兜底正文：商品规格卖点组装 + 诚实披露（原型口径）。"""
+    """compose 无引用时的兜底正文：商品规格卖点组装 + 诚实披露（原型口径）。
+
+    0038 修订补全（第 26 刀 P1③）：兜底正文落 ops_runs.output.body——标题行
+    的商品名/类目过 redact；points 行在 spec_selling_points 已掩。
+    """
     points = spec_selling_points(product)
-    lines = [f"{product.name}（{product.category}）"]
+    lines = [redact(f"{product.name}（{product.category}）")]
     lines.extend(points if points else ["（规格事实尚未写回，暂无可组装的治理口径）"])
     lines.append(
         f"{NO_REF_DETAIL}——在素材中心登记并发布素材（或拣选切片发布）后重新编排，正文会跟随素材。"
@@ -234,12 +247,20 @@ def _run_executors(db: Session, product: Product) -> dict[str, Executor]:
             _fail(step, f"生成不可用：{exc}（可重试）")
             return
         title, body = parse_generated_output(raw)  # 坏输出抛 OpsGenError，环内收口 failed
+        # 0038 修订：出口必掩（第 26 刀评审收尾件）——厂商草稿同样落 ops_runs
+        # （非中台表）：title/body 落 output 前统一过 redact，与 detail/spec/
+        # fallback 同口径；prompt 虽已掩，模型复述掩码或自发吐裸号都不留底。
+        title, body = redact(title), redact(body)
         plan["output"] = {"title": title, "body": body, "refs": []}
         step["detail"] = f"厂商模型已生成草稿《{title}》（正文 {len(body)} 字）"
 
     def compose(step: dict[str, Any], plan: dict[str, Any]) -> None:
         refs = fetch_published_refs(db, product.id)
-        output = dict(plan["output"] or {"title": f"投放文案 · {product.name}", "body": "", "refs": []})
+        # 兜底标题的商品名同过 redact（0038 出口必掩；防御分支，gen done 时不走）
+        output = dict(
+            plan["output"]
+            or {"title": redact(f"投放文案 · {product.name}"), "body": "", "refs": []}
+        )
         if refs:
             output["refs"] = refs
             step["detail"] = (
@@ -273,7 +294,17 @@ def _execute_run(db: Session, run: OpsRun, product: Product) -> OpsRun:
 
 
 def _run_or_raise(db: Session, run_id: int) -> OpsRun:
-    run = db.get(OpsRun, run_id)
+    """retry/deliver 的取行：`FOR UPDATE` 行锁（第 26 刀，审计刀 5 P1⑥）。
+
+    裁决取行级排他锁（Owner 给的显式选项，未另造 re-fetch+条件 UPDATE）：
+    Session.get 的 with_for_update=True 即渲染 SELECT ... FOR UPDATE——锁住
+    「读轨迹→判状态→写终态前复位」的临界区，两个并发的 retry/deliver
+    串行化——deliver 的双跑（重复渠道动作）就此关死；retry 的并发双复位
+    关死（第二个进来时 failed 步已被复位，409「没有失败步骤」）。
+    边界如实注记：复位 commit 即放锁（LLM 等待不持写事务的纪律优先，
+    P1#2），执行中对「正在跑」轨迹的再 retry 仍是残存 running 恢复语义
+    （0041 单操作者语境可接受，多操作者再收紧）。"""
+    run = db.get(OpsRun, run_id, with_for_update=True)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="编排任务不存在")
     return run

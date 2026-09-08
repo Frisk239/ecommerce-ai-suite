@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**审计刀 5**（`feat/audit-5`，closeout 见 `docs/progress/audit-5-closeout.md`）：三路子代理审第 21–25 刀——P0 零；P1 簇=打码收口漏网三处（material prompt/MCP title/ops_runs 落库）+ops N+1 回归/无行锁/mcp 首插；goal 完成标准 6/7（README 口述稿唯一硬缺口）。**不改产品代码**；收官排期：26 语义收口 → 27 演示收官（达成 7/7）→ 28 起部署阶段。第 21–25 刀已合并 main。
+上一刀：**第 26 刀语义收口小刀**（`feat/semantic-cleanup`，closeout 见 `docs/progress/semantic-cleanup-closeout.md`）：audit-5 P1 簇清零——打码漏网四处（material prompt/ops_runs 含 output 面/MCP title 三出口）、ops 三修（N+1/行锁/首插兜底）、**血缘导出环拼装**（「导出 · MCP」中文化+计数）、gaps 出口掩。第 21–25 刀+审计刀 5 已合并 main。
 
-当前阶段：工程刀收官。下一刀：**第 26 刀语义收口小刀**（打码漏网三处+血缘导出环+ops 三修+slices 清理）；审计刀 6 于第 30 刀后触发。
+当前阶段：收官。下一刀：**第 27 刀演示收官刀**（README 3 分钟口述稿——达成 goal 完成标准 7/7；总览其余能力行；拒答交接摘要；format 基线）；第 28 刀起部署阶段；审计刀 6 于第 30 刀后。
 
 ## 怎么切
 
@@ -154,14 +154,8 @@
 
 **Out：** 血缘表/写路径/引用计数列/MCP 导出留痕（无留痕表记 debt）/跨资产图。
 
+## 第 26 刀：语义收口小刀（已交付，`feat/semantic-cleanup`）
+
+**路径：** audit-5 P1 簇清零——打码漏网四处（material 生成 prompt/ops_runs 落库含评审实修 output 面/MCP 三出口 title `_mask_title` 落库原文不动）；ops 三修（列表批取/with_for_update 行锁/mcp 首插 SAVEPOINT 兜底）；**血缘导出环拼装**（usages.exports+「导出 · MCP」中文化——0026 最后一环闭环）；gaps.question 出口掩。集成 505 passed（基线 491 → 505）。证据见 `docs/progress/semantic-cleanup-closeout.md`。
+
 ## 收官排期（audit-5）
-
-| 刀 | 内容 |
-| --- | --- |
-| 第 26 刀语义收口小刀 | 打码漏网三处（material prompt/MCP title 三处/ops_runs 落库）+ops N+1/行锁/mcp 首插兜底+血缘导出块拼装+export 中文化+gaps.question 掩+slices 清理 |
-| 第 27 刀演示收官刀 | README 3 分钟口述稿（goal 最后一条完成标准）+总览其余能力行+拒答交接摘要+format 基线收口——达成即完成标准 7/7 |
-| 第 28 刀起 | 部署阶段：CI+反代/HTTPS+备份+监控；真视频/ASR 单列 |
-| **审计刀 6** | **第 30 刀后触发** |
-**展示约定：** 资产 ID 对外写成 `A-{id:04d}`（如 `A-0001`），库内仍是整数，避免原型口述和工程芯片对不上。
-
-`prototype/` 只是交互规格；真产品改 `apps/`。

@@ -39,6 +39,7 @@ from suite_api.services.ops import (
     parse_generated_output,
     read_product_detail,
     retry_run,
+    spec_selling_points,
     start_run,
 )
 
@@ -62,11 +63,16 @@ class _FakeDB:
         self.runs = runs
         self.added: list[OpsRun] = []
         self.commits = 0
+        # 26 刀行锁钉测：记录取 OpsRun 行时的 with_for_update 参数
+        self.run_row_locks: list[bool] = []
 
-    def get(self, model: Any, pk: Any) -> Any:
+    def get(self, model: Any, pk: Any, **kwargs: Any) -> Any:
+        # 26 刀行锁：_run_or_raise 经 db.get(..., with_for_update=True) 取行——
+        # 假会话不建模锁语义，吞掉 kwarg（锁形状由集成并发用例钉）
         if model is Product:
             return self.product
         if model is OpsRun:
+            self.run_row_locks.append(bool(kwargs.get("with_for_update")))
             return next((r for r in self.runs + self.added if r.id == pk), None)
         return None
 
@@ -179,6 +185,63 @@ def test_read_product_detail_lists_specs() -> None:
     assert "材质：未写回" in detail  # 规格未写回如实标
 
 
+def test_read_product_detail_masks_pii_before_ops_runs() -> None:
+    """P1③：detail 落 ops_runs.steps（非中台表）——含 PII 的规格写回值在源头
+    掩后才进字符串（coaching 落库先例；净值幂等原样，不伤既有断言）。"""
+    product = _product()
+    product.spec_schema = {**dict(product.spec_schema), "售后电话": {"required": False}}
+    product.spec_values["售后电话"] = {
+        "value": "13812345678",
+        "source": {"asset_id": 1, "version": 1},
+    }
+    detail = read_product_detail(product)
+    assert "13812345678" not in detail
+    assert "1********78" in detail
+
+
+def test_spec_and_fallback_body_masked_before_ops_runs() -> None:
+    """P1③：兜底正文（fallback_body → ops_runs.output.body）与卖点原料
+    （spec_selling_points）落库前过 redact；诚实披露句不动。"""
+    product = _product()
+    product.spec_values["售后"] = {
+        "value": "邮箱 zhangsan@example.com 或电话 13812345678",
+        "source": {"asset_id": 1, "version": 1},
+    }
+    points = spec_selling_points(product)
+    assert any("****@example.com" in p and "1********78" in p for p in points)
+    body = fallback_body(product)
+    assert "zhangsan" not in body and "13812345678" not in body
+    assert "****@example.com" in body and "1********78" in body
+    assert NO_REF_DETAIL in body  # 披露句原样（掩的是商品文本非模板文案）
+
+
+def test_retry_and_deliver_fetch_run_row_with_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """P1⑥ 锁形状：retry/deliver 的状态机入口取 run 行必须 with_for_update
+    （行锁串行化「读→判→复位」临界区）；start_run 建轨不锁形（新行无竞态）。
+    锁的并发行为由 test_ops_integration 真 PG 双 deliver 用例钉。"""
+    _patch_llm(monkeypatch, result=GOOD_OUTPUT)
+    _patch_refs(monkeypatch, [])
+
+    steps = initial_steps()
+    steps[0]["status"] = DONE
+    steps[1]["status"] = FAILED
+    db = _FakeDB(_product(), [_run(steps)])
+    retry_run(db, 1)  # 复位续跑到全 done——只钉取行形状
+    assert db.run_row_locks == [True]
+
+    done_steps = initial_steps()
+    for step in done_steps:
+        step["status"] = DONE
+        step["detail"] = "ok"
+    db2 = _FakeDB(_product(), [_run(done_steps)])
+    deliver_run(db2, 1)
+    assert db2.run_row_locks == [True]
+
+    fresh = _FakeDB(_product(), [])
+    start_run(fresh, 1)
+    assert fresh.run_row_locks == []  # 新建无竞态：不锁
+
+
 # ---------- compose 兜底与引用口径（纯函数面） ----------
 
 
@@ -284,6 +347,46 @@ def test_start_run_no_refs_compose_fallback_discloses(monkeypatch: pytest.Monkey
     assert run.output["body"] != json.loads(GOOD_OUTPUT)["body"]  # 兜底正文替换草稿
     assert NO_REF_DETAIL in run.output["body"]
     assert run.steps[2]["detail"] == NO_REF_DETAIL  # 步轨迹诚实披露
+
+
+def test_generated_output_masked_before_ops_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """第 26 刀评审收尾件（0038 出口必掩）：厂商返回的 title/body 落
+    ops_runs.output 前过 redact——prompt 已掩但模型可自发吐裸号，草稿落
+    非中台表不留底；compose 兜底标题同口径（防御分支，gen done 时不触）。"""
+    pii_output = json.dumps(
+        {
+            "title": "钛钢保温杯热销 13812345678",
+            "body": "有问题联系 zhangsan@example.com，钛钢保温杯好用",
+        },
+        ensure_ascii=False,
+    )
+    _patch_llm(monkeypatch, result=pii_output)
+    _patch_refs(monkeypatch, [{"asset_id": 5, "version_no": 1}])  # 有引用：output 走草稿本体
+    run = start_run(_FakeDB(_product(), []), 1)
+
+    assert run.output is not None
+    assert run.output["title"] == "钛钢保温杯热销 1********78"
+    assert run.output["body"] == "有问题联系 ****@example.com，钛钢保温杯好用"
+    assert "13812345678" not in json.dumps(run.output, ensure_ascii=False)
+    assert "zhangsan" not in json.dumps(run.output, ensure_ascii=False)
+    # 草稿标题进 steps.detail 同掩（同一字符串进两处都净）
+    assert "13812345678" not in run.steps[1]["detail"]
+
+
+def test_compose_fallback_title_masked_for_pii_product_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同口径的兜底标题：gen 成功即不触（output 非空），但商品名带号进防御
+    分支时仍掩——用空 output 直调 compose 钉住该形状。"""
+    product = _product()
+    product.name = "钛钢保温杯 13812345678"
+    _patch_refs(monkeypatch, [])  # 无引用 -> 走兜底标题分支
+    db = _FakeDB(product, [])
+    step = initial_steps()[2]
+    plan: dict = {"steps": [], "output": None}
+    ops_module._run_executors(db, product)[STEP_COMPOSE](step, plan)
+    assert "13812345678" not in plan["output"]["title"]
+    assert "1********78" in plan["output"]["title"]
 
 
 def test_gen_material_no_key_fails_without_fallback(monkeypatch: pytest.MonkeyPatch) -> None:

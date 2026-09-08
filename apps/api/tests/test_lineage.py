@@ -132,6 +132,28 @@ def test_empty_usages_is_the_empty_state() -> None:
     assert out.usages.citations.samples == []
     assert out.usages.writebacks == []
     assert out.usages.coaching == []
+    assert out.usages.exports == []
+
+
+def test_exports_block_from_audit_rows() -> None:
+    """第 26 刀缺口路③（血缘导出环拼装）：audit_rows 里 action=export 的行
+    拼进 usages.exports（版本/时间/操作者，保持来料倒序）；不混 writebacks
+    （WRITEBACK_ACTIONS={publish,rollback} 不含 export，0041）；时间线照常
+    全量透传（versions_audit 不做过滤）。零新查询：同一无 filter 的 audit 来料。"""
+    out = _assemble(
+        audit_rows=[
+            (_at(9), "export", 2, "mcp"),
+            (_at(8), "export", 1, "mcp"),
+            (_at(3), "publish", 2, "operator"),
+            (_at(2), "confirm", 2, "operator"),
+        ]
+    )
+    assert [(e.version_no, e.operator, e.at, e.action) for e in out.usages.exports] == [
+        (2, "mcp", _at(9), "export"),
+        (1, "mcp", _at(8), "export"),
+    ]
+    assert [(w.version_no, w.action) for w in out.usages.writebacks] == [(2, "publish")]
+    assert [e.action for e in out.versions_audit] == ["export", "export", "publish", "confirm"]
 
 
 # ---------- 截断与上限 ----------

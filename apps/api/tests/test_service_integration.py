@@ -359,6 +359,27 @@ def test_refusal_gap_exact_idempotency(api: ApiFixture) -> None:
     assert other[-1][1]["gap_id"] != gap_id  # 不同问法不合并（只做精确幂等）
 
 
+def test_refusal_gap_question_masked_on_exit(api: ApiFixture) -> None:
+    """第 26 刀缺口路（0038 修订口径）：gaps.question 出口掩——拒答仍按顾客
+    原问落库（同 service_messages 落库豁免，不回写），治理台列表视图（出口）
+    呈掩码；幂等复用走库内原文比对，不受出口掩影响。"""
+    client, _ = api
+    _login(client)
+    question = "以旧换新补贴是打款到 13812345678 吗"
+    events = _ask(client, client.post("/api/service/sessions").json()["id"], question)
+    assert events[-1][1]["kind"] == "refusal"
+    gap_id = events[-1][1]["gap_id"]
+
+    row = next(g for g in client.get("/api/knowledge-gaps").json() if g["id"] == gap_id)
+    assert "13812345678" not in row["question"]
+    assert "1********78" in row["question"]
+
+    # 落库原文不动（出口掩不回写行）
+    session_factory = client.app.state.session_factory
+    with session_factory() as db:
+        assert db.get(KnowledgeGap, gap_id).question == question
+
+
 def test_gap_fill_register_publish_resolves(api: ApiFixture) -> None:
     """补文档闭环（0024）：拒答 -> 缺口 open -> 带缺口登记（发布前仍 open 但已
     指向资产）-> 发布事务内 resolved + resolved_by_asset_id -> 同问法再问命中

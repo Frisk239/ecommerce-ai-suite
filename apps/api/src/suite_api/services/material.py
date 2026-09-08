@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.models import MaterialTask, Product
 from suite_api.services import llm
-from suite_api.services.machine_wash import strip_code_fence
+from suite_api.services.machine_wash import redact, strip_code_fence
 from suite_api.services.registration import register_asset
 from suite_platform.storage import ObjectStorage
 
@@ -59,20 +59,26 @@ class MaterialGenError(Exception):
 
 
 def build_generation_prompt(product: Product) -> str:
-    """user prompt：商品名+类目+规格字段模板+已写回的规格值（生成依据的事实面）。"""
+    """user prompt：商品名+类目+规格字段模板+已写回的规格值（生成依据的事实面）。
+
+    0038 修订（出口必掩，第 26 刀补漏——审计刀 5 P1①）：本函数是孪生于
+    ops.build_generation_prompt 的第二条厂商 prompt 通道（21 刀掩了 ops 漏了
+    这里）——商品文本进厂商前统一过 redact，规格写回值可能混有人工填的
+    手机号/邮箱，厂商 prompt 是进程边界。redact 幂等，干净值原样通过。
+    """
     spec_values = [
-        f"{field}：{entry.get('value')}"
+        f"{field}：{redact(str(entry.get('value')))}"
         for field, entry in dict(product.spec_values).items()
         if isinstance(entry, dict) and entry.get("value")
     ]
     lines = [
-        f"商品名称：{product.name}",
-        f"类目：{product.category}",
-        f"规格字段：{'、'.join(dict(product.spec_schema).keys()) or '无'}",
+        f"商品名称：{redact(product.name)}",
+        f"类目：{redact(product.category)}",
+        f"规格字段：{redact('、'.join(dict(product.spec_schema).keys()) or '无')}",
     ]
     if spec_values:
         lines.append("已知规格值：\n" + "\n".join(spec_values))
-    lines.append(f"请为「{product.name}」生成一条卖点文案（标题 + 正文）。")
+    lines.append(f"请为「{redact(product.name)}」生成一条卖点文案（标题 + 正文）。")
     return "\n".join(lines)
 
 

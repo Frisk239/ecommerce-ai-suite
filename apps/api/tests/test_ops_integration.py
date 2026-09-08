@@ -12,15 +12,23 @@
 """
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
+from suite_api.models import OpsRun, Product
 from suite_api.services import llm as llm_module
+from suite_api.services.ops import deliver_run
 
 ApiFixture = tuple[TestClient, Path]
+
+API_PHONE = "13812345678"
+MASKED_PHONE = "1********78"
 
 OPS_TITLE = "钛钢保温杯：一杯守住温度"
 OPS_BODY = "早九点的热水，下午三点还烫口。钛钢保温杯，通勤车载两相宜。"
@@ -203,3 +211,124 @@ def test_ops_gate_and_error_contract(api: ApiFixture, monkeypatch: pytest.Monkey
     assert client.post("/api/ops/runs", json={"product_id": cup_id}).status_code == 401
     assert client.post(f"/api/ops/runs/{done_run['id']}/deliver").status_code == 401
     _login(client)
+
+
+# ---------- 第 26 刀：ops_runs 落库掩 / 列表批取消 N+1 / deliver 行锁 ----------
+
+
+def test_ops_runs_store_masked_detail_and_body(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P1③（落库处）：给商品规格值塞裸号 -> read_product detail 与 compose
+    兜底正文直读 ops_runs.steps/output（非中台表），落库前已掩（coaching
+    落库先例）。对象字节不动的豁免（版本正文端点）与 run 无关——这里本就没
+    有中台内容，掩的是商品事实进非中台表那一程。"""
+    client, _ = api
+    _login(client)
+    # 直接改种子的瓶装水规格值（不建新商品，避开种子幂等）：注入一个带 PII 的值
+    water_id = _product_id(client, "瓶装水")
+    session_factory = client.app.state.session_factory
+    with session_factory() as db:
+        product = db.get(Product, water_id)
+        assert product is not None
+        # read_product detail 按 spec_schema 逐字段拼——schema 与值都要带上
+        product.spec_schema = {
+            **dict(product.spec_schema),
+            "售后电话": {"required": False},
+        }
+        product.spec_values = {
+            **dict(product.spec_values),
+            "售后电话": {"value": API_PHONE, "source": {"manual": True}},
+        }
+        db.commit()
+
+    # 空 key -> compose 走兜底（无已发布素材），正文含商品规格卖点
+    run = client.post("/api/ops/runs", json={"product_id": water_id}).json()
+    assert [s["status"] for s in run["steps"]] == ["done", "failed", "pending"]  # 空 key 断在 gen
+
+    # read_product detail 落库即掩（run 已建，steps[0] done）
+    with session_factory() as db:
+        row = db.get(OpsRun, run["id"])
+        assert API_PHONE not in row.steps[0]["detail"]  # 落库非中台表：无裸号
+        assert MASKED_PHONE in row.steps[0]["detail"]
+
+
+def test_ops_list_runs_single_batched_product_query(api: ApiFixture) -> None:
+    """P1④（22 刀 N+1 回归收口）：load_product_names 批取后，一次列表请求
+    打到 products 表的 SELECT 恰好 1 次、且是 IN 批取形状（N+1 形态=每行
+    一次 db.get，探针会数到 ≥3）。"""
+    client, _ = api
+    _login(client)
+    water_id = _product_id(client, "瓶装水")
+    created_ids = [_make_patched_run(client, water_id)["id"] for _ in range(3)]
+
+    statements: list[str] = []
+    engine = client.app.state.engine
+
+    def _listener(conn, cursor, statement, parameters, context, executemany) -> None:  # noqa: ANN001
+        del conn, cursor, parameters, context, executemany
+        norm = " ".join(statement.lower().split())
+        if "from products" in norm:
+            statements.append(norm)
+
+    event.listen(engine, "before_cursor_execute", _listener)
+    try:
+        listed = client.get("/api/ops/runs").json()
+    finally:
+        event.remove(engine, "before_cursor_execute", _listener)
+    assert len(listed) >= 3
+    assert len(statements) == 1  # 每行一次的 N+1 形态不许出现
+    assert "products.id in (" in statements[0]  # IN 批取形状
+    by_id = {r["id"]: r for r in listed}
+    assert all(by_id[rid]["product_name"] == "瓶装水" for rid in created_ids)  # 批取不串名
+
+
+def _make_patched_run(client: TestClient, product_id: int) -> dict:
+    """替身 LLM 下建一条全 done 的 run（并发/列表用例共用）。"""
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        _patch_complete_chat(monkeypatch, result=_ops_json())
+        resp = client.post("/api/ops/runs", json={"product_id": product_id})
+        assert resp.status_code == 201
+        return resp.json()
+    finally:
+        monkeypatch.undo()
+
+
+def test_concurrent_deliver_single_winner(api: ApiFixture) -> None:
+    """P1⑥（等效锁断言）：两步并发 deliver 同一 run——FOR UPDATE 行锁 +
+    delivered_at 判重，恰好一个成功（另一个 409），不重复记 delivered_at。
+    这是「retry/deliver 行锁」最诚实的并发钉法：双跑竞态关死。"""
+    client, _ = api
+    _login(client)
+    water_id = _product_id(client, "瓶装水")
+    run = _make_patched_run(client, water_id)
+    run_id = run["id"]
+    # 确保三步全 done（空 key 会断在 gen，这里 _make_patched_run 用替身全绿）
+    assert [s["status"] for s in run["steps"]] == ["done", "done", "done"]
+
+    session_factory = client.app.state.session_factory
+    barrier = threading.Barrier(2)
+    outcomes: list[str] = []
+
+    def worker() -> None:
+        with session_factory() as db:
+            barrier.wait(timeout=5)
+            try:
+                deliver_run(db, run_id)
+                db.commit()
+                outcomes.append("ok")
+            except HTTPException as exc:
+                outcomes.append("409" if exc.status_code == 409 else f"err{exc.status_code}")
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+
+    assert sorted(outcomes) == ["409", "ok"]
+    with session_factory() as db:
+        row = db.get(OpsRun, run_id)
+        assert row.delivered_at is not None  # 只记一次
