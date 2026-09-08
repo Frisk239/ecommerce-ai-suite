@@ -36,7 +36,12 @@ _UNKEYED_TEMPLATE = "根据已发布的规格文档《密钥缺席口径备注�
 
 
 def _login(client: TestClient) -> None:
-    assert client.post("/api/auth/login", json={"username": "operator", "password": "operator123"}).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _upload_and_publish(client: TestClient, content: bytes, title: str) -> int:
@@ -96,7 +101,9 @@ def _agent_content(client: TestClient, session_id: int) -> str:
 # ---------- 模型路径：真 token 流 + 服务端定 citations ----------
 
 
-def test_vendor_stream_answer_citations_and_prompts(api: ApiFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_vendor_stream_answer_citations_and_prompts(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client, _ = api
     _login(client)
     asset_id = _upload_and_publish(client, _VENDOR_DOC, "厂商生成验证说明")
@@ -134,7 +141,9 @@ def test_vendor_stream_answer_citations_and_prompts(api: ApiFixture, monkeypatch
 # ---------- 降级路径 ----------
 
 
-def test_vendor_failure_falls_back_to_template(api: ApiFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_vendor_failure_falls_back_to_template(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """LLM 失败 -> answer.py 模板回答 + fallback=true；无「正在生成」thinking。"""
     client, _ = api
     _login(client)
@@ -193,6 +202,12 @@ def test_no_evidence_never_calls_llm(api: ApiFixture, monkeypatch: pytest.Monkey
     assert complete["citations"] == []
     assert complete["fallback"] is False  # 拒答不是降级
     assert isinstance(complete["gap_id"], int)  # 拒答照常落知识缺口（0024）
+    # 第 27 刀拒答交接摘要：原「全等固定文案」断言按新语义更新——无证据不调
+    # 模型不变，落库/流式文本带问句摘要与缺口段（操作者通道）
     refusal_deltas = "".join(data["text"] for event, data in events if event == "delta")
-    assert refusal_deltas == "抱歉，已发布资产里没有能回答这个问题的证据。"
+    assert refusal_deltas == (
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
+        "问句摘要：冥王星殖民基地怎么预约参观？\n"
+        f"缺口：G-{complete['gap_id']:04d}"
+    )
     assert calls == []  # stream_chat 从未被调（mock 断言 call count=0）

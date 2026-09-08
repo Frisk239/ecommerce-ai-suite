@@ -3,14 +3,18 @@
 把 routes/service.py 的 ask 主体抽出为两个可复用件，操作者路由与顾客路由
 （routes/customer.py）同调，保证两条通道的行为只差在鉴权与载荷白名单：
 
-- ``run_ask(db, session, question)``：落顾客问句 -> 检索当前已发布版本 ->
-  厂商生成（0033）/降级模板 -> 落 agent 消息（引用带版本 0007，拒答/转人工
-  显性 0018）-> 拒答同事务落知识缺口（0024）。
+- ``run_ask(db, session, question, expose_gap_id=True)``：落顾客问句 ->
+  检索当前已发布版本 -> 厂商生成（0033）/降级模板 -> 落 agent 消息（引用带
+  版本 0007，拒答/转人工显性 0018）-> 拒答同事务落知识缺口（0024），并把拒答
+  消息文本升级为交接摘要（第 27 刀：固定文案+问句摘要+缺口 G-xxxx，白名单
+  同 complete 载荷的 expose_gap_id——顾客通道不带缺口 ID 段）。
 - ``sse_event_stream(outcome, expose_gap_id)``：thinking -> delta* -> complete
   的事件序列（0036 订单工具路径：thinking(查询订单中…) -> tool -> delta* ->
   complete 带 tool）。``expose_gap_id`` 是载荷白名单闸门：操作者保持 True（0030
   运行时返回口径不变）；顾客置 False——complete 不带 gap_id，顾客不暴露内部
-  缺口 id（spec 工程裁决：事件载荷白名单裁剪，不是消息表改动）。
+  缺口 id（spec 工程裁决：事件载荷白名单裁剪，不是消息表改动）。第 27 刀起
+  同一白名单延伸到 run_ask：顾客通道拒答消息文本也不带「缺口：G-xxxx」段
+  （两路由同值传入，一个闸管载荷与文本两处）。
 
 取舍（任务锁定并写明，自 routes/service.py 原样搬移）：回答文本在开始流式前
 已完整收全并落库——含第 7 刀的厂商模型流（先收全再流，而非边流边攒）：服务
@@ -36,7 +40,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, KnowledgeGap, ServiceMessage, ServiceSession
 from suite_api.services import llm
-from suite_api.services.answer import ComposedAnswer, compose_answer
+from suite_api.services.answer import ComposedAnswer, build_refusal_handoff_content, compose_answer
 from suite_api.services.knowledge_gaps import record_refusal_gap
 from suite_api.services.order_tools import (
     find_order_no,
@@ -105,7 +109,9 @@ def assets_meta(db: Session, hits: list[dict[str, Any]]) -> dict[int, dict[str, 
     }
 
 
-async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOutcome:
+async def run_ask(
+    db: Session, session: ServiceSession, question: str, *, expose_gap_id: bool = True
+) -> AskOutcome:
     """发问主体（调用方已完成鉴权与会话状态校验，question 已 strip 非空）。
 
     每问独立检索：无多轮记忆（ADR 0023 不预埋）。无命中 -> refusal 消息
@@ -126,6 +132,10 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     NULL/故障走 kind="handoff"；不调 LLM、citations 恒空、不产生缺口。
     词表命中但商品未命中 -> **回既有检索路径**（不是 handoff，不是工具；
     归宿对齐词条：无证据拒答留缺口，0024）——裸「有货吗」不配吞掉检索。
+
+    ``expose_gap_id``（第 27 刀）：与 sse_event_stream 同名白名单闸——顾客
+    路由传 False，拒答消息文本不带「缺口：G-xxxx」段（问句摘要两通道都带）；
+    操作者默认 True。缺口本身两通道照常落库（0024 语义不动）。
     """
     # 1) 先落 customer 消息
     db.add(ServiceMessage(session_id=session.id, role="customer", content=question))
@@ -180,9 +190,17 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     # 0024：无证据拒答同事务落知识缺口（question=顾客原问，精确幂等：同文
     # open 缺口复用不新建）。只挂 refusal 路径——工具（0036 订单/0037 库存）
     # 查无/故障转人工不产生缺口（handoff 分支不走本段，契约由单测+集成钉死）。
+    # 第 27 刀（词条「转人工」：交接带结构化摘要——拒答面兑现）：拒答消息
+    # 文本从固定文案升级为「固定文案 + 问句摘要 +（操作者通道）缺口 G-xxxx」。
+    # 拼接点在落库处：gap_id 在拒答消息之后才由 record_refusal_gap 产生
+    # （ADR 0030：运行时 id，消息表不加列），同事务内先改属性再 commit，
+    # SSE delta 流自然带出全文。REFUSAL_CONTENT 常量结构不变。
     gap: KnowledgeGap | None = None
     if answer.kind == "refusal":
         gap = record_refusal_gap(db, question)
+        agent_message.content = build_refusal_handoff_content(
+            question, gap.id if expose_gap_id and gap is not None else None
+        )
     db.commit()
     db.refresh(agent_message)
 
@@ -300,7 +318,8 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     （正在生成回答…）；降级不发（诚实标注靠 fallback）。complete 载荷按
     ``expose_gap_id`` 白名单裁剪：顾客通道不吐 gap_id（0030 口径仅对操作者
     保持），操作者通道事件形状与抽取前逐字节一致（新增的 tool 键除外——
-    0036：单号本由提问者提供，无内部敏感字段，两通道同形状不裁剪）。
+    0036：单号本由提问者提供，无内部敏感字段，两通道同形状不裁剪；第 27 刀
+    拒答交接摘要改的是 delta **文本**，thinking/tool/complete 事件形状不动）。
 
     0036 订单工具路径（outcome.tool 非 None）：thinking 换「查询订单中…」
     （检索被跳过，状态行诚实）-> tool {name, arg, result}（工具调用后发，
@@ -309,9 +328,7 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     if outcome.tool is not None:
         # 0036/0037：检索被跳过，状态行按工具名换成真实动作（订单/库存各自诚实）
         thinking = (
-            STOCK_THINKING_TEXT
-            if outcome.tool.get("name") == "get_stock"
-            else ORDER_THINKING_TEXT
+            STOCK_THINKING_TEXT if outcome.tool.get("name") == "get_stock" else ORDER_THINKING_TEXT
         )
         yield sse_event("thinking", {"text": thinking})
         yield sse_event("tool", outcome.tool)

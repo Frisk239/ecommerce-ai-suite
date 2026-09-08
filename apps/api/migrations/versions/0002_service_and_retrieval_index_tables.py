@@ -52,7 +52,9 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False),
         sa.Column("registered_asset_id", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["registered_asset_id"], ["assets.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -69,7 +71,9 @@ def upgrade() -> None:
         # answer | refusal（customer 消息为 NULL：kind 是回答的属性）
         sa.Column("kind", sa.String(length=10), nullable=True),
         sa.Column("handoff", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["session_id"], ["service_sessions.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -81,8 +85,6 @@ def downgrade() -> None:
     op.drop_table("service_messages")
     op.drop_index("ix_service_sessions_status", table_name="service_sessions")
     op.drop_table("service_sessions")
-    op.drop_index(
-        "ix_retrieval_chunks_asset_id_version_no", table_name="retrieval_chunks"
-    )
+    op.drop_index("ix_retrieval_chunks_asset_id_version_no", table_name="retrieval_chunks")
     op.drop_index("ix_retrieval_chunks_asset_id", table_name="retrieval_chunks")
     op.drop_table("retrieval_chunks")

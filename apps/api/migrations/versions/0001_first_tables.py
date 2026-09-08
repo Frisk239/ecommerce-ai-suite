@@ -66,8 +66,12 @@ def upgrade() -> None:
         sa.Column("asset_id", sa.Integer(), nullable=False),
         sa.Column("version_no", sa.Integer(), nullable=False),
         sa.Column("object_key", sa.String(length=500), nullable=False),
-        sa.Column("extracted_fields", postgresql.JSONB(), server_default=_JSONB_EMPTY, nullable=False),
-        sa.Column("confirmed_fields", postgresql.JSONB(), server_default=_JSONB_EMPTY, nullable=False),
+        sa.Column(
+            "extracted_fields", postgresql.JSONB(), server_default=_JSONB_EMPTY, nullable=False
+        ),
+        sa.Column(
+            "confirmed_fields", postgresql.JSONB(), server_default=_JSONB_EMPTY, nullable=False
+        ),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["asset_id"], ["assets.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -87,7 +91,9 @@ def upgrade() -> None:
         sa.Column("asset_id", sa.Integer(), nullable=False),
         sa.Column("version_no", sa.Integer(), nullable=False),
         sa.Column("action", sa.String(length=20), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["operator_id"], ["operators.id"]),
         sa.ForeignKeyConstraint(["asset_id"], ["assets.id"]),
         sa.PrimaryKeyConstraint("id"),

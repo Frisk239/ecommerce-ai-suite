@@ -65,10 +65,7 @@ def list_knowledge_gaps(
     )
     product_ids = {g.product_id for g in gaps if g.product_id is not None}
     products = (
-        {
-            p.id: p
-            for p in db.scalars(select(Product).where(Product.id.in_(product_ids)))
-        }
+        {p.id: p for p in db.scalars(select(Product).where(Product.id.in_(product_ids)))}
         if product_ids
         else {}
     )

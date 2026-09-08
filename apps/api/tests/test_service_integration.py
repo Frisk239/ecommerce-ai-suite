@@ -36,7 +36,12 @@ _EXTENDED_WARRANTY_DOC = "延保口径说明\n延保：下单一年内可补购�
 
 
 def _login(client: TestClient) -> None:
-    assert client.post("/api/auth/login", json={"username": "operator", "password": "operator123"}).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _upload(
@@ -77,7 +82,9 @@ def test_service_endpoints_require_login(api: ApiFixture) -> None:
     assert client.post("/api/service/sessions").status_code == 401
     assert client.get("/api/service/sessions").status_code == 401
     assert client.get("/api/service/sessions/1").status_code == 401
-    assert client.post("/api/service/sessions/1/messages", json={"content": "你好"}).status_code == 401
+    assert (
+        client.post("/api/service/sessions/1/messages", json={"content": "你好"}).status_code == 401
+    )
     assert client.post("/api/service/sessions/1/register").status_code == 401
     assert client.get("/api/knowledge-gaps").status_code == 401  # 缺口列表同样要登录
 
@@ -145,8 +152,15 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
     assert refusal_complete["kind"] == "refusal"
     assert refusal_complete["handoff"] is True
     assert refusal_complete["citations"] == []
+    # 第 27 刀拒答交接摘要：原「全等固定文案」断言按新语义更新——操作者通道
+    # 拒答消息 = 固定文案 + 问句摘要 + 缺口 G-xxxx（id 与 complete.gap_id 同源）
     refusal_deltas = "".join(d["text"] for e, d in refusal_events if e == "delta")
-    assert refusal_deltas == "抱歉，已发布资产里没有能回答这个问题的证据。"
+    gap_id = refusal_complete["gap_id"]
+    assert isinstance(gap_id, int)
+    assert refusal_deltas == (
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
+        f"问句摘要：退货政策是怎样的？\n缺口：G-{gap_id:04d}"
+    )
 
     # 4) 回流登记：转写落对象存储 -> dialogue 资产待人洗 -> 会话 registered
     register_resp = client.post(f"/api/service/sessions/{sid}/register")
@@ -165,7 +179,10 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
     assert closed["registered_asset_id"] == dialogue_id
     assert closed["closed_at"] is not None
     # 已登记会话不能再发问/再登记
-    assert client.post(f"/api/service/sessions/{sid}/messages", json={"content": "再问"}).status_code == 409
+    assert (
+        client.post(f"/api/service/sessions/{sid}/messages", json={"content": "再问"}).status_code
+        == 409
+    )
     assert client.post(f"/api/service/sessions/{sid}/register").status_code == 409
 
     # 登记不是 0005 治理动作：审计不因回流新增 action 类型（publish/confirm/rollback）
@@ -288,7 +305,10 @@ def test_service_input_validation(api: ApiFixture) -> None:
     client, _ = api
     _login(client)
     assert client.get("/api/service/sessions/999999").status_code == 404
-    assert client.post("/api/service/sessions/999999/messages", json={"content": "你好"}).status_code == 404
+    assert (
+        client.post("/api/service/sessions/999999/messages", json={"content": "你好"}).status_code
+        == 404
+    )
     assert client.post("/api/service/sessions/999999/register").status_code == 404
 
     sid = client.post("/api/service/sessions").json()["id"]
@@ -317,7 +337,9 @@ def test_refusal_creates_gap_and_answer_does_not(api: ApiFixture) -> None:
     answer_complete = answer_events[-1][1]
     assert answer_complete["kind"] == "answer"
     assert answer_complete["gap_id"] is None
-    assert all(g["question"] != "维修网点在哪里？" for g in client.get("/api/knowledge-gaps").json())
+    assert all(
+        g["question"] != "维修网点在哪里？" for g in client.get("/api/knowledge-gaps").json()
+    )
 
     # 拒答：缺口落库（question=原问、open、不挂商品），gap_id 与列表行一致
     refusal_events = _ask(client, sid, "会员积分怎么兑换？")
@@ -366,7 +388,8 @@ def test_refusal_gap_question_masked_on_exit(api: ApiFixture) -> None:
     client, _ = api
     _login(client)
     question = "以旧换新补贴是打款到 13812345678 吗"
-    events = _ask(client, client.post("/api/service/sessions").json()["id"], question)
+    sid = client.post("/api/service/sessions").json()["id"]
+    events = _ask(client, sid, question)
     assert events[-1][1]["kind"] == "refusal"
     gap_id = events[-1][1]["gap_id"]
 
@@ -375,6 +398,60 @@ def test_refusal_gap_question_masked_on_exit(api: ApiFixture) -> None:
     assert "1********78" in row["question"]
 
     # 落库原文不动（出口掩不回写行）
+    session_factory = client.app.state.session_factory
+    with session_factory() as db:
+        assert db.get(KnowledgeGap, gap_id).question == question
+
+    # 第 27 刀交接摘要的问句段同口径出口掩（先掩后截）——agent 消息文本呈
+    # 掩码；customer 消息本身按既有豁免口径裸存（同问句回显不新增暴露面）。
+    agent_msg = next(
+        m
+        for m in client.get(f"/api/service/sessions/{sid}").json()["messages"]
+        if m["role"] == "agent"
+    )
+    assert "1********78" in agent_msg["content"]
+    assert "13812345678" not in agent_msg["content"]
+
+
+def test_refusal_handoff_summary_operator(api: ApiFixture) -> None:
+    """第 27 刀拒答交接摘要（操作者通道钉）：消息文本 = 固定文案 + 问句摘要 +
+    缺口 G-xxxx（4 位补零，与 complete.gap_id 同源）；SSE delta 拼接与落库
+    文本同源；拒答判定/缺口语义不动，只升级文本。"""
+    client, _ = api
+    _login(client)
+    sid = client.post("/api/service/sessions").json()["id"]
+    events = _ask(client, sid, "登山绳可以定制长度吗")
+    complete = events[-1][1]
+    assert complete["kind"] == "refusal"
+    assert complete["handoff"] is True
+    gap_id = complete["gap_id"]
+    assert isinstance(gap_id, int)
+    expected = (
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
+        f"问句摘要：登山绳可以定制长度吗\n缺口：G-{gap_id:04d}"
+    )
+    assert "".join(d["text"] for e, d in events if e == "delta") == expected
+    messages = client.get(f"/api/service/sessions/{sid}").json()["messages"]
+    agent_msg = next(m for m in messages if m["role"] == "agent")
+    assert agent_msg["content"] == expected
+    assert agent_msg["kind"] == "refusal" and agent_msg["handoff"] is True
+
+
+def test_refusal_summary_truncates_long_question(api: ApiFixture) -> None:
+    """第 27 刀截断口径钉：问句摘要 60 字 + 「…」（与会话列表首问摘要同口径）；
+    缺口落库仍是原问全文（0024/0030 精确幂等语义不动）。"""
+    client, _ = api
+    _login(client)
+    question = "定制帆布袋" * 20  # 100 字，本文件独有关键词
+    events = _ask(client, client.post("/api/service/sessions").json()["id"], question)
+    complete = events[-1][1]
+    assert complete["kind"] == "refusal"
+    gap_id = complete["gap_id"]
+    content = "".join(d["text"] for e, d in events if e == "delta")
+    assert content == (
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
+        f"问句摘要：{question[:60]}…\n缺口：G-{gap_id:04d}"
+    )
     session_factory = client.app.state.session_factory
     with session_factory() as db:
         assert db.get(KnowledgeGap, gap_id).question == question
@@ -393,9 +470,7 @@ def test_gap_fill_register_publish_resolves(api: ApiFixture) -> None:
     gap_id = refusal[-1][1]["gap_id"]
 
     # 补文档：带缺口登记（预填标题只是前端便利），来源=upload（端点定值）
-    registered = _upload(
-        client, _GIFT_DOC, title="补口径 · 下单有赠品吗", gap_id=gap_id
-    )
+    registered = _upload(client, _GIFT_DOC, title="补口径 · 下单有赠品吗", gap_id=gap_id)
     assert registered.status_code == 201
     asset_id = registered.json()["id"]
     assert registered.json()["source_kind"] == "upload"
@@ -406,7 +481,9 @@ def test_gap_fill_register_publish_resolves(api: ApiFixture) -> None:
     # 发布 -> 缺口 resolved + 指向资产 + resolved_at 落值；open 待办出列
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
     resolved = next(
-        g for g in client.get("/api/knowledge-gaps", params={"status": "resolved"}).json() if g["id"] == gap_id
+        g
+        for g in client.get("/api/knowledge-gaps", params={"status": "resolved"}).json()
+        if g["id"] == gap_id
     )
     assert resolved["status"] == "resolved"
     assert resolved["resolved_by_asset_id"] == asset_id
@@ -435,7 +512,9 @@ def test_open_gap_allows_only_one_pending_fill_doc(api: ApiFixture) -> None:
     gap_id = refusal[-1][1]["gap_id"]
     assert refusal[-1][1]["kind"] == "refusal"
 
-    first = _upload(client, _EXTENDED_WARRANTY_DOC, title="补口径 · 延保服务怎么开通", gap_id=gap_id)
+    first = _upload(
+        client, _EXTENDED_WARRANTY_DOC, title="补口径 · 延保服务怎么开通", gap_id=gap_id
+    )
     assert first.status_code == 201
     first_id = first.json()["id"]
 

@@ -35,9 +35,12 @@ GOOD_SCORE_JSON = '{"accurate": 36, "evidence": 25, "tone": 28, "comment": "口�
 
 
 def _login(client: TestClient) -> None:
-    assert client.post(
-        "/api/auth/login", json={"username": "operator", "password": "operator123"}
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _ask(client: TestClient, session_id: int, question: str) -> None:
@@ -57,9 +60,12 @@ def _publish_dialogue(client: TestClient, question: str, confirmed: list[dict[st
     reg = client.post(f"/api/service/sessions/{sid}/register")
     assert reg.status_code == 201
     asset_id = reg.json()["id"]
-    assert client.patch(
-        f"/api/assets/{asset_id}/versions/1/fields", json={"qa_pairs": confirmed}
-    ).status_code == 200
+    assert (
+        client.patch(
+            f"/api/assets/{asset_id}/versions/1/fields", json={"qa_pairs": confirmed}
+        ).status_code
+        == 200
+    )
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
     return asset_id
 
@@ -115,7 +121,12 @@ def test_question_bank_and_scored_attempt(api: ApiFixture, monkeypatch: pytest.M
     assert created.status_code == 200
     rec = created.json()
     assert rec["status"] == "scored"
-    assert rec["score"] == {"accurate": 36, "evidence": 25, "tone": 28, "comment": "口径准，语气亲切"}
+    assert rec["score"] == {
+        "accurate": 36,
+        "evidence": 25,
+        "tone": 28,
+        "comment": "口径准，语气亲切",
+    }
     assert rec["model_name"] == get_settings().llm_model  # 打分时刻底座名快照
     assert rec["operator_name"] == "operator"
     assert rec["question_text"] == "盲盒可以指定款式吗"
@@ -138,7 +149,12 @@ def test_question_bank_and_scored_attempt(api: ApiFixture, monkeypatch: pytest.M
         client.post(
             "/api/coach/attempts",
             json={
-                "question_key": {"asset_id": 999999, "version_no": 1, "source": "qa", "pair_index": 0},
+                "question_key": {
+                    "asset_id": 999999,
+                    "version_no": 1,
+                    "source": "qa",
+                    "pair_index": 0,
+                },
                 "answer": "答",
             },
         ).status_code
@@ -183,7 +199,9 @@ def test_unscored_when_no_key_then_rescore(
     q = _qa_question(client, asset_id)
 
     # 不 patch：空凭证进程 complete_chat 抛 LLMNotConfigured -> 未评分行，不抛 500
-    att = client.post("/api/coach/attempts", json={"question_key": q["key"], "answer": "支持 7 天无理由"})
+    att = client.post(
+        "/api/coach/attempts", json={"question_key": q["key"], "answer": "支持 7 天无理由"}
+    )
     assert att.status_code == 200
     rec = att.json()
     assert rec["status"] == "unscored"
@@ -222,7 +240,10 @@ def test_assets_kind_filter_and_auth(api: ApiFixture) -> None:
 
     client.cookies.clear()
     assert client.get("/api/coach/questions").status_code == 401
-    assert client.post("/api/coach/attempts", json={"question_key": {}, "answer": "x"}).status_code == 401
+    assert (
+        client.post("/api/coach/attempts", json={"question_key": {}, "answer": "x"}).status_code
+        == 401
+    )
     assert client.get("/api/coach/records").status_code == 401
     assert client.post("/api/coach/records/1/rescore").status_code == 401
     _login(client)
@@ -336,7 +357,9 @@ def test_score_attempt_llm_call_not_in_transaction(
         )
     finally:
         session.close()
-    assert seen and all(flag is False for flag in seen), "complete_chat 时刻不得 idle-in-transaction"
+    assert seen and all(flag is False for flag in seen), (
+        "complete_chat 时刻不得 idle-in-transaction"
+    )
     assert record.id is not None  # 未评分 INSERT 先落库，打分后同 session UPDATE 收口
     assert record.score is not None and record.model_name == get_settings().llm_model
 
@@ -370,5 +393,7 @@ def test_rescore_record_llm_call_not_in_transaction(
         record = rescore_record(session, rec["id"])
     finally:
         session.close()
-    assert seen and all(flag is False for flag in seen), "rescore complete_chat 时刻不得 idle-in-transaction"
+    assert seen and all(flag is False for flag in seen), (
+        "rescore complete_chat 时刻不得 idle-in-transaction"
+    )
     assert record.score is not None and record.last_error is None

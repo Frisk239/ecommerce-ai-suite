@@ -33,9 +33,12 @@ _DOC_TI = "【产品规格】\n材质：钛钢\n颜色：杏粉".encode()
 
 
 def _login(client: TestClient) -> None:
-    assert client.post(
-        "/api/auth/login", json={"username": "operator", "password": "operator123"}
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _ask(client: TestClient, session_id: int, question: str) -> dict[str, Any]:
@@ -74,9 +77,10 @@ def _publish_water_doc(client: TestClient) -> tuple[int, int]:
         for field, entry in extracted.items()
         if isinstance(entry, dict) and isinstance(entry.get("value"), str)
     }
-    assert client.patch(
-        f"/api/assets/{asset['id']}/versions/1/fields", json=confirmed
-    ).status_code == 200
+    assert (
+        client.patch(f"/api/assets/{asset['id']}/versions/1/fields", json=confirmed).status_code
+        == 200
+    )
     assert client.post(f"/api/assets/{asset['id']}/publish").status_code == 200
     return asset["id"], water_id
 
@@ -88,9 +92,13 @@ def _publish_dialogue(client: TestClient, question: str, answer: str) -> int:
     reg = client.post(f"/api/service/sessions/{sid}/register")
     assert reg.status_code == 201
     asset_id = reg.json()["id"]
-    assert client.patch(
-        f"/api/assets/{asset_id}/versions/1/fields", json={"qa_pairs": [{"q": question, "a": answer}]}
-    ).status_code == 200
+    assert (
+        client.patch(
+            f"/api/assets/{asset_id}/versions/1/fields",
+            json={"qa_pairs": [{"q": question, "a": answer}]},
+        ).status_code
+        == 200
+    )
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
     return asset_id
 
@@ -134,7 +142,10 @@ def test_lineage_document_citations_and_writebacks(api: ApiFixture) -> None:
     # 引用：计数=引用本资产的消息条数；样例带问句截断/版本/会话/时间，倒序
     citations = body["usages"]["citations"]
     assert citations["total"] == 2
-    assert [s["question"] for s in citations["samples"]] == ["净含量777毫升的保质期", "海盐荔枝是什么口味"]
+    assert [s["question"] for s in citations["samples"]] == [
+        "净含量777毫升的保质期",
+        "海盐荔枝是什么口味",
+    ]
     assert all(s["version_no"] == 1 and s["session_id"] == sid for s in citations["samples"])
     assert all(s["at"] for s in citations["samples"])
 
@@ -176,9 +187,11 @@ def test_lineage_writebacks_include_rollback_with_target_version_fields(api: Api
     assert rolled.status_code == 200
 
     body = client.get(f"/api/assets/{asset_id}/lineage").json()
-    assert [
-        (w["version_no"], w["action"]) for w in body["usages"]["writebacks"]
-    ] == [(1, "rollback"), (2, "publish"), (1, "publish")]
+    assert [(w["version_no"], w["action"]) for w in body["usages"]["writebacks"]] == [
+        (1, "rollback"),
+        (2, "publish"),
+        (1, "publish"),
+    ]
     # 回滚行字段=目标 v1 的确认字段（净含量+保质期）；时间线倒序首行即回滚
     assert set(body["usages"]["writebacks"][0]["fields"]) == {"净含量", "保质期"}
     assert body["versions_audit"][0]["action"] == "rollback"

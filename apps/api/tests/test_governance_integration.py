@@ -119,9 +119,7 @@ def test_login_rate_limit_ignores_xff(api: ApiFixture) -> None:
     original = client.app.state.login_limiter
     client.app.state.login_limiter = SlidingWindowLimiter(2, 60.0)
     try:
-        assert (
-            _login(client, password="wrong").status_code == 401
-        )
+        assert _login(client, password="wrong").status_code == 401
         assert (
             client.post(
                 "/api/auth/login",

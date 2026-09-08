@@ -200,7 +200,9 @@ def _fail(step: dict[str, Any], reason: str) -> None:
 Executor = Callable[[dict[str, Any], dict[str, Any]], None]
 
 
-def drive_steps(plan: dict[str, Any], executors: dict[str, Executor], commit: Callable[[], None]) -> None:
+def drive_steps(
+    plan: dict[str, Any], executors: dict[str, Executor], commit: Callable[[], None]
+) -> None:
     """纯执行环：pending 步 running 先落库→执行→终态落库；failed 后断链。
 
     - done 步直接跳过（续跑语义：前序不重跑）；
@@ -334,9 +336,7 @@ def retry_run(db: Session, run_id: int) -> OpsRun:
     """
     run = _run_or_raise(db, run_id)
     if run.delivered_at is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="已投放的编排任务不能重试"
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已投放的编排任务不能重试")
     steps = [dict(step) for step in run.steps]
     resumable = [step for step in steps if step["status"] in (FAILED, RUNNING)]
     if not resumable:

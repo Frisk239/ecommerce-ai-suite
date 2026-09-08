@@ -214,9 +214,7 @@ def test_parsed_qa_values_are_redacted() -> None:
     pairs = parse_qa_output(
         '[{"q": "安装要留电话吗", "a": "登记 13812345678，师傅联系 zhangsan@example.com"}]'
     )
-    assert pairs == [
-        {"q": "安装要留电话吗", "a": "登记 1********78，师傅联系 ****@example.com"}
-    ]
+    assert pairs == [{"q": "安装要留电话吗", "a": "登记 1********78，师傅联系 ****@example.com"}]
 
 
 def test_document_field_values_are_redacted() -> None:
@@ -307,9 +305,7 @@ def test_retry_enters_run_from_failed_state_not_queued(
         seen.append(t.status)
         return t
 
-    monkeypatch.setattr(
-        "suite_api.services.material.run_generation_task", spy
-    )
+    monkeypatch.setattr("suite_api.services.material.run_generation_task", spy)
     task = _task(FAILED)
     task.last_error = "人工打回"
     retry_task(None, task)  # type: ignore[arg-type]

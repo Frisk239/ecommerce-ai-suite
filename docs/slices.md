@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 26 刀语义收口小刀**（`feat/semantic-cleanup`，closeout 见 `docs/progress/semantic-cleanup-closeout.md`）：audit-5 P1 簇清零——打码漏网四处（material prompt/ops_runs 含 output 面/MCP title 三出口）、ops 三修（N+1/行锁/首插兜底）、**血缘导出环拼装**（「导出 · MCP」中文化+计数）、gaps 出口掩。第 21–25 刀+审计刀 5 已合并 main。
+上一刀：**第 27 刀演示收官刀**（`feat/demo-finale`，closeout 见 `docs/progress/demo-finale-closeout.md`）——**goal 完成标准 7/7 达成**：README 3 分钟口述稿（四段时间锚，种子通用名无虚构品牌）+总览其余能力四行+拒答交接摘要（问句 redact 截断+G-xxxx，顾客白名单）+format 全仓收口（46 文件零语义）。第 21–26 刀+审计刀 5 已合并 main。
 
-当前阶段：收官。下一刀：**第 27 刀演示收官刀**（README 3 分钟口述稿——达成 goal 完成标准 7/7；总览其余能力行；拒答交接摘要；format 基线）；第 28 刀起部署阶段；审计刀 6 于第 30 刀后。
+当前阶段：**goal 完成标准 7/7 达成**。下一刀：**第 28 刀起部署阶段**（CI workflow/反代 HTTPS/备份/监控；真视频/ASR 单列）；审计刀 6 于第 30 刀后。
 
 ## 怎么切
 
@@ -157,5 +157,9 @@
 ## 第 26 刀：语义收口小刀（已交付，`feat/semantic-cleanup`）
 
 **路径：** audit-5 P1 簇清零——打码漏网四处（material 生成 prompt/ops_runs 落库含评审实修 output 面/MCP 三出口 title `_mask_title` 落库原文不动）；ops 三修（列表批取/with_for_update 行锁/mcp 首插 SAVEPOINT 兜底）；**血缘导出环拼装**（usages.exports+「导出 · MCP」中文化——0026 最后一环闭环）；gaps.question 出口掩。集成 505 passed（基线 491 → 505）。证据见 `docs/progress/semantic-cleanup-closeout.md`。
+
+## 第 27 刀：演示收官刀（已交付，`feat/demo-finale`）——goal 7/7
+
+**路径：** README「3 分钟口述稿」四段（0:00 接待含缺口/0:45 内容/1:30 MCP/2:20 中台核心——种子通用名例句，评审实修 500ml 对齐种子）；总览「其余能力」四行（原型冻结形状）；拒答交接摘要（REFUSAL_CONTENT 不变+追加段：问句 redact 截 60+G-xxxx；顾客通道白名单延伸到文本）；ruff format 全仓收口（46 文件纯格式，收集数 510=510）。集成 510 passed（基线 505 → 510）。证据见 `docs/progress/demo-finale-closeout.md`（含完成标准 7/7 对账表）。
 
 ## 收官排期（audit-5）

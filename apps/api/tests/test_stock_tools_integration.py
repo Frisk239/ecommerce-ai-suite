@@ -35,7 +35,12 @@ _CUP_DOC = "钛钢保温杯产品说明\n净含量：480ml\n材质牌号未标�
 
 
 def _login(client: TestClient) -> None:
-    assert client.post("/api/auth/login", json={"username": "operator", "password": "operator123"}).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _ask(client: TestClient, session_id: int, question: str) -> list[tuple[str, dict]]:
@@ -232,7 +237,9 @@ def test_spec_question_still_retrieves(api: ApiFixture) -> None:
     cup_id = next(p["id"] for p in client.get("/api/products").json() if p["name"] == "钛钢保温杯")
     files = {"file": ("spec.txt", _CUP_DOC, "text/plain")}
     registered = client.post(
-        "/api/assets/register", files=files, data={"productId": str(cup_id), "title": "保温杯规格文档"}
+        "/api/assets/register",
+        files=files,
+        data={"productId": str(cup_id), "title": "保温杯规格文档"},
     )
     assert registered.status_code == 201
     doc_id: int = registered.json()["id"]
@@ -267,7 +274,9 @@ def test_stock_policy_question_hits_published_policy_doc(api: ApiFixture) -> Non
     检索并命中引用（旧词表含「库存」时此问句永远到不了检索——审计刀 3 P1#3）。"""
     client, _ = api
     _login(client)
-    policy_doc = "库存政策说明\n库存：现货商品付款后48小时内发货；预售商品以详情页时效为准。".encode()
+    policy_doc = (
+        "库存政策说明\n库存：现货商品付款后48小时内发货；预售商品以详情页时效为准。".encode()
+    )
     registered = client.post(
         "/api/assets/register",
         files={"file": ("policy.txt", policy_doc, "text/plain")},

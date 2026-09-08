@@ -48,7 +48,12 @@ def _assemble(**overrides):
         "citation_rows": [_citation_row(2), _citation_row(1)],
         "citations_total": 2,
         "coach_rows": [
-            (7, "盲盒可以指定款式吗", {"asset_id": 9, "version_no": 1, "source": "qa", "pair_index": 0}, _at(5)),
+            (
+                7,
+                "盲盒可以指定款式吗",
+                {"asset_id": 9, "version_no": 1, "source": "qa", "pair_index": 0},
+                _at(5),
+            ),
         ],
         # 写回 fields 的派生源：各版 confirmed_fields 键列表（查询侧已排序）
         "version_fields": {1: ["净含量", "保质期"], 2: ["净含量", "保质期", "储存条件"]},
@@ -71,8 +76,7 @@ def test_assemble_aggregates_three_sources_in_order() -> None:
     # 写回=发布/回滚事件（0010/0034 两类移指针事务都写回商品）：confirm 行不进；
     # action 区分两类，fields 按事件版本号从 confirmed_fields 派生，带商品锚与操作者
     assert [
-        (w.version_no, w.action, w.operator, w.product_id, w.fields)
-        for w in out.usages.writebacks
+        (w.version_no, w.action, w.operator, w.product_id, w.fields) for w in out.usages.writebacks
     ] == [
         (2, "publish", "operator", 3, ["净含量", "保质期", "储存条件"]),
         (1, "publish", "operator", 3, ["净含量", "保质期"]),
@@ -108,9 +112,7 @@ def test_rollback_moves_product_so_it_is_a_writeback() -> None:
             (_at(1), "publish", 1, "operator"),
         ]
     )
-    assert [
-        (w.version_no, w.action, w.fields) for w in out.usages.writebacks
-    ] == [
+    assert [(w.version_no, w.action, w.fields) for w in out.usages.writebacks] == [
         (1, "rollback", ["净含量", "保质期"]),
         (2, "publish", ["净含量", "保质期", "储存条件"]),
         (1, "publish", ["净含量", "保质期"]),
@@ -214,7 +216,12 @@ def test_coaching_record_without_version_in_key_is_skipped() -> None:
     out = _assemble(
         coach_rows=[
             (7, "坏锚题面", {"asset_id": 9, "source": "qa"}, _at(5)),
-            (8, "主题面", {"asset_id": 9, "version_no": 2, "source": "qa", "pair_index": 1}, _at(4)),
+            (
+                8,
+                "主题面",
+                {"asset_id": 9, "version_no": 2, "source": "qa", "pair_index": 1},
+                _at(4),
+            ),
         ],
     )
     assert [(c.record_id, c.version_no) for c in out.usages.coaching] == [(8, 2)]

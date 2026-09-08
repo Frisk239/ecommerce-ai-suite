@@ -61,9 +61,7 @@ class ScoreParseError(Exception):
     """评分输出解析失败（坏 JSON/形状不对/超区间）：该次 attempt 落未评分行。"""
 
 
-def build_score_prompt(
-    question_text: str, standard_answer: str | None, trainee_answer: str
-) -> str:
+def build_score_prompt(question_text: str, standard_answer: str | None, trainee_answer: str) -> str:
     """user prompt 三要素（0040）：题面 + 标准答案（可空，写明兜底口径）+ 受训者答案。
 
     0038 修订（第 21 刀，审计刀 4 P0 簇出口 3）：字节不动、出口必掩——打分
@@ -153,11 +151,7 @@ def asset_questions(
     if isinstance(value, list):
         questions = []
         for index, pair in enumerate(value):
-            if (
-                isinstance(pair, dict)
-                and isinstance(pair.get("q"), str)
-                and pair["q"].strip()
-            ):
+            if isinstance(pair, dict) and isinstance(pair.get("q"), str) and pair["q"].strip():
                 answer = pair.get("a")
                 standard = answer.strip() if isinstance(answer, str) and answer.strip() else None
                 questions.append(
@@ -228,9 +222,7 @@ def normalize_key(raw: Any) -> dict[str, Any] | None:
     }
 
 
-def find_question(
-    db: Session, storage: ObjectStorage, question_key: Any
-) -> dict[str, Any]:
+def find_question(db: Session, storage: ObjectStorage, question_key: Any) -> dict[str, Any]:
     """按锚找题：单资产推导（debt-2 第 24 刀，不再全量 derive_questions O(N)）。
 
     锚自带 asset_id+version_no，直接定位该资产的当前已发布版本出题再匹配
@@ -336,7 +328,9 @@ def score_attempt(
     )
     db.add(record)
     db.commit()  # ① 未评分态先落库 + 释放推导事务，再等 LLM
-    _apply_score(record, question_text, standard_answer, trainee_answer)  # 三输入走本地变量，不回读过期属性（不重开事务）
+    _apply_score(
+        record, question_text, standard_answer, trainee_answer
+    )  # 三输入走本地变量，不回读过期属性（不重开事务）
     db.commit()  # ② 打分结果 UPDATE 收口（新事务，毫秒级）
     db.refresh(record)
     return record

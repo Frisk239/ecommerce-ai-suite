@@ -62,9 +62,7 @@ def make_object_key(kind: str, content_bytes: bytes) -> str:
 def validate_source_kind(source_kind: str) -> str:
     """来源枚举校验（纯函数便于单测）：坏值 ValueError，路由层转 422。"""
     if source_kind not in SOURCE_KINDS:
-        raise ValueError(
-            f"来源种类必须是 {'/'.join(SOURCE_KINDS)} 之一，收到: {source_kind!r}"
-        )
+        raise ValueError(f"来源种类必须是 {'/'.join(SOURCE_KINDS)} 之一，收到: {source_kind!r}")
     return source_kind
 
 

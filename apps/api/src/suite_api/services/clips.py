@@ -35,9 +35,7 @@ def transcript_bytes(candidate: ClipCandidate) -> bytes:
     ).encode()
 
 
-def pick_candidates(
-    db: Session, storage: ObjectStorage, ids: list[int]
-) -> list[Asset]:
+def pick_candidates(db: Session, storage: ObjectStorage, ids: list[int]) -> list[Asset]:
     """批量拣选登记：pending 候选 → kind=video / source=clip_pick 资产。
 
     - 重复 id 去重保序（同一候选勾两次=登记一次）；
@@ -51,9 +49,7 @@ def pick_candidates(
     for candidate_id in dict.fromkeys(ids):
         candidate = db.get(ClipCandidate, candidate_id)
         if candidate is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="切片候选不存在"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="切片候选不存在")
         if candidate.status != PENDING:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

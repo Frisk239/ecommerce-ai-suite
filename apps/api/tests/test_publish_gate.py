@@ -53,7 +53,10 @@ def test_confirmed_overrides_machine_value() -> None:
 
 def test_filling_abstained_field_passes_gate() -> None:
     extracted = {"净含量": {"value": "500ml", "source": "machine"}, "材质": {"abstained": True}}
-    confirmed = {"净含量": {"value": "500ml", "source": "human"}, "材质": {"value": "钛钢", "source": "human"}}
+    confirmed = {
+        "净含量": {"value": "500ml", "source": "human"},
+        "材质": {"value": "钛钢", "source": "human"},
+    }
     missing, unconfirmed = evaluate_publish_gate(_CUP_SCHEMA, extracted, confirmed)
     assert (missing, unconfirmed) == ([], [])
 

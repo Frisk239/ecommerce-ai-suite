@@ -109,7 +109,9 @@ def _install_fake_client(monkeypatch: pytest.MonkeyPatch, create_result: Any) ->
         llm,
         "get_settings",
         lambda: Settings(
-            llm_api_key="sk-test-1234567890", llm_base_url="http://localhost:9/v1", llm_model="fake-model"
+            llm_api_key="sk-test-1234567890",
+            llm_base_url="http://localhost:9/v1",
+            llm_model="fake-model",
         ),
     )
     return calls
@@ -180,7 +182,9 @@ def test_stream_chat_wraps_create_errors_without_leaking(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         llm,
         "get_settings",
-        lambda: Settings(llm_api_key="sk-test-1234567890", llm_base_url="http://localhost:9/v1", llm_model="m"),
+        lambda: Settings(
+            llm_api_key="sk-test-1234567890", llm_base_url="http://localhost:9/v1", llm_model="m"
+        ),
     )
     with pytest.raises(llm.LLMUnavailable) as excinfo:
         _consume()
@@ -189,7 +193,9 @@ def test_stream_chat_wraps_create_errors_without_leaking(monkeypatch: pytest.Mon
     assert str(excinfo.value)  # 通用文案非空
 
 
-def test_stream_chat_wraps_midstream_errors_without_leaking(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stream_chat_wraps_midstream_errors_without_leaking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """流中途失败同样包装（不向调用方漏原始异常类型）。"""
     calls = _install_fake_client(monkeypatch, _FakeStream(["前半"], fail_on=1))
     with pytest.raises(llm.LLMUnavailable) as excinfo:

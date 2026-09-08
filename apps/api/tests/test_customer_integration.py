@@ -26,7 +26,12 @@ _CHOPSTICK_DOC = "钛合金筷子产品说明\n筷长：26cm".encode()
 
 
 def _login(client: TestClient) -> None:
-    assert client.post("/api/auth/login", json={"username": "operator", "password": "operator123"}).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _upload_and_publish(client: TestClient, content: bytes, title: str) -> int:
@@ -107,6 +112,14 @@ def test_customer_full_flow_same_engine(api: ApiFixture) -> None:
     assert refusal_complete["handoff"] is True
     assert refusal_complete["citations"] == []
     assert "gap_id" not in refusal_complete
+    # 第 27 刀：拒答交接摘要白名单延伸到消息文本——顾客通道带问句摘要、
+    # **不带**「缺口：G-xxxx」段（操作者版全等断言见 test_service_integration）
+    refusal_deltas = "".join(d["text"] for e, d in refusal_events if e == "delta")
+    assert refusal_deltas == (
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：会员生日礼怎么领？"
+    )
+    assert "缺口" not in refusal_deltas
+    assert "G-" not in refusal_deltas
 
     client.cookies.clear()
     _login(client)
@@ -154,7 +167,9 @@ def test_customer_token_auth(api: ApiFixture) -> None:
     assert missing.headers.get("www-authenticate") == "Bearer"
     # 无效令牌 -> 401 + WWW-Authenticate
     bad = client.post(
-        f"/api/customer/sessions/{sid}/messages", json=body, headers={"Authorization": "Bearer not-the-token"}
+        f"/api/customer/sessions/{sid}/messages",
+        json=body,
+        headers={"Authorization": "Bearer not-the-token"},
     )
     assert bad.status_code == 401
     assert bad.json()["detail"] == "会话不存在或令牌无效"
@@ -166,7 +181,9 @@ def test_customer_token_auth(api: ApiFixture) -> None:
     assert weird.status_code == 401
     # 未知会话 -> 401 与令牌无效同文案（自增 id 不可探测：404/401 双态是探测面）
     unknown = client.post(
-        "/api/customer/sessions/999999/messages", json=body, headers={"Authorization": f"Bearer {token}"}
+        "/api/customer/sessions/999999/messages",
+        json=body,
+        headers={"Authorization": f"Bearer {token}"},
     )
     assert unknown.status_code == 401
     assert unknown.json()["detail"] == "会话不存在或令牌无效"
@@ -249,7 +266,9 @@ def test_rate_limit_ip_key_direct_mode_ignores_xff(api: ApiFixture) -> None:
     try:
         # 两次请求换了 XFF，仍同一真实对端记账 -> 第二次 429（换头无效）
         assert (
-            client.post("/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7"}).status_code
+            client.post(
+                "/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7"}
+            ).status_code
             == 201
         )
         blocked = client.post("/api/customer/sessions", headers={"X-Forwarded-For": "198.51.100.9"})
@@ -272,10 +291,14 @@ def test_rate_limit_ip_key_trust_mode_uses_xff_first_hop(
     )
     try:
         assert (
-            client.post("/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.1"}).status_code
+            client.post(
+                "/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.1"}
+            ).status_code
             == 201
         )
-        blocked = client.post("/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.2"})
+        blocked = client.post(
+            "/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.2"}
+        )
         assert blocked.status_code == 429  # 第二跳变了不算数：仍同一第一跳
         other = client.post("/api/customer/sessions", headers={"X-Forwarded-For": "198.51.100.9"})
         assert other.status_code == 201  # 不同第一跳各账
@@ -298,7 +321,9 @@ def test_bad_token_cannot_burn_session_quota(api: ApiFixture) -> None:
         bad_headers = {"Authorization": "Bearer not-the-token"}
         for _ in range(5):  # 5 > 会话阈值 2：若会话闸仍在鉴权之前，这里会被替耗成 429
             resp = client.post(
-                f"/api/customer/sessions/{sid}/messages", json={"content": "你好"}, headers=bad_headers
+                f"/api/customer/sessions/{sid}/messages",
+                json={"content": "你好"},
+                headers=bad_headers,
             )
             assert resp.status_code == 401
         assert len(_customer_ask(client, sid, token, "真顾客第一问")) > 0
@@ -328,7 +353,9 @@ def test_ip_gate_fronts_auth_for_bad_tokens(api: ApiFixture) -> None:
         bad_headers = {"Authorization": "Bearer not-the-token"}
         for _ in range(3):  # 都 401，但 IP 账已记满 3 条
             resp = client.post(
-                f"/api/customer/sessions/{sid}/messages", json={"content": "你好"}, headers=bad_headers
+                f"/api/customer/sessions/{sid}/messages",
+                json={"content": "你好"},
+                headers=bad_headers,
             )
             assert resp.status_code == 401
         fourth = client.post(

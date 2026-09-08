@@ -119,9 +119,7 @@ def test_get_order_status_db_error_swallowed(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_summarize_tool_result() -> None:
     assert (
-        order_tools.summarize_tool_result(
-            {"found": True, "status": "已发货", "events": [{}, {}]}
-        )
+        order_tools.summarize_tool_result({"found": True, "status": "已发货", "events": [{}, {}]})
         == "已发货 · 2 个物流事件"
     )
     assert order_tools.summarize_tool_result({"found": False}) == "未找到"
@@ -184,9 +182,7 @@ def _guards(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
 
     monkeypatch.setattr("suite_api.services.chat_engine.retrieve", _boom("retrieve"))
     monkeypatch.setattr("suite_api.services.chat_engine.assets_meta", _boom("retrieve"))
-    monkeypatch.setattr(
-        "suite_api.services.chat_engine.record_refusal_gap", _boom("gap")
-    )
+    monkeypatch.setattr("suite_api.services.chat_engine.record_refusal_gap", _boom("gap"))
 
     async def _no_llm(*_a: Any, **_k: Any) -> Any:
         calls["llm"] += 1
@@ -245,9 +241,7 @@ def test_run_ask_order_not_found_handoff_without_gap(
     assert outcome.answer.kind == "handoff"
     assert outcome.answer.handoff is True
     assert outcome.gap is None
-    assert outcome.agent_message.content == (
-        "订单 SO-9999 未找到，已转人工，请人工核实单号。"
-    )
+    assert outcome.agent_message.content == ("订单 SO-9999 未找到，已转人工，请人工核实单号。")
     assert outcome.tool == {
         "name": "get_order_status",
         "arg": "SO-9999",
@@ -283,6 +277,9 @@ def test_run_ask_non_order_never_touches_order_tool(
     )
     monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: [])
     monkeypatch.setattr("suite_api.services.chat_engine.assets_meta", lambda *_a, **_k: {})
+    # 第 27 刀：拒答落库文本要格式化缺口 id，本单测钉分派零接触不测文本——
+    # mock 库把缺口钉 None（摘要/缺口段文本由 test_answer 单测+DB 集成钉）
+    monkeypatch.setattr("suite_api.services.chat_engine.record_refusal_gap", lambda *_a, **_k: None)
 
     outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "保温杯的材质是什么？"))
 
@@ -307,9 +304,7 @@ def _order_outcome() -> AskOutcome:
 
     return AskOutcome(
         agent_message=message,
-        answer=ComposedAnswer(
-            content=message.content, citations=[], kind="answer", handoff=False
-        ),
+        answer=ComposedAnswer(content=message.content, citations=[], kind="answer", handoff=False),
         gap=None,
         generated=False,
         fallback=False,

@@ -2,10 +2,13 @@
 // 对齐工程路由）+ 统计带（资产三态/开放缺口/会话数，复用既有只读端点）。
 // 计数口径与治理台列表同源：待人洗=纯新待办（无已发布指针）、已发布=指针非空
 // （修订中的资产线上版仍在服务）。图标块全中性（DSH：色彩只承担状态语义）。
+// 第 27 刀补「其余能力」四行入口（对照原型 Overview.tsx:177 冻结形状：
+// 资产/商品/考核/连接层，路由换工程路由）。
 
 import { useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  ArrowRight,
   ChatCircleDots,
   CheckCircle,
   Database,
@@ -66,6 +69,26 @@ const LOOPS: LoopDef[] = [
       { label: '取资产版本', to: '/connect' },
       { label: '登记进中台', to: '/platform/assets?status=已接入' },
     ],
+  },
+]
+
+// 其余能力：一行的入口，不是营销磁贴（原型 Overview.tsx:177 冻结形状与文案）
+const REMAINING: { to: string; label: string; line: string }[] = [
+  {
+    to: '/platform/assets',
+    label: '中台 · 资产',
+    line: '登记、机洗、人洗、发布、修订；发布权只在这里',
+  },
+  {
+    to: '/platform/products',
+    label: '中台 · 商品',
+    line: '结构化事实；规格来自已发布资产的写回',
+  },
+  { to: '/coach', label: '销售考核', line: '从已发布对话资产抽场景，AI 扮演顾客打分' },
+  {
+    to: '/connect',
+    label: '连接层（MCP）',
+    line: '把中台能力暴露给外部 Agent：检索、取资产、登记、导出，没有发布',
   },
 ]
 
@@ -211,6 +234,27 @@ export default function OverviewPage() {
               ))}
             </div>
           </div>
+        ))}
+      </div>
+
+      {/* 其余能力：故事线之外的一行入口（第 27 刀，对照原型冻结四行） */}
+      <div className="panel mt-4 divide-y divide-line-1">
+        {REMAINING.map((row) => (
+          <Link
+            key={row.to}
+            to={row.to}
+            className="group flex items-center gap-3 px-4 py-3 hover:bg-fill"
+          >
+            <span className="text-sm font-medium text-ink group-hover:text-accent-strong">
+              {row.label}
+            </span>
+            <span className="truncate text-xs text-ink-3">{row.line}</span>
+            <ArrowRight
+              aria-hidden
+              size={14}
+              className="ml-auto shrink-0 text-caption hover:text-accent-strong"
+            />
+          </Link>
         ))}
       </div>
     </div>

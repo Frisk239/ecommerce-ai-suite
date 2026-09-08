@@ -24,9 +24,12 @@ ApiFixture = tuple[TestClient, Path]
 
 
 def _login(client: TestClient) -> None:
-    assert client.post(
-        "/api/auth/login", json={"username": "operator", "password": "operator123"}
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _ask(client: TestClient, session_id: int, question: str) -> list[tuple[str, dict]]:
@@ -219,7 +222,9 @@ def test_reflow_llm_failure_stops_ingested_then_retry_succeeds(
 # ---------- PATCH fields 契约：dialogue 合法集=qa_pairs，数组值形状校验 ----------
 
 
-def test_dialogue_field_validation_contract(api: ApiFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dialogue_field_validation_contract(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client, _ = api
     _login(client)
     _patch_complete_chat(monkeypatch, result="[]")  # 无可抽 -> 弃权草稿，照常待人洗
@@ -231,7 +236,9 @@ def test_dialogue_field_validation_contract(api: ApiFixture, monkeypatch: pytest
 
     # 未知字段 422（对话合法集只有 qa_pairs）
     assert (
-        client.patch(f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "500ml"}).status_code
+        client.patch(
+            f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "500ml"}
+        ).status_code
         == 422
     )
     # 值不是数组 / 项缺 a / q 空串 / 非数组项 -> 422

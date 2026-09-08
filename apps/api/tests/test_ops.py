@@ -99,7 +99,9 @@ def _product() -> Product:
 
 
 def _run(steps: list[dict[str, Any]] | None = None, output: dict | None = None) -> OpsRun:
-    return OpsRun(id=1, product_id=1, steps=steps if steps is not None else initial_steps(), output=output)
+    return OpsRun(
+        id=1, product_id=1, steps=steps if steps is not None else initial_steps(), output=output
+    )
 
 
 def _patch_llm(

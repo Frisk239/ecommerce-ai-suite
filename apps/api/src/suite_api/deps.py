@@ -58,16 +58,14 @@ def get_storage(request: Request):
     return ensure_storage(request.app)
 
 
-def get_current_operator(
-    request: Request, db: Session = Depends(get_db)
-) -> Operator:
+def get_current_operator(request: Request, db: Session = Depends(get_db)) -> Operator:
     """签名 cookie 验签 -> 操作者；失败一律 401（0016：控制台必须登录）。"""
     settings = request.app.state.settings
-    operator_id = verify_session_value(request.cookies.get(SESSION_COOKIE_NAME), settings.session_secret)
+    operator_id = verify_session_value(
+        request.cookies.get(SESSION_COOKIE_NAME), settings.session_secret
+    )
     if operator_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录或会话已过期"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录或会话已过期")
     operator = db.scalar(select(Operator).where(Operator.id == operator_id))
     if operator is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录或会话已过期")

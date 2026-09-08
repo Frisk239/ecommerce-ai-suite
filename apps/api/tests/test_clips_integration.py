@@ -31,9 +31,12 @@ _URL_ENV = "SUITE_TEST_DATABASE_URL"
 
 
 def _login(client: TestClient) -> None:
-    assert client.post(
-        "/api/auth/login", json={"username": "operator", "password": "operator123"}
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
 
 
 def _candidates(client: TestClient) -> list[dict]:
@@ -161,7 +164,10 @@ def test_pick_publish_retrieval_and_surface(api: ApiFixture) -> None:
         # 登记字节 = [start-end] 转写 文本（0039：不是 mp4）
         text = client.get(f"/api/assets/{out['id']}/versions/1/text")
         assert text.status_code == 200
-        assert text.text == f"[{candidate['timecode_start']}-{candidate['timecode_end']}] {candidate['transcript']}"
+        assert (
+            text.text
+            == f"[{candidate['timecode_start']}-{candidate['timecode_end']}] {candidate['transcript']}"
+        )
 
     # video 合法字段集为空（人洗侧同分派口径）：任何字段 PATCH 都 422……
     assert (
@@ -223,7 +229,10 @@ def test_repick_and_error_contract(api: ApiFixture) -> None:
     assert registered, "上一用例已登记两条"
 
     # 重复拣选 409（单向状态机，0039）
-    assert client.post("/api/clips/candidates/pick", json={"ids": [registered[0]["id"]]}).status_code == 409
+    assert (
+        client.post("/api/clips/candidates/pick", json={"ids": [registered[0]["id"]]}).status_code
+        == 409
+    )
     # 混合批次：含已登记整体 409，pending 那条不被登记（事务不落）
     mixed = client.post(
         "/api/clips/candidates/pick", json={"ids": [pending[0]["id"], registered[0]["id"]]}
