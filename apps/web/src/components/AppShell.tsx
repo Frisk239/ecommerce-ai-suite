@@ -1,10 +1,10 @@
 // 操作台壳（视觉优化刀）：固定左侧栏（分组：数据中台靠前）+ 顶栏面包屑 + 内容列。
 // 路由行为不变：/login 与 /customer 不进此壳；新页面入口只加 NAV/面包屑条目
 // （第 17 刀起含素材中心；第 18 刀起含直播切片；第 19 刀起含销售考核；
-// 第 22 刀起含运营 Agent）。
+// 第 22 刀起含运营 Agent；第 23 刀起含连接层，/ 为总览）。
 
 import { useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
   ChatCircleDots,
   Database,
@@ -13,6 +13,7 @@ import {
   List,
   Megaphone,
   Package,
+  PlugsConnected,
   Robot,
   SignOut,
   Storefront,
@@ -24,6 +25,8 @@ import { useAuth } from '../auth/AuthContext'
 const NAV = [
   { to: '/platform/assets', label: '中台 · 资产', icon: Database, group: '数据中台' },
   { to: '/platform/products', label: '中台 · 商品', icon: Package, group: null },
+  // 连接层是操作者对外部 Agent 的门面，归数据中台组语义（group:null 跟随商品先例）
+  { to: '/connect', label: '连接层', icon: PlugsConnected, group: null },
   { to: '/service', label: 'AI 客服', icon: ChatCircleDots, group: '业务能力' },
   { to: '/material', label: '素材中心', icon: Megaphone, group: null },
   { to: '/clips', label: '直播切片', icon: FilmSlate, group: null },
@@ -33,9 +36,11 @@ const NAV = [
 
 function useCrumb(): string | null {
   const { pathname } = useLocation()
+  if (pathname === '/') return '总览'
   if (pathname.startsWith('/platform/assets/')) return '数据中台 / 中台 · 资产 / 详情'
   if (pathname.startsWith('/platform/assets')) return '数据中台 / 中台 · 资产'
   if (pathname.startsWith('/platform/products')) return '数据中台 / 中台 · 商品'
+  if (pathname.startsWith('/connect')) return '数据中台 / 连接层'
   if (pathname.startsWith('/material')) return '业务能力 / 素材中心'
   if (pathname.startsWith('/clips')) return '业务能力 / 直播切片'
   if (pathname.startsWith('/coach')) return '业务能力 / 销售考核'
@@ -47,7 +52,12 @@ function useCrumb(): string | null {
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav className="flex h-full flex-col" aria-label="主导航">
-      <div className="flex h-14 items-center gap-2.5 border-b border-line-1 px-5">
+      <Link
+        to="/"
+        onClick={onNavigate}
+        className="flex h-14 items-center gap-2.5 border-b border-line-1 px-5"
+        title="返回总览"
+      >
         <span className="brand-mark flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]">
           <Database aria-hidden size={14} weight="bold" className="text-white" />
         </span>
@@ -55,7 +65,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
           <span className="block text-[15px] font-semibold tracking-tight text-ink">电商 AI 套件</span>
           <span className="block text-[11px] text-caption">治理台</span>
         </span>
-      </div>
+      </Link>
 
       <div className="flex-1 overflow-y-auto pb-4 pt-1.5">
         {NAV.map((item) => (
