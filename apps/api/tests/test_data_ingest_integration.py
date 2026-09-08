@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from suite_api.models import RetrievalChunk
+from suite_api.services.retrieval import retrieve
 
 ApiFixture = tuple[TestClient, Path]
 
@@ -103,6 +104,10 @@ def test_import_csv_full_journey(api: ApiFixture) -> None:
         ).all()
         assert unpublished == []
 
+        # 4.5) spec Must 4：retrieve 真正命中（客服/MCP 同一入口，0017）
+        hits = retrieve(db, "会员积分怎么累计？")
+        assert any(hit["asset_id"] == first_id for hit in hits), "导入→发布的资产应被检索命中"
+
     # 5) 重传同文件=再建 3 条新资产（登记幂等可重，Out：不做增量去重）
     again = _import_csv(client, _GOOD_CSV)
     assert again.status_code == 200
@@ -131,3 +136,14 @@ def test_import_csv_rejects_bad_batches(api: ApiFixture) -> None:
     # 422 批次不登记任何资产：全库 document 标题不含这两批的输入
     titles = [a["title"] for a in client.get("/api/assets").json() if a["title"]]
     assert "a" not in titles
+
+
+def test_import_csv_rejects_oversize_file(api: ApiFixture) -> None:
+    """2MB 文件防线（评审处置，与单份登记同一把尺）：巨型文件在被行数规则
+    拒绝前就已整读进内存——大小检查前置于解析。"""
+    client, _ = api
+    _login(client)
+    huge = b"title,content\n" + b"x," + b"c" * (2 * 1024 * 1024) + b"\n"
+    resp = _import_csv(client, huge)
+    assert resp.status_code == 413
+    assert "2MB" in resp.json()["detail"]

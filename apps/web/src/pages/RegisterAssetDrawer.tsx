@@ -436,7 +436,8 @@ export default function RegisterAssetDrawer({
               {csvPreview !== null && csvReport === null ? (
                 <div className="rounded-[6px] border border-line-2 bg-surface px-3 py-2 text-xs leading-5 text-ink-2">
                   预览：共 {csvPreview.total} 行数据，约 {csvPreview.create} 条将创建、
-                  {csvPreview.skip} 条将跳过（空值行）。计数仅供参考，以后端结果为准。
+                  {csvPreview.skip} 条将跳过（空值行）。计数仅供参考（引号包裹的
+                  逗号/换行可能造成偏差），以后端结果为准。
                   {csvPreview.headerOk ? null : (
                     <span className="mt-1 block text-danger">
                       表头缺少 {csvPreview.missing.join('、')} 列，后端将拒绝整批导入。
@@ -449,7 +450,9 @@ export default function RegisterAssetDrawer({
                 <div className="space-y-3" role="status" aria-label="导入结果报告">
                   <div className="text-xs leading-5 text-ink-2">
                     导入完成：创建 <span className="font-semibold text-ink">{csvReport.created.length}</span> 条
-                    <span className="text-ink-3">（已进入待人洗，逐条人洗后发布）</span>
+                    <span className="text-ink-3">
+                      （已登记：机洗成功者进入待人洗，失败者留在已接入可就地重试）
+                    </span>
                     ，跳过 <span className="font-semibold text-ink">{csvReport.skipped.length}</span> 条。
                   </div>
                   {csvReport.created.length > 0 ? (

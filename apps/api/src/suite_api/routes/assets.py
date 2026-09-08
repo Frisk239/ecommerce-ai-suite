@@ -261,6 +261,12 @@ async def import_csv(
     """
     del operator  # 写接口仅要求登录，401 口径同既有写端点
     data = await file.read()
+    # 与单份登记同一把 2MB 防线（评审处置）：CSV 是文本容器，200 行小文本远低于
+    # 此；无上限则巨型文件在被 422 行数拒绝前已整读进内存
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="CSV 文件超过 2MB 上限"
+        )
     try:
         rows, skipped = parse_import_csv(data)
     except CsvImportFormatError as exc:
