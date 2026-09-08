@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**审计刀 1**（`feat/audit-1`，closeout 见 `docs/progress/audit-1-closeout.md`）：三路审计零硬偏离；P0 回滚写回残留已修（ADR 0034 全量写回，集成 141 passed）；P1 进后续施工单。前六刀（脚手架/治理发布写回/客服引用/知识缺口闭环/MCP 只读已发布/修订流+回滚）已全部合并 main。
+上一刀：**第 11 刀并发收口**（`feat/concurrency-hardening`，closeout 见 `docs/progress/concurrency-hardening-closeout.md`）：审计刀 2 P1 簇一揽子（事务边界 / SSE 释连接 / CSV 线程池 / 缺口部分唯一 / login 闸 / limiter 清扫 / retrieve 排序）。前十刀 + 审计刀 2 已合并 main。
 
-当前阶段：工程刀。第 7 刀：**厂商生成**（0033，凭证已备，审计裁决）。
+当前阶段：工程刀。下一刀：**回流增强**（会话回流后 LLM 抽 QA 草稿→人洗→发布）。
 
 ## 怎么切
 
@@ -86,11 +86,15 @@
 
 **Must：** 顾客正常问答零变化（回归）；闸序「狂刷不碰库」裁决保持（IP 闸仍前置）。
 
-## 审计刀 2（已交付，`feat/audit-2` 待 PR）
+## 审计刀 2（已交付已合并，PR #14）
 
-三路子代理（领域对账/安全密钥/工程债务）审 `7e41a3d..main` 五刀：**P0 零**（密钥纪律全链通过、领域零硬偏离、四项工程嫌疑逐一排除）；P1 聚成一簇——**「单操作者无并发」前提在顾客公开面后失效**（LLM 持连接 20s×池 15、SSE 慢连接钉池、import_csv 冻结事件循环、缺口幂等无索引、login 无限流、limiter 字典无界、retrieve 无序截断）。ADR 0030 回写 gap_id 通道分叉。证据见 `docs/progress/audit-2-closeout.md`。
+三路子代理（领域对账/安全密钥/工程债务）审 `7e41a3d..main` 五刀：**P0 零**（密钥纪律全链通过、领域零硬偏离、四项工程嫌疑逐一排除）；P1 聚成一簇——**「单操作者无并发」前提在顾客公开面后失效**（LLM 持连接 20s×池 15、SSE 慢连接钉池、import_csv 冻结事件循环、缺口幂等无索引、login 无限流、limiter 字典无界、retrieve 无序截断）。ADR 0030 回写 gap_id 通道分叉。证据见 `docs/progress/audit-2-closeout.md`。Intake 通过：`docs/progress/audit-2-intake.md`。
 
-**下一刀裁决 = 并发收口刀**（P1 簇一揽子，优先于回流增强：后者加重 LLM 调用面，先修地基）。
+## 第 11 刀：并发收口（已交付，`feat/concurrency-hardening` 待 PR）
+
+**路径：** 演示并发安全——并发顾客提问 / 并发拒答同问 / 导入不再冻事件循环。零新功能面。LLM 等待期不持 DB 事务；ask 路由 SSE 返回前释放 session；`import_csv` 同步进线程池；缺口部分唯一索引 + IntegrityError 兜底（映射 0024/0030，不新开 ADR）；login IP 闸 10/60s；limiter 空 key 清扫；retrieve 按 id 排序再截断。证据见 `docs/progress/concurrency-hardening-closeout.md`。
+
+**Must：** 既有问答事件序/文案/状态码零变化（login 429 是新路径）；不扩连接池。
 
 ## 更后面（现在不锁顺序，各是独立刀）
 
@@ -98,7 +102,6 @@
 | --- | --- |
 | **回流增强** | 调研 §6 候选 2：会话回流后 LLM 抽 QA 草稿→人洗→发布；并发收口之后 |
 | **审计刀 3** | 约 5 刀后再轮（上两轮见 audit-1/audit-2 closeout） |
-| **审计刀 2** | 约 5 刀后再轮（上轮见 `docs/progress/audit-1-closeout.md`）；不改产品代码，三路对账后排还债 |
 | 素材 / 切片 / 考核 | 有接待飞轮和 MCP 证据后再进队。质检、候选不是资产已锁。不做微调（0028） |
 
 **展示约定：** 资产 ID 对外写成 `A-{id:04d}`（如 `A-0001`），库内仍是整数，避免原型口述和工程芯片对不上。
