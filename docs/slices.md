@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 25 刀前端收口刀**（`feat/frontend-cleanup`，closeout 见 `docs/progress/frontend-cleanup-closeout.md`）：toUiMessage 工厂+useAskStream 共享 hook+AssetAnchorChip+ActionError 统一（9 处）——audit-4 前端债清零，行为零变化（api 零 diff）。第 16–24 刀+审计刀 4 已合并 main。
+上一刀：**审计刀 5**（`feat/audit-5`，closeout 见 `docs/progress/audit-5-closeout.md`）：三路子代理审第 21–25 刀——P0 零；P1 簇=打码收口漏网三处（material prompt/MCP title/ops_runs 落库）+ops N+1 回归/无行锁/mcp 首插；goal 完成标准 6/7（README 口述稿唯一硬缺口）。**不改产品代码**；收官排期：26 语义收口 → 27 演示收官（达成 7/7）→ 28 起部署阶段。第 21–25 刀已合并 main。
 
-当前阶段：**计数线到——下一刀=审计刀 5**（自审计刀 4 后五刀：21 打码收口/22 运营/23 总览连接/24 后端债池/25 前端收口；三路子代理，不改产品代码）。
+当前阶段：工程刀收官。下一刀：**第 26 刀语义收口小刀**（打码漏网三处+血缘导出环+ops 三修+slices 清理）；审计刀 6 于第 30 刀后触发。
 
 ## 怎么切
 
@@ -154,39 +154,14 @@
 
 **Out：** 血缘表/写路径/引用计数列/MCP 导出留痕（无留痕表记 debt）/跨资产图。
 
-## 更后面（现在不锁顺序，各是独立刀）
+## 收官排期（audit-5）
 
-## 第 25 刀：前端收口刀（已交付，`feat/frontend-cleanup`）
-
-**路径：** 行为零变化重构——toUiMessage 13 字段工厂单点（4 处内联删净）；useAskStream 双页共享 hook（gap_id 等价/事件序对齐）；AssetAnchorChip×3；ActionError 9 处统一（三档 DOM 冻结）。api 零 diff，pytest 491 不变。证据见 `docs/progress/frontend-cleanup-closeout.md`。
-
-## 第 24 刀：后端债池刀（已交付，`feat/debt-2`）
-
-**路径：** 行为零变化——迁移 0013 GIN（citations/question_key jsonb_path_ops，血缘/考核大表索引面）；题库按锚单资产推导（prompt 逐字节等价）；material/clips 列表批取消 N+1；material 四小条（retry 死转移/qc 同串/storage 死参数/reject commit 层次）。集成 491 passed（基线 485 → 491）。证据见 `docs/progress/debt-2-closeout.md`。
-
-## 第 23 刀：总览页+连接层演示页（已交付，`feat/overview-connect`）
-
-**路径：** 登录落 `/` 总览（接待闭环/内容闭环/连接层三故事线步进卡——原型冻结文案转工程路由；统计带待人洗/已接入/已发布/缺口/会话）；侧栏「连接层」→ `/connect` 四 MCP 工具卡+「没有 publish（0005）」红条+检索试玩命中芯片+取版预览 mono+mcp.json 占位复制（零真值）。纯前端零后端改动。485 基线不变。证据见 `docs/progress/overview-connect-closeout.md`。
-
-## 第 22 刀：运营 Agent（已交付，`feat/ops-agent`）——能力 7/7
-
-**路径：** 选商品「开始编排」→三步轨迹逐步点亮（读取商品卖点/生成投放文案草稿——厂商模型无降级失败可重试/组装引用「当时已发布」素材切片，refs 冻结版本；无引用时规格兜底+诚实披露）→产出预览（引用芯片）→「投放发布」二次确认（渠道动作，不改变资产三态）→已投放。失败续跑 done 不重跑；MCP export 留痕（audit action="export"，不混 writebacks）。ops_runs 非中台对象。集成 485 passed（基线 458 → 485）。证据见 `docs/progress/ops-agent-closeout.md`。
-
-**Out：** 真渠道对接、批量/定时、效果回流、投放撤销。
-
-## 第 21 刀：打码出口收口（已交付，`feat/redact-exports`）
-
-**路径：** 零新功能面——审计刀 4 P0 簇七出口统一 redact（检索 chunk 进 prompt/人洗 confirmed 值/coaching 三输入/MCP export+get_asset/血缘引用样例/title 源头先掩后截），**版本字节不动、出口必掩**（ADR 0038 修订段）；版本正文端点豁免钉死；ClipsPage 文案/任务词条/0038 正名/计数回写小修。评审再抓 get_asset（P0）与 title 全线（P1）两漏口均实修。零既有断言改动。集成 458 passed（基线 446 → 458）。证据见 `docs/progress/redact-exports-closeout.md`。
-
-**Out：** 打码规则扩展、多角色权限收紧、knowledge_gaps.question 出口（P2 记债）。
-
-## 更后面（现在不锁顺序，各是独立刀）
-
-| 刀 | 约束 |
+| 刀 | 内容 |
 | --- | --- |
-| 第 23 刀 | 总览页+连接层演示页（七块入口观感） |
-| 第 24–25 刀 | P1 债池：GIN 索引/题库单资产推导/N+1/material 四小条/前端收口刀 |
-| **审计刀 5** | **第 25 刀后触发** |
+| 第 26 刀语义收口小刀 | 打码漏网三处（material prompt/MCP title 三处/ops_runs 落库）+ops N+1/行锁/mcp 首插兜底+血缘导出块拼装+export 中文化+gaps.question 掩+slices 清理 |
+| 第 27 刀演示收官刀 | README 3 分钟口述稿（goal 最后一条完成标准）+总览其余能力行+拒答交接摘要+format 基线收口——达成即完成标准 7/7 |
+| 第 28 刀起 | 部署阶段：CI+反代/HTTPS+备份+监控；真视频/ASR 单列 |
+| **审计刀 6** | **第 30 刀后触发** |
 **展示约定：** 资产 ID 对外写成 `A-{id:04d}`（如 `A-0001`），库内仍是整数，避免原型口述和工程芯片对不上。
 
 `prototype/` 只是交互规格；真产品改 `apps/`。
