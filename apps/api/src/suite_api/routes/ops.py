@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db
 from suite_api.models import Operator, OpsRun, Product
+from suite_api.services.asset_view import load_product_names
 from suite_api.services.ops import deliver_run, retry_run, start_run
 
 router = APIRouter(prefix="/api/ops", tags=["ops"])
@@ -71,13 +72,20 @@ def _product_name(db: Session, product_id: int) -> str:
     return product.name if product is not None else "—"
 
 
-def _to_out(db: Session, run: OpsRun) -> OpsRunOut:
+def _to_out(db: Session, run: OpsRun, names: dict[int, str] | None = None) -> OpsRunOut:
+    """run→视图；names 传入则为列表批取的商品名映射（第 26 刀 P1④：
+    22 刀列表逐行 db.get(Product) 的 N+1 回归，收口回 asset_view.load_product_names
+    批取——debt-2 第 24 刀同款）。单行端点不传，走 _product_name 防回退。"""
     steps: list[OpsStepOut] = [OpsStepOut(**step) for step in dict_list(run.steps)]
     output = OpsOutputOut(**dict(run.output)) if run.output is not None else None
+    if names is None:
+        product_name = _product_name(db, run.product_id)
+    else:
+        product_name = names.get(run.product_id) or "—"
     return OpsRunOut(
         id=run.id,
         product_id=run.product_id,
-        product_name=_product_name(db, run.product_id),
+        product_name=product_name,
         steps=steps,
         output=output,
         delivered_at=run.delivered_at,
@@ -110,10 +118,15 @@ def list_runs(
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> list[OpsRunOut]:
-    """编排轨迹列表（id 倒序，最新在前；run 不进检索、无分页——Out 口径）。"""
+    """编排轨迹列表（id 倒序，最新在前；run 不进检索、无分页——Out 口径）。
+
+    第 26 刀 P1④（audit-5 技术债④）：列表批取商品名（load_product_names），
+    消 22 刀逐行 db.get(Product) 的 N+1 回归——单查询形状同 material/clips
+    列表（debt-2 第 24 刀先例）。"""
     del operator  # 读接口同样要求登录
     runs = list(db.scalars(select(OpsRun).order_by(OpsRun.id.desc())))
-    return [_to_out(db, run) for run in runs]
+    names = load_product_names(db, {run.product_id for run in runs})
+    return [_to_out(db, run, names) for run in runs]
 
 
 @router.post("/runs/{run_id}/retry", response_model=OpsRunOut)

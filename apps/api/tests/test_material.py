@@ -4,7 +4,7 @@
 - 规则质检 qc_check 四规则（正文非空/总长≤2000/标题非空/正文含商品名）；
 - 生成输出解析 parse_generated_output（好 JSON/围栏/坏 JSON/坏形状）；
 - 打码 redact 三态（手机号/邮箱/无 PII）+ 打码步三接入点（prompt、qa 值、
-  文档字段值）；
+  文档字段值）+ 生成 user prompt 出口掩（第 26 刀 P1①，0038 修订补全）；
 - 任务状态机转移矩阵（run/approve/reject/retry × 五态：非法转移 409，
   生成失败分级 failed——空 key/LLM 故障=「生成不可用」，坏输出=解析失败，
   规则不过=记规则项；打回=人工打回；retry 复位重跑）。
@@ -33,6 +33,7 @@ from suite_api.services.material import (
     RUNNING,
     MaterialGenError,
     approve_task,
+    build_generation_prompt,
     parse_generated_output,
     qc_check,
     reject_task,
@@ -222,6 +223,27 @@ def test_document_field_values_are_redacted() -> None:
     # 抽取值落库前过打码（接入点 c）：字段值里混的裸号不留底
     extracted = extract_document_fields("材质：13812345678", ["材质"])
     assert extracted["材质"] == {"value": "1********78", "source": "machine"}
+
+
+def test_generation_prompt_masks_product_text() -> None:
+    """第 26 刀 P1①（0038 修订补全，孪生于 ops.build_generation_prompt）：素材
+    生成 user prompt 送厂商前，商品名/类目/规格字段/已写回值统一过 redact——
+    厂商 prompt 是进程边界。干净值幂等原样通过，不破坏既有生成断言。"""
+    product = Product(
+        id=1,
+        name="钛钢保温杯",
+        category="器皿",
+        spec_schema={"净含量": {"required": True}, "售后电话": {"required": True}},
+        spec_values={
+            "净含量": {"value": "480ml", "source": {"asset_id": 1, "version": 1}},
+            "售后电话": {"value": "13812345678", "source": {"asset_id": 1, "version": 1}},
+        },
+    )
+    prompt = build_generation_prompt(product)
+    assert "13812345678" not in prompt
+    assert "1********78" in prompt
+    assert "钛钢保温杯" in prompt  # 无 PII 事实照进 prompt
+    assert "480ml" in prompt
 
 
 # ---------- 状态机转移矩阵 ----------

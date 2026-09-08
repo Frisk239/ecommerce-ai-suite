@@ -18,6 +18,9 @@
     不存字段名，派生非现编；无 confirmed 字段的版本=空列表），product_id 取
     assets 行（未挂商品为 null）。
   - 考核：coach_records.question_key JSONB containment（题源锚含 asset_id）。
+  - 导出（第 26 刀，审计刀 5 缺口路③）：audit_log action="export" 的行（22 刀
+    MCP export_published 已写留痕，只是没拼进视图）——从既有 audit_rows 派生，
+    零新查询，与 writebacks 分 action 各走各的（导出不写回商品，不混入）。
 
 纯拼装函数 ``assemble_lineage`` 与查询语句构造器（``citation_*_stmt`` /
 ``coaching_stmt``）分开：前者不依赖 DB 可单测（三源聚合/截断/样例上限/空态），
@@ -42,6 +45,11 @@ _SUMMARY_CHARS = 60
 # 写回事件集合：发布与回滚都执行 _write_back_product（0010/0034 同一移指针
 # 事务语义），两类都算「写回商品」的留痕
 WRITEBACK_ACTIONS = frozenset({"publish", "rollback"})
+
+# 导出留痕动作（第 22 刀/ADR 0041：MCP export_published 每份资产一行；operator
+# 恒为系统行「mcp」）——第 26 刀起在「被谁用过」拼成 exports 环（审计刀 5
+# 缺口路③「有留痕未拼视图」）。不并入 WRITEBACK_ACTIONS：导出不写回商品。
+EXPORT_ACTION = "export"
 
 
 def _summary(text: str) -> str:
@@ -74,7 +82,7 @@ class LineageOriginOut(BaseModel):
 
 class AuditEventOut(BaseModel):
     at: datetime
-    action: str  # publish | confirm | rollback
+    action: str  # publish | confirm | rollback | export（0041 起连接层导出也留痕）
     version_no: int
     operator: str
 
@@ -108,10 +116,20 @@ class CoachingUsageOut(BaseModel):
     at: datetime
 
 
+class ExportUsageOut(BaseModel):
+    at: datetime
+    action: str  # 恒 export（audit_log 的导出留痕行，第 22 刀/0041 起有料）
+    version_no: int
+    operator: str  # 恒系统操作者「mcp」（连接层无逐用户身份，留痕归属见 0041）
+
+
 class LineageUsagesOut(BaseModel):
     citations: CitationsBlockOut
     writebacks: list[WritebackOut]
     coaching: list[CoachingUsageOut]
+    # 「导出」环（第 26 刀，审计刀 5 缺口路③）：从既有 audit_rows 的 export 行
+    # 拼出，零新查询——留痕自 22 刀就在写，视图一直没接
+    exports: list[ExportUsageOut]
 
 
 class AssetLineageOut(BaseModel):
@@ -150,10 +168,11 @@ def assemble_lineage(
     version_fields: dict[int, list[str]],
     # version_no -> 该版 confirmed_fields 键列表（写回 fields 的派生源）
 ) -> AssetLineageOut:
-    """三源聚合成血缘载荷：版本号从 JSONB 原样提取（提不出不编造，样例行丢弃
-    但计入总数）、问句/题面截断、引用样例硬上限 SAMPLE_LIMIT（查询已 limit，
-    这里再守一道，纯函数自含契约）、三块全空即空态（前端显示「还没有被使用
-    的记录」）。"""
+    """三源聚合成血缘载荷（usages 四块：引用/写回/考核 + 第 26 刀导出口径）：
+    版本号从 JSONB 原样提取（提不出不编造，样例行丢弃但计入总数）、问句/题面
+    截断、引用样例硬上限 SAMPLE_LIMIT（查询已 limit，这里再守一道，纯函数自含
+    契约）、四块全空即空态（前端显示「还没有被使用的记录」）。exports 与
+    writebacks 同吃 audit_rows、按 action 分派——导出绝不混入写回（0041 钉测）。"""
     versions_audit = [
         AuditEventOut(at=at, action=action, version_no=version_no, operator=operator)
         for at, action, version_no, operator in audit_rows
@@ -185,6 +204,13 @@ def assemble_lineage(
         for at, action, version_no, operator in audit_rows
         if action in WRITEBACK_ACTIONS
     ]
+    # 「导出」环：audit_rows 里 action=export 的行（同一无新查询的来料，保持
+    # 倒序）——export 留痕自 22 刀就有，本刀起拼进视图（审计刀 5 缺口路③）
+    exports = [
+        ExportUsageOut(at=at, action=action, version_no=version_no, operator=operator)
+        for at, action, version_no, operator in audit_rows
+        if action == EXPORT_ACTION
+    ]
     coaching: list[CoachingUsageOut] = []
     for record_id, question_text, question_key, at in coach_rows:
         version_no = _int_or_none(question_key.get("version_no"))
@@ -205,6 +231,7 @@ def assemble_lineage(
             citations=CitationsBlockOut(total=citations_total, samples=samples),
             writebacks=writebacks,
             coaching=coaching,
+            exports=exports,
         ),
     )
 

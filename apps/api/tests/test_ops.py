@@ -39,6 +39,7 @@ from suite_api.services.ops import (
     parse_generated_output,
     read_product_detail,
     retry_run,
+    spec_selling_points,
     start_run,
 )
 
@@ -62,11 +63,16 @@ class _FakeDB:
         self.runs = runs
         self.added: list[OpsRun] = []
         self.commits = 0
+        # 26 刀行锁钉测：记录取 OpsRun 行时的 with_for_update 参数
+        self.run_row_locks: list[bool] = []
 
-    def get(self, model: Any, pk: Any) -> Any:
+    def get(self, model: Any, pk: Any, **kwargs: Any) -> Any:
+        # 26 刀行锁：_run_or_raise 经 db.get(..., with_for_update=True) 取行——
+        # 假会话不建模锁语义，吞掉 kwarg（锁形状由集成并发用例钉）
         if model is Product:
             return self.product
         if model is OpsRun:
+            self.run_row_locks.append(bool(kwargs.get("with_for_update")))
             return next((r for r in self.runs + self.added if r.id == pk), None)
         return None
 
@@ -177,6 +183,63 @@ def test_read_product_detail_lists_specs() -> None:
     assert "钛钢保温杯" in detail
     assert "净含量：480ml" in detail
     assert "材质：未写回" in detail  # 规格未写回如实标
+
+
+def test_read_product_detail_masks_pii_before_ops_runs() -> None:
+    """P1③：detail 落 ops_runs.steps（非中台表）——含 PII 的规格写回值在源头
+    掩后才进字符串（coaching 落库先例；净值幂等原样，不伤既有断言）。"""
+    product = _product()
+    product.spec_schema = {**dict(product.spec_schema), "售后电话": {"required": False}}
+    product.spec_values["售后电话"] = {
+        "value": "13812345678",
+        "source": {"asset_id": 1, "version": 1},
+    }
+    detail = read_product_detail(product)
+    assert "13812345678" not in detail
+    assert "1********78" in detail
+
+
+def test_spec_and_fallback_body_masked_before_ops_runs() -> None:
+    """P1③：兜底正文（fallback_body → ops_runs.output.body）与卖点原料
+    （spec_selling_points）落库前过 redact；诚实披露句不动。"""
+    product = _product()
+    product.spec_values["售后"] = {
+        "value": "邮箱 zhangsan@example.com 或电话 13812345678",
+        "source": {"asset_id": 1, "version": 1},
+    }
+    points = spec_selling_points(product)
+    assert any("****@example.com" in p and "1********78" in p for p in points)
+    body = fallback_body(product)
+    assert "zhangsan" not in body and "13812345678" not in body
+    assert "****@example.com" in body and "1********78" in body
+    assert NO_REF_DETAIL in body  # 披露句原样（掩的是商品文本非模板文案）
+
+
+def test_retry_and_deliver_fetch_run_row_with_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """P1⑥ 锁形状：retry/deliver 的状态机入口取 run 行必须 with_for_update
+    （行锁串行化「读→判→复位」临界区）；start_run 建轨不锁形（新行无竞态）。
+    锁的并发行为由 test_ops_integration 真 PG 双 deliver 用例钉。"""
+    _patch_llm(monkeypatch, result=GOOD_OUTPUT)
+    _patch_refs(monkeypatch, [])
+
+    steps = initial_steps()
+    steps[0]["status"] = DONE
+    steps[1]["status"] = FAILED
+    db = _FakeDB(_product(), [_run(steps)])
+    retry_run(db, 1)  # 复位续跑到全 done——只钉取行形状
+    assert db.run_row_locks == [True]
+
+    done_steps = initial_steps()
+    for step in done_steps:
+        step["status"] = DONE
+        step["detail"] = "ok"
+    db2 = _FakeDB(_product(), [_run(done_steps)])
+    deliver_run(db2, 1)
+    assert db2.run_row_locks == [True]
+
+    fresh = _FakeDB(_product(), [])
+    start_run(fresh, 1)
+    assert fresh.run_row_locks == []  # 新建无竞态：不锁
 
 
 # ---------- compose 兜底与引用口径（纯函数面） ----------

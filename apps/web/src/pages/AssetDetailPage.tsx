@@ -216,8 +216,9 @@ function LineageTime({ at }: { at: string }) {
  * 血缘视图（第 20 刀/ADR 0026）：资产详情上拼出来的派生只读视图——无表、
  * 不进检索、不能发布。「从哪来/版本与审计」已由元数据与留痕面板承担，本面板
  * 只回答「被谁用过」：引用样例（问句+版本+时间，后端截断+计数）、写回事件
- * （发布/回滚各带徽章，字段名按该版确认值派生）、考核抽题（题面+版本+时间）。
- * 详情加载完成后独立请求（不阻塞主栏人洗）；三块全空=「还没有被使用的记录」。
+ * （发布/回滚各带徽章，字段名按该版确认值派生）、考核抽题（题面+版本+时间）、
+ * 导出（第 26 刀：MCP export_published 留痕拼装，版本+时间，操作者恒 mcp）。
+ * 详情加载完成后独立请求（不阻塞主栏人洗）；四块全空=「还没有被使用的记录」。
  */
 function LineagePanel({ assetId }: { assetId: number }) {
   const [open, setOpen] = useState(true)
@@ -228,7 +229,8 @@ function LineagePanel({ assetId }: { assetId: number }) {
     data !== null &&
     (data.usages.citations.total > 0 ||
       data.usages.writebacks.length > 0 ||
-      data.usages.coaching.length > 0)
+      data.usages.coaching.length > 0 ||
+      data.usages.exports.length > 0)
 
   return (
     <div className="panel">
@@ -243,7 +245,7 @@ function LineagePanel({ assetId }: { assetId: number }) {
           {data === null
             ? ''
             : used
-              ? `引用 ${data.usages.citations.total} · 写回 ${data.usages.writebacks.length} · 考核 ${data.usages.coaching.length}`
+              ? `引用 ${data.usages.citations.total} · 写回 ${data.usages.writebacks.length} · 考核 ${data.usages.coaching.length} · 导出 ${data.usages.exports.length}`
               : '未被使用'}
         </span>
         <span className="flex-1" />
@@ -258,7 +260,7 @@ function LineagePanel({ assetId }: { assetId: number }) {
       ) : data === null || !used ? (
         <div className="px-4 py-3.5 text-[13px] leading-6 text-ink-3">
           还没有被使用的记录。
-          <span className="mt-0.5 block text-xs">客服引用、发布写回、考核抽题发生后在这里拼装。</span>
+          <span className="mt-0.5 block text-xs">客服引用、发布写回、考核抽题、MCP 导出发生后在这里拼装。</span>
         </div>
       ) : (
         <>
@@ -340,6 +342,28 @@ function LineagePanel({ assetId }: { assetId: number }) {
                   </div>
                 </div>
               ))}
+            </div>
+          ) : null}
+          {data.usages.exports.length > 0 ? (
+            <div>
+              <LineageGroupTitle>导出 · {data.usages.exports.length}</LineageGroupTitle>
+              {data.usages.exports.map((e, i) => (
+                <div
+                  key={`${e.at}-${e.version_no}-${i}`}
+                  className="border-b border-line-1 px-4 py-2 last:border-b-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-ink-2">v{e.version_no}</span>
+                    <span className="tag tag-machine">导出 · MCP</span>
+                    <span className="flex-1" />
+                    <span className="text-xs text-ink-3">{e.operator}</span>
+                    <LineageTime at={e.at} />
+                  </div>
+                </div>
+              ))}
+              <div className="px-4 py-1.5 text-xs text-ink-3">
+                连接层 export_published 的留痕（0041）：每次导出每份资产一行，只记版本与时间，不存正文。
+              </div>
             </div>
           ) : null}
         </>
@@ -495,6 +519,9 @@ function auditActionLabel(action: string): string {
   if (action === 'publish') return '发布'
   if (action === 'confirm') return '确认字段'
   if (action === 'rollback') return '回滚'
+  // 第 26 刀：连接层导出留痕（22 刀起在写）不再裸显英文码；留痕列已带操作者，
+  // 标签点明「导出 · MCP」与血缘导出块同口径
+  if (action === 'export') return '导出 · MCP'
   return action
 }
 

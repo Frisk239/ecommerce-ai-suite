@@ -17,6 +17,11 @@
 - 豁免钉死：GET versions/{no}/text（操作者面版本正文）仍含原文——打码永不
   回写存储（0038 修订段明文），集成用例一并断言。
 
+第 26 刀补漏（审计刀 5 P1①②③+缺口路）：material 生成 prompt 出口掩、
+MCP 三出口 title 掩（_mask_title）、ops_runs 落库掩、gaps.question 出口掩——
+断言分别落在 test_material.py / test_mcp.py（本文件钉 _mask_title 形状）/
+test_ops.py+test_ops_integration.py / test_service_integration.py。
+
 单元层用假 db/纯函数即可钉；MCP 集成走官方 SDK client（自建库，模式同
 test_mcp.py）。手机号统一 13812345678（redact 后 1********78，等长掩码）。
 """
@@ -39,7 +44,7 @@ from sqlalchemy import select
 from sse_helpers import parse_sse_events
 
 from suite_api.main import create_app
-from suite_api.mcp_server import _mask_fields_map
+from suite_api.mcp_server import _mask_fields_map, _mask_title
 from suite_api.models import RetrievalChunk
 from suite_api.routes.assets import _mask_confirmed_value
 from suite_api.routes.service import _first_question
@@ -181,6 +186,17 @@ def test_mask_fields_map_string_and_qa_entries() -> None:
     assert masked["净含量"]["source"] == "human"  # 只动 value，entry 形状不变
     assert masked["保质期"] == {"abstained": True}
     assert _mask_fields_map(masked) == masked  # 幂等（新链路写入已掩，读侧兜历史）
+
+
+def test_mask_title_masks_pii_and_passes_clean() -> None:
+    """第 26 刀 P1②（单元层）：MCP 三出口 title 统一过 _mask_title——回流
+    title 虽已在源头收掩（上方 _first_question 用例），但切片 title=
+    transcript[:60] 裸转写截断（services/clips.py）、素材/上传 title 非净源，
+    出口侧统一兜底（双保险取一）。None/空/净值原样（幂等，不伤既有断言）。"""
+    assert _mask_title(f"转写首问：我的电话{API_PHONE}能改吗") == f"转写首问：我的电话{MASKED_PHONE}能改吗"
+    assert _mask_title("盲盒可以指定款式吗") == "盲盒可以指定款式吗"
+    assert _mask_title(None) is None
+    assert _mask_title("") == ""
 
 
 def test_first_question_masks_title_at_source() -> None:

@@ -125,7 +125,7 @@ export interface LineageOrigin {
 
 export interface LineageAuditEvent {
   at: string
-  action: string // publish | confirm | rollback
+  action: string // publish | confirm | rollback | export（0041 起连接层导出也留痕）
   version_no: number
   operator: string
 }
@@ -162,6 +162,16 @@ export interface LineageCoachingUsage {
   at: string
 }
 
+/** 导出环（第 26 刀/审计刀 5 缺口路③）：MCP export_published 的留痕行
+ * （22 刀起就在写 audit_log action='export'，本刀起拼进血缘视图）。operator
+ * 恒系统操作者「mcp」——连接层无逐用户身份，归属见 ADR 0041。 */
+export interface LineageExportUsage {
+  at: string
+  action: 'export'
+  version_no: number
+  operator: string
+}
+
 export interface AssetLineage {
   origin: LineageOrigin
   versions_audit: LineageAuditEvent[]
@@ -169,6 +179,7 @@ export interface AssetLineage {
     citations: LineageCitationsBlock
     writebacks: LineageWriteback[]
     coaching: LineageCoachingUsage[]
+    exports: LineageExportUsage[]
   }
 }
 

@@ -24,7 +24,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from suite_api.main import create_app
-from suite_api.models import AssetVersion
+from suite_api.models import Asset, AssetVersion
 from suite_api.services.asset_view import VersionTextError, read_version_text
 from suite_api.settings import Settings
 from suite_platform.storage import LocalDirectoryStorage
@@ -501,3 +501,85 @@ def test_export_published_writes_audit_trace(mcp_env: McpEnv) -> None:
     writeback_actions = {w["action"] for w in out["lineage"]["usages"]["writebacks"]}
     assert "export" not in writeback_actions  # 不混入写回环
     assert writeback_actions <= {"publish", "rollback"}
+    # 第 26 刀缺口路③（血缘导出环）：export 留痕从 versions_audit 派生进
+    # usages.exports（「export 留痕→lineage 出现」端到端钉死）
+    assert out["lineage"]["usages"]["exports"] == [
+        {
+            "at": export_events[0]["at"],
+            "action": "export",
+            "version_no": 1,
+            "operator": "mcp",
+        }
+    ]
+
+
+def test_mcp_title_masked_on_all_three_read_exits(mcp_env: McpEnv) -> None:
+    """第 26 刀 P1②：MCP 三处只读出口（search/get/export）的 title 统一过
+    redact（切片 title=裸转写截断、素材/上传 title 非净源——出口侧收口）；
+    assets.title 原文不动（出口掩、不回写行，0038 修订「字节不动」同口径）。
+
+    同 host 不能第二次进 lifespan（session manager 单跑），重建 app 实例。"""
+    _, settings, storage_root = mcp_env
+    app = create_app(
+        Settings(
+            database_url=settings.database_url,
+            storage_root=storage_root,
+            mcp_bearer_token=_TOKEN,
+        )
+    )
+    title_raw = "保温杯售后咨询 13812345678 号"
+    title_masked = "保温杯售后咨询 1********78 号"
+    body = f"退款流程说明\n净含量：480ml\n咨询窗口：{title_raw}"
+
+    async def scenario() -> dict:
+        out: dict = {}
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as api:
+            login = await api.post(
+                "/api/auth/login", json={"username": "operator", "password": "operator123"}
+            )
+            assert login.status_code == 200
+            api.cookies.update(login.cookies)
+            up = await api.post(
+                "/api/assets/register",
+                files={"file": ("title-mask.txt", body.encode(), "text/plain")},
+                data={"title": title_raw},
+            )
+            assert up.status_code == 201, up.text
+            asset_id = up.json()["id"]
+            # 登记即落原文（出口掩不在写入侧——与版本字节不动同一纪律）
+            out["registered_title"] = up.json()["title"]
+            out["asset_id"] = asset_id
+            assert (await api.post(f"/api/assets/{asset_id}/publish")).status_code == 200
+
+        async with _mcp_session(app, settings) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                search = await session.call_tool("search_published", {"query": "退款流程净含量"})
+                assert not search.isError
+                out["search"] = _payload(search)
+                got = await session.call_tool("get_asset", {"asset_id": asset_id})
+                assert not got.isError
+                out["get"] = _payload(got)
+                exported = await session.call_tool("export_published", {})
+                assert not exported.isError
+                out["export"] = _payload(exported)
+        return out
+
+    out = _run_with_lifespan(app, scenario)
+
+    assert out["registered_title"] == title_raw  # 登记响应=治理台内部面，不在本刀范围
+    asset_id = out["asset_id"]
+    titles = [h["title"] for h in out["search"] if h["asset_id"] == asset_id]
+    assert titles and all(t == title_masked for t in titles)  # 出口 1：search 掩
+    assert out["get"]["title"] == title_masked  # 出口 2：get_asset 掩
+    mine_export = [e for e in out["export"] if e["asset_id"] == asset_id]
+    assert [e["title"] for e in mine_export] == [title_masked]  # 出口 3：export 掩
+    # 三出口响应整体无裸号
+    assert "13812345678" not in json.dumps(
+        [out["search"], out["get"], out["export"]], ensure_ascii=False
+    )
+    # 行原文不动（出口掩不回写 assets.title，0038 修订「字节不动」同口径）
+    with app.state.session_factory() as db:
+        assert db.get(Asset, asset_id).title == title_raw

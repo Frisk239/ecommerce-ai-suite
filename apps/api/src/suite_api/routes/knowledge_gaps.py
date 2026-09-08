@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from suite_api.deps import get_current_operator, get_db
 from suite_api.models import KnowledgeGap, Operator, Product
 from suite_api.services.knowledge_gaps import OPEN, RESOLVED
+from suite_api.services.machine_wash import redact
 
 router = APIRouter(prefix="/api/knowledge-gaps", tags=["knowledge-gaps"])
 
@@ -44,7 +45,11 @@ def list_knowledge_gaps(
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> list[KnowledgeGapOut]:
-    """缺口列表（默认 open 待办；倒序）。缺口不是资产，无检索/发布路径。"""
+    """缺口列表（默认 open 待办；倒序）。缺口不是资产，无检索/发布路径。
+
+    第 26 刀（缺口路 P1，0038 修订口径）：question 为顾客原问（拒答路径
+    原文落库，落库不动——同 service_messages 豁免），治理台列表是它面向
+    操作者的出口视图：返回前过 redact（出口必掩；血缘引用样例同先例）。"""
     del operator  # 控制台读接口同样要求登录（0016）
     if status_filter not in _VALID_STATUSES:
         raise HTTPException(
@@ -70,7 +75,8 @@ def list_knowledge_gaps(
     return [
         KnowledgeGapOut(
             id=g.id,
-            question=g.question,
+            # 出口掩（0038 修订）：落库原文不动，视图呈掩码
+            question=redact(g.question),
             product=(
                 GapProductRef(id=products[g.product_id].id, name=products[g.product_id].name)
                 if g.product_id in products
