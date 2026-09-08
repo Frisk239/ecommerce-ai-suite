@@ -147,11 +147,13 @@ export interface ServiceSessionDetail extends ServiceSession {
 
 /** SSE complete 事件的负载（与后端 event_stream 尾事件一致）。
  * gap_id 仅 refusal 时非空（ADR 0030：运行时返回，消息表不加列——重载会话后
- * 芯片不重现，属契约口径）。 */
+ * 芯片不重现，属契约口径）。fallback 仅 answer 且厂商生成失败降级模板时为
+ * true（第 7 刀，同 gap_id 运行时口径）。 */
 export interface ServiceAnswerComplete {
   message_id: number
   citations: ServiceCitation[]
   kind: 'answer' | 'refusal'
   handoff: boolean
   gap_id: number | null
+  fallback?: boolean
 }

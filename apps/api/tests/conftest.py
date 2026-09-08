@@ -5,15 +5,22 @@
 """
 
 import os
-from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
 
-import psycopg
-import pytest
-from fastapi.testclient import TestClient
+# 必须先于任何 suite_api import（suite_api.main 模块级 create_app() 即触发
+# get_settings() 的 lru_cache 定格）：测试进程强制空 LLM 凭证——即使本机 .env
+# 配了真 LLM_API_KEY，厂商生成路径在测试里也自动降级为证据组装模板，不做任何
+# 外网调用（spec 第 7 刀：mock 缺省策略=无凭证 env 走降级，既有 SSE 模板断言不破）。
+os.environ["LLM_API_KEY"] = ""
 
-from suite_api.main import create_app
-from suite_api.settings import Settings
+from pathlib import Path  # noqa: E402
+from urllib.parse import urlsplit, urlunsplit  # noqa: E402
+
+import psycopg  # noqa: E402
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from suite_api.main import create_app  # noqa: E402
+from suite_api.settings import Settings  # noqa: E402
 
 _REQUIRED_ENV = "SUITE_TEST_DATABASE_URL"
 
@@ -42,7 +49,8 @@ def api(tmp_path_factory: Path) -> tuple[TestClient, Path]:
     _run(f'CREATE DATABASE "{dbname}"')
 
     storage_root = tmp_path_factory.mktemp("objects")
-    settings = Settings(database_url=url, storage_root=storage_root)
+    # llm_api_key 显式空：与模块级 env 清理同口径（app settings 不带真凭证）
+    settings = Settings(database_url=url, storage_root=storage_root, llm_api_key="")
     app = create_app(settings)
     with TestClient(app) as client:  # with 触发 lifespan：alembic upgrade head + 幂等种子
         yield client, storage_root

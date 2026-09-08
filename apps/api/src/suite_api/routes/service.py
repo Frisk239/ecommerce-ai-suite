@@ -5,6 +5,9 @@
   冻结的交互状态机只保留 thinking/streaming/stop，传输用 SSE；35ms 逐字与
   mock 大脑不搬）。拒答（0018 refusal）同事务落知识缺口（0024），complete
   事件带 gap_id 供前端芯片跳转（ADR 0030：运行时返回，消息表不加列）。
+- 厂商生成（第 7 刀，ADR 0033）：检索有证据才调厂商模型流式生成，引用仍由
+  服务端从检索命中定（0007）；无证据拒答不调模型（0018）；LLM 未配置/失败
+  降级证据组装模板，complete 事件带 fallback（运行时返回，同 gap_id 口径）。
 - 回流登记（CONTEXT「会话」词条）：会话转写字节先落对象存储（0013），再建
   kind=dialogue 资产（已接入）+ v1 版本，对话种类无规格必填（0019）、机洗无
   字段抽取直接待人洗；会话置 registered 并指向登记出的资产。登记不是 0005
@@ -13,6 +16,7 @@
 """
 
 import json
+import logging
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -25,12 +29,15 @@ from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
 from suite_api.models import Asset, KnowledgeGap, Operator, ServiceMessage, ServiceSession
+from suite_api.services import llm
 from suite_api.services.answer import compose_answer
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
 from suite_api.services.knowledge_gaps import record_refusal_gap
 from suite_api.services.registration import register_asset
 from suite_api.services.retrieval import retrieve
 from suite_platform.storage import ObjectStorage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/service", tags=["service"])
 
@@ -39,6 +46,9 @@ REGISTERED = "registered"
 
 # UX-NOTES 二点八：检索是本产品的真实动作，比「思考中」更诚实
 THINKING_TEXT = "正在检索已发布资产…"
+# 第 7 刀：检索命中后走厂商模型生成（状态行随最新 thinking 事件更新——降级
+# 路径不发本事件，状态行停在检索，不装作生成过）
+GENERATING_THINKING_TEXT = "正在生成回答…"
 # 服务端回答分片粒度（~10-20 字/片；打字节奏由前端呈现层控制，服务端不模拟延迟）
 _DELTA_CHARS = 12
 # 列表首问摘要长度
@@ -215,7 +225,7 @@ def _assets_meta(db: Session, hits: list[dict[str, Any]]) -> dict[int, dict[str,
 
 
 @router.post("/sessions/{session_id}/messages")
-def ask(
+async def ask(
     session_id: int,
     body: AskBody,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
@@ -223,15 +233,22 @@ def ask(
 ) -> StreamingResponse:
     """发问 -> SSE 流式回答（thinking -> delta* -> complete）。
 
-    取舍（任务锁定并写明）：回答文本在开始流式前已完整组装并落库——本刀无
-    真实 LLM 逐 token 生成，服务端不存在「部分产出」，断连=客户端停止订阅，
-    agent 消息仍完整入库，SSE 只是传输；中断（stopped）语义由前端表达。
+    取舍（任务锁定并写明）：回答文本在开始流式前已完整收全并落库——含第 7 刀
+    的厂商模型流（先收全再流，而非边流边攒）：服务端不存在「部分产出」，
+    断连=客户端停止订阅，agent 消息仍完整入库，SSE 只是传输；中断（stopped）
+    语义由前端表达。async 路由是流式收集（await llm.stream_chat）所需；同步
+    DB 调用直接在事件循环上跑（0016 单操作者单店，无并发多写场景），生成等待
+    期间 Session 空闲持连接至多 20s（超时上限），属可接受取舍。
 
     双 commit 取舍：先落 customer 问句再组装落 agent 回答，两个独立 commit。
     agent 组装失败会留下已落库的顾客问句——属可接受残留：问题真实发生过，
     不因回答侧失败而抹掉提问记录。
 
-    无命中 -> refusal 消息（0018）：固定文案 + handoff=true，不编造不闲聊。
+    无命中 -> refusal 消息（0018）：固定文案 + handoff=true，不编造不闲聊，
+    且不调模型（防编造省调用）。有命中 -> 厂商模型流式生成（0033）；LLM 未
+    配置/失败/空产出 -> 降级 compose_answer 模板回答，complete 带
+    fallback=true（错误细节只进服务端日志，不含密钥）。citations 恒由检索
+    命中服务端定（0007；模型无引用决定权）。
     """
     del operator
     session = _get_session_or_404(db, session_id)
@@ -248,16 +265,31 @@ def ask(
     db.add(ServiceMessage(session_id=session.id, role="customer", content=question))
     db.commit()
 
-    # 2) 检索当前已发布版本 -> 组装（完整回答在流式开始前产生）
+    # 2) 检索当前已发布版本 -> 组装（模板回答=降级兜底，citations 选取也以它为准）
     hits = retrieve(db, question)
     answer = compose_answer(hits, _assets_meta(db, hits))
+
+    # 2.5) 厂商生成（第 7 刀，ADR 0033）：有证据才调模型（0018 无证据不调）。
+    #      stream_chat 契约：只抛 LLMError 子类（超时/连接已转通用文案）；
+    #      空产出视同失败降级。先收全再落库再流式（断连=完整落库契约不变）。
+    generated: str | None = None
+    if answer.kind == "answer":
+        system_prompt, user_prompt = llm.build_prompts(hits, question)
+        try:
+            pieces = [piece async for piece in llm.stream_chat(system_prompt, user_prompt)]
+            generated = "".join(pieces).strip() or None
+        except llm.LLMError as exc:
+            # 错误细节只进服务端日志（llm.stream_chat 已保证消息不含密钥/端点）
+            logger.warning("厂商生成失败，降级证据组装模板: %s", type(exc).__name__)
+    fallback = answer.kind == "answer" and generated is None
+    content = generated if generated is not None else answer.content
 
     # 3) 落 agent 消息：引用带版本（0007），拒答/转人工显性（0018）。
     #    agent 消息 citations 恒为列表（refusal=[]），customer 消息为 None（ADR 0023「仅 agent」）
     agent_message = ServiceMessage(
         session_id=session.id,
         role="agent",
-        content=answer.content,
+        content=content,
         citations=answer.citations,
         kind=answer.kind,
         handoff=answer.handoff,
@@ -272,10 +304,13 @@ def ask(
     db.commit()
     db.refresh(agent_message)
 
-    # 4) SSE 传输：生成器只吐已组装文本与已落库的元数据，不碰 DB
+    # 4) SSE 传输：生成器只吐已收全文本与已落库的元数据，不碰 DB。模型路径
+    #    多一个 thinking（正在生成回答…）；降级不发（诚实标注靠 fallback）。
     def event_stream() -> Iterator[str]:
         yield _sse_event("thinking", {"text": THINKING_TEXT})
-        for piece in _split_deltas(answer.content):
+        if generated is not None:
+            yield _sse_event("thinking", {"text": GENERATING_THINKING_TEXT})
+        for piece in _split_deltas(content):
             yield _sse_event("delta", {"text": piece})
         yield _sse_event(
             "complete",
@@ -286,6 +321,9 @@ def ask(
                 "handoff": answer.handoff,
                 # 拒答=缺口 id（前端芯片跳治理台缺口 tab）；answer 恒为 null
                 "gap_id": gap.id if gap is not None else None,
+                # 第 7 刀：true=厂商生成失败降级模板（前端「模板回退」徽章；
+                # 运行时返回，同 gap_id 口径，消息表不加列）
+                "fallback": fallback,
             },
         )
 

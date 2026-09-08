@@ -55,11 +55,15 @@ interface UiMessage {
   streaming: boolean
   /** 操作者中断了订阅：已收文本保留，完整回答在后端留档。 */
   stopped: boolean
-  /** thinking 事件带来的检索状态行文案。 */
+  /** thinking 事件带来的检索状态行文案（多个 thinking 事件按到达顺序覆盖，
+   * 状态行随最新事件更新：检索 -> 正在生成回答…）。 */
   thinkingText: string | null
   /** 拒答时 complete 事件带回的知识缺口 id（ADR 0030：只在运行时返回，
    * 服务器消息列表不含此列——重载后芯片不重现，属契约口径）。 */
   gapId: number | null
+  /** 厂商生成失败降级为证据组装模板（第 7 刀）：只在 complete 事件带回，
+   * 重载后徽章不重现（同 gapId 运行时口径）。 */
+  fallback: boolean
 }
 
 function toUi(m: {
@@ -84,6 +88,7 @@ function toUi(m: {
     stopped: false,
     thinkingText: null,
     gapId: null,
+    fallback: false,
   }
 }
 
@@ -120,6 +125,11 @@ function MessageBubble({ m, prev }: { m: UiMessage; prev?: UiMessage }) {
         {!grouped && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-accent-strong">AI 客服</span>
+            {m.fallback && (
+              <span className="badge badge-ingested" title="厂商模型不可用，本条回答由已发布证据模板组装">
+                模板回退
+              </span>
+            )}
             {m.kind === 'refusal' && <span className="badge badge-failed">拒答 · 无已发布证据</span>}
             {m.handoff && (
               <span className="badge badge-review">
@@ -312,6 +322,7 @@ export default function ServicePage() {
         stopped: false,
         thinkingText: null,
         gapId: null,
+        fallback: false,
       },
       {
         key: agentKey,
@@ -326,6 +337,7 @@ export default function ServicePage() {
         stopped: false,
         thinkingText: null,
         gapId: null,
+        fallback: false,
       },
     ])
     const controller = new AbortController()
@@ -358,6 +370,7 @@ export default function ServicePage() {
                       streaming: false,
                       stopped: false,
                       gapId: payload.gap_id ?? null,
+                      fallback: payload.fallback ?? false,
                     }
                   : m,
               ),
