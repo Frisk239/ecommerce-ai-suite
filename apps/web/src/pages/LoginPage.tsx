@@ -3,10 +3,11 @@
 
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { Database, Warning } from '@phosphor-icons/react'
+import { Database } from '@phosphor-icons/react'
 import { detailText, isApiError } from '../api/client'
 import { api } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
+import ActionError from '../components/ActionError'
 
 export default function LoginPage() {
   const { operator, bootstrapping, signIn } = useAuth()
@@ -81,15 +82,7 @@ export default function LoginPage() {
             </label>
           </div>
 
-          {error ? (
-            <div
-              role="alert"
-              className="mt-4 flex items-center gap-2 rounded-[6px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3 py-2 text-xs leading-5 text-danger"
-            >
-              <Warning aria-hidden size={13} className="shrink-0" />
-              {error}
-            </div>
-          ) : null}
+          {error ? <ActionError message={error} variant="compact" className="mt-4" /> : null}
 
           <button type="submit" className="btn btn-primary mt-5 w-full" disabled={submitting}>
             {submitting ? '登录中…' : '登录'}

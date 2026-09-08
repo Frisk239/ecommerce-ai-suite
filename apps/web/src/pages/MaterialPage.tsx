@@ -25,6 +25,7 @@ import type { AssetListItem, MaterialTask } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { formatAssetId, formatDateTime, formatTaskId } from '../labels'
 import { ErrorBanner } from '../components/Banner'
+import ActionError from '../components/ActionError'
 import Empty from '../components/Empty'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
@@ -114,14 +115,7 @@ function CreateTaskDrawer({
               ))}
             </select>
           </div>
-          {error ? (
-            <div
-              role="alert"
-              className="rounded-[6px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3 py-2 text-xs leading-5 text-danger"
-            >
-              {error}
-            </div>
-          ) : null}
+          {error ? <ActionError message={error} /> : null}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-line-2 px-4 py-3">
           <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
@@ -220,14 +214,7 @@ function TaskDetailDrawer({
             </div>
           ) : null}
 
-          {error ? (
-            <div
-              role="alert"
-              className="rounded-[6px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3 py-2 text-xs leading-5 text-danger"
-            >
-              {error}
-            </div>
-          ) : null}
+          {error ? <ActionError message={error} /> : null}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-line-2 px-4 py-3">

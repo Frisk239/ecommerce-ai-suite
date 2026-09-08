@@ -17,6 +17,7 @@ import { api } from '../api/endpoints'
 import type { CsvImportReport, KnowledgeGap, Product } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { formatAssetId, formatGapId } from '../labels'
+import ActionError from '../components/ActionError'
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
@@ -372,14 +373,7 @@ export default function RegisterAssetDrawer({
                 {fieldError ? <p className="mt-2 text-xs leading-5 text-danger">{fieldError}</p> : null}
               </div>
 
-              {submitError ? (
-                <div
-                  role="alert"
-                  className="rounded-[6px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3 py-2 text-xs leading-5 text-danger"
-                >
-                  {submitError}
-                </div>
-              ) : null}
+              {submitError ? <ActionError message={submitError} /> : null}
             </>
           ) : (
             <>
@@ -505,14 +499,7 @@ export default function RegisterAssetDrawer({
                 </div>
               ) : null}
 
-              {csvSubmitError ? (
-                <div
-                  role="alert"
-                  className="rounded-[6px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3 py-2 text-xs leading-5 text-danger"
-                >
-                  {csvSubmitError}
-                </div>
-              ) : null}
+              {csvSubmitError ? <ActionError message={csvSubmitError} /> : null}
             </>
           )}
         </form>

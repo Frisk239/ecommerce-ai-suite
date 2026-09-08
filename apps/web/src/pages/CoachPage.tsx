@@ -7,7 +7,6 @@
 // 单操作者 v1 自兼受训者与考官：标准答案作评分参照折叠展示（0040 裁决，诚实口径）。
 
 import { useCallback, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   ArrowsClockwise,
   CaretDown,
@@ -18,10 +17,12 @@ import {
 } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
-import type { CoachQuestion, CoachQuestionKey, CoachRecord } from '../api/types'
+import type { CoachQuestion, CoachRecord } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
-import { formatAssetId, formatDateTime } from '../labels'
+import { formatDateTime } from '../labels'
 import { ErrorBanner } from '../components/Banner'
+import ActionError from '../components/ActionError'
+import AssetAnchorChip from '../components/AssetAnchorChip'
 import Empty from '../components/Empty'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
@@ -35,24 +36,6 @@ const DIMS = [
   { key: 'evidence', label: '证据贴合', max: 30 },
   { key: 'tone', label: '服务语气', max: 30 },
 ] as const
-
-function formatKeyChip(key: CoachQuestionKey): string {
-  return `${formatAssetId(key.asset_id)} · v${key.version_no}`
-}
-
-/** 题源锚芯片 `A-xxxx · vN`：链治理台详情（只读引用，0040：不进中台不改资产）。 */
-function SourceChip({ questionKey }: { questionKey: CoachQuestionKey }) {
-  return (
-    <Link
-      to={`/platform/assets/${questionKey.asset_id}`}
-      className="font-mono text-xs text-ink-2 underline-offset-2 hover:text-accent-strong hover:underline"
-      title="题源对话资产（治理台）"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {formatKeyChip(questionKey)}
-    </Link>
-  )
-}
 
 function UnscoredBadge() {
   return <span className="badge badge-review">未评分</span>
@@ -178,12 +161,7 @@ function AnswerDrawer({
             </p>
             <span className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-3">
               题源：
-              <Link
-                to={`/platform/assets/${question.key.asset_id}`}
-                className="font-mono text-ink-2 underline-offset-2 hover:text-accent-strong hover:underline"
-              >
-                {formatKeyChip(question.key)}
-              </Link>
+              <AssetAnchorChip assetId={question.key.asset_id} version={question.key.version_no} />
               {question.asset_title ? <span className="truncate text-caption">{question.asset_title}</span> : null}
             </span>
           </div>
@@ -237,14 +215,7 @@ function AnswerDrawer({
             </div>
           ) : null}
 
-          {error ? (
-            <div
-              role="alert"
-              className="rounded-[6px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3 py-2 text-xs leading-5 text-danger"
-            >
-              {error}
-            </div>
-          ) : null}
+          {error ? <ActionError message={error} /> : null}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-line-2 px-4 py-3">
@@ -407,7 +378,12 @@ function RecordsPanel({
                             ) : null}
                             <span className="field-label mt-2">题源</span>
                             <span className="flex items-center gap-1.5 text-xs text-ink-2">
-                              <SourceChip questionKey={r.question_key} />
+                              <AssetAnchorChip
+                                assetId={r.question_key.asset_id}
+                                version={r.question_key.version_no}
+                                title="题源对话资产（治理台）"
+                                stopPropagation
+                              />
                               <span className="text-caption">
                                 {r.question_key.source === 'qa'
                                   ? `QA 对 #${r.question_key.pair_index}`
@@ -499,14 +475,12 @@ export default function CoachPage() {
                     </td>
                     <td>
                       <span className="flex items-center gap-1.5">
-                        <Link
-                          to={`/platform/assets/${q.key.asset_id}`}
-                          className="font-mono text-xs text-ink-2 underline-offset-2 hover:text-accent-strong hover:underline"
+                        <AssetAnchorChip
+                          assetId={q.key.asset_id}
+                          version={q.key.version_no}
                           title={q.asset_title ?? '题源对话资产（治理台）'}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {formatKeyChip(q.key)}
-                        </Link>
+                          stopPropagation
+                        />
                         <span className="kind-chip">{q.key.source === 'qa' ? 'QA 对' : '转写兜底'}</span>
                       </span>
                     </td>

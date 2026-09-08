@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 24 刀后端债池刀**（`feat/debt-2`，closeout 见 `docs/progress/debt-2-closeout.md`）：GIN 索引（citations/question_key）+题库单资产推导+N+1 批取+material 四小条——行为零变化，audit-4 P1 后端清零。第 16–23 刀+审计刀 4 已合并 main。
+上一刀：**第 25 刀前端收口刀**（`feat/frontend-cleanup`，closeout 见 `docs/progress/frontend-cleanup-closeout.md`）：toUiMessage 工厂+useAskStream 共享 hook+AssetAnchorChip+ActionError 统一（9 处）——audit-4 前端债清零，行为零变化（api 零 diff）。第 16–24 刀+审计刀 4 已合并 main。
 
-当前阶段：工程刀。下一刀：**第 25 刀前端收口刀**（UiMessage/ask 双闭包/Link 复用/action-error 组件化）；**其后触发审计刀 5**。
+当前阶段：**计数线到——下一刀=审计刀 5**（自审计刀 4 后五刀：21 打码收口/22 运营/23 总览连接/24 后端债池/25 前端收口；三路子代理，不改产品代码）。
 
 ## 怎么切
 
@@ -155,6 +155,10 @@
 **Out：** 血缘表/写路径/引用计数列/MCP 导出留痕（无留痕表记 debt）/跨资产图。
 
 ## 更后面（现在不锁顺序，各是独立刀）
+
+## 第 25 刀：前端收口刀（已交付，`feat/frontend-cleanup`）
+
+**路径：** 行为零变化重构——toUiMessage 13 字段工厂单点（4 处内联删净）；useAskStream 双页共享 hook（gap_id 等价/事件序对齐）；AssetAnchorChip×3；ActionError 9 处统一（三档 DOM 冻结）。api 零 diff，pytest 491 不变。证据见 `docs/progress/frontend-cleanup-closeout.md`。
 
 ## 第 24 刀：后端债池刀（已交付，`feat/debt-2`）
 

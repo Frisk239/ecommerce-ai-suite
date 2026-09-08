@@ -10,6 +10,7 @@ import { ArrowUDownLeft, ArrowUp, ChatCircleDots, Prohibit, Stop } from '@phosph
 import { api } from '../api/endpoints'
 import type { ServiceSessionSummary } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
+import { useAskStream } from '../hooks/useAskStream'
 import {
   SERVICE_SESSION_STATUS_LABEL,
   ASSET_STATUS_LABEL,
@@ -68,9 +69,6 @@ export default function ServicePage() {
   const detail = useApiData(detailFetcher)
   const session = detail.state.phase === 'ok' ? detail.state.data : null
 
-  // 本地流式追加的消息（detail 重新加载时清空，以服务器为准）
-  const [live, setLive] = useState<UiMessage[]>([])
-
   const [input, setInput] = useState('')
   const [streamError, setStreamError] = useState<unknown>(null)
   const [actionError, setActionError] = useState<unknown>(null)
@@ -79,16 +77,33 @@ export default function ServicePage() {
   const [registering, setRegistering] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
 
+  // 本地流式追加的消息（换会话/回流登记/同步时清空，以服务器为准）——占位构造、
+  // SSE 事件回填与停止/失败口径都收敛在共享 hook（第 25 刀；顾客通道同钩）
+  const {
+    messages: live,
+    streaming,
+    send: sendStream,
+    stop,
+    reset: resetLive,
+  } = useAskStream({
+    ask: (question, handlers, signal) => {
+      // 页面守卫保证发问时有选中会话；此分支只为类型收窄（不可达）
+      if (selectedId === null) return Promise.resolve()
+      return api.askService(selectedId, question, handlers, signal)
+    },
+    onError: setStreamError,
+    // 中止/断流：已收文本保留，标「已停止展示 · 完整回答已留档」
+    markStoppedOnFinally: true,
+    onSettled: () => list.reload(),
+  })
+
   const endRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const seqRef = useRef(0)
 
   const messages = useMemo<UiMessage[]>(
     () => [...(session?.messages.map(toUi) ?? []), ...live],
     [session, live],
   )
-  const streaming = live.some((m) => m.streaming)
 
   // 自动跟随：消息条数与已输出字符数变化都滚动到尾部
   const totalChars = messages.reduce((acc, m) => acc + m.content.length, 0)
@@ -97,17 +112,14 @@ export default function ServicePage() {
   }, [messages.length, totalChars])
 
   // 切换会话：中断在途流（旧会话的已收文本不带入新会话），回到服务器口径
-  const selectSession = useCallback((id: number) => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setLive([])
-    setStreamError(null)
-    setChosenId(id)
-  }, [])
-
-  const stop = useCallback(() => {
-    abortRef.current?.abort()
-  }, [])
+  const selectSession = useCallback(
+    (id: number) => {
+      resetLive()
+      setStreamError(null)
+      setChosenId(id)
+    },
+    [resetLive],
+  )
 
   // Esc 停止（textarea 流式期间被禁用，事件不再冒泡，挂 window 级）
   useEffect(() => {
@@ -126,9 +138,7 @@ export default function ServicePage() {
     try {
       const created = await api.createServiceSession()
       setRegistered(null)
-      abortRef.current?.abort()
-      abortRef.current = null
-      setLive([])
+      resetLive()
       setStreamError(null)
       setChosenId(created.id)
       list.reload()
@@ -141,106 +151,15 @@ export default function ServicePage() {
   }
 
   // 发送：立即回显顾客消息 + agent 占位，SSE 事件驱动 thinking → delta → complete
+  //（状态机回填在 useAskStream；0036 工具条随 tool 事件即时落上，重载经 toUi 还原）
   const send = async (text: string) => {
     const question = text.trim()
     if (question === '' || streaming || selectedId === null) return
     if (session === null || session.status !== 'active') return
     setInput('')
     if (taRef.current) taRef.current.style.height = 'auto'
-    const now = new Date().toISOString()
-    const seq = seqRef.current
-    seqRef.current += 1
-    const agentKey = `local-a-${seq}`
     setStreamError(null)
-    setLive((prev) => [
-      ...prev,
-      {
-        key: `local-c-${seq}`,
-        id: null,
-        role: 'customer',
-        content: question,
-        citations: null,
-        kind: null,
-        handoff: false,
-        created_at: now,
-        streaming: false,
-        stopped: false,
-        thinkingText: null,
-        gapId: null,
-        fallback: false,
-        tool: null,
-      },
-      {
-        key: agentKey,
-        id: null,
-        role: 'agent',
-        content: '',
-        citations: null,
-        kind: null,
-        handoff: false,
-        created_at: now,
-        streaming: true,
-        stopped: false,
-        thinkingText: null,
-        gapId: null,
-        fallback: false,
-        tool: null,
-      },
-    ])
-    const controller = new AbortController()
-    abortRef.current = controller
-    let completed = false
-    try {
-      await api.askService(
-        selectedId,
-        question,
-        {
-          onThinking: (t) =>
-            setLive((prev) =>
-              prev.map((m) => (m.key === agentKey ? { ...m, thinkingText: t } : m)),
-            ),
-          // 0036：tool 事件先于 delta 到达（工具条随引擎调用即时落上）；
-          // 重载会话时由消息表 tool 列经 toUi 还原（回放同形状）
-          onTool: (record) =>
-            setLive((prev) => prev.map((m) => (m.key === agentKey ? { ...m, tool: record } : m))),
-          onDelta: (piece) =>
-            setLive((prev) =>
-              prev.map((m) => (m.key === agentKey ? { ...m, content: m.content + piece } : m)),
-            ),
-          onComplete: (payload) => {
-            completed = true
-            setLive((prev) =>
-              prev.map((m) =>
-                m.key === agentKey
-                  ? {
-                      ...m,
-                      id: payload.message_id,
-                      citations: payload.citations,
-                      kind: payload.kind,
-                      handoff: payload.handoff,
-                      streaming: false,
-                      stopped: false,
-                      gapId: payload.gap_id ?? null,
-                      fallback: payload.fallback ?? false,
-                      tool: payload.tool ?? m.tool,
-                    }
-                  : m,
-              ),
-            )
-          },
-        },
-        controller.signal,
-      )
-    } catch (err) {
-      setStreamError(err)
-    } finally {
-      abortRef.current = null
-      // 中止/断流：已收文本保留，标「已停止展示 · 完整回答已留档」
-      setLive((prev) =>
-        prev.map((m) => (m.key === agentKey ? { ...m, streaming: false, stopped: !completed } : m)),
-      )
-      list.reload()
-    }
+    await sendStream(question)
   }
 
   const register = async () => {
@@ -251,7 +170,7 @@ export default function ServicePage() {
       const asset = await api.registerServiceSession(selectedId)
       setRegistered({ assetId: asset.id, assetStatus: asset.status })
       setConfirmOpen(false)
-      setLive([])
+      resetLive()
       list.reload()
       detail.reload()
     } catch (err) {
@@ -266,10 +185,10 @@ export default function ServicePage() {
   const syncFromServer = useCallback(() => {
     setStreamError(null)
     setActionError(null)
-    setLive([])
+    resetLive()
     list.reload()
     detail.reload()
-  }, [list, detail])
+  }, [list, detail, resetLive])
 
   const isActiveSession = session !== null && session.status === 'active'
   const canAsk = isActiveSession && !streaming

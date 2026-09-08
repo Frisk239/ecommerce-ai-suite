@@ -36,7 +36,28 @@ export interface UiMessage {
   tool: ToolCallRecord | null
 }
 
-/** 服务器消息 -> 展示用消息（重载会话时用；live 消息由发问方直接构造）。 */
+/** UiMessage 构造单点（第 25 刀收口）：13 字段默认值集中在这里，调用方只给
+ * 差异字段——服务器消息回填（toUi）与本地流式占位（useAskStream）共用。 */
+export function toUiMessage(
+  init: Pick<UiMessage, 'key' | 'role' | 'content' | 'created_at'> &
+    Partial<Omit<UiMessage, 'key' | 'role' | 'content' | 'created_at'>>,
+): UiMessage {
+  return {
+    id: null,
+    citations: null,
+    kind: null,
+    handoff: false,
+    streaming: false,
+    stopped: false,
+    thinkingText: null,
+    gapId: null,
+    fallback: false,
+    tool: null,
+    ...init,
+  }
+}
+
+/** 服务器消息 -> 展示用消息（重载会话时用；live 消息由 useAskStream 构造）。 */
 export function toUi(m: {
   id: number
   role: 'customer' | 'agent'
@@ -47,7 +68,7 @@ export function toUi(m: {
   created_at: string
   tool?: ToolCallRecord | null
 }): UiMessage {
-  return {
+  return toUiMessage({
     key: `s-${m.id}`,
     id: m.id,
     role: m.role,
@@ -56,13 +77,8 @@ export function toUi(m: {
     kind: m.kind,
     handoff: m.handoff ?? false,
     created_at: m.created_at,
-    streaming: false,
-    stopped: false,
-    thinkingText: null,
-    gapId: null,
-    fallback: false,
     tool: m.tool ?? null,
-  }
+  })
 }
 
 /** 顾客侧引用芯片：同 cite-chip 视觉，不可跳转（顾客页不进操作者控制台）。 */

@@ -16,6 +16,7 @@ import { formatDateTime } from '../labels'
 import CitationChip from '../components/CitationChip'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { ErrorBanner } from '../components/Banner'
+import ActionError from '../components/ActionError'
 import Empty from '../components/Empty'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
@@ -188,14 +189,7 @@ export default function OpsPage() {
       />
 
       {state.phase === 'error' ? <ErrorBanner error={state.error} onRetry={reload} /> : null}
-      {error ? (
-        <div
-          role="alert"
-          className="mb-4 rounded-[6px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3 py-2 text-xs leading-5 text-danger"
-        >
-          {error}
-        </div>
-      ) : null}
+      {error ? <ActionError message={error} className="mb-4" /> : null}
 
       <div className="panel mb-4 flex flex-wrap items-center gap-2.5 px-4 py-3">
         <Robot aria-hidden size={17} className="text-accent-strong" />
