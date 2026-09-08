@@ -216,7 +216,7 @@ function LineageTime({ at }: { at: string }) {
  * 血缘视图（第 20 刀/ADR 0026）：资产详情上拼出来的派生只读视图——无表、
  * 不进检索、不能发布。「从哪来/版本与审计」已由元数据与留痕面板承担，本面板
  * 只回答「被谁用过」：引用样例（问句+版本+时间，后端截断+计数）、写回事件
- * （发布即写回，audit_log 不存字段名故不显示字段）、考核抽题（题面+版本+时间）。
+ * （发布/回滚各带徽章，字段名按该版确认值派生）、考核抽题（题面+版本+时间）。
  * 详情加载完成后独立请求（不阻塞主栏人洗）；三块全空=「还没有被使用的记录」。
  */
 function LineagePanel({ assetId }: { assetId: number }) {
@@ -294,21 +294,28 @@ function LineagePanel({ assetId }: { assetId: number }) {
             <div>
               <LineageGroupTitle>写回 · {data.usages.writebacks.length}</LineageGroupTitle>
               {data.usages.writebacks.map((w) => (
-                <div
-                  key={`${w.at}-${w.version_no}`}
-                  className="flex items-center gap-2.5 border-b border-line-1 px-4 py-2 text-xs last:border-b-0"
-                >
-                  <span className="font-mono text-ink-2">v{w.version_no}</span>
-                  <span className="text-ink-3">
-                    {w.product_id !== null ? `商品 #${w.product_id}` : '未挂商品'}
-                  </span>
-                  <span className="text-ink-3">{w.operator}</span>
-                  <span className="flex-1" />
-                  <LineageTime at={w.at} />
+                <div key={`${w.at}-${w.version_no}-${w.action}`} className="border-b border-line-1 px-4 py-2 last:border-b-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-ink-2">v{w.version_no}</span>
+                    <span className={w.action === 'rollback' ? 'tag tag-machine' : 'tag tag-confirmed'}>
+                      {w.action === 'rollback' ? '回滚写回' : '发布写回'}
+                    </span>
+                    <span className="text-xs text-ink-3">
+                      {w.product_id !== null ? `商品 #${w.product_id}` : '未挂商品'}
+                    </span>
+                    <span className="flex-1" />
+                    <span className="text-xs text-ink-3">{w.operator}</span>
+                    <LineageTime at={w.at} />
+                  </div>
+                  {w.fields.length > 0 ? (
+                    <div className="mt-0.5 truncate text-xs text-ink-3" title={w.fields.join('、')}>
+                      {w.fields.join('、')}
+                    </div>
+                  ) : null}
                 </div>
               ))}
               <div className="px-4 py-1.5 text-xs text-ink-3">
-                写回随发布同事务（0010）；留痕未存字段名，不在此重列。
+                写回随发布/回滚同事务（0010/0034）；字段按该版确认值如实派生。
               </div>
             </div>
           ) : null}

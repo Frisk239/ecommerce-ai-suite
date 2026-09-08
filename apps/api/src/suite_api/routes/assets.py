@@ -692,11 +692,12 @@ def get_asset_lineage(
     """血缘视图（第 20 刀/ADR 0026）：从哪来/版本与审计/被谁用过（引用/写回/
     考核）——资产详情上的派生拼装，只读、零新表零写路径，不进检索不进 MCP。
 
-    数据源全在既有表：audit_log（时间线与写回=发布事件，0010 写回随发布同
-    事务）、service_messages.citations JSONB containment 下推（引用样例+同
-    条件计数）、coach_records.question_key（考核抽题）。写回不带 fields 键
-    （audit_log 不存字段名，如实拼装）；origin.created_at 恒 null（assets 无
-    登记时间列）。响应形状与截断规则见 services/lineage.py。
+    数据源全在既有表：audit_log（时间线；写回=publish/rollback 事件——0010/
+    0034 两类移指针事务都写回商品，fields 从 asset_versions.confirmed_fields
+    按版本号如实派生）、service_messages.citations JSONB containment 下推
+    （引用样例+同条件计数）、coach_records.question_key（考核抽题）；另有
+    本资产版本行一次轻查询供 fields 派生。origin.created_at 恒 null（assets
+    无登记时间列）。响应形状与截断规则见 services/lineage.py。
     """
     del operator  # 读接口同样要求登录（CONTEXT.md：控制台=登录后的人机界面）
     asset = _get_asset_or_404(db, asset_id)

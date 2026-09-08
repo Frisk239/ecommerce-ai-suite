@@ -3,8 +3,11 @@
 契约（全走 HTTP，数据源全部来自既有写路径的真实动作）：
 - 发布挂商品的文档（确认字段->发布=写回事件）+ 客服问句引用 -> lineage：
   origin=upload、时间线含 confirm/publish（操作者名）、writebacks 带版本+
-  操作者+商品锚（无 fields 键）、citations 计数=引用消息数、样例带问句/版本/
-  会话/时间且倒序；未被引用的其他资产不串（containment 按 asset_id 精确）；
+  action+操作者+商品锚+fields（按版本从 confirmed_fields 派生）、citations
+  计数=引用消息数、样例带问句/版本/会话/时间且倒序；未被引用的其他资产不串
+  （containment 按 asset_id 精确）；
+- 开修订->发布 v2->回滚 v1 -> writebacks 出现 action=rollback 行（0034 回滚
+  即回口径，_write_back_product 随移指针事务），fields 指向回滚目标版；
 - 发布对话 + 考核作答（题源锚指向该资产）-> coaching 块出现对应记录带版本号；
   同一资产被引用+被抽题时三块各现各的；
 - 未使用资产 -> 三块全空（空态）+ 时间线空，仍 200；
@@ -117,12 +120,15 @@ def test_lineage_document_citations_and_writebacks(api: ApiFixture) -> None:
     timeline = [(e["action"], e["version_no"], e["operator"]) for e in body["versions_audit"]]
     assert timeline == [("publish", 1, "operator"), ("confirm", 1, "operator")]
 
-    # 写回=发布事件（audit_log 不存字段名 -> 无 fields 键）；带商品锚
+    # 写回=发布/回滚事件；fields 按版本号从该版 confirmed_fields 派生（瓶装水
+    # schema=净含量+保质期；正文的「口味/储存条件」行非 schema 字段、不入确认
+    # 集）；带商品锚
     (writeback,) = body["usages"]["writebacks"]
     assert writeback["version_no"] == 1
+    assert writeback["action"] == "publish"
     assert writeback["operator"] == "operator"
     assert writeback["product_id"] == water_id
-    assert "fields" not in writeback
+    assert set(writeback["fields"]) == {"净含量", "保质期"}
     assert writeback["at"]
 
     # 引用：计数=引用本资产的消息条数；样例带问句截断/版本/会话/时间，倒序
@@ -155,6 +161,27 @@ def test_lineage_citations_isolated_across_assets(api: ApiFixture) -> None:
     # 水文档自己的计数不受钛钢消息污染（本用例内水文档未被问）
     water_lineage = client.get(f"/api/assets/{water_id}/lineage").json()
     assert all("钛钢" not in s["question"] for s in water_lineage["usages"]["citations"]["samples"])
+
+
+def test_lineage_writebacks_include_rollback_with_target_version_fields(api: ApiFixture) -> None:
+    """回滚即回口径（0034）：发布与回滚同走 _write_back_product——lineage 的
+    writebacks 必须含 action=rollback 行，fields 指向回滚目标版的确认字段。"""
+    client, _ = api
+    _login(client)
+    asset_id, _ = _publish_water_doc(client)
+    # 开修订 -> 发布 v2（继承确认直接过闸）-> 回滚到 v1
+    assert client.post(f"/api/assets/{asset_id}/revisions").status_code == 201
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+    rolled = client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 1})
+    assert rolled.status_code == 200
+
+    body = client.get(f"/api/assets/{asset_id}/lineage").json()
+    assert [
+        (w["version_no"], w["action"]) for w in body["usages"]["writebacks"]
+    ] == [(1, "rollback"), (2, "publish"), (1, "publish")]
+    # 回滚行字段=目标 v1 的确认字段（净含量+保质期）；时间线倒序首行即回滚
+    assert set(body["usages"]["writebacks"][0]["fields"]) == {"净含量", "保质期"}
+    assert body["versions_audit"][0]["action"] == "rollback"
 
 
 # ---------- 对话：考核抽题 + 客服引用 三块各现各的 ----------
@@ -194,10 +221,12 @@ def test_lineage_dialogue_coaching_and_citations(api: ApiFixture) -> None:
     assert body["usages"]["citations"]["samples"][0]["session_id"] == sid
     # 回流登记不写审计（登记不是 0005 治理动作）：时间线只有确认+发布
     assert [e["action"] for e in body["versions_audit"]] == ["publish", "confirm"]
-    # 写回=发布事件：对话未挂商品也记一行，product_id 如实 null（0010 口径：
-    # 不暗的字段就没有，但发布事件本身真实发生过）
+    # 写回=发布/回滚事件：对话未挂商品也记发布行，product_id 如实 null；
+    # fields 派生该版 confirmed_fields 键——对话的就是 qa_pairs（如实非现编）
     (wb,) = body["usages"]["writebacks"]
     assert wb["version_no"] == 1 and wb["product_id"] is None
+    assert wb["action"] == "publish"
+    assert wb["fields"] == ["qa_pairs"]
 
 
 # ---------- 未使用资产：空态 ----------

@@ -1,10 +1,12 @@
 """血缘视图单元测试（不依赖 DB；第 20 刀/ADR 0026）。
 
 覆盖两块：
-- 纯拼装 assemble_lineage：三源聚合（audit 时间线/发布行导出写回/考核题源锚）、
-  版本号从 JSONB 原样提取（提不出跳样例不跳计数、bool 不算整数）、问句与题面
-  60 字截断、引用样例硬上限 10、空态（三块全空）、写回不带 fields 键、
-  origin.created_at 恒 null（assets 无登记时间列，不发明时间）。
+- 纯拼装 assemble_lineage：三源聚合（audit 时间线/发布+回滚行导出写回/考核题源
+  锚）、版本号从 JSONB 原样提取（提不出跳样例不跳计数、bool 不算整数）、问句与题面
+  60 字截断、引用样例硬上限 10、空态（三块全空）、写回 action 区分发布/回滚
+  （0010/0034 两类移指针事务都写回）且 fields 按版本从 confirmed_fields 派生
+  （无该版数据=空列表）、origin.created_at 恒 null（assets 无登记时间列，不
+  发明时间）。
 - 查询形状下推：citations/coaching 的 containment 编译进 PostgreSQL 方言后
   必须出现 ``@>``（JSONB containment 下推，禁全表拉回 Python 过滤），
   样例语句带 LIMIT。
@@ -48,6 +50,8 @@ def _assemble(**overrides):
         "coach_rows": [
             (7, "盲盒可以指定款式吗", {"asset_id": 9, "version_no": 1, "source": "qa", "pair_index": 0}, _at(5)),
         ],
+        # 写回 fields 的派生源：各版 confirmed_fields 键列表（查询侧已排序）
+        "version_fields": {1: ["净含量", "保质期"], 2: ["净含量", "保质期", "储存条件"]},
     }
     kwargs.update(overrides)
     return assemble_lineage(**kwargs)
@@ -64,13 +68,15 @@ def test_assemble_aggregates_three_sources_in_order() -> None:
         ("confirm", 2, "operator"),
         ("publish", 1, "operator"),
     ]
-    # 写回=发布事件（0010 同事务）：confirm/rollback 行不进；带商品锚与操作者
-    assert [(w.version_no, w.operator, w.product_id) for w in out.usages.writebacks] == [
-        (2, "operator", 3),
-        (1, "operator", 3),
+    # 写回=发布/回滚事件（0010/0034 两类移指针事务都写回商品）：confirm 行不进；
+    # action 区分两类，fields 按事件版本号从 confirmed_fields 派生，带商品锚与操作者
+    assert [
+        (w.version_no, w.action, w.operator, w.product_id, w.fields)
+        for w in out.usages.writebacks
+    ] == [
+        (2, "publish", "operator", 3, ["净含量", "保质期", "储存条件"]),
+        (1, "publish", "operator", 3, ["净含量", "保质期"]),
     ]
-    # audit_log 不存字段名：如实不带 fields 键（契约形状钉死）
-    assert "fields" not in out.usages.writebacks[0].model_dump()
     # 引用来料即样料：会话/问句/版本/时间
     assert [(c.session_id, c.question, c.version_no) for c in out.usages.citations.samples] == [
         (102, "问句2", 1),
@@ -89,6 +95,34 @@ def test_assemble_aggregates_three_sources_in_order() -> None:
 def test_writeback_product_null_for_unlinked_asset() -> None:
     out = _assemble(product_id=None)
     assert all(w.product_id is None for w in out.usages.writebacks)
+
+
+def test_rollback_moves_product_so_it_is_a_writeback() -> None:
+    """回滚也执行 _write_back_product（0034 回滚即回口径）：rollback 行进
+    writebacks 带 action=rollback；fields 取回滚目标版（v1）的确认字段。"""
+    out = _assemble(
+        audit_rows=[
+            (_at(9), "rollback", 1, "operator"),
+            (_at(3), "publish", 2, "operator"),
+            (_at(2), "confirm", 2, "operator"),
+            (_at(1), "publish", 1, "operator"),
+        ]
+    )
+    assert [
+        (w.version_no, w.action, w.fields) for w in out.usages.writebacks
+    ] == [
+        (1, "rollback", ["净含量", "保质期"]),
+        (2, "publish", ["净含量", "保质期", "储存条件"]),
+        (1, "publish", ["净含量", "保质期"]),
+    ]
+    # 时间线仍全量（含 rollback 与 confirm）：写回过滤不回伤 versions_audit
+    assert [e.action for e in out.versions_audit] == ["rollback", "publish", "confirm", "publish"]
+
+
+def test_writeback_fields_empty_for_version_without_confirmed() -> None:
+    """无 confirmed 字段的版本（对话/素材/首发前）：fields 如实空列表。"""
+    out = _assemble(version_fields={2: []}, coach_rows=[])
+    assert [w.fields for w in out.usages.writebacks] == [[], []]
 
 
 def test_empty_usages_is_the_empty_state() -> None:

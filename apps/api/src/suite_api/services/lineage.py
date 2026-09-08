@@ -12,8 +12,10 @@
     （``citations @> '[{"asset_id": N}]'``，禁止全表拉回 Python 过滤），
     样例时间倒序上限 10 + 同条件 count 总计数；问句=该 agent 消息同会话内
     最近一条 customer 消息（相关子查询同语句下推）。
-  - 写回：audit_log action=publish 的行——0010 写回随发布同事务，发布事件
-    即写回事件。audit_log 没存字段名，如实不带 fields 键；product_id 取
+  - 写回：audit_log action ∈ {publish, rollback} 的行——写回随两类移指针事务
+    同事务发生（0010 发布、0034 回滚即回口径），``action`` 键区分；fields
+    从 asset_versions.confirmed_fields 按事件版本号如实派生键列表（audit_log
+    不存字段名，派生非现编；无 confirmed 字段的版本=空列表），product_id 取
     assets 行（未挂商品为 null）。
   - 考核：coach_records.question_key JSONB containment（题源锚含 asset_id）。
 
@@ -29,12 +31,16 @@ from pydantic import BaseModel
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, aliased
 
-from suite_api.models import Asset, AuditLog, CoachRecord, Operator, ServiceMessage
+from suite_api.models import Asset, AssetVersion, AuditLog, CoachRecord, Operator, ServiceMessage
 
 # 引用样例上限（spec Must 1：样例 10 + 总计数）；问句/题面截断口径同
 # service 会话列表的 first_question 摘要（60 字符 + 省略号）
 SAMPLE_LIMIT = 10
 _SUMMARY_CHARS = 60
+
+# 写回事件集合：发布与回滚都执行 _write_back_product（0010/0034 同一移指针
+# 事务语义），两类都算「写回商品」的留痕
+WRITEBACK_ACTIONS = frozenset({"publish", "rollback"})
 
 
 def _summary(text: str) -> str:
@@ -78,10 +84,12 @@ class CitationsBlockOut(BaseModel):
 
 class WritebackOut(BaseModel):
     at: datetime
+    action: str  # publish | rollback（0010/0034 两类移指针事务都执行写回）
     version_no: int
     operator: str
     product_id: int | None
-    # fields 键不提供：audit_log 不存写回字段名（如实拼装，不现编语义）
+    # 该版本 confirmed_fields 的键列表（如实派生非现编；无 confirmed 字段=空列表）
+    fields: list[str]
 
 
 class CoachingUsageOut(BaseModel):
@@ -130,6 +138,8 @@ def assemble_lineage(
     citations_total: int,
     coach_rows: list[tuple[int, str, dict[str, Any], datetime]],
     # (record_id, question_text, question_key, at)——按记录 id 倒序
+    version_fields: dict[int, list[str]],
+    # version_no -> 该版 confirmed_fields 键列表（写回 fields 的派生源）
 ) -> AssetLineageOut:
     """三源聚合成血缘载荷：版本号从 JSONB 原样提取（提不出不编造，样例行丢弃
     但计入总数）、问句/题面截断、引用样例硬上限 SAMPLE_LIMIT（查询已 limit，
@@ -155,9 +165,16 @@ def assemble_lineage(
         if len(samples) >= SAMPLE_LIMIT:
             break
     writebacks = [
-        WritebackOut(at=at, version_no=version_no, operator=operator, product_id=product_id)
+        WritebackOut(
+            at=at,
+            action=action,
+            version_no=version_no,
+            operator=operator,
+            product_id=product_id,
+            fields=list(version_fields.get(version_no, [])),
+        )
         for at, action, version_no, operator in audit_rows
-        if action == "publish"
+        if action in WRITEBACK_ACTIONS
     ]
     coaching: list[CoachingUsageOut] = []
     for record_id, question_text, question_key, at in coach_rows:
@@ -244,16 +261,29 @@ def audit_rows_stmt(asset_id: int) -> Select:
     )
 
 
+def version_fields_stmt(asset_id: int) -> Select:
+    """写回 fields 的派生源：本资产各版本的 confirmed_fields（版本数量级=个位，
+    整资产拉回不算全表；按事件 version_no 取对应版，如实非现编）。"""
+    return select(AssetVersion.version_no, AssetVersion.confirmed_fields).where(
+        AssetVersion.asset_id == asset_id
+    )
+
+
 # ---------- 装配入口 ----------
 
 
 def fetch_asset_lineage(db: Session, asset: Asset) -> AssetLineageOut:
-    """一次请求四查询（audit / citations 计数 / citations 样例 / coach），
-    全部条件在 SQL 里——无任何全表拉回。"""
+    """一次请求五查询（audit / citations 计数 / citations 样例 / coach / 版本
+    确认字段），过滤条件全在 SQL 里——无任何全表拉回。"""
     audit_rows = [tuple(row) for row in db.execute(audit_rows_stmt(asset.id)).all()]
     citation_rows = [tuple(row) for row in db.execute(citation_sample_stmt(asset.id)).all()]
     citations_total = db.scalar(citation_count_stmt(asset.id)) or 0
     coach_rows = [tuple(row) for row in db.execute(coaching_stmt(asset.id)).all()]
+    # JSONB 对象回读为 dict；键排序保证契约稳定（jsonb 存储序不是输入序）
+    version_fields: dict[int, list[str]] = {
+        version_no: sorted(dict(confirmed))
+        for version_no, confirmed in db.execute(version_fields_stmt(asset.id)).all()
+    }
     return assemble_lineage(
         asset_id=asset.id,
         source_kind=asset.source_kind,
@@ -262,4 +292,5 @@ def fetch_asset_lineage(db: Session, asset: Asset) -> AssetLineageOut:
         citation_rows=citation_rows,  # type: ignore[arg-type]
         citations_total=citations_total,
         coach_rows=coach_rows,  # type: ignore[arg-type]
+        version_fields=version_fields,
     )

@@ -146,10 +146,13 @@ export interface LineageCitationsBlock {
 
 export interface LineageWriteback {
   at: string
+  /** 写回随两类移指针事务发生：publish=发布写回（0010）、rollback=回滚写回（0034）。 */
+  action: 'publish' | 'rollback'
   version_no: number
   operator: string
   product_id: number | null
-  /** fields 键不存在：audit_log 不存写回字段名（如实拼装）。 */
+  /** 该版 confirmed_fields 键列表（如实派生非现编；无确认字段=空列表）。 */
+  fields: string[]
 }
 
 export interface LineageCoachingUsage {
