@@ -4,7 +4,7 @@
 
 ## 交付（0026 落地：拼出来的派生视图，零新表零写路径）
 
-1. **`GET /api/assets/{id}/lineage`**：`services/lineage.py` 固定 4 查询拼装——origin（来源种类）/ versions_audit（发布/回滚/确认时间线）/ usages 三块：**引用**（`service_messages.citations` JSONB containment `@>` 下推，总计数+样例 10 条带问句/版本/会话/时间）、**写回**（audit_log publish+rollback——0034 回滚也写回，每条带 action 与按 version_no 从 confirmed_fields 派生的字段名列表）、**考核**（coach_records question_key containment，题面+版本+时间）。
+1. **`GET /api/assets/{id}/lineage`**：`services/lineage.py` 固定 5 查询拼装——origin（来源种类）/ versions_audit（发布/回滚/确认时间线）/ usages 三块：**引用**（`service_messages.citations` JSONB containment `@>` 下推，总计数+样例 10 条带问句/版本/会话/时间）、**写回**（audit_log publish+rollback——0034 回滚也写回，每条带 action 与按 version_no 从 confirmed_fields 派生的字段名列表）、**考核**（coach_records question_key containment，题面+版本+时间）。
 2. **web**：AssetDetailPage 侧栏「血缘」折叠面板（头部汇总「引用 N · 写回 N · 考核 N」；三块列表；写回行带发布/回滚徽章与字段名；空态「还没有被使用的记录」）。
 3. **测试**：单测 12（拼装纯函数/回滚事件/字段派生/截断）+集成 6（发布 v2→回滚 v1 全链路 writebacks 三行；引用/考核带版本号；空资产；401/404；containment 下推断言）。
 

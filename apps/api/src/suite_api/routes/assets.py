@@ -51,6 +51,7 @@ from suite_api.services.lineage import AssetLineageOut, fetch_asset_lineage
 from suite_api.services.machine_wash import (
     QA_FIELD,
     MachineWashError,
+    redact,
     run_machine_wash,
     validate_qa_pairs,
 )
@@ -372,6 +373,23 @@ def _validate_qa_pairs_payload(value: Any) -> list[dict[str, str]]:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
+def _mask_confirmed_value(field: str, value: Any) -> Any:
+    """0038 修订（第 21 刀，审计刀 4 P0 簇出口 2）：字节不动、出口必掩——
+    人洗 confirmed 值落库前的 PII 打码收口（validate 之后、写回之前）。
+
+    - qa_pairs：每项 q/a 过 `machine_wash.redact`（复用第 17 刀函数，不复制
+      正则——同一口径同时守「送厂商 prompt」与「入索引切块」两个面）；
+    - 文档字符串值：整值过 redact（转写类文档手填值也可能带手机号/邮箱）。
+    纯函数便于单测钉死；redact 幂等且只会收缩或等长（掩码不产空串），
+    故不会把合法非空值掩成违反 0009 空串闸门的形态。
+    """
+    if field == QA_FIELD:
+        assert isinstance(value, list)  # 上游 _validate_qa_pairs_payload 已保证形状
+        return [{"q": redact(p["q"]), "a": redact(p["a"])} for p in value]
+    assert isinstance(value, str)
+    return redact(value)
+
+
 @router.patch("/{asset_id}/versions/{version_no}/fields", response_model=VersionOut)
 def confirm_fields(
     asset_id: int,
@@ -418,15 +436,27 @@ def confirm_fields(
         )
     merged = dict(version.confirmed_fields)
     for field, value in body.items():
+        # 0038 修订（第 21 刀，审计刀 4 P0 簇出口 2）：字节不动、出口必掩——
+        # 人洗 confirmed 值在 validate 之后、写回 confirmed_fields 之前统一过
+        # redact（字符串值与 qa_pairs 每项 q/a，掩码收在 _mask_confirmed_value
+        # 纯函数）。confirmed 是发布切块入索引的唯一来源（0010），写回点收口
+        # 即「既有切块入口随 confirmed 数据天然干净」，手填手机号不再裸进
+        # 索引与下游 prompt/回答。
         if field == QA_FIELD:
-            merged[field] = {"value": _validate_qa_pairs_payload(value), "source": "human"}
+            merged[field] = {
+                "value": _mask_confirmed_value(field, _validate_qa_pairs_payload(value)),
+                "source": "human",
+            }
         else:
             if not isinstance(value, str):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"字段值须为字符串（qa_pairs 除外，其为数组）: {field}",
                 )
-            merged[field] = {"value": value.strip(), "source": "human"}  # 改动丢掉 inherited
+            merged[field] = {
+                "value": _mask_confirmed_value(field, value.strip()),
+                "source": "human",
+            }  # 改动丢掉 inherited
     version.confirmed_fields = merged
     # 0016：确认必填字段也留痕（谁/何时/哪版）
     db.add(
@@ -717,6 +747,11 @@ def get_version_text(
     操作者面人洗视图：第 12 刀起 dialogue 资产人洗必须看得见转写正文（ADR 0035
     后果）。复用 read_version_text 服务函数（与 MCP get_asset 同一取数路径）；
     对象缺失/非 UTF-8 属存储异常 -> 409。
+
+    0038 修订（第 21 刀）明确豁免：本端点**不打码**——「字节不动、出口必掩」
+    里版本正文端点是操作者面的原文回放通道（治理语境，v1 单操作者可接受；
+    多角色时再收紧）。打码只发生在其余出口（prompt/confirmed 落库/coaching/
+    MCP export/血缘），永不回写存储，人洗对照转写必须能看到原文。
     """
     del operator  # 读接口要求登录
     asset = _get_asset_or_404(db, asset_id)

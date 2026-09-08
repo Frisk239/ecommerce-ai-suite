@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 from suite_api.models import Asset, AssetVersion, CoachRecord
 from suite_api.services import llm
 from suite_api.services.asset_view import VersionTextError, read_version_text
-from suite_api.services.machine_wash import QA_FIELD, strip_code_fence
+from suite_api.services.machine_wash import QA_FIELD, redact, strip_code_fence
 from suite_api.settings import get_settings
 from suite_platform.storage import ObjectStorage
 
@@ -64,13 +64,19 @@ class ScoreParseError(Exception):
 def build_score_prompt(
     question_text: str, standard_answer: str | None, trainee_answer: str
 ) -> str:
-    """user prompt 三要素（0040）：题面 + 标准答案（可空，写明兜底口径）+ 受训者答案。"""
-    lines = [f"题面（顾客问）：{question_text}"]
+    """user prompt 三要素（0040）：题面 + 标准答案（可空，写明兜底口径）+ 受训者答案。
+
+    0038 修订（第 21 刀，审计刀 4 P0 簇出口 3）：字节不动、出口必掩——打分
+    prompt 三输入在进厂商前统一过 redact（本函数是 score/rescore 两条调用链
+    的唯一 prompt 漏斗，收口于此即两条出口同掩）。受训者手输的答案、历史
+    脏数据里未掩的题面/参照快照（出口 2 收口前落的 confirmed 原文）都在此
+    兜住；redact 幂等，已掩值重复掩无副作用。"""
+    lines = [f"题面（顾客问）：{redact(question_text)}"]
     if standard_answer:
-        lines.append(f"标准答案（评分参照）：{standard_answer}")
+        lines.append(f"标准答案（评分参照）：{redact(standard_answer)}")
     else:
         lines.append("标准答案（评分参照）：（无——转写兜底题，按 rubric 口径常识打分）")
-    lines.append(f"受训者作答：{trainee_answer}")
+    lines.append(f"受训者作答：{redact(trainee_answer)}")
     return "\n".join(lines)
 
 
@@ -98,13 +104,19 @@ def parse_score_output(raw: str) -> dict[str, Any]:
 
 
 def first_customer_question(transcript: str) -> str | None:
-    """转写首个非空「顾客：」行的问句（兜底题面）；没有则 None（该资产不成题）。"""
+    """转写首个非空「顾客：」行的问句（兜底题面）；没有则 None（该资产不成题）。
+
+    0038 修订（第 21 刀，审计刀 4 P0 簇出口 3）：字节不动、出口必掩——转写
+    兜底题面直接读自版本字节（未掩区），在推导出口处过 redact 再外发：题库
+    列表、落库 question_text、打分 prompt 三处消费者从此拿到的都是掩码值
+    （qa 题面的 confirmed 值已由出口 2 在写回点收口，旧脏行由
+    build_score_prompt/score_attempt 兜住）。"""
     for line in transcript.splitlines():
         line = line.strip()
         if line.startswith("顾客："):
             question = line[len("顾客：") :].strip()
             if question:
-                return question
+                return redact(question)
     return None
 
 
@@ -283,18 +295,26 @@ def score_attempt(
     （也终结 find_question 的只读事务）→ LLM 等待期间会话不持事务 → 打分结果
     UPDATE 收口。进程崩在 LLM 等待中留未评分行——本就语义合法、可重评。"""
     question = find_question(db, storage, question_key)
+    # 0038 修订（第 21 刀，审计刀 4 P0 簇出口 3）：字节不动、出口必掩——
+    # coach_records 是非中台表，三文本字段落库前过 redact（受训者手输答案
+    # 是本字段裸 PII 的主要来源；题面/参照新链路已在推导与出口 2 收掩，
+    # 这里统一兜历史脏值）。_apply_score 同用掩后值（prompt 侧
+    # build_score_prompt 还有一道幂等掩，双保险）。
+    question_text = redact(question["question"])
+    standard_answer = (
+        redact(question["standard_answer"]) if question["standard_answer"] is not None else None
+    )
+    trainee_answer = redact(answer)
     record = CoachRecord(
         operator_name=operator_name,
         question_key=question["key"],
-        question_text=question["question"],
-        standard_answer=question["standard_answer"],
-        trainee_answer=answer,
+        question_text=question_text,
+        standard_answer=standard_answer,
+        trainee_answer=trainee_answer,
     )
     db.add(record)
     db.commit()  # ① 未评分态先落库 + 释放推导事务，再等 LLM
-    _apply_score(
-        record, question["question"], question["standard_answer"], answer
-    )  # 三输入走本地变量，不回读过期属性（不重开事务）
+    _apply_score(record, question_text, standard_answer, trainee_answer)  # 三输入走本地变量，不回读过期属性（不重开事务）
     db.commit()  # ② 打分结果 UPDATE 收口（新事务，毫秒级）
     db.refresh(record)
     return record

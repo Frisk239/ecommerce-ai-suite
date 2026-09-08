@@ -116,7 +116,7 @@ export default function ClipsPage() {
           <Empty
             icon={<FilmSlate aria-hidden size={24} />}
             title="没有候选切片"
-            hint="直播结束后由机洗切出候选（v1 由启动种子灌入 mock 候选）。"
+            hint="直播结束后切出候选（自动切出/ASR 留部署刀；v1 由启动种子灌入 mock 候选）。"
           />
         </div>
       ) : (

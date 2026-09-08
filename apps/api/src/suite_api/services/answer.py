@@ -54,6 +54,11 @@ def compose_answer(
 
     无命中 -> refusal+handoff（0018）；有命中 -> answer，citations 按
     (asset_id, version_no) 去重保序。
+
+    0038 修订（第 21 刀，审计刀 4 P0 簇出口 1）：降级模板回答同样是顾客可见
+    出口（_dialogue_sentence/_document_sentence 拼装的即转写/字段原文）——
+    hit.chunk 已在 retrieve 返回处统一 redact（收口点见 services/retrieval.py
+    注释），本模块不再重复掩，输入干净即输出干净。
     """
     if not hits:
         return ComposedAnswer(content=REFUSAL_CONTENT, citations=[], kind="refusal", handoff=True)
