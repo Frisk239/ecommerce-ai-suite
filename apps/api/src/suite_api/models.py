@@ -231,6 +231,33 @@ class Order(Base):
     placed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class MaterialTask(Base):
+    """ADR 0038：素材任务=素材中心自有的任务状态机（0012 不是中台对象）。
+
+    status ∈ queued/running/pending_qc/registered/failed——失败不进中台
+    （0029）：failed 不登记任何字节，registered 才有 asset_id 指向登记出的
+    素材资产。title/content 是生成文案本体（抽检通过前只住本行，不入对象
+    存储）；last_error 记规则项/生成失败/人工打回原因，重试时清空。
+    """
+
+    __tablename__ = "material_tasks"
+    __table_args__ = (Index("ix_material_tasks_status", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    status: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str | None] = mapped_column(String(200))
+    content: Mapped[str | None] = mapped_column(Text)
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    # 抽检通过登记出的资产（kind=material, source_kind=material_generated）；
+    # UI 跳转治理台详情的锚，未登记为 NULL
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class KnowledgeGap(Base):
     """ADR 0024/0030：知识缺口=无证据拒答留下的待补项，可挂商品。
 

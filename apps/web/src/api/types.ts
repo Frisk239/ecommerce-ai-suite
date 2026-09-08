@@ -201,6 +201,30 @@ export interface ServiceAnswerComplete {
   tool: ToolCallRecord | null
 }
 
+// ---------- 素材中心任务（routes/material.py 契约，第 17 刀/ADR 0038） ----------
+
+/** 任务五态（0038 状态机；不是资产三态，与 middle-plate 无关）：
+ * queued=排队 / running=进行中 / pending_qc=待抽检（规则质检过线等人）/
+ * registered=已登记（终态，asset_id 指向登记出的素材资产）/ failed=失败（可重试）。 */
+export type MaterialTaskStatus =
+  | 'queued'
+  | 'running'
+  | 'pending_qc'
+  | 'registered'
+  | 'failed'
+
+export interface MaterialTask {
+  id: number
+  product_id: number
+  product_name: string
+  status: MaterialTaskStatus
+  title: string | null
+  content: string | null
+  last_error: string | null
+  asset_id: number | null
+  created_at: string
+}
+
 // ---------- 顾客通道（routes/customer.py 契约，ADR 0021/0033） ----------
 
 /** POST /customer/sessions 签发：令牌只在此响应完整出现一次，顾客侧自行保存。 */

@@ -149,7 +149,10 @@ def to_asset_detail(db: Session, asset: Asset) -> AssetDetail:
     )
     latest = versions[-1] if versions else None
     product = db.get(Product, asset.product_id) if asset.product_id is not None else None
-    schema = dict(product.spec_schema) if product is not None else {}
+    # 与发布端点同口径：必填闸门仅种类=文档且挂商品（CONTEXT「必填字段」词条）
+    schema: dict[str, Any] = {}
+    if asset.kind == "document" and product is not None:
+        schema = dict(product.spec_schema)
     extracted = dict(latest.extracted_fields) if latest is not None else {}
     confirmed = dict(latest.confirmed_fields) if latest is not None else {}
     missing, unconfirmed = evaluate_publish_gate(schema, extracted, confirmed)

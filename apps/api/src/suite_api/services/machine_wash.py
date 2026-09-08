@@ -19,6 +19,11 @@
 - 种类=对话 -> 字段集只有一个 ``qa_pairs``：LLM 从转写抽问答对草稿
   （``[{q, a}, ...]`` 结构化值）。分级：未配置模型（空 key）=降级弃权、
   对话照常推进待人洗；已配置但失败/坏输出=机洗失败（停已接入可重试）。
+
+打码步（第 17 刀，ADR 0038 / 审计刀 3 P1#4）：``redact`` 纯函数在三处
+接入——转写送厂商 LLM 前（prompt 输入）、LLM 抽出的每对 q/a 值、文档正则
+抽出的字段值。作用于抽取环节，不改版本字节、不动对象键（ADR 0003 每版一
+把键不可变）；字段集分派不受影响（打码在弃权/抽取的取值侧）。
 """
 
 import asyncio
@@ -153,8 +158,36 @@ FIELD_EXTRACTORS: dict[str, Callable[[str], str | None]] = {
 }
 
 
+# ---------- 打码（第 17 刀，ADR 0038 / 审计刀 3 P1#4） ----------
+
+# 手机号：11 位、1[3-9] 开头；前后否定环视防止从更长的数字串中段咬出一段
+# （「订单号 1234567890123456」不该被当手机号打码）。
+_PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+# 邮箱：local 部分 ≥3 字符才打码（ab@x.co 这类短 local 多为占位/示例，
+# 且掩码后无法区分粒度）；域名保留（回联线索不是 PII 外流面）。
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]{3,}@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+
+
+def _mask_phone(match: re.Match[str]) -> str:
+    """保留前 1 后 2，中间打星（13812345678 -> 1********78）。"""
+    digits = match.group()
+    return f"{digits[0]}{'*' * (len(digits) - 3)}{digits[-2:]}"
+
+
+def redact(text: str) -> str:
+    """PII 打码纯函数：手机号保留前 1 后 2 位掩码；邮箱 local 部分（≥3 字符）
+    掩成 ``****``、域名保留。先邮箱后手机号——邮箱 local 里的数字串不该被
+    手机号正则二次咬合。无 PII 文本原样返回（幂等）。"""
+    text = _EMAIL_RE.sub(lambda m: f"****@{m.group(1)}", text)
+    return _PHONE_RE.sub(_mask_phone, text)
+
+
 def extract_document_fields(text: str, field_names: Iterable[str]) -> dict[str, dict]:
-    """对字段集合逐个抽取：``{value, source:"machine"}`` 或 ``{abstained: true}``。"""
+    """对字段集合逐个抽取：``{value, source:"machine"}`` 或 ``{abstained: true}``。
+
+    抽出的字段值先过 ``redact``（ADR 0038 打码步：正则口径下值多为规格短语，
+    但转写类文档的字段值可能带 PII，统一在落库前掩掉）。
+    """
     result: dict[str, dict] = {}
     for name in field_names:
         extractor = FIELD_EXTRACTORS.get(name)
@@ -162,7 +195,7 @@ def extract_document_fields(text: str, field_names: Iterable[str]) -> dict[str, 
         if value is None:
             result[name] = {"abstained": True}
         else:
-            result[name] = {"value": value, "source": "machine"}
+            result[name] = {"value": redact(value), "source": "machine"}
     return result
 
 
@@ -202,10 +235,12 @@ _QA_SYSTEM_PROMPT = (
 
 
 def build_qa_prompt(transcript: str) -> str:
-    return f"客服对话转写：\n{transcript}"
+    """QA 抽取的 user prompt：转写先过 ``redact`` 再进 prompt（ADR 0038 打码步
+    接入点 a——修外流面：送厂商 API 的字节里不再有裸手机号/邮箱）。"""
+    return f"客服对话转写：\n{redact(transcript)}"
 
 
-def _strip_code_fence(raw: str) -> str:
+def strip_code_fence(raw: str) -> str:
     """剥离 ```/```json 围栏（模型常包一层；不包也兼容）。"""
     text = raw.strip()
     if not text.startswith("```"):
@@ -224,12 +259,16 @@ def parse_qa_output(raw: str) -> list[dict[str, str]]:
 
     坏 JSON / 不是数组 / 项形状不对 = 抽取失败（MachineWashError，停已接入可
     重试，ADR 0035 分级）；合法空数组不是失败（调用方按弃权处理）。
+
+    打码步（ADR 0038 接入点 b）：校验后的每个 q/a 值再过 ``redact``——模型
+    可能把转写里的手机号/邮箱原样带进答案，落库（extracted_fields）不留裸 PII。
     """
     try:
-        data = json.loads(_strip_code_fence(raw))
-        return validate_qa_pairs(data)
+        data = json.loads(strip_code_fence(raw))
+        pairs = validate_qa_pairs(data)
     except (ValueError, TypeError) as exc:
         raise MachineWashError(QA_FAILURE_MESSAGE) from exc
+    return [{"q": redact(p["q"]), "a": redact(p["a"])} for p in pairs]
 
 
 def extract_qa_draft(transcript: str) -> dict:
