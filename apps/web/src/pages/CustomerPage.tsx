@@ -162,7 +162,7 @@ export default function CustomerPage() {
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col px-4 py-6">
       {/* 轻页头：不搬操作者壳的导航（spec 工程裁决） */}
       <header className="mb-4 flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border border-line-2 bg-surface text-ink-2">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border border-line-2 bg-white text-ink-2 shadow-sm">
           <ChatCircleDots aria-hidden size={18} />
         </div>
         <div className="min-w-0 flex-1">
@@ -187,26 +187,29 @@ export default function CustomerPage() {
 
       <section className="panel flex min-h-0 flex-1 flex-col overflow-hidden" style={{ minHeight: 420 }}>
         {session === null ? (
-          <Empty
-            icon={<ChatCircleDots aria-hidden size={26} />}
-            title="开始咨询"
-            hint="无需注册登录：点击开始，服务端为这段对话签发一次性会话身份。"
-            action={
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => void startSession()}
-                disabled={creating}
-              >
-                <ChatCircleDots aria-hidden size={14} />
-                {creating ? '创建中…' : '开始咨询'}
-              </button>
-            }
-          />
+          /* 空态在面板内垂直居中：顾客页是产品门面，内容别吊在顶上 */
+          <div className="flex flex-1 items-center justify-center">
+            <Empty
+              icon={<ChatCircleDots aria-hidden size={26} />}
+              title="开始咨询"
+              hint="无需注册登录：点击开始，服务端为这段对话签发一次性会话身份。"
+              action={
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void startSession()}
+                  disabled={creating}
+                >
+                  <ChatCircleDots aria-hidden size={14} />
+                  {creating ? '创建中…' : '开始咨询'}
+                </button>
+              }
+            />
+          </div>
         ) : (
           <>
             {/* 消息流（共享 MessageBubble；引用芯片只读——顾客不进控制台） */}
-            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+            <div className="chat-scroll flex-1 space-y-3 overflow-y-auto px-4 py-4">
               {messages.length === 0 && (
                 <div className="py-6 text-center text-[13px] text-caption">
                   试着问问：
@@ -215,7 +218,7 @@ export default function CustomerPage() {
                       <button
                         key={q}
                         type="button"
-                        className="btn btn-ghost btn-sm"
+                        className="btn btn-secondary btn-sm"
                         onClick={() => void send(q)}
                         disabled={!canAsk}
                       >
@@ -232,7 +235,7 @@ export default function CustomerPage() {
             </div>
 
             {/* composer：流式期间锁输入 */}
-            <div className="border-t border-line-2 p-3">
+            <div className="rounded-b-[8px] border-t border-line-2 bg-white p-3">
               <div className="msg-composer">
                 <textarea
                   ref={taRef}

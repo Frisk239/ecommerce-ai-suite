@@ -45,9 +45,9 @@ export default function ProductsPage() {
       ) : (
         <div className="grid items-start gap-4 md:grid-cols-2">
           {products.map((product) => (
-            <div key={product.id} className="panel">
+            <div key={product.id} className="panel panel-hover hover:-translate-y-0.5">
               <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3.5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] bg-surface text-ink-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] bg-accent-soft text-accent-strong">
                   <Package aria-hidden size={17} />
                 </span>
                 <div className="min-w-0">

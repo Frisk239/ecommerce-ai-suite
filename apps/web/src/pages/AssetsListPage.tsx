@@ -188,6 +188,41 @@ export default function AssetsListPage() {
         </div>
       </PageHeader>
 
+      {state.phase === 'ok' ? (
+        <div className="mb-4 grid gap-3 sm:grid-cols-3" aria-label="治理队列摘要">
+          <button
+            type="button"
+            className={`stat-card ${activeTab === '待人洗' ? 'stat-card-active' : ''}`}
+            onClick={() => setTab('待人洗')}
+            title="纯新待办：修订中的待办跟着它的线上资产走，不在这里计数"
+          >
+            <div className="stat-label">待人洗 · 待办</div>
+            <div className="stat-value">{counts.pending_review}</div>
+            <div className="stat-hint">纯新待办 · 修订跟线上走</div>
+          </button>
+          <button
+            type="button"
+            className={`stat-card ${activeTab === '已发布' ? 'stat-card-active' : ''}`}
+            onClick={() => setTab('已发布')}
+            title="线上在服务：含修订中的资产，客服与连接层只读这一口径"
+          >
+            <div className="stat-label">已发布 · 线上口径</div>
+            <div className="stat-value">{counts.published}</div>
+            <div className="stat-hint">检索与引用只读这一口径</div>
+          </button>
+          <button
+            type="button"
+            className={`stat-card ${activeTab === '知识缺口' ? 'stat-card-active' : ''}`}
+            onClick={() => setTab('知识缺口')}
+            title="拒答后排队：人补文档并发布后关闭，不是资产"
+          >
+            <div className="stat-label">知识缺口 · 待补</div>
+            <div className="stat-value">{openGapCount ?? '—'}</div>
+            <div className="stat-hint">拒答排队 · 发布后关闭</div>
+          </button>
+        </div>
+      ) : null}
+
       {activeTab === '知识缺口' ? (
         gapsQ.state.phase === 'loading' ? (
           <div className="panel">
@@ -385,7 +420,8 @@ export default function AssetsListPage() {
                         {retryingId === asset.id ? '重试中…' : '重试机洗'}
                       </button>
                     ) : (
-                      <span className="flex items-center justify-end text-caption">
+                      /* 行尾箭头 hover 才现（StaffDesk 手法：次级导航线索不与数据抢注意） */
+                      <span className="row-caret flex items-center justify-end text-caption">
                         <CaretRight aria-hidden size={13} />
                       </span>
                     )}

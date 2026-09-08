@@ -15,7 +15,7 @@ export default function Empty({
   return (
     <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
       {icon ? (
-        <div className="mb-3.5 flex h-12 w-12 items-center justify-center rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface text-ink-3">
+        <div className="mb-3.5 flex h-12 w-12 items-center justify-center rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-white text-ink-3 shadow-sm">
           {icon}
         </div>
       ) : null}
