@@ -34,12 +34,39 @@ from suite_api.services.asset_view import (
     read_version_text,
     to_asset_out,
 )
-from suite_api.services.machine_wash import redact
+from suite_api.services.machine_wash import QA_FIELD, redact
 from suite_api.services.retrieval import retrieve
 
 # get_asset 对「取不到已发布版本」统一口径：不区分资产不存在/存在但未发布/
 # 版本存在但从未发布——知道 ID 也探不出哪些是待人洗（ADR 0020 的闸门语义）。
 _UNPUBLISHED_MESSAGE = "资产或版本不存在，或从未发布：连接层只能读取已发布版本"
+
+
+def _mask_fields_map(fields: dict) -> dict:
+    """0038 修订（第 21 刀评审处置件 1：MCP get_asset=第六出口）：字段映射表
+    （extracted_fields / confirmed_fields）出 MCP 响应前统一过 redact——
+    字符串 value 与 qa_pairs 每项 q/a；abstained 项与坏形状原样走（防御不
+    改写形状）。新写入侧（机洗第 17 刀、人洗出口 2）已掩，这里是读侧对
+    历史脏行的兜底收口，幂等无害；掩码不回写存储（字节不动）。
+    title 的收口在推导源头（routes/service._first_question，评审处置件 2），
+    本处不重复掩。"""
+
+    def _mask_value(name: str, value):  # noqa: ANN001, ANN202 - JSONB 回读三态
+        if name == QA_FIELD and isinstance(value, list):
+            return [
+                {**p, "q": redact(p["q"]), "a": redact(p["a"])}
+                if isinstance(p, dict) and isinstance(p.get("q"), str) and isinstance(p.get("a"), str)
+                else p
+                for p in value
+            ]
+        return redact(value) if isinstance(value, str) else value
+
+    masked: dict = {}
+    for name, entry in fields.items():
+        if isinstance(entry, dict) and "value" in entry:
+            entry = {**entry, "value": _mask_value(name, entry["value"])}
+        masked[name] = entry
+    return masked
 
 
 class BearerGateMiddleware:
@@ -128,6 +155,8 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
         但仅当它发布过。已接入/待人洗/从未发布的版本一律拒绝（错误信息不含
         未发布内容）。返回 {id, title, kind, source_kind, version_no,
         object_key, content, extracted_fields, confirmed_fields}。
+        0038 修订（第 21 刀评审处置件 1）：content 与两张字段映射表以掩码
+        形态出边界（MCP 响应=进程边界出口，出口必掩；对象字节不动）。
         """
         with _db_session() as session:
             asset = session.get(Asset, asset_id)
@@ -147,6 +176,10 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 if asset is None or asset_version is None or asset_version.published_at is None:
                     raise ValueError(_UNPUBLISHED_MESSAGE)
             content = read_version_text(session, ensure_storage(host), asset_version)
+            # 0038 修订（第 21 刀评审处置件 1：MCP get_asset=第六出口）：正文与
+            # 两张字段映射表出 MCP 响应前过 redact（掩码不回写字节，对象键/
+            # 版本指针不动；与 export_published 同口径）；title 在推导源头收掩
+            # （routes/service._first_question），此处直读 assets 行即净。
             return {
                 "id": asset.id,
                 "title": asset.title,
@@ -154,9 +187,9 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 "source_kind": asset.source_kind,
                 "version_no": asset_version.version_no,
                 "object_key": asset_version.object_key,
-                "content": content,
-                "extracted_fields": dict(asset_version.extracted_fields),
-                "confirmed_fields": dict(asset_version.confirmed_fields),
+                "content": redact(content),
+                "extracted_fields": _mask_fields_map(dict(asset_version.extracted_fields)),
+                "confirmed_fields": _mask_fields_map(dict(asset_version.confirmed_fields)),
             }
 
     @mcp.tool()

@@ -9,6 +9,11 @@
   三输入（build_score_prompt 唯一漏斗，score/rescore 同掩）、coach_records 落库；
 - 出口 4（MCP export_published）：导出正文过 redact；
 - 出口 5（血缘引用问句样例）：lineage._summary 先掩后截。
+- 出口 6（评审处置件 1，MCP get_asset）：正文与 extracted/confirmed 两张字段
+  表出响应前过 redact（_mask_fields_map：字符串值与 qa_pairs 每项 q/a）。
+- title 出口全线（评审处置件 2）：routes/service._first_question 源头收口
+  （先掩后截）——回流登记资产 title=顾客首问截断，登记即净，MCP 三工具/
+  降级回答标题/详情页一次全覆盖。
 - 豁免钉死：GET versions/{no}/text（操作者面版本正文）仍含原文——打码永不
   回写存储（0038 修订段明文），集成用例一并断言。
 
@@ -34,8 +39,10 @@ from sqlalchemy import select
 from sse_helpers import parse_sse_events
 
 from suite_api.main import create_app
+from suite_api.mcp_server import _mask_fields_map
 from suite_api.models import RetrievalChunk
 from suite_api.routes.assets import _mask_confirmed_value
+from suite_api.routes.service import _first_question
 from suite_api.services import llm as llm_module
 from suite_api.services.coaching import build_score_prompt, first_customer_question
 from suite_api.services.lineage import _summary, assemble_lineage
@@ -151,6 +158,42 @@ def test_mask_confirmed_value_qa_pairs_and_strings() -> None:
     )
 
 
+# ---------- 单元：出口 6（MCP get_asset 字段表）+ title 源头（_first_question） ----------
+
+
+def test_mask_fields_map_string_and_qa_entries() -> None:
+    """0038 修订出口 6（评审处置件 1）：get_asset 的 extracted/confirmed 映射
+    表——字符串 value 与 qa_pairs 每项 q/a 出边界前掩；abstained 项与坏形状
+    原样走；已掩值幂等不二次变形。"""
+    masked = _mask_fields_map(
+        {
+            "净含量": {"value": f"550毫升，售后{API_PHONE}", "source": "human"},
+            QA_FIELD: {
+                "value": [{"q": f"电话{API_PHONE}能改吗", "a": "打客服"}],
+                "source": "machine",
+            },
+            "保质期": {"abstained": True},
+        }
+    )
+    dumped = json.dumps(masked, ensure_ascii=False)
+    assert API_PHONE not in dumped
+    assert MASKED_PHONE in dumped
+    assert masked["净含量"]["source"] == "human"  # 只动 value，entry 形状不变
+    assert masked["保质期"] == {"abstained": True}
+    assert _mask_fields_map(masked) == masked  # 幂等（新链路写入已掩，读侧兜历史）
+
+
+def test_first_question_masks_title_at_source() -> None:
+    """评审处置件 2：回流 title/会话摘要在 _first_question 源头收口——先掩
+    后截（跨 60 字边界的号码不会被拦腰留下裸号前缀），无 PII 输入逐字节
+    不变（不破坏既有标题断言）。"""
+    assert _first_question(f"我的手机号{API_PHONE}还能改绑吗") == f"我的手机号{MASKED_PHONE}还能改绑吗"
+    boundary = "x" * 55 + API_PHONE + "尾" * 20
+    out = _first_question(boundary)
+    assert "13812" not in out and API_PHONE not in out  # 先截后掩的事故形态不许出现
+    assert _first_question("盲盒可以指定款式吗") == "盲盒可以指定款式吗"  # 幂等
+
+
 # ---------- 单元：出口 3（coaching 纯函数层） ----------
 
 
@@ -226,6 +269,11 @@ def test_dialogue_with_phone_prompt_index_lineage_clean_text_exempt(
     reg = client.post(f"/api/service/sessions/{sid}/register")
     assert reg.status_code == 201
     asset_id = reg.json()["id"]
+    # 评审处置件 2（源头验证）：回流登记即净——title=首问截断已在
+    # _first_question 收口，登记响应返回的资产视图无裸号（下游 to_asset_out/
+    # MCP/详情页全线受益）
+    assert API_PHONE not in reg.json()["title"]
+    assert MASKED_PHONE in reg.json()["title"]
     # 入口侧（第 17 刀既有行为）：机洗草稿值落库即掩——顺带钉住不被本刀破坏
     draft = reg.json()["versions"][0]["extracted_fields"][QA_FIELD]
     assert API_PHONE not in json.dumps(draft, ensure_ascii=False)
@@ -434,6 +482,10 @@ def test_mcp_export_and_search_masked(mcp_env: Any) -> None:
                 searched = await session.call_tool("search_published", {"query": "顾客电话原路退回"})
                 assert not searched.isError
                 out["search"] = _mcp_payload(searched)
+                # 评审处置件 1（第六出口）：含号资产 get_asset -> 响应无裸号
+                got = await session.call_tool("get_asset", {"asset_id": asset_id})
+                assert not got.isError
+                out["get"] = _mcp_payload(got)
         return out
 
     async def wrapped() -> dict:
@@ -448,3 +500,9 @@ def test_mcp_export_and_search_masked(mcp_env: Any) -> None:
     assert API_PHONE not in json.dumps(out["export"], ensure_ascii=False)
     assert MASKED_PHONE in export[0]["content"]  # 正文以掩码形态出边界
     assert API_PHONE not in json.dumps(out["search"], ensure_ascii=False)
+
+    # get_asset（第六出口钉测）：同资产响应无裸号，content 呈掩码
+    assert API_PHONE not in json.dumps(out["get"], ensure_ascii=False)
+    assert MASKED_PHONE in out["get"]["content"]
+    # 对象键/版本指针不动（字节不动纪律）：响应仍带真实 object_key
+    assert out["get"]["object_key"]

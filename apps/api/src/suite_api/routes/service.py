@@ -33,6 +33,7 @@ from suite_api.deps import get_current_operator, get_db, get_storage
 from suite_api.models import Operator, ServiceMessage, ServiceSession
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
 from suite_api.services.chat_engine import run_ask, sse_event_stream
+from suite_api.services.machine_wash import redact
 from suite_api.services.registration import register_asset
 from suite_platform.storage import ObjectStorage
 
@@ -118,7 +119,17 @@ def _to_message_out(message: ServiceMessage) -> MessageOut:
 
 
 def _first_question(content: str) -> str:
-    return content[:_SUMMARY_CHARS] + ("…" if len(content) > _SUMMARY_CHARS else "")
+    """60 字首问摘要（会话列表 first_question 与回流登记资产 title 共用）。
+
+    0038 修订（第 21 刀评审处置件 2：title 出口全线）：对话资产 title=顾客
+    首问截断，随 to_asset_out / MCP get_asset·export·search / 降级回答标题 /
+    治理台详情页全线流转——在推导源头收口过 redact（先掩后截，若先截后掩，
+    跨 60 字边界的手机号会被拦腰咬断逃过正则留裸号前缀），一次收口全链路
+    干净。素材任务 title 来自生成文案不走此函数，不动。redact 等长收缩
+    （掩码不新增字符），不改变既有摘要长度口径。
+    """
+    masked = redact(content)
+    return masked[:_SUMMARY_CHARS] + ("…" if len(masked) > _SUMMARY_CHARS else "")
 
 
 def _origin(session: ServiceSession) -> str:
