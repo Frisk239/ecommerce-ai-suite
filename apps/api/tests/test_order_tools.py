@@ -283,6 +283,9 @@ def test_run_ask_non_order_never_touches_order_tool(
     )
     monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: [])
     monkeypatch.setattr("suite_api.services.chat_engine.assets_meta", lambda *_a, **_k: {})
+    # 第 27 刀：拒答落库文本要格式化缺口 id，本单测钉分派零接触不测文本——
+    # mock 库把缺口钉 None（摘要/缺口段文本由 test_answer 单测+DB 集成钉）
+    monkeypatch.setattr("suite_api.services.chat_engine.record_refusal_gap", lambda *_a, **_k: None)
 
     outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "保温杯的材质是什么？"))
 

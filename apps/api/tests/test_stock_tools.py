@@ -379,6 +379,9 @@ def test_run_ask_narrowed_words_never_touch_stock_tool(
     )
     monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: [])
     monkeypatch.setattr("suite_api.services.chat_engine.assets_meta", lambda *_a, **_k: {})
+    # 第 27 刀：拒答消息文本要格式化缺口 id，本单测钉分派零接触不测文本——
+    # mock 库把缺口钉 None（摘要/缺口段文本由 test_answer 单测+DB 集成钉）
+    monkeypatch.setattr("suite_api.services.chat_engine.record_refusal_gap", lambda *_a, **_k: None)
 
     for question in ("保温杯还剩多少毫升？", "库存政策是什么"):
         outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), question))
@@ -422,6 +425,8 @@ def test_run_ask_non_stock_never_touches_stock_tool(
     )
     monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: [])
     monkeypatch.setattr("suite_api.services.chat_engine.assets_meta", lambda *_a, **_k: {})
+    # 第 27 刀：同上——钉分派零接触，缺口 mock 成 None 绕开摘要文本格式化
+    monkeypatch.setattr("suite_api.services.chat_engine.record_refusal_gap", lambda *_a, **_k: None)
 
     outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "保温杯的净含量是多少？"))
 

@@ -193,6 +193,12 @@ def test_no_evidence_never_calls_llm(api: ApiFixture, monkeypatch: pytest.Monkey
     assert complete["citations"] == []
     assert complete["fallback"] is False  # 拒答不是降级
     assert isinstance(complete["gap_id"], int)  # 拒答照常落知识缺口（0024）
+    # 第 27 刀拒答交接摘要：原「全等固定文案」断言按新语义更新——无证据不调
+    # 模型不变，落库/流式文本带问句摘要与缺口段（操作者通道）
     refusal_deltas = "".join(data["text"] for event, data in events if event == "delta")
-    assert refusal_deltas == "抱歉，已发布资产里没有能回答这个问题的证据。"
+    assert refusal_deltas == (
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
+        "问句摘要：冥王星殖民基地怎么预约参观？\n"
+        f"缺口：G-{complete['gap_id']:04d}"
+    )
     assert calls == []  # stream_chat 从未被调（mock 断言 call count=0）

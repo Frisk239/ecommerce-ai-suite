@@ -1,6 +1,10 @@
 """回答组装与拒答判定单测（纯函数，无 DB；0018 拒答是消息种类不是异常）。"""
 
-from suite_api.services.answer import REFUSAL_CONTENT, compose_answer
+from suite_api.services.answer import (
+    REFUSAL_CONTENT,
+    build_refusal_handoff_content,
+    compose_answer,
+)
 
 
 def _hit(asset_id: int, version_no: int, chunk: str, score: float = 1.0) -> dict:
@@ -71,3 +75,32 @@ def test_missing_title_falls_back() -> None:
 def test_refusal_content_constant_is_stable() -> None:
     # 文案固定（任务锁定）：前端与测试都按此断言
     assert REFUSAL_CONTENT == "抱歉，已发布资产里没有能回答这个问题的证据。"
+
+
+# ---------- 第 27 刀：拒答交接摘要拼装（纯函数，通道差异由 gap_id 传否决定） ----------
+
+
+def test_handoff_summary_operator_with_gap_ref() -> None:
+    content = build_refusal_handoff_content("登山绳可以定制长度吗", gap_id=7)
+    assert content == (
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
+        "问句摘要：登山绳可以定制长度吗\n缺口：G-0007"
+    )
+    assert content.startswith(REFUSAL_CONTENT)  # 常量结构不变，摘要段追加
+
+
+def test_handoff_summary_without_gap_id_has_no_gap_line() -> None:
+    # 顾客通道（run_ask expose_gap_id=False → 传 None）：带问句摘要、不带缺口段
+    content = build_refusal_handoff_content("会员生日礼怎么领？")
+    assert content == (
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：会员生日礼怎么领？"
+    )
+
+
+def test_handoff_summary_truncates_and_masks() -> None:
+    # 先掩后截（0038 出口掩口径，同 _first_question）：60 字 + 「…」
+    question = "退款请打到 13812345678" + "啊" * 80
+    masked_summary = ("退款请打到 1********78" + "啊" * 80)[:60]
+    content = build_refusal_handoff_content(question)
+    assert "13812345678" not in content
+    assert content.endswith(f"问句摘要：{masked_summary}…")

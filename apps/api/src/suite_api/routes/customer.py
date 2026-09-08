@@ -163,7 +163,9 @@ async def ask(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="消息内容不能为空"
         )
 
-    outcome = await run_ask(db, session, question)
+    # expose_gap_id=False：顾客白名单一个闸管两处（第 27 刀起延伸到拒答消息
+    # 文本——不带「缺口：G-xxxx」段；complete 载荷不带 gap_id 口径不变）
+    outcome = await run_ask(db, session, question, expose_gap_id=False)
     # SSE 生成器不碰 DB：返回前归还连接，慢客户端不再钉住池（get_db 幂等 close）
     db.commit()
     db.close()

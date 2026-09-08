@@ -107,6 +107,14 @@ def test_customer_full_flow_same_engine(api: ApiFixture) -> None:
     assert refusal_complete["handoff"] is True
     assert refusal_complete["citations"] == []
     assert "gap_id" not in refusal_complete
+    # 第 27 刀：拒答交接摘要白名单延伸到消息文本——顾客通道带问句摘要、
+    # **不带**「缺口：G-xxxx」段（操作者版全等断言见 test_service_integration）
+    refusal_deltas = "".join(d["text"] for e, d in refusal_events if e == "delta")
+    assert refusal_deltas == (
+        "抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：会员生日礼怎么领？"
+    )
+    assert "缺口" not in refusal_deltas
+    assert "G-" not in refusal_deltas
 
     client.cookies.clear()
     _login(client)

@@ -14,9 +14,37 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from suite_api.services.machine_wash import redact
+
 REFUSAL_CONTENT = "抱歉，已发布资产里没有能回答这个问题的证据。"
 
 _MAX_EVIDENCE = 2  # 多源命中最多引 1-2 条（宁少而准，0018 宁缺勿滥）
+
+# 第 27 刀（演示收官）：拒答交接摘要的问句截断口径——与会话列表首问摘要
+# （routes/service._first_question）同为 60 字 + 省略号，两处口径一致。
+_SUMMARY_MAX_CHARS = 60
+
+
+def build_refusal_handoff_content(question: str, gap_id: int | None = None) -> str:
+    """拒答落库消息的完整文本（第 27 刀，词条「转人工」：交接带结构化摘要）。
+
+    结构：REFUSAL_CONTENT（常量原样，既有全等断言不破）+ 换行 +
+    「问句摘要：{question}」（先掩后截，对齐 0038「字节不动、出口必掩」与
+    _first_question 口径——顾客原问本就在同会话 customer 消息里裸存，摘要不
+    新增暴露面，打码只是不主动多做一次原样复读）+（gap_id 非空时）换行 +
+    「缺口：G-xxxx」（4 位补零，与治理台界面 ID 口径一致）。
+
+    gap_id 是否可进文本由调用方通道白名单决定（run_ask 的 expose_gap_id）：
+    顾客通道不带缺口 ID（0030 gap_id 白名单语义从 complete 载荷延伸到消息
+    文本）；操作者通道带——治理台/客服页重开会话也能看见缺口号，不依赖
+    只在流里出现一次的 complete 事件。
+    """
+    masked = redact(question)
+    summary = masked[:_SUMMARY_MAX_CHARS] + ("…" if len(masked) > _SUMMARY_MAX_CHARS else "")
+    parts = [REFUSAL_CONTENT, f"问句摘要：{summary}"]
+    if gap_id is not None:
+        parts.append(f"缺口：G-{gap_id:04d}")
+    return "\n".join(parts)
 
 # 「字段：值」证据句提取（单一正则，判定与分组一体；原先 FIELD_LINE_RE 判定 +
 # 内联分组两段式双写，口径已合一）。字段名字符与切块同词表（中文/字母/数字，
