@@ -18,12 +18,12 @@
 
 | 项 | 输出 |
 | --- | --- |
-| `uv run pytest` | `107 passed, 33 skipped, 1 warning in 6.44s` |
+| `uv run pytest`（无库） | `107 passed, 33 skipped, 1 warning in 6.44s` |
 | `uv run ruff check .` | `All checks passed!` |
-| 集成（SUITE_TEST_DATABASE_URL） | **未跑**：本机 `com.docker.service` 停且无管理员权限拉起；5432/5433/5434 无监听。账本测试已写在 `test_governance_integration.py` / 客服与 MCP 指针测已改走真开修订。CI 或本机 Docker 起来后须补跑。 |
+| 集成（`SUITE_TEST_DATABASE_URL` @5432 `suite_test`） | `140 passed, 18 warnings in 17.90s` + `PYTEST_EXIT=0`（Owner 亲跑；`ecommerce-ai-suite-db-1` healthy，宿主 5432） |
 | web lint | `Found 2 warnings and 0 errors.` `Finished in 70ms on 26 files`（既有 warnings，非本刀引入） |
 | web build | 实现子代理：`✓ built in 11.72s`（本刀未再改 web 后未复跑 build） |
-| 浏览器点穿 | **未跑**（无 compose 栈）。债务。 |
+| 浏览器点穿 | 仍未点（api/web 未随本轮起栈）。债务。 |
 
 ## 评审（两轴）与修复
 
@@ -33,11 +33,11 @@
 
 1. 原型 `OPEN_REVISION` 把 `asset.state` 打成待人洗；工程 **不照抄**（检索/MCP 滤 `status==published`）。列表口径跟原型：已发布=指针非空。
 2. 原型无回滚按钮；工程按 UX-NOTES「回滚单独移指针」补了版本历史动作。
-3. 本机 Docker 起不来，集成与浏览器验收记债务，不假装绿。
+3. 关刀时 Docker 未起，集成后补：`140 passed, 18 warnings in 17.90s`。浏览器点穿仍未做（未起 api/web）。
 
 ## 债务
 
-1. 集成 33 skipped 与浏览器点穿须在 Docker/CI 补跑。
+1. 浏览器点穿仍缺：开修订 → 发布 v2 → 客服引用 v2 → 回滚 → 引用 v1。
 2. 拒答缺口 `product_id` 恒空 → 去补多数仍走新登记；0031 要带商品的缺口才自动开修订。
 3. 去补取该商品「最新已发布 document」，不一定是规格那一份。
 4. 二次开修订 409 前已写对象键，并发可能留孤儿字节（同登记模式）。
@@ -48,5 +48,5 @@
 ## 下一 Owner 注意
 
 - 更后面：厂商生成（0033，`.env` 已留位）、顾客通道（0021/0033）、**审计刀**（不改产品代码）。
-- 合入前：起 Docker 后 `SUITE_TEST_DATABASE_URL=postgresql://suite:suite@localhost:<PG_PORT>/suite_test uv run pytest`；浏览器走开修订→发布 v2→客服引用 v2→回滚→引用 v1。
-- 环境：本机 Docker Desktop 服务停着；5432 历史上常被 suanming 占用，用 `PG_PORT`。
+- 合入前：浏览器走开修订→发布 v2→客服引用 v2→回滚→引用 v1。集成已在 5432 补跑全绿。
+- 环境：5432 若再被 suanming 占用，compose 用 `PG_PORT` 覆盖。
