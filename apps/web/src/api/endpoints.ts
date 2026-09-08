@@ -3,6 +3,7 @@
 import { request, requestText, streamSse, type SseEvent } from './client'
 import type {
   AssetDetail,
+  AssetLineage,
   AssetListItem,
   AssetVersion,
   AuditEntry,
@@ -89,6 +90,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ version_no: versionNo }),
     }),
+
+  // 血缘视图（第 20 刀/ADR 0026）：派生拼装只读，详情加载后独立请求
+  getAssetLineage: (assetId: number) => request<AssetLineage>(`/assets/${assetId}/lineage`),
 
   // 商品与留痕
   listProducts: () => request<Product[]>('/products'),
