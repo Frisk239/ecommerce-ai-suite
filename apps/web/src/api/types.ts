@@ -54,10 +54,17 @@ export interface KnowledgeGap {
   resolved_at: string | null
 }
 
+/** 对话 QA 对（第 12 刀/ADR 0035）：qa_pairs 字段的数组值，每对 {q, a} 非空串。 */
+export interface QaPair {
+  q: string
+  a: string
+}
+
 /** 字段值三形状：机洗 {value,source:"machine"} / 弃权 {abstained:true} / 人洗 {value,source:"human"}。
- * 修订继承的确认值带 inherited，改动后丢掉。 */
+ * 修订继承的确认值带 inherited，改动后丢掉。value 允许结构化值：dialogue 的
+ * qa_pairs 为 QaPair[]（空数组=人洗确认「没有 QA」）。 */
 export type FieldEntry =
-  | { value: string; source: 'machine' | 'human'; inherited?: boolean }
+  | { value: string | QaPair[]; source: 'machine' | 'human'; inherited?: boolean }
   | { abstained: true }
 
 export interface AssetVersion {

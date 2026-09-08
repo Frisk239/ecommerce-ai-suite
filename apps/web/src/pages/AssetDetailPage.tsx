@@ -1,6 +1,8 @@
 // 资产详情：治理台核心界面。
 // 主栏 = 正在处理的版本（字段确认/补填）；侧栏 = 治理动作（发布闸门）、元数据、版本、留痕。
 // 只读语义：待人洗以外状态字段不可编辑（已发布版本是只读证据）。
+// dialogue 资产（第 12 刀/ADR 0035）：转写正文只读查看 + qa_pairs QA 对编辑器
+// （人洗必须看见转写；机洗草稿改/删/增后确认，confirmed 才在发布时成块入索引）。
 
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
@@ -10,14 +12,16 @@ import {
   ArrowsClockwise,
   CheckCircle,
   PencilSimple,
+  Plus,
   Prohibit,
   SealCheck,
+  Trash,
   Warning,
 } from '@phosphor-icons/react'
 import { ApiError, detailText, parsePublishGate, type PublishGateDetail } from '../api/client'
 import { api } from '../api/endpoints'
 import { resolveFieldValue, toFieldView, type FieldView } from '../api/fields'
-import type { AssetVersion, Product } from '../api/types'
+import type { AssetVersion, Product, QaPair } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { formatDateTime, formatAssetId, sourceKindLabel } from '../labels'
 import { ErrorBanner, SuccessBanner } from '../components/Banner'
@@ -166,6 +170,163 @@ function FieldRow({
   )
 }
 
+/** dialogue 转写正文（只读）：版本字节 text/plain 直读，人洗必须看得见原文。 */
+function TranscriptPanel({ assetId, versionNo }: { assetId: number; versionNo: number }) {
+  const fetcher = useCallback(() => api.getVersionText(assetId, versionNo), [assetId, versionNo])
+  const q = useApiData(fetcher)
+  return (
+    <div className="panel">
+      <div className="panel-title flex-wrap">
+        <span>对话转写 · v{versionNo}</span>
+        <span className="text-xs font-normal text-ink-3">
+          登记时的转写原文（只读）；发布后按轮成块入检索
+        </span>
+      </div>
+      {q.state.phase === 'loading' ? <LoadingHint text="加载转写…" /> : null}
+      {q.state.phase === 'error' ? (
+        <div className="px-4 py-3 text-[13px] leading-6 text-ink-3">
+          转写读取失败：{detailText(q.state.error)}
+        </div>
+      ) : null}
+      {q.state.phase === 'ok' ? (
+        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-sans text-[13px] leading-6 text-ink-2">
+          {q.state.data}
+        </pre>
+      ) : null}
+    </div>
+  )
+}
+
+/** QA 对编辑器：qa_pairs（dialogue 唯一字段，ADR 0035）。列表=每对 q/a 两个
+ * 输入 + 删除；底部「添加一对」；确认走既有 PATCH 流程（source=human）。
+ * 空列表确认=「没有 QA」（发布闸门对 dialogue 不设必填，弃权/空都可发布）。 */
+function QaPairsEditor({
+  assetId,
+  versionNo,
+  view,
+  editable,
+  onSaved,
+}: {
+  assetId: number
+  versionNo: number
+  view: FieldView
+  editable: boolean
+  onSaved: () => void
+}) {
+  // 初始值=外部草稿/确认值（调用方按 key 重挂本组件：版本或来源变化即重置）
+  const [pairs, setPairs] = useState<QaPair[]>(view.qaPairs ?? [])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const invalid = pairs.some((p) => p.q.trim() === '' || p.a.trim() === '')
+
+  const confirmAll = async () => {
+    if (invalid || saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      await api.confirmFields(assetId, versionNo, {
+        qa_pairs: pairs.map((p) => ({ q: p.q.trim(), a: p.a.trim() })),
+      })
+      onSaved()
+    } catch (err) {
+      setError(detailText(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const updatePair = (index: number, next: QaPair) => {
+    setPairs((prev) => prev.map((p, i) => (i === index ? next : p)))
+    if (error !== null) setError(null)
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-title flex-wrap">
+        <span>QA 对 · v{versionNo}</span>
+        {view.source === 'human' ? (
+          <span className="tag tag-confirmed">
+            {view.inherited ? '继承自已发布版 · 已确认' : '已确认'}
+          </span>
+        ) : view.source === 'machine' ? (
+          <span className="tag tag-machine">机洗草稿</span>
+        ) : null}
+        <span className="text-xs font-normal text-ink-3">
+          确认后发布时按对成块「问：…/答：…」入检索；机洗草稿未确认不进索引
+        </span>
+      </div>
+      {pairs.length === 0 ? (
+        <div className="px-4 py-3.5 text-[13px] leading-6 text-ink-3">
+          {view.abstained
+            ? '机洗未抽出 QA（对话无可抽问答，或未配置模型）。可手动添加，也可直接确认「没有 QA」。'
+            : '暂无 QA 对：可手动添加，确认后发布只保留转写轮次证据。'}
+        </div>
+      ) : (
+        pairs.map((pair, i) => (
+          <div key={i} className="border-b border-line-1 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <span className="mt-2 w-5 shrink-0 font-mono text-xs tabular-nums text-ink-3">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <input
+                  className="input h-8 w-full text-[13px]"
+                  value={pair.q}
+                  placeholder="问（顾客问法）"
+                  disabled={!editable || saving}
+                  onChange={(e) => updatePair(i, { ...pair, q: e.target.value })}
+                />
+                <input
+                  className="input h-8 w-full text-[13px]"
+                  value={pair.a}
+                  placeholder="答（客服口径，以转写为出处）"
+                  disabled={!editable || saving}
+                  onChange={(e) => updatePair(i, { ...pair, a: e.target.value })}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm mt-1 shrink-0"
+                title="删除这一对"
+                disabled={!editable || saving}
+                onClick={() => setPairs((prev) => prev.filter((_, j) => j !== i))}
+              >
+                <Trash aria-hidden size={13} />
+              </button>
+            </div>
+            {pair.q.trim() === '' || pair.a.trim() === '' ? (
+              <div className="mt-1.5 pl-7 text-xs text-warn">问与答都须非空（禁止空串确认，0009）</div>
+            ) : null}
+          </div>
+        ))
+      )}
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={!editable || saving}
+          onClick={() => setPairs((prev) => [...prev, { q: '', a: '' }])}
+        >
+          <Plus aria-hidden size={13} />
+          添加一对
+        </button>
+        <span className="flex-1" />
+        {error !== null ? <span className="text-xs text-danger">{error}</span> : null}
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          disabled={!editable || saving || invalid}
+          onClick={() => void confirmAll()}
+        >
+          <CheckCircle aria-hidden size={13} />
+          {saving ? '确认中…' : pairs.length > 0 ? `确认 ${pairs.length} 对` : '确认「没有 QA」'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function versionRoleLabel(
   version: AssetVersion,
   currentPublishedNo: number | null,
@@ -264,6 +425,14 @@ export default function AssetDetailPage() {
       toFieldView(activeVersion, field, rule.required === true),
     )
   }, [activeVersion, product])
+
+  // dialogue 的唯一结构化字段：qa_pairs（ADR 0035）；编辑器读它的数组值
+  const qaView = useMemo<FieldView | null>(
+    () => (detail?.kind === 'dialogue' && activeVersion !== null
+      ? toFieldView(activeVersion, 'qa_pairs', false)
+      : null),
+    [detail?.kind, activeVersion],
+  )
 
   const requiredNames = useMemo(
     () =>
@@ -509,6 +678,20 @@ export default function AssetDetailPage() {
                 机洗成功前没有可处理的字段；就地重试不会产生新版本。
               </div>
             </div>
+          ) : null}
+
+          {detail.kind === 'dialogue' && activeVersion !== null && qaView !== null ? (
+            <>
+              <TranscriptPanel assetId={detail.id} versionNo={activeVersion.version_no} />
+              <QaPairsEditor
+                key={`${activeVersion.version_no}:${qaView.source ?? 'none'}:${JSON.stringify(qaView.qaPairs ?? [])}`}
+                assetId={detail.id}
+                versionNo={activeVersion.version_no}
+                view={qaView}
+                editable={editable}
+                onSaved={reloadDetail}
+              />
+            </>
           ) : null}
 
           {detail.product !== null && productQ.state.phase === 'loading' ? (
