@@ -89,11 +89,9 @@ def chunk_document(text: str) -> list[str]:
 
 def chunk_dialogue(text: str) -> list[str]:
     """对话转写切块：按行/轮成块（「顾客：…」「客服：…」一轮=一条证据）。"""
-    return [
-        line.strip()
-        for line in text.splitlines()
-        if len(line.strip()) >= _MIN_CHUNK_CHARS
-    ][:MAX_CHUNKS]
+    return [line.strip() for line in text.splitlines() if len(line.strip()) >= _MIN_CHUNK_CHARS][
+        :MAX_CHUNKS
+    ]
 
 
 def chunk_text(text: str, kind: str) -> list[str]:
@@ -214,6 +212,7 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
             & (Asset.current_published_version_id == AssetVersion.id)
             & (Asset.status == "published"),
         )
+        .order_by(RetrievalChunk.id)
         .limit(_MAX_CANDIDATE_ROWS)
     ).all()
     scored = [
@@ -229,5 +228,7 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
         if key not in unique:
             unique[key] = hit
     # 分数降序；并列按 (asset_id, chunk) 稳定排序，结果可重现
-    results = sorted(unique.values(), key=lambda hit: (-hit["score"], hit["asset_id"], hit["chunk"]))
+    results = sorted(
+        unique.values(), key=lambda hit: (-hit["score"], hit["asset_id"], hit["chunk"])
+    )
     return results[:top_k]

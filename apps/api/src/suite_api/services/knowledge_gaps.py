@@ -9,6 +9,7 @@ from datetime import datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from suite_api.models import KnowledgeGap
@@ -21,21 +22,35 @@ def record_refusal_gap(db: Session, question: str) -> KnowledgeGap:
     """拒答落缺口（0024）：精确幂等——同 question 文本且 open 时复用，不新建。
 
     在拒答消息同一事务内调用（复用与否与 agent 消息一起提交/回滚）；question
-    为顾客原问（已 strip，与 customer 消息同文），缺 D 级约束的并发窗口由
-    单操作者场景消化（0024 未锁去重策略，工程裁决只做应用层精确幂等）。
-    product_id 留空：拒答路径无法从自由文本可靠归属商品，不猜。flush 拿 id
-    供 SSE complete 事件的 gap_id（ADR 0030：运行时返回，不在消息表加列）。
+    为顾客原问（已 strip，与 customer 消息同文）。快路径仍是应用层
+    check-then-insert；并发窗口由部分唯一索引
+    ``uq_knowledge_gaps_open_question``（open 同行同问）兜底——IntegrityError
+    时 SAVEPOINT 回滚插入，再查已有 open 行返回。不可 session.rollback()：
+    会把同事务尚未提交的拒答消息一并丢掉。product_id 留空：拒答路径无法从
+    自由文本可靠归属商品，不猜。flush 拿 id 供 SSE complete 的 gap_id
+    （ADR 0030：运行时返回，不在消息表加列）。
     """
     gap = db.scalar(
-        select(KnowledgeGap).where(
-            KnowledgeGap.question == question, KnowledgeGap.status == OPEN
-        )
+        select(KnowledgeGap).where(KnowledgeGap.question == question, KnowledgeGap.status == OPEN)
     )
     if gap is not None:
         return gap
     gap = KnowledgeGap(question=question, status=OPEN)
-    db.add(gap)
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.add(gap)
+            db.flush()
+    except IntegrityError:
+        # SAVEPOINT 已回滚插入；未 expunge 则后续 SELECT 的 autoflush 会再插一次
+        if gap in db:
+            db.expunge(gap)
+        gap = db.scalar(
+            select(KnowledgeGap).where(
+                KnowledgeGap.question == question, KnowledgeGap.status == OPEN
+            )
+        )
+        if gap is None:
+            raise
     return gap
 
 
@@ -60,8 +75,7 @@ def load_attachable_gap(db: Session, gap_id: int) -> KnowledgeGap:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"该缺口已有登记中的补文档 A-{gap.resolved_by_asset_id}，"
-                "请先发布它或换一条缺口"
+                f"该缺口已有登记中的补文档 A-{gap.resolved_by_asset_id}，请先发布它或换一条缺口"
             ),
         )
     return gap

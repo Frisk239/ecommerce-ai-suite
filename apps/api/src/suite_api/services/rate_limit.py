@@ -23,6 +23,9 @@ import time
 from collections import deque
 from collections.abc import Callable
 
+# 每 N 次 check 扫一遍空 deque 的 key（进程内字典不会无限涨）；非 settings 旋钮
+_SWEEP_EVERY = 512
+
 
 class SlidingWindowLimiter:
     """单阈值滑动窗口：key -> 时间戳队列；check 通过即记账（check 与记录一体）。"""
@@ -39,6 +42,7 @@ class SlidingWindowLimiter:
         self._clock = clock
         self._events: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
+        self._checks = 0
 
     def check(self, key: str) -> int | None:
         """通过返回 None 并记账；超限返回剩余等待秒（Retry-After 口径，向上取整）。"""
@@ -50,9 +54,26 @@ class SlidingWindowLimiter:
                 events.popleft()
             if len(events) >= self._limit:
                 retry_after = self._window - (now - events[0])
-                return max(1, math.ceil(retry_after))
-            events.append(now)
-            return None
+                result = max(1, math.ceil(retry_after))
+            else:
+                events.append(now)
+                result = None
+            self._checks += 1
+            if self._checks % _SWEEP_EVERY == 0:
+                self._sweep(now)
+            return result
+
+    def _sweep(self, now: float) -> None:
+        """删掉已过期剪空的 key；仍有窗内事件的 key 保留。调用方已持锁。"""
+        cutoff = now - self._window
+        dead: list[str] = []
+        for key, events in self._events.items():
+            while events and events[0] <= cutoff:
+                events.popleft()
+            if not events:
+                dead.append(key)
+        for key in dead:
+            del self._events[key]
 
 
 # 默认阈值（spec Must 4）：窗口 60s；测试可用小阈值构造替换（app.state 注入）

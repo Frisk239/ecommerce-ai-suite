@@ -6,14 +6,22 @@
 行号口径（1 起数据行号，空行占号）。
 """
 
+import inspect
+
 import pytest
 
+from suite_api.routes.assets import import_csv
 from suite_api.services.csv_import import (
     MAX_CONTENT_BYTES,
     MAX_IMPORT_ROWS,
     CsvImportFormatError,
     parse_import_csv,
 )
+
+
+def test_import_csv_route_is_sync() -> None:
+    """同步 def：FastAPI 丢线程池，不冻事件循环。"""
+    assert inspect.iscoroutinefunction(import_csv) is False
 
 
 def test_bom_tolerated() -> None:

@@ -10,6 +10,7 @@ from suite_api.services.retrieval import (
     chunk_document,
     chunk_text,
     query_terms,
+    retrieve,
     score_chunk,
 )
 
@@ -67,7 +68,9 @@ def test_document_mixed_language() -> None:
 
 
 def test_dialogue_chunks_by_turn() -> None:
-    transcript = "顾客：保温杯的净含量是多少？\n客服：根据已发布的规格文档，净含量为480ml。\n顾客：谢谢"
+    transcript = (
+        "顾客：保温杯的净含量是多少？\n客服：根据已发布的规格文档，净含量为480ml。\n顾客：谢谢"
+    )
     # 对话按行/轮成块：一轮=一条证据，句中的问号句号不拆（轮次完整性优先）
     assert chunk_dialogue(transcript) == [
         "顾客：保温杯的净含量是多少？",
@@ -132,3 +135,22 @@ def test_score_chunk_length_normalization() -> None:
 def test_score_chunk_empty_terms_is_zero() -> None:
     assert score_chunk(frozenset(), "任意内容") == 0
     assert score_chunk(query_terms("的吗"), "净含量：480ml") == 0
+
+
+def test_retrieve_candidate_query_orders_by_chunk_id() -> None:
+    """万行截断按主键排序，避免无 ORDER BY 的非确定 LIMIT。"""
+
+    class _FakeResult:
+        def all(self) -> list:
+            return []
+
+    class _FakeDb:
+        def execute(self, stmt):
+            self.stmt = stmt
+            return _FakeResult()
+
+    db = _FakeDb()
+    assert retrieve(db, "净含量") == []  # type: ignore[arg-type]
+    compiled = str(db.stmt.compile(compile_kwargs={"literal_binds": True}))
+    normalized = " ".join(compiled.split())
+    assert "ORDER BY retrieval_chunks.id" in normalized

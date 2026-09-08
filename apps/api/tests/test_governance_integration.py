@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from suite_api.models import KnowledgeGap, RetrievalChunk
+from suite_api.services.rate_limit import SlidingWindowLimiter
 
 ApiFixture = tuple[TestClient, Path]
 
@@ -53,9 +54,16 @@ def _product_id_by_name(client: TestClient, name: str) -> int:
 
 def test_write_endpoints_require_login(api: ApiFixture) -> None:
     client, _ = api
-    assert client.post("/api/assets/register", files={"file": ("a.txt", b"x", "text/plain")}).status_code == 401
+    assert (
+        client.post(
+            "/api/assets/register", files={"file": ("a.txt", b"x", "text/plain")}
+        ).status_code
+        == 401
+    )
     assert client.post("/api/assets/1/retry-machine-wash").status_code == 401
-    assert client.patch("/api/assets/1/versions/1/fields", json={"净含量": "1ml"}).status_code == 401
+    assert (
+        client.patch("/api/assets/1/versions/1/fields", json={"净含量": "1ml"}).status_code == 401
+    )
     assert client.post("/api/assets/1/publish").status_code == 401
     assert client.post("/api/assets/1/revisions").status_code == 401
     assert client.post("/api/assets/1/rollback", json={"version_no": 1}).status_code == 401
@@ -86,6 +94,23 @@ def test_login_flow(api: ApiFixture) -> None:
     assert me.json()["username"] == "operator"
     assert client.post("/api/auth/logout").status_code == 200
     assert client.get("/api/auth/me").status_code == 401
+
+
+def test_login_rate_limit_429(api: ApiFixture) -> None:
+    """小阈值替换 login_limiter：第 3 次登录 429+Retry-After；错密也计入同一闸。"""
+    client, _ = api
+    original = client.app.state.login_limiter
+    client.app.state.login_limiter = SlidingWindowLimiter(2, 60.0)
+    try:
+        assert _login(client, password="wrong").status_code == 401
+        assert _login(client, password="wrong").status_code == 401
+        blocked = _login(client)  # 正确密码也计，第 3 次仍 429
+        assert blocked.status_code == 429
+        retry_after = blocked.headers.get("retry-after")
+        assert retry_after is not None and int(retry_after) >= 1
+        assert "请求过于频繁" in blocked.json()["detail"]
+    finally:
+        client.app.state.login_limiter = original
 
 
 def test_forged_cookie_rejected(api: ApiFixture) -> None:
@@ -160,7 +185,12 @@ def test_water_document_full_journey(api: ApiFixture) -> None:
     assert publish_row["asset_id"] == asset_id
 
     # 发布后不可变（0006）：PATCH 409、重复发布 409、retry 409
-    assert client.patch(f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "1ml"}).status_code == 409
+    assert (
+        client.patch(
+            f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "1ml"}
+        ).status_code
+        == 409
+    )
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 409
     assert client.post(f"/api/assets/{asset_id}/retry-machine-wash").status_code == 409
 
@@ -222,7 +252,9 @@ def test_machine_wash_failure_and_in_place_retry(api: ApiFixture) -> None:
     # 已接入态发布被 409；人洗也不可改（闸门不只看 published_at）
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 409
     assert (
-        client.patch(f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "1ml"}).status_code
+        client.patch(
+            f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "1ml"}
+        ).status_code
         == 409
     )
 
@@ -247,7 +279,10 @@ def test_machine_wash_failure_and_in_place_retry(api: ApiFixture) -> None:
     body = retry_ok.json()
     assert body["status"] == "pending_review"
     assert body["last_error"] is None
-    assert body["versions"][0]["extracted_fields"]["材质"] == {"value": "304不锈钢", "source": "machine"}
+    assert body["versions"][0]["extracted_fields"]["材质"] == {
+        "value": "304不锈钢",
+        "source": "machine",
+    }
 
 
 # ---------- 上传闸门：类型 / 大小 / 空文件 ----------
@@ -297,7 +332,9 @@ def test_confirm_fields_rejects_blank_and_unknown(api: ApiFixture) -> None:
     assert blank.status_code == 422
     unknown = client.patch(f"/api/assets/{asset_id}/versions/1/fields", json={"材质": "钛钢"})
     assert unknown.status_code == 422  # 食品类目没有材质字段
-    missing_version = client.patch(f"/api/assets/{asset_id}/versions/99/fields", json={"净含量": "1ml"})
+    missing_version = client.patch(
+        f"/api/assets/{asset_id}/versions/99/fields", json={"净含量": "1ml"}
+    )
     assert missing_version.status_code == 404
 
 
@@ -441,13 +478,13 @@ def test_confirm_fields_allows_unpublished_revision_on_published_asset(
 
     # 已发布 v1 仍不可改
     assert (
-        client.patch(f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "1ml"}).status_code
+        client.patch(
+            f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "1ml"}
+        ).status_code
         == 409
     )
     # 未发布 v2 可改；改动丢掉 inherited
-    patched = client.patch(
-        f"/api/assets/{asset_id}/versions/2/fields", json={"净含量": "600毫升"}
-    )
+    patched = client.patch(f"/api/assets/{asset_id}/versions/2/fields", json={"净含量": "600毫升"})
     assert patched.status_code == 200
     entry = patched.json()["confirmed_fields"]["净含量"]
     assert entry["value"] == "600毫升"
@@ -462,9 +499,7 @@ def test_publish_revision_moves_pointer_and_writes_back(api: ApiFixture) -> None
     asset_id = published["id"]
     water_id = published["product"]["id"]
     assert client.post(f"/api/assets/{asset_id}/revisions").status_code == 201
-    patched = client.patch(
-        f"/api/assets/{asset_id}/versions/2/fields", json={"净含量": "600毫升"}
-    )
+    patched = client.patch(f"/api/assets/{asset_id}/versions/2/fields", json={"净含量": "600毫升"})
     assert patched.status_code == 200
 
     published_v2 = client.post(f"/api/assets/{asset_id}/publish")
@@ -531,12 +566,20 @@ def test_rollback_moves_pointer_writes_back_and_audits(api: ApiFixture) -> None:
         assert v2_chunks, "回滚不删旧切块"
 
     # 已是当前指针 / 未知版本 / 未发布修订存在 → 409
-    assert client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 1}).status_code == 409
-    assert client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 99}).status_code == 409
+    assert (
+        client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 1}).status_code == 409
+    )
+    assert (
+        client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 99}).status_code == 409
+    )
     assert client.post(f"/api/assets/{asset_id}/revisions").status_code == 201
-    assert client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 2}).status_code == 409
+    assert (
+        client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 2}).status_code == 409
+    )
     # 未发布 v3 不能当回滚目标
-    assert client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 3}).status_code == 409
+    assert (
+        client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 3}).status_code == 409
+    )
 
 
 def test_rollback_clears_fields_absent_from_target_version(api: ApiFixture) -> None:
@@ -598,17 +641,13 @@ def test_open_revision_associates_knowledge_gap(api: ApiFixture) -> None:
         db.commit()
         gap_id = gap.id
 
-    opened = client.post(
-        f"/api/assets/{asset_id}/revisions", json={"knowledge_gap_id": gap_id}
-    )
+    opened = client.post(f"/api/assets/{asset_id}/revisions", json={"knowledge_gap_id": gap_id})
     assert opened.status_code == 201
     row = next(g for g in client.get("/api/knowledge-gaps").json() if g["id"] == gap_id)
     assert row["status"] == "open"
     assert row["resolved_by_asset_id"] == asset_id
 
-    second = client.post(
-        f"/api/assets/{asset_id}/revisions", json={"knowledge_gap_id": gap_id}
-    )
+    second = client.post(f"/api/assets/{asset_id}/revisions", json={"knowledge_gap_id": gap_id})
     assert second.status_code == 409  # 已有未发布修订，且缺口已挂
 
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200

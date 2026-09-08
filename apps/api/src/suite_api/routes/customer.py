@@ -54,7 +54,9 @@ def client_ip(request: Request) -> str:
     强制覆盖该头（README 顾客通道节写明两模式语义）。
     """
     forwarded = (
-        request.headers.get("x-forwarded-for") if request.app.state.settings.customer_trust_proxy else None
+        request.headers.get("x-forwarded-for")
+        if request.app.state.settings.customer_trust_proxy
+        else None
     )
     first_hop = forwarded.split(",", 1)[0].strip() if forwarded else ""
     # 首跳空白（如「 , 10.0.0.1」的畸形头）不落空串 key：空串会让所有畸形
@@ -92,7 +94,9 @@ def _rate_limited(retry_after: int) -> HTTPException:
     )
 
 
-@router.post("/sessions", response_model=CustomerSessionCreated, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/sessions", response_model=CustomerSessionCreated, status_code=status.HTTP_201_CREATED
+)
 def create_session(
     request: Request,
     db: Annotated[Session, Depends(get_db)] = None,
@@ -155,9 +159,14 @@ async def ask(
         )
     question = body.content.strip()
     if not question:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="消息内容不能为空")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="消息内容不能为空"
+        )
 
     outcome = await run_ask(db, session, question)
+    # SSE 生成器不碰 DB：返回前归还连接，慢客户端不再钉住池（get_db 幂等 close）
+    db.commit()
+    db.close()
     return StreamingResponse(
         sse_event_stream(outcome, expose_gap_id=False), media_type="text/event-stream"
     )

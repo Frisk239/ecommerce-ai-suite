@@ -15,12 +15,13 @@
 已完整收全并落库——含第 7 刀的厂商模型流（先收全再流，而非边流边攒）：服务
 端不存在「部分产出」，断连=客户端停止订阅，agent 消息仍完整入库，SSE 只是
 传输；中断（stopped）语义由前端表达。async 是流式收集（await llm.stream_chat）
-所需；同步 DB 调用直接在事件循环上跑（0016 单操作者单店，无并发多写场景），
-生成等待期间 Session 空闲持连接至多 20s（超时上限），属可接受取舍。
+所需；同步 DB 调用直接在事件循环上跑。LLM 等待前显式 commit 结束只读事务，
+20s 等待不得 idle-in-transaction 占连接（写阶段 autobegin 重取）。
 
 双 commit 取舍：先落 customer 问句再组装落 agent 回答，两个独立 commit。agent
 组装失败会留下已落库的顾客问句——属可接受残留：问题真实发生过，不因回答侧
-失败而抹掉提问记录。
+失败而抹掉提问记录。LLM 前再 commit 一次只为归还连接，不改变「问句与回答
+分两事务」的语义。
 """
 
 import json
@@ -97,6 +98,9 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     # 2) 检索当前已发布版本 -> 组装（模板回答=降级兜底，citations 选取也以它为准）
     hits = retrieve(db, question)
     answer = compose_answer(hits, assets_meta(db, hits))
+    # 结束只读事务：LLM 等待（至多 20s）不得 idle-in-transaction 占连接。
+    # 写阶段（agent 消息）autobegin 再取连接。citations 仍以本问检索快照为准。
+    db.commit()
 
     # 2.5) 厂商生成（第 7 刀，ADR 0033）：有证据才调模型（0018 无证据不调）。
     #      stream_chat 契约：只抛 LLMError 子类（超时/连接已转通用文案）；
