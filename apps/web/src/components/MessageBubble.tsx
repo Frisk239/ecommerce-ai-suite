@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom'
 import { ChatCircleDots, HandArrowUp, UserCircle } from '@phosphor-icons/react'
 import type { ServiceCitation } from '../api/types'
 import CitationChip from './CitationChip'
-import { formatGapId, formatTime } from '../labels'
+import { formatAssetId, formatGapId, formatTime } from '../labels'
 
 /** 展示用消息 = 服务器消息 + 本地流式追加（streaming/stopped 是前端表达，不进 API 类型）。 */
 export interface UiMessage {
@@ -62,10 +62,9 @@ export function toUi(m: {
 
 /** 顾客侧引用芯片：同 cite-chip 视觉，不可跳转（顾客页不进操作者控制台）。 */
 function CitationChipPlain({ assetId, version }: { assetId: number; version: number }) {
-  const label = `A-${String(assetId).padStart(4, '0')} · v${version}`
   return (
     <span className="cite-chip" title="回答依据的已发布资料版本">
-      {label}
+      {formatAssetId(assetId)} · v{version}
     </span>
   )
 }

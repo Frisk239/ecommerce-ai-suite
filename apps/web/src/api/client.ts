@@ -143,7 +143,9 @@ async function streamSse(
   try {
     resp = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
-      credentials: 'include',
+      // 顾客 Bearer 通道（传 headers 时）不带操作者 cookie（0033：不用操作者
+      // cookie；服务端虽不消费，也不随请求外发）；操作者通道维持 include
+      credentials: headers === undefined ? 'include' : 'omit',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
       signal,

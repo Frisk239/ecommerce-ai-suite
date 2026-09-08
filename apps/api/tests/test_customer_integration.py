@@ -228,3 +228,26 @@ def test_customer_rate_limit_429_with_retry_after(api: ApiFixture) -> None:
         assert int(limited.headers["retry-after"]) >= 1
     finally:
         client.app.state.customer_rate_limits = original
+
+
+def test_rate_limit_ip_key_uses_xff_first_hop(api: ApiFixture) -> None:
+    """IP 托底口径（spec Must 4）：带 X-Forwarded-For 时按第一跳记账——伪造
+    不同第一跳的请求各自占独立配额，互不挤占；无头时落回 remote addr。"""
+    client, _ = api
+    client.cookies.clear()
+    original = client.app.state.customer_rate_limits
+    client.app.state.customer_rate_limits = CustomerRateLimits(
+        session_ask_limit=50, ip_ask_limit=50, ip_create_limit=1
+    )
+    try:
+        # 同一「第一跳」建两次会话 -> 第二次 429；换第一跳 -> 又能建（各自记账）
+        assert (
+            client.post("/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.1"}).status_code
+            == 201
+        )
+        blocked = client.post("/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.2"})
+        assert blocked.status_code == 429
+        other = client.post("/api/customer/sessions", headers={"X-Forwarded-For": "198.51.100.9"})
+        assert other.status_code == 201
+    finally:
+        client.app.state.customer_rate_limits = original
