@@ -14,7 +14,7 @@ export function ErrorBanner({
   return (
     <div
       role="alert"
-      className="mb-4 flex items-start gap-2.5 rounded-[8px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3.5 py-2.5"
+      className="mb-4 flex items-start gap-2.5 rounded-[8px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3.5 py-2.5 shadow-sm"
     >
       <Warning aria-hidden size={15} className="mt-px shrink-0 text-danger" />
       <div className="min-w-0 flex-1 text-[13px] leading-5 text-danger">{detailText(error)}</div>
@@ -32,7 +32,7 @@ export function SuccessBanner({ children }: { children: ReactNode }) {
   return (
     <div
       role="status"
-      className="mb-4 flex items-center gap-2.5 rounded-[8px] border border-[rgba(30,107,69,0.22)] bg-[rgba(30,107,69,0.05)] px-3.5 py-2.5 text-[13px] leading-5 text-ok"
+      className="mb-4 flex items-center gap-2.5 rounded-[8px] border border-[rgba(30,107,69,0.22)] bg-[rgba(30,107,69,0.05)] px-3.5 py-2.5 text-[13px] leading-5 text-ok shadow-sm"
     >
       <CheckCircle aria-hidden size={15} weight="fill" className="shrink-0" />
       {children}

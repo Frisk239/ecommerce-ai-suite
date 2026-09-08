@@ -321,7 +321,9 @@ export default function ServicePage() {
                     <button
                       type="button"
                       className={`w-full px-3 py-2.5 text-left transition-colors duration-150 ${
-                        selected ? 'bg-[rgba(65,118,230,0.06)]' : 'hover:bg-[rgba(38,49,72,0.04)]'
+                        selected
+                          ? 'bg-accent-soft shadow-[inset_2px_0_0_var(--color-accent)]'
+                          : 'hover:bg-hover'
                       }`}
                       onClick={() => selectSession(s.id)}
                     >
@@ -430,7 +432,7 @@ export default function ServicePage() {
             </div>
 
             {/* 消息流 */}
-            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+            <div className="chat-scroll flex-1 space-y-3 overflow-y-auto px-4 py-4">
               {messages.length === 0 && (
                 <div className="py-6 text-center text-[13px] text-caption">
                   扮演顾客提问试试：
@@ -439,7 +441,7 @@ export default function ServicePage() {
                       <button
                         key={q}
                         type="button"
-                        className="btn btn-ghost btn-sm"
+                        className="btn btn-secondary btn-sm"
                         onClick={() => void send(q)}
                         disabled={!canAsk}
                       >
@@ -457,7 +459,7 @@ export default function ServicePage() {
 
             {/* composer：仅进行中会话；流式期间锁输入、发送钮原位变停止钮 */}
             {isActiveSession ? (
-              <div className="border-t border-line-2 p-3">
+              <div className="rounded-b-[8px] border-t border-line-2 bg-white p-3">
                 <div className="msg-composer">
                   <textarea
                     ref={taRef}

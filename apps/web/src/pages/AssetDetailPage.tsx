@@ -59,7 +59,7 @@ function FieldRow({
   }
 
   return (
-    <div className="border-b border-line-1 px-4 py-2.5 last:border-b-0">
+    <div className="field-row border-b border-line-1 px-4 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <div className="w-24 shrink-0 text-[13px] text-ink-2">
           {view.field}
@@ -549,7 +549,7 @@ export default function AssetDetailPage() {
         </div>
 
         {/* 侧栏 */}
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-[72px]">
           <div className="panel px-4 py-4">
             <div className="mb-3 text-xs font-medium text-ink-3">治理动作</div>
             {(detail.status === 'pending_review' || revising) && activeVersion !== null ? (
@@ -695,7 +695,7 @@ export default function AssetDetailPage() {
                     className={
                       isAnchored
                         ? 'border-b border-line-1 bg-[rgba(65,118,230,0.06)] px-4 py-2.5 shadow-[inset_3px_0_0_var(--color-accent)] last:border-b-0'
-                        : 'border-b border-line-1 px-4 py-2.5 last:border-b-0'
+                        : 'border-b border-line-1 px-4 py-2.5 transition-colors duration-150 last:border-b-0 hover:bg-hover'
                     }
                   >
                     <div className="flex items-center gap-2.5">

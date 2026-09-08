@@ -90,7 +90,7 @@ export default function MessageBubble({
         {grouped ? (
           <div className="w-7 shrink-0" />
         ) : (
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line-2 bg-surface">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line-2 bg-white shadow-sm">
             <UserCircle aria-hidden size={15} className="text-caption" />
           </div>
         )}

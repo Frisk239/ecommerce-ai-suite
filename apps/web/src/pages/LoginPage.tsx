@@ -40,10 +40,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
+    <div className="login-page flex min-h-screen items-center justify-center bg-canvas px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-[#0F1115]">
+          <span className="brand-mark flex h-8 w-8 items-center justify-center rounded-[8px]">
             <Database aria-hidden size={16} weight="bold" className="text-white" />
           </span>
           <span className="text-[17px] font-semibold tracking-tight text-ink">电商 AI 套件</span>
@@ -95,6 +95,10 @@ export default function LoginPage() {
             {submitting ? '登录中…' : '登录'}
           </button>
         </form>
+
+        <p className="mt-4 text-center text-[11px] leading-4 text-caption">
+          本地开发环境 · 凭证见仓库 .env.example（生产必换）
+        </p>
       </div>
     </div>
   )
