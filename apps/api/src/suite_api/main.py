@@ -23,6 +23,7 @@ from suite_api.routes import (
     customer,
     health,
     knowledge_gaps,
+    material,
     products,
     service,
 )
@@ -102,6 +103,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(audit.router)
     app.include_router(service.router)
     app.include_router(knowledge_gaps.router)
+    # 素材中心（第 17 刀/ADR 0038）：任务不是中台对象（0012），六端点全操作者鉴权
+    app.include_router(material.router)
     # 顾客通道（ADR 0021/0033）：无操作者鉴权，Bearer 令牌 + 两级限流在路由内；
     # 限流器挂 app.state（测试可替换为小阈值/假时钟实例）
     app.include_router(customer.router)
