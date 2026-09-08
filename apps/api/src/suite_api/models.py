@@ -285,6 +285,32 @@ class ClipCandidate(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class CoachRecord(Base):
+    """ADR 0040：考核记录=销售考核模块自有，不是中台对象（0027 考核不是资产）。
+
+    不能被检索、不能发布、不进治理台、无 MCP 触点。question_key 是题源锚
+    {asset_id, version_no, source: qa|transcript, pair_index}（0007 引用口径：
+    抽的是当时的已发布版本）；题目本身不落库，由 derive_questions 从已发布
+    dialogue 动态推导，记录只存作答时刻的题面/标准答案快照。score 为三维分
+    + 评语 {accurate, evidence, tone, comment}，NULL=未评分（LLM 未配置/失败/
+    坏输出，无降级——打分是考核的本体），last_error 记原因可重评。
+    model_name 是打分时刻的 settings.llm_model 快照（回放显示扮演底座）。
+    """
+
+    __tablename__ = "coach_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operator_name: Mapped[str] = mapped_column(String(120))  # 单操作者 v1：受训者=操作者名
+    question_key: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    question_text: Mapped[str] = mapped_column(Text)  # 题面快照（题可能随修订消失，回放要稳）
+    standard_answer: Mapped[str | None] = mapped_column(Text)  # 转写兜底题无标准答案
+    trainee_answer: Mapped[str] = mapped_column(Text)
+    score: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    model_name: Mapped[str | None] = mapped_column(String(120))  # 成功打分时落底座名快照
+    last_error: Mapped[str | None] = mapped_column(String(500))  # 未评分原因；重评成功清空
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class KnowledgeGap(Base):
     """ADR 0024/0030：知识缺口=无证据拒答留下的待补项，可挂商品。
 

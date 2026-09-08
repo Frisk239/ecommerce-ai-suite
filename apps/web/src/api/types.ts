@@ -246,6 +246,49 @@ export interface ClipCandidate {
   created_at: string
 }
 
+// ---------- 销售考核（routes/coach.py 契约，第 19 刀/ADR 0040） ----------
+
+/** 题源锚（0007 引用口径：题面=该资产该已发布版本里的内容）。
+ * source=qa：confirmed 问答对逐对成题（pair_index 定位）；
+ * source=transcript：弃权/空时转写首问兜底（standard_answer 为 null）。 */
+export interface CoachQuestionKey {
+  asset_id: number
+  version_no: number
+  source: 'qa' | 'transcript'
+  pair_index: number | null
+}
+
+/** 三维分（原型 RUBRIC 冻结口径，0040）：口径准确 40 / 证据贴合 30 / 服务语气 30。 */
+export interface CoachScore {
+  accurate: number
+  evidence: number
+  tone: number
+  comment: string
+}
+
+export interface CoachQuestion {
+  key: CoachQuestionKey
+  question: string
+  standard_answer: string | null
+  asset_title: string | null
+}
+
+/** 考核记录不是中台对象（0027）：status 由 score 是否 NULL 派生——
+ * unscored=LLM 未配置/失败/坏输出（无降级，last_error 记原因），可重评。 */
+export interface CoachRecord {
+  id: number
+  operator_name: string
+  question_key: CoachQuestionKey
+  question_text: string
+  standard_answer: string | null
+  trainee_answer: string
+  score: CoachScore | null
+  model_name: string | null
+  last_error: string | null
+  status: 'scored' | 'unscored'
+  created_at: string
+}
+
 // ---------- 顾客通道（routes/customer.py 契约，ADR 0021/0033） ----------
 
 /** POST /customer/sessions 签发：令牌只在此响应完整出现一次，顾客侧自行保存。 */
