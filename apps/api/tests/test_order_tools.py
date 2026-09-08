@@ -1,0 +1,357 @@
+"""订单工具单测（第 13 刀/ADR 0036，无 DB）：
+
+- 正则分派纯函数：命中/不命中/大小写归一。
+- get_order_status 三分支（fake session：命中/查无/DB 异常吞成 {error: True}）。
+- 工具条摘要与模板组装文案（确定性，中文）。
+- run_ask 分派：订单路径 retrieve 零调用、record_refusal_gap 零调用
+  （handoff 不产生缺口，0024）、LLM 不调用、handoff kind/文案；非订单路径
+  对 get_order_status 零调用（既有路径零漂移的另一半，commit 序列由
+  test_chat_engine.py 钉）。
+- sse_event_stream：订单路径事件序（thinking(查询订单中…) -> tool -> delta*
+  -> complete 带 tool）；非订单路径首事件与既有形状不变（complete.tool=None）。
+"""
+
+import asyncio
+import json
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import MagicMock
+
+import pytest
+from sqlalchemy.exc import SQLAlchemyError
+
+from suite_api.models import ServiceMessage
+from suite_api.services import order_tools
+from suite_api.services.answer import ComposedAnswer
+from suite_api.services.chat_engine import AskOutcome, run_ask, sse_event_stream
+
+
+def _parse(events: list[str]) -> list[tuple[str, dict[str, Any]]]:
+    out: list[tuple[str, dict[str, Any]]] = []
+    for block in events:
+        lines = block.strip().splitlines()
+        event = next(line.removeprefix("event: ") for line in lines if line.startswith("event: "))
+        data = json.loads(
+            next(line.removeprefix("data: ") for line in lines if line.startswith("data: "))
+        )
+        out.append((event, data))
+    return out
+
+
+# ---------- 分派正则 ----------
+
+
+def test_find_order_no_hits() -> None:
+    assert order_tools.find_order_no("我的订单 SO-1001 到哪了？") == "SO-1001"
+    # 大小写不敏感 + 归一大写（seed/查询口径统一）
+    assert order_tools.find_order_no("查下 so-42 谢谢") == "SO-42"
+    # 多单号取首个
+    assert order_tools.find_order_no("SO-1 和 SO-2 哪个先到") == "SO-1"
+
+
+def test_find_order_no_misses() -> None:
+    assert order_tools.find_order_no("保温杯的净含量是多少？") is None
+    assert order_tools.find_order_no("SO-") is None
+    assert order_tools.find_order_no("SO一1001") is None
+    assert order_tools.find_order_no("") is None
+
+
+# ---------- get_order_status 三分支（fake session） ----------
+
+
+class _FakeSession:
+    def __init__(self, scalar_result: Any = None, scalar_error: Exception | None = None) -> None:
+        self._result = scalar_result
+        self._error = scalar_error
+        self.rollback_calls = 0
+
+    def scalar(self, *_a: Any, **_k: Any) -> Any:
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+    def rollback(self) -> None:
+        self.rollback_calls += 1
+
+
+def test_get_order_status_found() -> None:
+    order = SimpleNamespace(
+        order_no="SO-1001",
+        status="已发货",
+        items=[{"name": "瓶装水", "qty": 2}],
+        events=[{"at": "2026-09-05 09:12", "text": "包裹揽收"}],
+    )
+    result = order_tools.get_order_status(_FakeSession(scalar_result=order), "SO-1001")  # type: ignore[arg-type]
+    assert result == {
+        "found": True,
+        "order_no": "SO-1001",
+        "status": "已发货",
+        "items": [{"name": "瓶装水", "qty": 2}],
+        "events": [{"at": "2026-09-05 09:12", "text": "包裹揽收"}],
+    }
+
+
+def test_get_order_status_not_found() -> None:
+    assert order_tools.get_order_status(_FakeSession(scalar_result=None), "SO-9999") == {  # type: ignore[arg-type]
+        "found": False
+    }
+
+
+def test_get_order_status_db_error_swallowed() -> None:
+    session = _FakeSession(scalar_error=SQLAlchemyError("db down"))
+    result = order_tools.get_order_status(session, "SO-1001")  # type: ignore[arg-type]
+    assert result == {"error": True}
+    # 异常后尽力回滚恢复会话可用（handoff 消息还要在同 session 落库）
+    assert session.rollback_calls == 1
+
+
+# ---------- 摘要与模板组装 ----------
+
+
+def test_summarize_tool_result() -> None:
+    assert (
+        order_tools.summarize_tool_result(
+            {"found": True, "status": "已发货", "events": [{}, {}]}
+        )
+        == "已发货 · 2 个物流事件"
+    )
+    assert order_tools.summarize_tool_result({"found": False}) == "未找到"
+    assert order_tools.summarize_tool_result({"error": True}) == "查询失败"
+
+
+def test_render_order_answer_deterministic_template() -> None:
+    content = order_tools.render_order_answer(
+        {
+            "found": True,
+            "order_no": "SO-1001",
+            "status": "已发货",
+            "items": [{"name": "瓶装水", "qty": 2}, {"name": "钛钢保温杯", "qty": 1}],
+            "events": [
+                {"at": "2026-09-05 09:12", "text": "商家已发货，包裹揽收"},
+                {"at": "2026-09-05 20:40", "text": "快件已到达杭州转运中心"},
+            ],
+        }
+    )
+    assert content == (
+        "订单 SO-1001 当前状态：已发货。\n"
+        "商品：瓶装水 ×2、钛钢保温杯 ×1。\n"
+        "物流轨迹：\n"
+        "- 2026-09-05 09:12 商家已发货，包裹揽收\n"
+        "- 2026-09-05 20:40 快件已到达杭州转运中心"
+    )
+
+
+def test_render_handoff_content() -> None:
+    assert order_tools.render_handoff_content("SO-9999", {"found": False}) == (
+        "订单 SO-9999 未找到，已转人工，请人工核实单号。"
+    )
+    assert order_tools.render_handoff_content("SO-1001", {"error": True}) == (
+        "订单查询失败，已转人工。"
+    )
+
+
+# ---------- run_ask 分派（MagicMock db，不碰真库） ----------
+
+
+_HIT_RESULT = {
+    "found": True,
+    "order_no": "SO-1001",
+    "status": "已发货",
+    "items": [{"name": "瓶装水", "qty": 2}],
+    "events": [{"at": "2026-09-05 09:12", "text": "包裹揽收"}],
+}
+
+
+def _guards(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """检索/缺口/LLM 全部装哨兵：订单路径必须一个都不碰。"""
+    calls = {"retrieve": 0, "gap": 0, "llm": 0}
+
+    def _boom(name: str) -> Any:
+        def _fn(*_a: Any, **_k: Any) -> Any:
+            calls[name] += 1
+            raise AssertionError(f"订单工具路径不允许触发 {name}（0036/0018/0024）")
+
+        return _fn
+
+    monkeypatch.setattr("suite_api.services.chat_engine.retrieve", _boom("retrieve"))
+    monkeypatch.setattr("suite_api.services.chat_engine.assets_meta", _boom("retrieve"))
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.record_refusal_gap", _boom("gap")
+    )
+
+    async def _no_llm(*_a: Any, **_k: Any) -> Any:
+        calls["llm"] += 1
+        raise AssertionError("订单工具路径不调 LLM（0036 v1 模板组装）")
+        yield ""  # pragma: no cover
+
+    monkeypatch.setattr("suite_api.services.chat_engine.llm.stream_chat", _no_llm)
+    return calls
+
+
+def _mock_db() -> MagicMock:
+    db = MagicMock()
+    db.refresh = MagicMock()
+    return db
+
+
+def test_run_ask_order_found_template_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _guards(monkeypatch)
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.get_order_status",
+        lambda *_a, **_k: dict(_HIT_RESULT),
+    )
+    session = MagicMock()
+    session.id = 1
+
+    outcome = asyncio.run(run_ask(_mock_db(), session, "我的订单 SO-1001 到哪了？"))
+
+    assert calls == {"retrieve": 0, "gap": 0, "llm": 0}
+    assert outcome.answer.kind == "answer"
+    assert outcome.answer.handoff is False
+    assert outcome.answer.citations == []
+    assert outcome.gap is None
+    assert outcome.generated is False
+    assert outcome.fallback is False
+    assert outcome.tool == {
+        "name": "get_order_status",
+        "arg": "SO-1001",
+        "result": "已发货 · 1 个物流事件",
+    }
+    assert "当前状态：已发货" in outcome.agent_message.content
+
+
+def test_run_ask_order_not_found_handoff_without_gap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _guards(monkeypatch)
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.get_order_status", lambda *_a, **_k: {"found": False}
+    )
+    session = MagicMock()
+    session.id = 1
+
+    outcome = asyncio.run(run_ask(_mock_db(), session, "订单 SO-9999 呢？"))
+
+    assert calls == {"retrieve": 0, "gap": 0, "llm": 0}
+    assert outcome.answer.kind == "handoff"
+    assert outcome.answer.handoff is True
+    assert outcome.gap is None
+    assert outcome.agent_message.content == (
+        "订单 SO-9999 未找到，已转人工，请人工核实单号。"
+    )
+    assert outcome.tool == {
+        "name": "get_order_status",
+        "arg": "SO-9999",
+        "result": "未找到",
+    }
+
+
+def test_run_ask_order_error_handoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _guards(monkeypatch)
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.get_order_status", lambda *_a, **_k: {"error": True}
+    )
+    session = MagicMock()
+    session.id = 1
+
+    outcome = asyncio.run(run_ask(_mock_db(), session, "SO-1 什么情况"))
+
+    assert calls == {"retrieve": 0, "gap": 0, "llm": 0}
+    assert outcome.answer.kind == "handoff"
+    assert outcome.answer.handoff is True
+    assert outcome.agent_message.content == "订单查询失败，已转人工。"
+    assert outcome.tool["result"] == "查询失败"
+
+
+def test_run_ask_non_order_never_touches_order_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """非订单问题对工具零调用（既有路径零漂移的前置条件；commit 序列由
+    test_chat_engine 钉）。"""
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.get_order_status",
+        lambda *_a, **_k: pytest.fail("非订单问题不得调用订单工具"),
+    )
+    monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: [])
+    monkeypatch.setattr("suite_api.services.chat_engine.assets_meta", lambda *_a, **_k: {})
+
+    outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "保温杯的材质是什么？"))
+
+    assert outcome.tool is None
+    assert outcome.answer.kind == "refusal"  # 空检索 -> 既有拒答路径原样
+
+
+# ---------- SSE 事件序 ----------
+
+
+def _order_outcome() -> AskOutcome:
+    message = ServiceMessage(
+        session_id=1,
+        role="agent",
+        content="订单 SO-1001 当前状态：已发货。",
+        citations=[],
+        kind="answer",
+        handoff=False,
+        tool={"name": "get_order_status", "arg": "SO-1001", "result": "已发货 · 2 个物流事件"},
+    )
+    message.id = 77
+
+    return AskOutcome(
+        agent_message=message,
+        answer=ComposedAnswer(
+            content=message.content, citations=[], kind="answer", handoff=False
+        ),
+        gap=None,
+        generated=False,
+        fallback=False,
+        tool=dict(message.tool),
+    )
+
+
+def test_sse_stream_order_path_events() -> None:
+    events = _parse(list(sse_event_stream(_order_outcome())))
+    kinds = [event for event, _ in events]
+    assert kinds[0] == "thinking"
+    assert kinds[0:2] == ["thinking", "tool"]
+    assert kinds[-1] == "complete"
+    assert events[0][1] == {"text": "查询订单中…"}
+    assert events[1][1] == {
+        "name": "get_order_status",
+        "arg": "SO-1001",
+        "result": "已发货 · 2 个物流事件",
+    }
+    complete = events[-1][1]
+    assert complete["kind"] == "answer"
+    assert complete["citations"] == []
+    assert complete["tool"] == events[1][1]
+    assert complete["gap_id"] is None  # 操作者通道：键在但恒 null（无缺口）
+    assert "".join(d["text"] for e, d in events if e == "delta") == (
+        "订单 SO-1001 当前状态：已发货。"
+    )
+
+
+def test_sse_stream_customer_order_same_shape_without_gap_id() -> None:
+    events = _parse(list(sse_event_stream(_order_outcome(), expose_gap_id=False)))
+    tool_events = [data for event, data in events if event == "tool"]
+    assert len(tool_events) == 1  # 顾客通道同形状不裁剪
+    complete = events[-1][1]
+    assert "gap_id" not in complete
+    assert complete["tool"] == tool_events[0]
+
+
+def test_sse_stream_non_order_unchanged_shape() -> None:
+    """非订单路径：首 thinking 文案与既有逐字节一致，complete 仅多 tool:null 键。"""
+    message = ServiceMessage(session_id=1, role="agent", content="答", citations=[], kind="answer")
+    message.id = 1
+
+    outcome = AskOutcome(
+        agent_message=message,
+        answer=ComposedAnswer(content="答", citations=[], kind="answer", handoff=False),
+        gap=None,
+        generated=False,
+        fallback=False,
+    )
+    events = _parse(list(sse_event_stream(outcome)))
+    assert events[0] == ("thinking", {"text": "正在检索已发布资产…"})
+    assert [event for event, _ in events if event == "tool"] == []
+    assert events[-1][1]["tool"] is None

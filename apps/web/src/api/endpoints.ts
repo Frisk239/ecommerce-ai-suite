@@ -18,18 +18,24 @@ import type {
   ServiceSession,
   ServiceSessionDetail,
   ServiceSessionSummary,
+  ToolCallRecord,
 } from './types'
 
-/** 客服发问的 SSE 回调（thinking → delta* → complete 状态机，UX-NOTES §二点八）。 */
+/** 客服发问的 SSE 回调（thinking → [tool] → delta* → complete 状态机，
+ * UX-NOTES §二点八；tool 仅订单工具路径出现，第 13 刀/ADR 0036）。 */
 export interface AskHandlers {
   onThinking: (text: string) => void
+  /** 工具调用条数据（{name, arg, result}）：complete 前到达，工具条即时呈现。 */
+  onTool: (record: ToolCallRecord) => void
   onDelta: (text: string) => void
   onComplete: (payload: ServiceAnswerComplete) => void
 }
 
-/** 顾客发问的 SSE 回调：同状态机，complete 载荷无 gap_id（服务端白名单裁剪）。 */
+/** 顾客发问的 SSE 回调：同状态机，complete 载荷无 gap_id（服务端白名单裁剪；
+ * tool 不裁剪——两通道同形状，0036）。 */
 export interface CustomerAskHandlers {
   onThinking: (text: string) => void
+  onTool: (record: ToolCallRecord) => void
   onDelta: (text: string) => void
   onComplete: (payload: CustomerAnswerComplete) => void
 }
@@ -102,6 +108,9 @@ export const api = {
       (evt: SseEvent) => {
         if (evt.event === 'thinking' && typeof evt.data.text === 'string') {
           handlers.onThinking(evt.data.text)
+        } else if (evt.event === 'tool' && typeof evt.data.name === 'string') {
+          // 0036 订单工具：{name, arg, result} 直传给工具条（两通道同形状）
+          handlers.onTool(evt.data as unknown as ToolCallRecord)
         } else if (evt.event === 'delta' && typeof evt.data.text === 'string') {
           handlers.onDelta(evt.data.text)
         } else if (evt.event === 'complete') {
@@ -128,6 +137,9 @@ export const api = {
       (evt: SseEvent) => {
         if (evt.event === 'thinking' && typeof evt.data.text === 'string') {
           handlers.onThinking(evt.data.text)
+        } else if (evt.event === 'tool' && typeof evt.data.name === 'string') {
+          // 顾客通道同样有工具条：单号本由提问者给出，无裁剪（0036）
+          handlers.onTool(evt.data as unknown as ToolCallRecord)
         } else if (evt.event === 'delta' && typeof evt.data.text === 'string') {
           handlers.onDelta(evt.data.text)
         } else if (evt.event === 'complete') {

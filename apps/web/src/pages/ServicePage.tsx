@@ -29,6 +29,8 @@ const SUGGESTIONS = [
   '饮用水的保质期是多久？',
   '怎么退货？',
   '保温杯的材质是什么？',
+  // 第 13 刀/ADR 0036：带单号即命中订单工具（种子 mock 单 SO-1001 已发货）
+  '我的订单 SO-1001 到哪了？',
 ]
 
 function SessionStatusBadge({ status }: { status: ServiceSessionSummary['status'] }) {
@@ -164,6 +166,7 @@ export default function ServicePage() {
         thinkingText: null,
         gapId: null,
         fallback: false,
+        tool: null,
       },
       {
         key: agentKey,
@@ -179,6 +182,7 @@ export default function ServicePage() {
         thinkingText: null,
         gapId: null,
         fallback: false,
+        tool: null,
       },
     ])
     const controller = new AbortController()
@@ -193,6 +197,10 @@ export default function ServicePage() {
             setLive((prev) =>
               prev.map((m) => (m.key === agentKey ? { ...m, thinkingText: t } : m)),
             ),
+          // 0036：tool 事件先于 delta 到达（工具条随引擎调用即时落上）；
+          // 重载会话时由消息表 tool 列经 toUi 还原（回放同形状）
+          onTool: (record) =>
+            setLive((prev) => prev.map((m) => (m.key === agentKey ? { ...m, tool: record } : m))),
           onDelta: (piece) =>
             setLive((prev) =>
               prev.map((m) => (m.key === agentKey ? { ...m, content: m.content + piece } : m)),
@@ -212,6 +220,7 @@ export default function ServicePage() {
                       stopped: false,
                       gapId: payload.gap_id ?? null,
                       fallback: payload.fallback ?? false,
+                      tool: payload.tool ?? m.tool,
                     }
                   : m,
               ),

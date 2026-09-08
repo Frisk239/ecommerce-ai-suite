@@ -29,7 +29,7 @@ _FIELD_CAPTURE_RE = re.compile(r"^([\u4e00-\u9fa5A-Za-z0-9]{1,12}?)\s*[:：]\s*(
 class ComposedAnswer:
     content: str
     citations: list[dict[str, Any]]
-    kind: str  # "answer" | "refusal"
+    kind: str  # "answer" | "refusal" | "handoff"（订单工具查无/故障，ADR 0036）
     handoff: bool
 
 
