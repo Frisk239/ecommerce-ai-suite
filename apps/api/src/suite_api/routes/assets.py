@@ -47,6 +47,7 @@ from suite_api.services.asset_view import (
 )
 from suite_api.services.csv_import import CsvImportFormatError, parse_import_csv
 from suite_api.services.knowledge_gaps import load_attachable_gap, resolve_gaps_for_asset
+from suite_api.services.lineage import AssetLineageOut, fetch_asset_lineage
 from suite_api.services.machine_wash import (
     QA_FIELD,
     MachineWashError,
@@ -680,6 +681,26 @@ def get_asset(
     del operator  # 读接口同样要求登录（CONTEXT.md：控制台=登录后的人机界面）
     asset = _get_asset_or_404(db, asset_id)
     return to_asset_detail(db, asset)
+
+
+@router.get("/{asset_id}/lineage", response_model=AssetLineageOut)
+def get_asset_lineage(
+    asset_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> AssetLineageOut:
+    """血缘视图（第 20 刀/ADR 0026）：从哪来/版本与审计/被谁用过（引用/写回/
+    考核）——资产详情上的派生拼装，只读、零新表零写路径，不进检索不进 MCP。
+
+    数据源全在既有表：audit_log（时间线与写回=发布事件，0010 写回随发布同
+    事务）、service_messages.citations JSONB containment 下推（引用样例+同
+    条件计数）、coach_records.question_key（考核抽题）。写回不带 fields 键
+    （audit_log 不存字段名，如实拼装）；origin.created_at 恒 null（assets 无
+    登记时间列）。响应形状与截断规则见 services/lineage.py。
+    """
+    del operator  # 读接口同样要求登录（CONTEXT.md：控制台=登录后的人机界面）
+    asset = _get_asset_or_404(db, asset_id)
+    return fetch_asset_lineage(db, asset)
 
 
 @router.get("/{asset_id}/versions/{version_no}/text")
