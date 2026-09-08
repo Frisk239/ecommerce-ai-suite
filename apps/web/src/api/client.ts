@@ -64,9 +64,9 @@ export function parsePublishGate(err: unknown): PublishGateDetail | null {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
   const isForm = init.body instanceof FormData
   const headers: Record<string, string> = {
     ...(init.body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),

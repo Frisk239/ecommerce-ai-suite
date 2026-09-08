@@ -97,11 +97,16 @@ export const api = {
 
   // 素材中心（第 17 刀/ADR 0038）：任务不是中台对象；建任务请求内同步执行
   // LLM 生成+规则质检（≤20s，同回流机洗的等待面），返回即稳定态。全部操作者鉴权。
+  // 建任务/重试的 LLM 等待面必须宽于默认 15s 超时（LLM 上限 20s + 缓冲）。
   createMaterialTask: (productId: number) =>
-    request<MaterialTask>('/material/tasks', {
-      method: 'POST',
-      body: JSON.stringify({ product_id: productId }),
-    }),
+    request<MaterialTask>(
+      '/material/tasks',
+      {
+        method: 'POST',
+        body: JSON.stringify({ product_id: productId }),
+      },
+      30_000,
+    ),
   listMaterialTasks: () => request<MaterialTask[]>('/material/tasks'),
   getMaterialTask: (taskId: number) => request<MaterialTask>(`/material/tasks/${taskId}`),
   approveMaterialTask: (taskId: number) =>
@@ -109,7 +114,7 @@ export const api = {
   rejectMaterialTask: (taskId: number) =>
     request<MaterialTask>(`/material/tasks/${taskId}/reject`, { method: 'POST' }),
   retryMaterialTask: (taskId: number) =>
-    request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }),
+    request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 30_000),
 
   // 客服会话（预览与顾客接口同一引擎；传输用 SSE，不用 EventSource）
   createServiceSession: () =>
