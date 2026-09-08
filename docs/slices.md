@@ -72,7 +72,7 @@
 
 **Out：** 顾客账号、多轮记忆、令牌过期/吊销 UI、分布式限流、XFF 信任模式可配置（安全面议题进下一刀）。
 
-## 第 9 刀：数据接入 CSV 批量导入（已交付，`feat/data-ingest` 待 PR）
+## 第 9 刀：数据接入 CSV 批量导入（已交付已合并，PR #12）
 
 **路径：** 资产页登记抽屉「批量导入」页签 → CSV（title,content，utf-8-sig）→ 预览计数（后端为准）→ 逐行独立登记（复用 register_asset：0013 字节、kind=document、不挂商品、source_kind=upload 不动 0025 枚举）→ 报告 created/skipped 带行号 → 人洗发布 → 客服/MCP 可答可引。2MB/200 行/200KB 单行三重防线。冷启动死结（空库→全拒答→无回流）有了批量入口。证据见 `docs/progress/data-ingest-closeout.md`。
 
@@ -80,11 +80,17 @@
 
 **Out：** URL 导入/网站同步、同步-断链语义、挂商品列、增量去重、导入历史。
 
+## 第 10 刀：顾客通道安全面收口（已交付，`feat/security-hardening` 待 PR）
+
+**路径：** 三项安全语义收口（零新功能面）——XFF 信任模式（`CUSTOMER_TRUST_PROXY` 默认直连 fail-closed，忽略自报头；反代模式才信第一跳）；ask 闸序重排（IP 闸前置省 DB → 401 统一 → 会话闸后置，无效令牌不再替真顾客耗配额）；会话不存在与令牌无效统一 401（自增 id 不可探测）。证据见 `docs/progress/security-hardening-closeout.md`。
+
+**Must：** 顾客正常问答零变化（回归）；闸序「狂刷不碰库」裁决保持（IP 闸仍前置）。
+
 ## 更后面（现在不锁顺序，各是独立刀）
 
 | 刀 | 约束 |
 | --- | --- |
-| **安全面收口** | XFF 第一跳伪造（直连只信 remote addr 可配置）、限流先于鉴权替他人耗配额、404/401 存在性探测——见 customer-channel-closeout 遗留 |
+| **回流增强** | 调研 §6 候选 2：会话回流后 LLM 抽 QA 草稿→人洗→发布；与 CSV 通道互补 |
 | **审计刀 2** | 约 5 刀后再轮（上轮见 `docs/progress/audit-1-closeout.md`）；不改产品代码，三路对账后排还债 |
 | 素材 / 切片 / 考核 | 有接待飞轮和 MCP 证据后再进队。质检、候选不是资产已锁。不做微调（0028） |
 
