@@ -247,12 +247,20 @@ def _run_executors(db: Session, product: Product) -> dict[str, Executor]:
             _fail(step, f"生成不可用：{exc}（可重试）")
             return
         title, body = parse_generated_output(raw)  # 坏输出抛 OpsGenError，环内收口 failed
+        # 0038 修订：出口必掩（第 26 刀评审收尾件）——厂商草稿同样落 ops_runs
+        # （非中台表）：title/body 落 output 前统一过 redact，与 detail/spec/
+        # fallback 同口径；prompt 虽已掩，模型复述掩码或自发吐裸号都不留底。
+        title, body = redact(title), redact(body)
         plan["output"] = {"title": title, "body": body, "refs": []}
         step["detail"] = f"厂商模型已生成草稿《{title}》（正文 {len(body)} 字）"
 
     def compose(step: dict[str, Any], plan: dict[str, Any]) -> None:
         refs = fetch_published_refs(db, product.id)
-        output = dict(plan["output"] or {"title": f"投放文案 · {product.name}", "body": "", "refs": []})
+        # 兜底标题的商品名同过 redact（0038 出口必掩；防御分支，gen done 时不走）
+        output = dict(
+            plan["output"]
+            or {"title": redact(f"投放文案 · {product.name}"), "body": "", "refs": []}
+        )
         if refs:
             output["refs"] = refs
             step["detail"] = (

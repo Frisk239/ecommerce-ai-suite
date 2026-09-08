@@ -349,6 +349,46 @@ def test_start_run_no_refs_compose_fallback_discloses(monkeypatch: pytest.Monkey
     assert run.steps[2]["detail"] == NO_REF_DETAIL  # 步轨迹诚实披露
 
 
+def test_generated_output_masked_before_ops_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """第 26 刀评审收尾件（0038 出口必掩）：厂商返回的 title/body 落
+    ops_runs.output 前过 redact——prompt 已掩但模型可自发吐裸号，草稿落
+    非中台表不留底；compose 兜底标题同口径（防御分支，gen done 时不触）。"""
+    pii_output = json.dumps(
+        {
+            "title": "钛钢保温杯热销 13812345678",
+            "body": "有问题联系 zhangsan@example.com，钛钢保温杯好用",
+        },
+        ensure_ascii=False,
+    )
+    _patch_llm(monkeypatch, result=pii_output)
+    _patch_refs(monkeypatch, [{"asset_id": 5, "version_no": 1}])  # 有引用：output 走草稿本体
+    run = start_run(_FakeDB(_product(), []), 1)
+
+    assert run.output is not None
+    assert run.output["title"] == "钛钢保温杯热销 1********78"
+    assert run.output["body"] == "有问题联系 ****@example.com，钛钢保温杯好用"
+    assert "13812345678" not in json.dumps(run.output, ensure_ascii=False)
+    assert "zhangsan" not in json.dumps(run.output, ensure_ascii=False)
+    # 草稿标题进 steps.detail 同掩（同一字符串进两处都净）
+    assert "13812345678" not in run.steps[1]["detail"]
+
+
+def test_compose_fallback_title_masked_for_pii_product_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同口径的兜底标题：gen 成功即不触（output 非空），但商品名带号进防御
+    分支时仍掩——用空 output 直调 compose 钉住该形状。"""
+    product = _product()
+    product.name = "钛钢保温杯 13812345678"
+    _patch_refs(monkeypatch, [])  # 无引用 -> 走兜底标题分支
+    db = _FakeDB(product, [])
+    step = initial_steps()[2]
+    plan: dict = {"steps": [], "output": None}
+    ops_module._run_executors(db, product)[STEP_COMPOSE](step, plan)
+    assert "13812345678" not in plan["output"]["title"]
+    assert "1********78" in plan["output"]["title"]
+
+
 def test_gen_material_no_key_fails_without_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_llm(
         monkeypatch,
