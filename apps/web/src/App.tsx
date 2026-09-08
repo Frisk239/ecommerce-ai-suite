@@ -1,6 +1,7 @@
 // 路由表：/login、/platform/assets、/platform/assets/:id、/platform/products、
-// /material（素材中心，第 17 刀）、/service（客服预览）、/customer（顾客通道，
-// 无登录守卫——0021 顾客不登录，不进操作者壳）、404；/ 重定向资产列表。
+// /material（素材中心，第 17 刀）、/clips（直播切片，第 18 刀）、/service（客服
+// 预览）、/customer（顾客通道，无登录守卫——0021 顾客不登录，不进操作者壳）、
+// 404；/ 重定向资产列表。
 // 路径结构按后续八页预留，不预建空入口。
 
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
@@ -8,6 +9,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import AppShell from './components/AppShell'
 import AssetDetailPage from './pages/AssetDetailPage'
 import AssetsListPage from './pages/AssetsListPage'
+import ClipsPage from './pages/ClipsPage'
 import CustomerPage from './pages/CustomerPage'
 import LoginPage from './pages/LoginPage'
 import MaterialPage from './pages/MaterialPage'
@@ -50,6 +52,7 @@ export default function App() {
             <Route path="/platform/assets/:id" element={<AssetDetailPage />} />
             <Route path="/platform/products" element={<ProductsPage />} />
             <Route path="/material" element={<MaterialPage />} />
+            <Route path="/clips" element={<ClipsPage />} />
             <Route path="/service" element={<ServicePage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>

@@ -6,6 +6,7 @@ import type {
   AssetListItem,
   AssetVersion,
   AuditEntry,
+  ClipCandidate,
   CustomerAnswerComplete,
   CustomerSessionCreated,
   CsvImportReport,
@@ -115,6 +116,16 @@ export const api = {
     request<MaterialTask>(`/material/tasks/${taskId}/reject`, { method: 'POST' }),
   retryMaterialTask: (taskId: number) =>
     request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 30_000),
+
+  // 直播切片（第 18 刀/ADR 0014/0039）：候选不是中台对象；pick 批量把勾选候选
+  // 登记为 kind=视频/来源=切片拣选资产（登记字节=带时间码转写文本），返回登记
+  // 结果列表供卡片换「已登记 A-xxxx」。批量含已登记整体 409（事务不落）。
+  listClipCandidates: () => request<ClipCandidate[]>('/clips/candidates'),
+  pickClips: (ids: number[]) =>
+    request<AssetListItem[]>('/clips/candidates/pick', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
 
   // 客服会话（预览与顾客接口同一引擎；传输用 SSE，不用 EventSource）
   createServiceSession: () =>

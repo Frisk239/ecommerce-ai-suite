@@ -44,8 +44,17 @@ SOURCE_KINDS = (
 
 
 def make_object_key(kind: str, content_bytes: bytes) -> str:
-    """对象键 = {documents|dialogue}/{uuid}/{sha256前16}.txt（ADR 0003 每版一把键）。"""
-    prefix = "dialogue" if kind == "dialogue" else "documents"
+    """对象键 = {documents|dialogue|clips}/{uuid}/{sha256前16}.txt（ADR 0003 每版一把键）。
+
+    video（切片拣选登记）走 clips/ 前缀（ADR 0039）——登记的字节是带时间码头
+    的转写文本，扩展名仍 .txt；真视频字节与切出是部署刀的事。
+    """
+    if kind == "dialogue":
+        prefix = "dialogue"
+    elif kind == "video":
+        prefix = "clips"
+    else:
+        prefix = "documents"
     digest = hashlib.sha256(content_bytes).hexdigest()[:16]
     return f"{prefix}/{uuid4().hex}/{digest}.txt"
 
@@ -63,9 +72,15 @@ def machine_wash_field_names(kind: str, product: Product | None) -> list[str]:
     """机洗字段集按资产种类分派（第 12 刀，ADR 0035）：对话 -> 仅 qa_pairs
     （LLM 抽取）；文档挂商品 -> 商品 spec_schema 的 keys；文档不挂商品 -> 空集。
     非 dialogue 一律滤掉 qa_pairs（防御 spec_schema 撞名：QA 是种类级语义，
-    LLM 分派只认 kind，不认字段名）。"""
+    LLM 分派只认 kind，不认字段名）。
+
+    第 18 刀（ADR 0039）加 video 分支：切片登记的字节是口语转写文本，跑商品
+    规格正则会误抽——字段集恒空（即便挂了商品），弃权直接推进待人洗，与
+    dialogue 无 QA 时同形。"""
     if kind == "dialogue":
         return [QA_FIELD]
+    if kind == "video":
+        return []
     if product is None:
         return []
     return [f for f in schema_field_names(product.spec_schema) if f != QA_FIELD]

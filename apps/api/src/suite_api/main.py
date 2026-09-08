@@ -20,6 +20,7 @@ from suite_api.routes import (
     assets,
     audit,
     auth,
+    clips,
     customer,
     health,
     knowledge_gaps,
@@ -105,6 +106,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(knowledge_gaps.router)
     # 素材中心（第 17 刀/ADR 0038）：任务不是中台对象（0012），六端点全操作者鉴权
     app.include_router(material.router)
+    # 直播切片（第 18 刀/ADR 0014/0015/0039）：候选不是中台对象，拣选只登记视频
+    # 资产不暗插任务，两端点全操作者鉴权
+    app.include_router(clips.router)
     # 顾客通道（ADR 0021/0033）：无操作者鉴权，Bearer 令牌 + 两级限流在路由内；
     # 限流器挂 app.state（测试可替换为小阈值/假时钟实例）
     app.include_router(customer.router)

@@ -258,6 +258,33 @@ class MaterialTask(Base):
     )
 
 
+class ClipCandidate(Base):
+    """ADR 0014/0039：直播切片候选=切片模块自有的种子 mock，不是中台对象。
+
+    status ∈ pending/registered——单向状态机：拣选才切开字节登记
+    （0014），已登记不可再拣选（409）。timecode_start/end 是源录像的时间码
+    边界（HH:MM:SS 字符串）；transcript 是 ASR 转写 mock，登记字节 =
+    「[start-end] 转写」文本（kind=video，非 mp4，0039——真视频切出留部署刀）。
+    source_video_label 是源录像的名称字符串（mock 店铺语境，不存录像字节）。
+    registered_asset_id 只在 registered 后指向登记出的视频资产（回执锚，
+    UI 跳治理台的锚，同 MaterialTask.asset_id 先例）。
+    """
+
+    __tablename__ = "clip_candidates"
+    __table_args__ = (Index("ix_clip_candidates_status", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    status: Mapped[str] = mapped_column(String(16))
+    timecode_start: Mapped[str] = mapped_column(String(8))
+    timecode_end: Mapped[str] = mapped_column(String(8))
+    transcript: Mapped[str] = mapped_column(Text)
+    source_video_label: Mapped[str] = mapped_column(String(120))
+    # 拣选登记出的视频资产（kind=video、source_kind=clip_pick）；未拣选为 NULL
+    registered_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class KnowledgeGap(Base):
     """ADR 0024/0030：知识缺口=无证据拒答留下的待补项，可挂商品。
 

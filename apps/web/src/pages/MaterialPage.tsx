@@ -3,22 +3,40 @@
 // 已登记=绿、失败=红），registered 行给 A-xxxx 链接直达治理台详情。
 // 建任务/重试是请求内同步生成（LLM ≤20s）：按钮置「生成中/重试中…」禁用态，
 // 结果回来即整表 reload（不轮询演戏——0012 无任务 worker）。
+// 第 18 刀（ADR 0015）：加「切片汇入」页签——直播切片拣选登记出的视频资产列表
+// （kind=视频 且 来源=切片拣选）。视图不是二次登记：只展示已登记资产，运营只
+// 引用其中已发布的。列表端点无种类/来源过滤参数，客户端全量过滤（与治理台
+// 列表同口径，侵入最小）。
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ArrowsClockwise, CaretRight, Megaphone, Plus, Warning, X } from '@phosphor-icons/react'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  ArrowsClockwise,
+  CaretRight,
+  FilmSlate,
+  Megaphone,
+  Plus,
+  Warning,
+  X,
+} from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
-import type { MaterialTask } from '../api/types'
+import type { AssetListItem, MaterialTask } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { formatAssetId, formatDateTime, formatTaskId } from '../labels'
 import { ErrorBanner } from '../components/Banner'
 import Empty from '../components/Empty'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
-import { TaskStatusBadge } from '../components/StateBadge'
+import { StatusBadge, TaskStatusBadge } from '../components/StateBadge'
 
 const EMPTY_TASKS = [] as const
+const EMPTY_CLIP_ASSETS: AssetListItem[] = []
+
+// 页签（对照 AssetsListPage 的 seg 模式）：任务列表=本模块自有状态机；
+// 切片汇入=已登记视频资产的只读视图（0015）
+const TABS = ['任务列表', '切片汇入'] as const
+type MaterialTab = (typeof TABS)[number]
 
 // ---------- 新建任务抽屉 ----------
 
@@ -240,9 +258,23 @@ function TaskDetailDrawer({
 // ---------- 页面 ----------
 
 export default function MaterialPage() {
+  const navigate = useNavigate()
+  const [tab, setTab] = useState<MaterialTab>('任务列表')
+
   const fetcher = useCallback(() => api.listMaterialTasks(), [])
   const { state, reload } = useApiData(fetcher)
   const tasks = state.phase === 'ok' ? state.data : EMPTY_TASKS
+
+  // 切片汇入数据源：全量资产客户端过滤 video + clip_pick（0015 视图，不新端点）
+  const assetsFetcher = useCallback(() => api.listAssets(), [])
+  const assetsQ = useApiData(assetsFetcher)
+  const clipAssets = useMemo(
+    () =>
+      assetsQ.state.phase === 'ok'
+        ? assetsQ.state.data.filter((a) => a.kind === 'video' && a.source_kind === 'clip_pick')
+        : EMPTY_CLIP_ASSETS,
+    [assetsQ.state],
+  )
 
   const [createOpen, setCreateOpen] = useState(false)
   const [detailId, setDetailId] = useState<number | null>(null)
@@ -259,16 +291,105 @@ export default function MaterialPage() {
     <div>
       <PageHeader
         title="业务能力 · 素材中心"
-        desc="内容闭环第一段：选商品生成卖点文案，规则质检 + 操作者抽检双重过线才登记为素材资产（失败不进中台）。登记后走治理台人洗发布，成为可检索、可引用的证据。"
+        desc="内容闭环第一段：选商品生成卖点文案，规则质检 + 操作者抽检双重过线才登记为素材资产（失败不进中台）。登记后走治理台人洗发布，成为可检索、可引用的证据。「切片汇入」页签列出直播切片拣选登记出的视频资产（0015：视图不是二次登记）。"
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-            <Plus aria-hidden size={14} weight="bold" />
-            生成卖点文案
-          </button>
+          tab === '任务列表' ? (
+            <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+              <Plus aria-hidden size={14} weight="bold" />
+              生成卖点文案
+            </button>
+          ) : undefined
         }
-      />
+      >
+        <div className="seg" role="tablist" aria-label="素材中心视图">
+          {TABS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
+              className={`seg-btn ${tab === t ? 'seg-btn-active' : ''}`}
+              onClick={() => setTab(t)}
+            >
+              {t}
+              <span className={tab === t ? 'text-ink-3' : ''}>
+                {t === '任务列表' ? tasks.length : clipAssets.length}
+              </span>
+            </button>
+          ))}
+        </div>
+      </PageHeader>
 
-      {state.phase === 'loading' ? (
+      {tab === '切片汇入' ? (
+        assetsQ.state.phase === 'loading' ? (
+          <div className="panel">
+            <SkeletonRows rows={5} />
+          </div>
+        ) : assetsQ.state.phase === 'error' ? (
+          <>
+            <ErrorBanner error={assetsQ.state.error} onRetry={assetsQ.reload} />
+            <div className="panel">
+              <Empty
+                icon={<Warning aria-hidden size={26} />}
+                title="切片汇入加载失败"
+                hint="API 暂时不可用或网络中断，上面的横幅可重试。"
+              />
+            </div>
+          </>
+        ) : clipAssets.length === 0 ? (
+          <div className="rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface/60">
+            <Empty
+              icon={<FilmSlate aria-hidden size={24} />}
+              title="还没有拣选登记的视频资产"
+              hint="去侧栏「直播切片」勾选候选、点「拣选登记」；这里列出登记出的视频资产（视图不是二次登记，发布与引用在治理台）。"
+            />
+          </div>
+        ) : (
+          <div className="panel overflow-x-auto">
+            <table className="table-gov">
+              <thead>
+                <tr>
+                  <th className="w-20">资产 ID</th>
+                  <th>标题</th>
+                  <th className="w-24">状态</th>
+                  <th className="w-36">商品</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clipAssets.map((asset) => (
+                  <tr
+                    key={asset.id}
+                    className="row-click"
+                    onClick={() => navigate(`/platform/assets/${asset.id}`)}
+                  >
+                    <td className="font-mono text-xs text-ink-3">{formatAssetId(asset.id)}</td>
+                    <td className="max-w-[28rem]">
+                      <Link
+                        to={`/platform/assets/${asset.id}`}
+                        className="font-medium text-ink transition-colors duration-150 hover:text-accent-strong"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {asset.title ?? '未命名资产'}
+                      </Link>
+                    </td>
+                    <td>
+                      <StatusBadge
+                        status={asset.status}
+                        failed={asset.status === 'ingested' && asset.last_error !== null}
+                        revising={asset.revising}
+                        publishedVersionNo={asset.current_published_version_no}
+                      />
+                    </td>
+                    <td className="text-ink-2">
+                      {asset.product ? asset.product.name : <span className="text-ink-3">未挂商品</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : state.phase === 'loading' ? (
         <div className="panel">
           <SkeletonRows rows={6} />
         </div>
