@@ -126,7 +126,9 @@ def register_asset(
     # 事务留进机洗窗口）
     field_names = machine_wash_field_names(kind, product)
     # P1#2（第 16 刀）：登记行先提交——机洗（dialogue 含 LLM ≤20s）不持有
-    # 事务；成功/失败的终态推进在下一个 autobegin 事务里，由调用方 commit 收口
+    # 事务；成功/失败的终态推进在下一个 autobegin 事务里，由调用方 commit 收口。
+    # 两段式的代价：登记行 commit 后、调用方收口前进程崩溃，last_error 可能
+    # 未落库（资产停 ingested，可经 retry 端点推进——「登记失败不挡字节」不破）
     db.commit()
 
     try:

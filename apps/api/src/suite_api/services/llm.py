@@ -61,11 +61,13 @@ class LLMUnavailable(LLMError):
 # 按事件循环懒建缓存（第 16 刀，审计刀 3 P1#1）：官方 AsyncOpenAI 自带 httpx
 # 连接池，其 anyio 原语有 loop 亲和性——进程级单例客户端被 async 路由主循环
 # （顾客面 stream_chat）与同步线程池的一次性 `asyncio.run` 循环（machine_wash
-# QA 抽取）混用，混跑随机炸 "attached to a different loop"（对外表现为顾客
+# # QA 抽取）混用，混跑随机炸 "attached to a different loop"（对外表现为顾客
 # 静默降级 LLMUnavailable）。改为每个运行中的 loop 各建一份连接池；一次性循环
-# 结束后被 GC，WeakKeyDictionary 连带条目消失，不泄漏。懒建（而非 import 期）
-# 保证空凭证进程不持有客户端；测试注入替身走 `_new_client` 构造缝。
-# 密钥只在构造时从 settings 读入内存，此后不再外流（0033）。
+# 结束后被 GC，WeakKeyDictionary 连带条目消失，客户端只靠 finalizer 关 socket
+# （未显式 aclose，高回流吞吐下有短暂 fd churn 面——记录在案，非泄漏累积）。
+# 懒建（而非 import 期）保证空凭证进程不持有客户端；测试注入替身走
+# `_new_client` 构造缝。密钥只在构造时从 settings 读入内存，此后不再外流
+# （0033）；settings 进程内缓存不变，热轮换密钥需重启（与修复前单例同口径）。
 _clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncOpenAI] = (
     weakref.WeakKeyDictionary()
 )

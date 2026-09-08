@@ -106,6 +106,9 @@ class _TxnRecordingDb:
     def in_transaction(self) -> bool:
         return self._in_tx
 
+    def refresh(self, _obj: Any) -> None:
+        pass  # retry 端点收口后 refresh——替身无需做事
+
 
 class _MemoryStorage:
     def __init__(self) -> None:
@@ -189,3 +192,45 @@ def test_register_asset_llm_failure_still_lands_ingested_last_error(
     assert db.events == ["begin", "flush", "commit"]
     assert asset.status == "ingested"
     assert "LLM QA 抽取失败" in (asset.last_error or "")
+
+
+def test_retry_machine_wash_releases_transaction_before_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """评审(16) 补钉：retry 端点与登记同纪律——机洗（dialogue 含 LLM ≤20s）
+    调用时刻不得持有事务（P1#2 的 retry 路径，routes/assets.py 机洗前 commit）。"""
+    from types import SimpleNamespace
+
+    from suite_api.routes import assets as assets_routes
+    from suite_api.services import llm as llm_module
+
+    db = _TxnRecordingDb()
+    storage = _MemoryStorage()
+    storage.put_bytes("dialogue/x/y.txt", _TRANSCRIPT)
+    asset = SimpleNamespace(kind="dialogue", status="ingested", last_error="旧失败", id=1)
+    version = SimpleNamespace(asset_id=1, version_no=1, object_key="dialogue/x/y.txt")
+    seen: dict[str, Any] = {}
+
+    async def fake_complete_chat(_system: str, _user: str) -> str:
+        seen["in_transaction"] = db.in_transaction()
+        return "[]"
+
+    monkeypatch.setattr(llm_module, "complete_chat", fake_complete_chat)
+    monkeypatch.setattr(
+        assets_routes, "_get_asset_or_404", lambda _db, _aid: asset
+    )
+    monkeypatch.setattr(
+        assets_routes, "_latest_version_or_404", lambda _db, _a: version
+    )
+    monkeypatch.setattr(assets_routes, "_product_or_none", lambda _db, _a: None)
+    monkeypatch.setattr(
+        assets_routes, "to_asset_detail", lambda _db, _a: SimpleNamespace()
+    )
+
+    assets_routes.retry_machine_wash(
+        asset_id=1, db=db, operator=SimpleNamespace(), storage=storage  # type: ignore[arg-type]
+    )
+
+    assert seen["in_transaction"] is False, "retry 的 LLM 调用时刻不得持有事务（P1#2）"
+    assert asset.status == "pending_review"
+    assert asset.last_error is None
