@@ -167,6 +167,14 @@ SUITE_TEST_DATABASE_URL=postgresql://suite:suite@localhost:5432/suite_test uv ru
 覆盖全链路：登录 → 上传（真写临时对象存储目录）→ 机洗抽到/弃权 → 未确认发布 422（缺项分「缺少」与「未确认」两类）→ 确认/补填 → 发布 200 → 商品 spec_values 写回带 `asset_id·version` 来源 → 审计留痕 → 未登录 401 → 机洗失败/就地重试 → 对象键形状。
 客服刀闭环：发布（切块入索引）→ 问「净含量」SSE 引用 v1 → 问待人洗独有内容 refusal+handoff → 回流登记 dialogue 资产待人洗 → 发布 → 再问命中引用该对话 → 版本跟随指针（指针前移后命中 v2 块）。
 
+### 评测集（golden conversations + policy edges）
+
+数据在 `apps/api/evals/golden.json`，runner 在 `apps/api/tests/test_eval_set.py`（ADR 0027：评测集=问题+期望的可复现记录，不是资产、不建表、不做评测台）。它随集成测试跑：无 DB 时 runner 用例自动 skip、schema 自检照常跑；CI 位即上面两条 `uv run pytest`（`-k eval_set` 可单跑）。
+
+加一条 case 只改 JSON 不改代码：`{"id": "...", "question": "...", "expect": ...}`，expect 三形状之一——`{"cite_asset_title": "...", "version_no": 1}`（该引用哪条已发布资产）、`{"refuse": true}`（该拒答+转人工）、`{"tool": "order"|"stock", "tool_summary_contains": "...", "handoff": true?}`（该走哪个工具；查无/未命中转人工加 `"handoff": true`）。引用类新标题需同时在 runner 的 `anchors` fixture 里发布同标题资产（schema 自检验字段形状；标题没配套资产时 runner 会指名报错）。
+
+锚定口径是**标题不锚 id**：测试库每个 module 独立自建 `suite_test` 库，资产 id 随发布顺序漂移，只有标题跨运行稳定可复现；runner 在 fixture 内记录 `{标题: asset_id}` 再把 JSON 里的标题解析成 id 断言引用。
+
 web 构建校验：`cd apps/web && npm run build && npm run lint`
 
 ## 环境变量
