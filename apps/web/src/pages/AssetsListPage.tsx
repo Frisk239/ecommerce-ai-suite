@@ -13,6 +13,7 @@ import type { AssetStatus, KnowledgeGap } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { formatDateTime, formatAssetId, formatGapId, sourceKindLabel } from '../labels'
 import { ErrorBanner } from '../components/Banner'
+import ActionError from '../components/ActionError'
 import Empty from '../components/Empty'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
@@ -145,15 +146,7 @@ export default function AssetsListPage() {
 
   return (
     <div>
-      {actionError ? (
-        <div
-          role="alert"
-          className="mb-4 flex items-center gap-2.5 rounded-[8px] border border-[rgba(180,35,24,0.22)] bg-[rgba(180,35,24,0.05)] px-3.5 py-2.5 text-[13px] leading-5 text-danger"
-        >
-          <Warning aria-hidden size={15} className="shrink-0" />
-          {actionError}
-        </div>
-      ) : null}
+      {actionError ? <ActionError message={actionError} variant="prominent" className="mb-4" /> : null}
 
       <PageHeader
         title="中台 · 资产"

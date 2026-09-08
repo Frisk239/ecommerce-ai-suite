@@ -10,9 +10,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUp, ChatCircleDots } from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
-import MessageBubble, { type UiMessage } from '../components/MessageBubble'
+import MessageBubble from '../components/MessageBubble'
 import { ErrorBanner } from '../components/Banner'
 import Empty from '../components/Empty'
+import { useAskStream } from '../hooks/useAskStream'
 
 const SUGGESTIONS = [
   '保温杯的净含量是多少？',
@@ -30,15 +31,29 @@ interface CustomerSession {
 
 export default function CustomerPage() {
   const [session, setSession] = useState<CustomerSession | null>(null)
-  const [messages, setMessages] = useState<UiMessage[]>([])
   const [input, setInput] = useState('')
   const [error, setError] = useState<unknown>(null)
   const [creating, setCreating] = useState(false)
-  const [streaming, setStreaming] = useState(false)
+
+  // 发问状态机与操作者预览共用 useAskStream（第 25 刀）：顾客版 complete 载荷
+  // 无 gap_id（服务端白名单裁剪），失败剪掉未进引擎的空占位——口径参数化
+  const {
+    messages,
+    streaming,
+    send: sendStream,
+    reset: resetMessages,
+  } = useAskStream({
+    ask: (question, handlers, signal) => {
+      // 页面守卫保证发问时有会话令牌；此分支只为类型收窄（不可达）
+      if (session === null) return Promise.resolve()
+      return api.askCustomer(session.id, session.token, question, handlers, signal)
+    },
+    onError: setError,
+    pruneEmptyOnFailure: true,
+  })
 
   const endRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
-  const seqRef = useRef(0)
 
   // 自动跟随：消息条数与已输出字符数变化都滚动到尾部
   const totalChars = messages.reduce((acc, m) => acc + m.content.length, 0)
@@ -53,7 +68,7 @@ export default function CustomerPage() {
     try {
       const created = await api.createCustomerSession()
       setSession({ id: created.session_id, token: created.token })
-      setMessages([])
+      resetMessages()
       taRef.current?.focus()
     } catch (err) {
       setError(err)
@@ -63,110 +78,16 @@ export default function CustomerPage() {
   }
 
   // 发送：立即回显顾客消息 + agent 占位，SSE 事件驱动 thinking → delta → complete
+  //（状态机回填在 useAskStream；0036 顾客通道 tool 事件照常到达——单号本由提问者给出。
+  // 失败口径：409=会话已被操作者回流登记、429=限流、其余=网络，文案来自后端 detail，
+  // 重开新会话即可恢复）
   const send = async (text: string) => {
     const question = text.trim()
     if (question === '' || streaming || session === null) return
     setInput('')
     if (taRef.current) taRef.current.style.height = 'auto'
-    const now = new Date().toISOString()
-    const seq = seqRef.current
-    seqRef.current += 1
-    const agentKey = `local-a-${seq}`
     setError(null)
-    setStreaming(true)
-    setMessages((prev) => [
-      ...prev,
-      {
-        key: `local-c-${seq}`,
-        id: null,
-        role: 'customer',
-        content: question,
-        citations: null,
-        kind: null,
-        handoff: false,
-        created_at: now,
-        streaming: false,
-        stopped: false,
-        thinkingText: null,
-        gapId: null,
-        fallback: false,
-        tool: null,
-      },
-      {
-        key: agentKey,
-        id: null,
-        role: 'agent',
-        content: '',
-        citations: null,
-        kind: null,
-        handoff: false,
-        created_at: now,
-        streaming: true,
-        stopped: false,
-        thinkingText: null,
-        gapId: null,
-        fallback: false,
-        tool: null,
-      },
-    ])
-    try {
-      await api.askCustomer(
-        session.id,
-        session.token,
-        question,
-        {
-          onThinking: (t) =>
-            setMessages((prev) =>
-              prev.map((m) => (m.key === agentKey ? { ...m, thinkingText: t } : m)),
-            ),
-          // 0036：顾客通道同形状——tool 事件照常到达（单号本由提问者给出）
-          onTool: (record) =>
-            setMessages((prev) => prev.map((m) => (m.key === agentKey ? { ...m, tool: record } : m))),
-          onDelta: (piece) =>
-            setMessages((prev) =>
-              prev.map((m) => (m.key === agentKey ? { ...m, content: m.content + piece } : m)),
-            ),
-          onComplete: (payload) => {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.key === agentKey
-                  ? {
-                      ...m,
-                      id: payload.message_id,
-                      citations: payload.citations,
-                      kind: payload.kind,
-                      handoff: payload.handoff,
-                      streaming: false,
-                      stopped: false,
-                      fallback: payload.fallback ?? false,
-                      tool: payload.tool ?? m.tool,
-                    }
-                  : m,
-              ),
-            )
-          },
-        },
-        new AbortController().signal,
-      )
-    } catch (err) {
-      // 409=会话已被操作者回流登记（令牌失去发问资格）、429=限流、其余=网络；
-      // 文案来自后端 detail，重开新会话即可恢复
-      setError(err)
-      setMessages((prev) =>
-        prev.flatMap((m) => {
-          if (m.key !== agentKey) return [m]
-          // 收到过任何事件（引擎先落库再流式）= 后端确有完整回答留档，
-          // 保留已收文本+停止标注；空占位=请求未进引擎（409/401/429/建流
-          // 失败），没有回答落库，「已留档」对它是不实陈述——移除，原因由 alert 表达
-          if (m.content !== '' || m.thinkingText !== null) {
-            return [{ ...m, streaming: false, stopped: true }]
-          }
-          return []
-        }),
-      )
-    } finally {
-      setStreaming(false)
-    }
+    await sendStream(question)
   }
 
   const canAsk = session !== null && !streaming
