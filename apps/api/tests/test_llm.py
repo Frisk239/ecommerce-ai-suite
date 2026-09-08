@@ -141,6 +141,17 @@ def test_stream_chat_yields_text_pieces_with_chat_shape(monkeypatch: pytest.Monk
     ]
 
 
+def test_stream_chat_sends_session_header_per_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """opencode 网关硬性要求 x-opencode-session（缺则 400 MissingSessionID，
+    2026-09-08 Owner 验收实测）；每问独立（0023 无多轮记忆）= 请求级新 id。"""
+    calls = _install_fake_client(monkeypatch, _FakeStream(["ok"]))
+    _consume()
+    _consume()
+    ids = [c["extra_headers"]["x-opencode-session"] for c in calls]
+    assert all(isinstance(i, str) and i for i in ids)
+    assert ids[0] != ids[1], "两次调用各自新 id（一问一对话）"
+
+
 def test_stream_chat_wraps_create_errors_without_leaking(monkeypatch: pytest.MonkeyPatch) -> None:
     """建流失败（超时/连接）-> LLMUnavailable 通用文案；异常原文（可能含
     端点/请求 id）只留在 cause 链与服务端日志，不进异常消息文本。"""

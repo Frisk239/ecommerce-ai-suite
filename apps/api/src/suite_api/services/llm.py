@@ -15,6 +15,7 @@
 """
 
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -67,6 +68,8 @@ def _get_client() -> AsyncOpenAI:
             base_url=settings.llm_base_url,
             timeout=_TIMEOUT_SECONDS,
             max_retries=0,
+            # 网关建议客户端自带 UA 标识（opencode.ai/docs/go）
+            default_headers={"User-Agent": "ecommerce-ai-suite/0.1"},
         )
     return _client
 
@@ -87,6 +90,10 @@ async def stream_chat(system_prompt: str, user_prompt: str) -> AsyncIterator[str
                 {"role": "user", "content": user_prompt},
             ],
             stream=True,
+            # opencode 网关硬性要求每对话带稳定 session 头，缺则 400
+            # MissingSessionID；本产品每问独立（0023 无多轮记忆）= 一问一对话，
+            # 请求级新 id 即「该对话的稳定 id」，也避免跨问关联
+            extra_headers={"x-opencode-session": uuid.uuid4().hex},
         )
         async for chunk in stream:
             # 首块 delta 可能只有 role（content=None）；空增量直接跳过
