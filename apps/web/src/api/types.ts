@@ -159,15 +159,25 @@ export interface ServiceCitation {
   version_no: number
 }
 
+/** 工具调用记录（第 13 刀/ADR 0036）：SSE tool 事件、complete.tool 与消息表
+ * tool 列同形状；result 是后端生成的一行摘要（灰底工具条「参数→结果」）。 */
+export interface ToolCallRecord {
+  name: string
+  arg: string
+  result: string
+}
+
 export interface ServiceMessage {
   id: number
   role: 'customer' | 'agent'
   content: string
   /** 仅 agent 消息有（refusal 为空数组，customer 为 null）。 */
   citations: ServiceCitation[] | null
-  /** answer | refusal（仅 agent 消息）。 */
-  kind: 'answer' | 'refusal' | null
+  /** answer | refusal | handoff（仅 agent 消息；handoff=工具查无/故障转人工）。 */
+  kind: 'answer' | 'refusal' | 'handoff' | null
   handoff: boolean | null
+  /** 仅订单工具路径的 agent 消息非空（0036：随消息落库，重载还原工具条）。 */
+  tool: ToolCallRecord | null
   created_at: string
 }
 
@@ -178,14 +188,17 @@ export interface ServiceSessionDetail extends ServiceSession {
 /** SSE complete 事件的负载（与后端 event_stream 尾事件一致）。
  * gap_id 仅 refusal 时非空（ADR 0030：运行时返回，消息表不加列——重载会话后
  * 芯片不重现，属契约口径）。fallback 仅 answer 且厂商生成失败降级模板时为
- * true（第 7 刀，同 gap_id 运行时口径）。 */
+ * true（第 7 刀，同 gap_id 运行时口径）。tool 是第 13 刀新增：非订单路径恒为
+ * null，两通道同形状不裁剪（单号由提问者自己给出，无内部敏感字段）；与
+ * gap_id/fallback 不同——工具调用记录同时落进消息表（回放还原工具条）。 */
 export interface ServiceAnswerComplete {
   message_id: number
   citations: ServiceCitation[]
-  kind: 'answer' | 'refusal'
+  kind: 'answer' | 'refusal' | 'handoff'
   handoff: boolean
   gap_id: number | null
   fallback?: boolean
+  tool: ToolCallRecord | null
 }
 
 // ---------- 顾客通道（routes/customer.py 契约，ADR 0021/0033） ----------

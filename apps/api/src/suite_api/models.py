@@ -175,7 +175,8 @@ class ServiceMessage(Base):
     """ADR 0023 会话消息；引用带版本（0007），拒答/转人工显性（0018）。
 
     citations 仅 agent 消息携带 ``[{asset_id, version_no}]``；kind 是回答的
-    属性（answer/refusal），customer 消息为 NULL；handoff 与 refusal 同消息
+    属性（answer/refusal/handoff，0036：handoff=订单工具查无/故障的转人工，
+    不连带缺口），customer 消息为 NULL；handoff 与 refusal 同消息
     显性标记（0018：无证据拒答时一并转人工）。同一会话旧消息的引用不随
     后续发布漂移（回放按当时版本，ADR 0023）。
     """
@@ -188,9 +189,39 @@ class ServiceMessage(Base):
     role: Mapped[str] = mapped_column(String(10))  # customer | agent
     content: Mapped[str] = mapped_column(Text)
     citations: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
-    kind: Mapped[str | None] = mapped_column(String(10))  # answer | refusal（仅 agent）
+    kind: Mapped[str | None] = mapped_column(
+        String(10)
+    )  # answer | refusal | handoff（仅 agent；handoff=工具失败转人工，0036）
     handoff: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    # 0036 订单工具调用记录 {name, arg, result}（仅走工具路径的 agent 消息非空）：
+    # 回放完整性——重载会话也要还原灰底工具条（与 gap_id 的「运行时返回」口径
+    # 不同：工具条是已发生动作的留档，随消息落列，迁移 0007）
+    tool: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Order(Base):
+    """ADR 0036：订单表=订单工具（get_order_status）的数据源，不是中台对象。
+
+    只被引擎内的订单工具读：不进检索索引、不可登记/发布/引用/导出、不进治理
+    台、无 MCP 路径，也不与 products/assets 产生任何外键语义（0002 订单不升
+    格）。items=[{name, qty}]、events=[{at, text}]（按时间序）均为工具展示
+    数据，种子灌 mock 单（演示店铺语境）。无任何对外 API。
+    """
+
+    __tablename__ = "orders"
+    __table_args__ = (UniqueConstraint("order_no", name="uq_orders_order_no"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_no: Mapped[str] = mapped_column(String(32))  # SO-1001（唯一见上）
+    status: Mapped[str] = mapped_column(String(20))  # 已发货 | 运输中 | 已签收 …
+    items: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    events: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    placed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class KnowledgeGap(Base):

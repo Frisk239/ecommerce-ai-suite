@@ -14,7 +14,12 @@ import MessageBubble, { type UiMessage } from '../components/MessageBubble'
 import { ErrorBanner } from '../components/Banner'
 import Empty from '../components/Empty'
 
-const SUGGESTIONS = ['保温杯的净含量是多少？', '怎么退货？']
+const SUGGESTIONS = [
+  '保温杯的净含量是多少？',
+  '怎么退货？',
+  // 第 13 刀/ADR 0036：带单号即命中订单工具（与客服页同口径，教顾客带单号提问）
+  '我的订单 SO-1001 到哪了？',
+]
 
 interface CustomerSession {
   id: number
@@ -83,6 +88,7 @@ export default function CustomerPage() {
         thinkingText: null,
         gapId: null,
         fallback: false,
+        tool: null,
       },
       {
         key: agentKey,
@@ -98,6 +104,7 @@ export default function CustomerPage() {
         thinkingText: null,
         gapId: null,
         fallback: false,
+        tool: null,
       },
     ])
     try {
@@ -110,6 +117,9 @@ export default function CustomerPage() {
             setMessages((prev) =>
               prev.map((m) => (m.key === agentKey ? { ...m, thinkingText: t } : m)),
             ),
+          // 0036：顾客通道同形状——tool 事件照常到达（单号本由提问者给出）
+          onTool: (record) =>
+            setMessages((prev) => prev.map((m) => (m.key === agentKey ? { ...m, tool: record } : m))),
           onDelta: (piece) =>
             setMessages((prev) =>
               prev.map((m) => (m.key === agentKey ? { ...m, content: m.content + piece } : m)),
@@ -127,6 +137,7 @@ export default function CustomerPage() {
                       streaming: false,
                       stopped: false,
                       fallback: payload.fallback ?? false,
+                      tool: payload.tool ?? m.tool,
                     }
                   : m,
               ),

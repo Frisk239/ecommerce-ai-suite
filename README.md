@@ -11,7 +11,7 @@ docker compose up --build
 ```
 
 打开 <http://localhost:5173>：健康卡应显示 API 与数据库双绿（页面真实调用 API 的 `GET /health`）。
-api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者与两个商品），无需手工迁移。
+api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者、两个商品与三笔 mock 订单），无需手工迁移。
 
 | 端口 | 服务 | 说明 |
 | --- | --- | --- |
@@ -39,10 +39,13 @@ SSE 事件协议（`text/event-stream`，回答文本在流式开始前已完整
 ```
 event: thinking    data: {"text": "正在检索已发布资产…"}
 event: thinking    data: {"text": "正在生成回答…"}     # 仅模型路径；拒答/降级不出现
+event: tool        data: {"name": "get_order_status", "arg": "SO-1001", "result": "已发货 · 2 个物流事件"}   # 仅订单工具路径（第 13 刀）
 event: delta       data: {"text": "..."}            # 多片，~12 字/片
 event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "version_no": 1}],
-                          "kind": "answer", "handoff": false, "gap_id": null, "fallback": false}
+                          "kind": "answer", "handoff": false, "gap_id": null, "fallback": false, "tool": null}
 ```
+
+订单查询带单号即命中订单工具（第 13 刀，ADR 0036）：问「我的订单 SO-1001 到哪了？」（样例单 SO-1001/1002/1003）走只读 `get_order_status`——模板组装状态回答、`citations` 恒空、`complete.tool`/`tool` 事件带工具条（两通道同形状，前端灰底 mono 参数→结果）；查无单号如 SO-9999 返回 `kind: "handoff"`、`handoff: true` 交接摘要（0018：转人工不拿检索顶，0024：不产生知识缺口）。非订单问题零漂移。
 
 无命中 -> `kind: "refusal"`、`handoff: true`、`citations: []`，固定文案「抱歉，已发布资产里没有能回答这个问题的证据。」（0018：不编造不闲聊）。检索只查当前已发布版本（0004/0017），切块在发布事务内写入 `retrieval_chunks`（0002 第二批迁移）。
 

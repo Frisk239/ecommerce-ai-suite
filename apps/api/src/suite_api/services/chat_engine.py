@@ -7,8 +7,9 @@
   厂商生成（0033）/降级模板 -> 落 agent 消息（引用带版本 0007，拒答/转人工
   显性 0018）-> 拒答同事务落知识缺口（0024）。
 - ``sse_event_stream(outcome, expose_gap_id)``：thinking -> delta* -> complete
-  的事件序列。``expose_gap_id`` 是载荷白名单闸门：操作者保持 True（0030 运行
-  时返回口径不变）；顾客置 False——complete 不带 gap_id，顾客不暴露内部
+  的事件序列（0036 订单工具路径：thinking(查询订单中…) -> tool -> delta* ->
+  complete 带 tool）。``expose_gap_id`` 是载荷白名单闸门：操作者保持 True（0030
+  运行时返回口径不变）；顾客置 False——complete 不带 gap_id，顾客不暴露内部
   缺口 id（spec 工程裁决：事件载荷白名单裁剪，不是消息表改动）。
 
 取舍（任务锁定并写明，自 routes/service.py 原样搬移）：回答文本在开始流式前
@@ -37,12 +38,22 @@ from suite_api.models import Asset, KnowledgeGap, ServiceMessage, ServiceSession
 from suite_api.services import llm
 from suite_api.services.answer import ComposedAnswer, compose_answer
 from suite_api.services.knowledge_gaps import record_refusal_gap
+from suite_api.services.order_tools import (
+    find_order_no,
+    get_order_status,
+    render_handoff_content,
+    render_order_answer,
+    summarize_tool_result,
+)
 from suite_api.services.retrieval import retrieve
 
 logger = logging.getLogger(__name__)
 
 # UX-NOTES 二点八：检索是本产品的真实动作，比「思考中」更诚实
 THINKING_TEXT = "正在检索已发布资产…"
+# 第 13 刀（ADR 0036）：订单工具路径的状态行——检索被跳过，状态行必须换成
+# 真实动作（同「降级不发生成事件、不装作生成过」的诚实口径）
+ORDER_THINKING_TEXT = "查询订单中…"
 # 第 7 刀：检索命中后走厂商模型生成（状态行随最新 thinking 事件更新——降级
 # 路径不发本事件，状态行停在检索，不装作生成过）
 GENERATING_THINKING_TEXT = "正在生成回答…"
@@ -62,6 +73,9 @@ class AskOutcome:
     generated: bool
     # True=厂商生成失败/未配置降级证据组装模板（前端「模板回退」徽章）
     fallback: bool
+    # 0036 订单工具路径：{name, arg, result} 调用记录（工具条数据）；
+    # 非工具路径恒为 None——SSE 据此决定 thinking 文案与 tool 事件有无
+    tool: dict[str, Any] | None = None
 
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
@@ -90,10 +104,21 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     调用）。有命中 -> 厂商模型流式生成（0033）；LLM 未配置/失败/空产出 ->
     降级 compose_answer 模板回答（错误细节只进服务端日志，不含密钥）。
     citations 恒由检索命中服务端定（0007；模型无引用决定权）。
+
+    0036 订单工具分派（检索之前的前置正则，不命中零成本、既有路径一行不改）：
+    命中 ``SO-\\d+`` -> 只读 get_order_status、跳过检索——查到走模板组装
+    answer（不调 LLM、citations=[]），查无/故障走 kind="handoff" 转人工
+    （0018 失败不拿检索顶；0024 不产生缺口）。引擎级插入=操作者/顾客双通道
+    自动同获（0021 同一引擎）。
     """
     # 1) 先落 customer 消息
     db.add(ServiceMessage(session_id=session.id, role="customer", content=question))
     db.commit()
+
+    # 1.5) 订单号命中 -> 工具路径（跳过检索，ADR 0036；单独钉序列）
+    order_no = find_order_no(question)
+    if order_no is not None:
+        return _run_order_ask(db, session, order_no)
 
     # 2) 检索当前已发布版本 -> 组装（模板回答=降级兜底，citations 选取也以它为准）
     hits = retrieve(db, question)
@@ -146,15 +171,71 @@ async def run_ask(db: Session, session: ServiceSession, question: str) -> AskOut
     )
 
 
+def _run_order_ask(db: Session, session: ServiceSession, order_no: str) -> AskOutcome:
+    """订单工具路径（customer 消息已由 run_ask 落库提交，本函数只落 agent 消息）。
+
+    查无/故障用 kind="handoff"（不复用 refusal——refusal 分支连带
+    record_refusal_gap，工具失败不产生缺口，0024/0036）；两条分支都不检索、
+    不调 LLM、citations 恒空（订单不是资产，0002）。工具调用记录随消息落列
+    （tool JSONB，回放还原工具条），同形状进 SSE tool 事件与 complete.tool。
+    序列：2 commit（问句/回答）——与非订单路径独立，单测单独钉。
+    """
+    result = get_order_status(db, order_no)
+    tool_record = {
+        "name": "get_order_status",
+        "arg": order_no,
+        "result": summarize_tool_result(result),
+    }
+    if result.get("found"):
+        kind, handoff = "answer", False
+        content = render_order_answer(result)
+    else:
+        kind, handoff = "handoff", True
+        content = render_handoff_content(order_no, result)
+        logger.info("订单工具转人工: order_no=%s %s", order_no, tool_record["result"])
+
+    agent_message = ServiceMessage(
+        session_id=session.id,
+        role="agent",
+        content=content,
+        citations=[],
+        kind=kind,
+        handoff=handoff,
+        tool=tool_record,
+    )
+    db.add(agent_message)
+    db.commit()
+    db.refresh(agent_message)
+
+    answer = ComposedAnswer(content=content, citations=[], kind=kind, handoff=handoff)
+    return AskOutcome(
+        agent_message=agent_message,
+        answer=answer,
+        gap=None,
+        generated=False,  # 工具路径不调 LLM：不多发「正在生成回答…」thinking
+        fallback=False,  # 非降级——模板组装是工具路径的正式产出（0036 v1）
+        tool=tool_record,
+    )
+
+
 def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iterator[str]:
     """SSE 事件序列：thinking（检索）[-> thinking（生成）] -> delta* -> complete。
 
     生成器只吐已收全文本与已落库的元数据，不碰 DB。模型路径多一个 thinking
     （正在生成回答…）；降级不发（诚实标注靠 fallback）。complete 载荷按
     ``expose_gap_id`` 白名单裁剪：顾客通道不吐 gap_id（0030 口径仅对操作者
-    保持），操作者通道事件形状与抽取前逐字节一致。
+    保持），操作者通道事件形状与抽取前逐字节一致（新增的 tool 键除外——
+    0036：单号本由提问者提供，无内部敏感字段，两通道同形状不裁剪）。
+
+    0036 订单工具路径（outcome.tool 非 None）：thinking 换「查询订单中…」
+    （检索被跳过，状态行诚实）-> tool {name, arg, result}（工具调用后发，
+    工具条数据）-> delta* -> complete（含 tool）。
     """
-    yield sse_event("thinking", {"text": THINKING_TEXT})
+    if outcome.tool is not None:
+        yield sse_event("thinking", {"text": ORDER_THINKING_TEXT})
+        yield sse_event("tool", outcome.tool)
+    else:
+        yield sse_event("thinking", {"text": THINKING_TEXT})
     if outcome.generated:
         yield sse_event("thinking", {"text": GENERATING_THINKING_TEXT})
     for piece in split_deltas(outcome.agent_message.content):
@@ -164,6 +245,9 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
         "citations": outcome.answer.citations,
         "kind": outcome.answer.kind,
         "handoff": outcome.answer.handoff,
+        # 0036：None 或 {name, arg, result}——非订单路径多一个 null 键，
+        # 既有消费方按键取值不受影响；两通道同形状（不走 gap_id 式裁剪）
+        "tool": outcome.tool,
     }
     if expose_gap_id:
         # 拒答=缺口 id（前端芯片跳治理台缺口 tab）；answer 恒为 null

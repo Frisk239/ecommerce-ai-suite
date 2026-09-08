@@ -4,7 +4,7 @@
 
 import { Link } from 'react-router-dom'
 import { ChatCircleDots, HandArrowUp, UserCircle } from '@phosphor-icons/react'
-import type { ServiceCitation } from '../api/types'
+import type { ServiceCitation, ToolCallRecord } from '../api/types'
 import CitationChip from './CitationChip'
 import { formatAssetId, formatGapId, formatTime } from '../labels'
 
@@ -15,7 +15,7 @@ export interface UiMessage {
   role: 'customer' | 'agent'
   content: string
   citations: ServiceCitation[] | null
-  kind: 'answer' | 'refusal' | null
+  kind: 'answer' | 'refusal' | 'handoff' | null
   handoff: boolean
   created_at: string
   /** thinking 或 delta 进行中（锁输入、显示光标/typing）。 */
@@ -31,6 +31,9 @@ export interface UiMessage {
   /** 厂商生成失败降级为证据组装模板（第 7 刀）：只在 complete 事件带回，
    * 重载后徽章不重现（同 gapId 运行时口径）。 */
   fallback: boolean
+  /** 订单工具调用记录（第 13 刀/ADR 0036）：与 fallback 相反——随消息落库，
+   * 重载后灰底 mono 工具条照样还原（回放完整性）。 */
+  tool: ToolCallRecord | null
 }
 
 /** 服务器消息 -> 展示用消息（重载会话时用；live 消息由发问方直接构造）。 */
@@ -39,9 +42,10 @@ export function toUi(m: {
   role: 'customer' | 'agent'
   content: string
   citations: ServiceCitation[] | null
-  kind: 'answer' | 'refusal' | null
+  kind: 'answer' | 'refusal' | 'handoff' | null
   handoff: boolean | null
   created_at: string
+  tool?: ToolCallRecord | null
 }): UiMessage {
   return {
     key: `s-${m.id}`,
@@ -57,6 +61,7 @@ export function toUi(m: {
     thinkingText: null,
     gapId: null,
     fallback: false,
+    tool: m.tool ?? null,
   }
 }
 
@@ -66,6 +71,22 @@ function CitationChipPlain({ assetId, version }: { assetId: number; version: num
     <span className="cite-chip" title="回答依据的已发布资料版本">
       {formatAssetId(assetId)} · v{version}
     </span>
+  )
+}
+
+/** 工具条（第 13 刀/ADR 0036，UX-NOTES §6 冻结口径）：灰底 mono「参数→结果」，
+ * 与青底引用芯片视觉分离——引用=证据指向，工具条=已发生的动作留档。 */
+function ToolStrip({ tool }: { tool: ToolCallRecord }) {
+  return (
+    <div className="tool-strip" title="引擎调用工具的真实动作记录（只读工具，不是证据引用）">
+      <span className="tool-call">
+        {tool.name}({tool.arg})
+      </span>
+      <span className="tool-arrow" aria-hidden>
+        →
+      </span>
+      <span className="tool-result">{tool.result}</span>
+    </div>
   )
 }
 
@@ -159,6 +180,7 @@ export default function MessageBubble({
         {m.streaming && m.content === '' && (
           <div className="text-[11px] text-caption">{m.thinkingText ?? '正在检索已发布资产…'}</div>
         )}
+        {m.tool !== null && !m.streaming && <ToolStrip tool={m.tool} />}
         {m.citations !== null && m.citations.length > 0 && !m.streaming && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-caption">引用：</span>

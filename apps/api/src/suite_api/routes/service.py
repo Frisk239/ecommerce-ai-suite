@@ -68,8 +68,11 @@ class MessageOut(BaseModel):
     role: str  # customer | agent
     content: str
     citations: list[dict[str, Any]] | None  # 仅 agent 消息：[{asset_id, version_no}]
-    kind: str | None  # answer | refusal（仅 agent 消息）
+    kind: str | None  # answer | refusal | handoff（仅 agent 消息；handoff=0036 工具转人工）
     handoff: bool
+    # 0036 工具调用记录 {name, arg, result}（仅订单工具路径的 agent 消息非空）：
+    # 回放还原灰底工具条（与 gap_id 的运行时口径不同，随消息落库）
+    tool: dict[str, Any] | None
     created_at: datetime
 
 
@@ -109,6 +112,7 @@ def _to_message_out(message: ServiceMessage) -> MessageOut:
         citations=list(message.citations) if message.citations is not None else None,
         kind=message.kind,
         handoff=message.handoff,
+        tool=dict(message.tool) if message.tool is not None else None,
         created_at=message.created_at,
     )
 
