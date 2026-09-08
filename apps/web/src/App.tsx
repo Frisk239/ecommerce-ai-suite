@@ -15,6 +15,7 @@ import CustomerPage from './pages/CustomerPage'
 import LoginPage from './pages/LoginPage'
 import MaterialPage from './pages/MaterialPage'
 import NotFoundPage from './pages/NotFoundPage'
+import OpsPage from './pages/OpsPage'
 import ProductsPage from './pages/ProductsPage'
 import ServicePage from './pages/ServicePage'
 
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/material" element={<MaterialPage />} />
             <Route path="/clips" element={<ClipsPage />} />
             <Route path="/coach" element={<CoachPage />} />
+            <Route path="/ops" element={<OpsPage />} />
             <Route path="/service" element={<ServicePage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>

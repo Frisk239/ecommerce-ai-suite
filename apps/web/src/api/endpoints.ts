@@ -18,6 +18,7 @@ import type {
   KnowledgeGapStatus,
   MaterialTask,
   Operator,
+  OpsRun,
   Product,
   QaPair,
   ServiceAnswerComplete,
@@ -149,6 +150,15 @@ export const api = {
   listCoachRecords: () => request<CoachRecord[]>('/coach/records'),
   rescoreCoachRecord: (recordId: number) =>
     request<CoachRecord>(`/coach/records/${recordId}/rescore`, { method: 'POST' }, 30_000),
+
+  // 运营 Agent（第 22 刀/ADR 0041）：编排轨迹不是中台对象；建任务/重试请求内
+  // 同步执行三步（gen_material 含 LLM ≤20s，超时宽同素材生成）。投放=渠道动作。
+  listOpsRuns: () => request<OpsRun[]>('/ops/runs'),
+  createOpsRun: (productId: number) =>
+    request<OpsRun>('/ops/runs', { method: 'POST', body: JSON.stringify({ product_id: productId }) }, 30_000),
+  retryOpsRun: (runId: number) =>
+    request<OpsRun>(`/ops/runs/${runId}/retry`, { method: 'POST' }, 30_000),
+  deliverOpsRun: (runId: number) => request<OpsRun>(`/ops/runs/${runId}/deliver`, { method: 'POST' }),
 
   // 客服会话（预览与顾客接口同一引擎；传输用 SSE，不用 EventSource）
   createServiceSession: () =>

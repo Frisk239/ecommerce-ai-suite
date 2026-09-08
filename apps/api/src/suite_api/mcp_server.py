@@ -26,7 +26,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from suite_api.deps import ensure_engine, ensure_storage
-from suite_api.models import Asset, AssetVersion
+from suite_api.models import Asset, AssetVersion, AuditLog, Operator
 from suite_api.services import registration
 from suite_api.services.asset_view import (
     load_products,
@@ -40,6 +40,28 @@ from suite_api.services.retrieval import retrieve
 # get_asset 对「取不到已发布版本」统一口径：不区分资产不存在/存在但未发布/
 # 版本存在但从未发布——知道 ID 也探不出哪些是待人洗（ADR 0020 的闸门语义）。
 _UNPUBLISHED_MESSAGE = "资产或版本不存在，或从未发布：连接层只能读取已发布版本"
+
+# export 留痕（第 22 刀/ADR 0041）：audit_log.operator_id 是非空 FK operators.id，
+# 连接层调用方只有 Bearer token、无逐用户身份——归到这条系统操作者行「mcp」。
+# password_hash 置 "!"：不是合法 bcrypt 串，seed.check_password 捕获 ValueError
+# 按校验失败处理，此账号永远登不进控制台，只作留痕归属；血缘时间线里如实显示
+# 操作者名「mcp」，与治理台真人动作可分辨。
+MCP_OPERATOR_USERNAME = "mcp"
+_MCP_OPERATOR_UNLOGINABLE_HASH = "!"
+
+
+def ensure_mcp_operator_id(session) -> int:  # noqa: ANN001 - SQLAlchemy Session 窄用
+    """确保系统操作者「mcp」行存在并返回 id（export 留痕的 operator 归属）。"""
+    operator = session.scalar(
+        select(Operator).where(Operator.username == MCP_OPERATOR_USERNAME)
+    )
+    if operator is None:
+        operator = Operator(
+            username=MCP_OPERATOR_USERNAME, password_hash=_MCP_OPERATOR_UNLOGINABLE_HASH
+        )
+        session.add(operator)
+        session.flush()
+    return operator.id
 
 
 def _mask_fields_map(fields: dict) -> dict:
@@ -235,6 +257,13 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
         MCP 响应跨进程边界，导出正文（版本字节原文，未掩区）返回前过
         redact；对象键与存储字节不动。search_published 的 chunk 已在
         retrieve 返回处统一收掩（出口 1 收口点），两条只读出口同口径。
+
+        0041（第 22 刀顺手件）：成功导出的每份资产写一行 audit_log
+        （action="export"，含资产与当时版本号；只记元数据，正文不落留痕），
+        operator 归属系统操作者「mcp」（见 ensure_mcp_operator_id 的列形状
+        说明）。血缘「导出」环从此有料可拼；血缘写回（writebacks）的 action
+        集合={publish, rollback}（services/lineage.WRITEBACK_ACTIONS），不
+        含 export——不混入，钉测在 tests/test_mcp.py。
         """
         with _db_session() as session:
             storage = ensure_storage(host)
@@ -244,7 +273,7 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 .where(Asset.status == "published")
                 .order_by(Asset.id)
             ).all()
-            return [
+            exported = [
                 {
                     "asset_id": asset.id,
                     "version_no": asset_version.version_no,
@@ -256,6 +285,19 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 }
                 for asset, asset_version in rows
             ]
+            if exported:
+                operator_id = ensure_mcp_operator_id(session)
+                session.add_all(
+                    AuditLog(
+                        operator_id=operator_id,
+                        asset_id=entry["asset_id"],
+                        version_no=entry["version_no"],
+                        action="export",
+                    )
+                    for entry in exported
+                )
+                session.commit()
+            return exported
 
     streamable_app = mcp.streamable_http_app()
     # SDK 挂载约定：mounted 子应用 lifespan 不执行，session manager 交 host 代跑

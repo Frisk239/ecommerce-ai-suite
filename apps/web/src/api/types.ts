@@ -349,6 +349,43 @@ export interface CoachRecord {
   created_at: string
 }
 
+// ---------- 运营 Agent（routes/ops.py 契约，第 22 刀/ADR 0041） ----------
+
+/** 步状态四态（0041，冻结原型 OpsStepStatus）：与资产三态/素材五态无关。 */
+export type OpsStepStatus = 'pending' | 'running' | 'done' | 'failed'
+
+export interface OpsStep {
+  key: string // read_product | gen_material | compose（键序固定三步）
+  name: string
+  via: string // 中台接口 · 商品读取 / 厂商模型 / 中台接口 · 检索已发布素材
+  status: OpsStepStatus
+  detail: string
+}
+
+/** 引用锚（0007 冻结口径：compose 时刻的当前已发布指针版本，指针前移不漂移）。 */
+export interface OpsRunRef {
+  asset_id: number
+  version_no: number
+}
+
+export interface OpsRunOutput {
+  title: string
+  body: string
+  refs: OpsRunRef[]
+}
+
+/** 编排轨迹不是中台对象（0041）：不能检索、不能发布、不进治理台；
+ * delivered_at 非空=已投放（渠道动作 mock，不改任何资产三态）。 */
+export interface OpsRun {
+  id: number
+  product_id: number
+  product_name: string
+  steps: OpsStep[]
+  output: OpsRunOutput | null
+  delivered_at: string | null
+  created_at: string
+}
+
 // ---------- 顾客通道（routes/customer.py 契约，ADR 0021/0033） ----------
 
 /** POST /customer/sessions 签发：令牌只在此响应完整出现一次，顾客侧自行保存。 */

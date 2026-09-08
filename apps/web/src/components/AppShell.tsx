@@ -1,6 +1,7 @@
 // 操作台壳（视觉优化刀）：固定左侧栏（分组：数据中台靠前）+ 顶栏面包屑 + 内容列。
 // 路由行为不变：/login 与 /customer 不进此壳；新页面入口只加 NAV/面包屑条目
-// （第 17 刀起含素材中心；第 18 刀起含直播切片；第 19 刀起含销售考核）。
+// （第 17 刀起含素材中心；第 18 刀起含直播切片；第 19 刀起含销售考核；
+// 第 22 刀起含运营 Agent）。
 
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
@@ -12,6 +13,7 @@ import {
   List,
   Megaphone,
   Package,
+  Robot,
   SignOut,
   Storefront,
   X,
@@ -26,6 +28,7 @@ const NAV = [
   { to: '/material', label: '素材中心', icon: Megaphone, group: null },
   { to: '/clips', label: '直播切片', icon: FilmSlate, group: null },
   { to: '/coach', label: '销售考核', icon: GraduationCap, group: null },
+  { to: '/ops', label: '运营 Agent', icon: Robot, group: null },
 ] as const
 
 function useCrumb(): string | null {
@@ -36,6 +39,7 @@ function useCrumb(): string | null {
   if (pathname.startsWith('/material')) return '业务能力 / 素材中心'
   if (pathname.startsWith('/clips')) return '业务能力 / 直播切片'
   if (pathname.startsWith('/coach')) return '业务能力 / 销售考核'
+  if (pathname.startsWith('/ops')) return '业务能力 / 运营 Agent'
   if (pathname.startsWith('/service')) return '业务能力 / AI 客服'
   return null
 }
