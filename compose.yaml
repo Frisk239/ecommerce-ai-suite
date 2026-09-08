@@ -33,6 +33,7 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://opencode.ai/zen/go/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen3.8-flash}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
+      CUSTOMER_TRUST_PROXY: ${CUSTOMER_TRUST_PROXY:-}  # 空=直连模式忽略 XFF；反代部署设 true（settings 空串回落默认）
     ports:
       - "8000:8000"
     volumes:

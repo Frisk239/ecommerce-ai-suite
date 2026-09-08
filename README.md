@@ -63,6 +63,17 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 - **引用服务端定**（0007）：`citations` 恒由检索命中确定，模型无引用决定权；系统提示明确要求模型不输出引用编号。
 - 回答先收全再落库再流式：断连仍完整落库（契约不变）。
 
+## 顾客通道（第 8 刀，ADR 0021/0033）
+
+`POST /api/customer/sessions` 无登录签发会话令牌（Bearer）；`POST /api/customer/sessions/{id}/messages` 发问走与控制台预览同一客服引擎。三道限流闸（进程内滑动窗口，429+Retry-After）：IP 建会话 5/60s、IP 发问 30/60s（先于令牌鉴权——狂刷不碰库）、会话发问 10/60s（后于令牌鉴权——无效令牌耗不了真会话的配额）。会话不存在与令牌无效统一 401 同文案（自增 session id 不可探测）。
+
+限流 IP 口径两种部署模式（env `CUSTOMER_TRUST_PROXY`）：
+
+| 模式 | 取值 | 语义 |
+| --- | --- | --- |
+| 直连（默认） | 空 / `false` | 只信 TCP 对端地址，**完全忽略 `X-Forwarded-For`**：api 直接暴露（含 compose 现状）时，伪造该请求头换不了 IP 闸 key——不配即最保守（fail-closed） |
+| 反代 | `true` | 信 `X-Forwarded-For` 第一跳：api 只接反向代理流量时用，**部署者必须让反代强制覆盖/清洗该头**，否则顾客自报头即可绕过 IP 闸 |
+
 ## MCP 连接层（第 5 刀，ADR 0032）
 
 外部 Agent（Cursor / Claude / 官方 SDK 客户端）经 Streamable HTTP 连同一份中台，端点 `http://localhost:8000/mcp/`。
@@ -154,7 +165,7 @@ web 构建校验：`cd apps/web && npm run build && npm run lint`
 
 ## 环境变量
 
-见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）。真实 LLM 密钥只落到 `.env`。
+见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）。真实 LLM 密钥只落到 `.env`。
 
 ## 仓库布局
 

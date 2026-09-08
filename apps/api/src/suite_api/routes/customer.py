@@ -4,7 +4,8 @@
   原文，迁移 0005 落列）；201 返回 ``{session_id, token}``。无操作者鉴权
   （0021：顾客不是本套件账号），靠 IP 建会话限流（0033：不做无令牌狂刷）。
 - ``POST /api/customer/sessions/{id}/messages``：``Authorization: Bearer <token>``
-  鉴权（compare_digest 恒定时间比较；无效/缺令牌 401 带 WWW-Authenticate），
+  鉴权（compare_digest 恒定时间比较；会话不存在与令牌无效统一 401 带
+  WWW-Authenticate——自增 id 不可探测），
   发问走 chat_engine（0021 同一引擎：与操作者预览同事件序 thinking ->
   delta* -> complete），**complete 不带 gap_id**（spec 工程裁决：顾客不暴露
   内部缺口 id，事件载荷白名单裁剪——拒答照常落缺口，操作者在治理台可见）。
@@ -45,8 +46,16 @@ class AskBody(BaseModel):
 
 
 def client_ip(request: Request) -> str:
-    """限流托底口径：X-Forwarded-For 第一跳；compose 直连即 remote addr。"""
-    forwarded = request.headers.get("x-forwarded-for")
+    """限流 IP 口径（两模式，settings.customer_trust_proxy 切换）。
+
+    直连模式（默认，fail-closed）：只信 TCP 对端地址（request.client.host），
+    完全忽略 X-Forwarded-For——该头是客户端自报的，直连部署下伪造它就能换 IP
+    闸 key，等于没有 IP 托底。反代模式：信 XFF 第一跳，部署者负责让反向代理
+    强制覆盖该头（README 顾客通道节写明两模式语义）。
+    """
+    forwarded = (
+        request.headers.get("x-forwarded-for") if request.app.state.settings.customer_trust_proxy else None
+    )
     if forwarded:
         return forwarded.split(",", 1)[0].strip()
     return request.client.host if request.client else "unknown"
@@ -65,9 +74,11 @@ def _bearer_token(request: Request) -> str | None:
 
 
 def _unauthorized() -> HTTPException:
+    # 会话不存在与令牌无效共用同一文案：自增 session id 配 404/401 双态等于
+    # 存在性探测面，统一后不可区分（保留 WWW-Authenticate 满足 Bearer 语义）。
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="顾客会话令牌无效或缺失",
+        detail="会话不存在或令牌无效",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -112,25 +123,29 @@ async def ask(
 ) -> StreamingResponse:
     """顾客发问 -> SSE 流式回答（与操作者版同事件序；complete 不带 gap_id）。
 
-    闸序：限流（会话级 + IP 托底，先于鉴权——狂刷不值得碰库）-> 404 -> 401
-    （令牌）-> 409（非 active）-> 422（空问句）-> 引擎。引擎主体与取舍见
+    闸序（取舍见 services/rate_limit）：IP 闸（先于鉴权省 DB——狂刷无论令牌
+    对错都不碰库）-> 401（会话不存在与令牌无效统一文案，自增 id 不可探测）
+    -> 会话闸（后于鉴权保配额——无效令牌查得到会话但耗不了它的发问配额）
+    -> 409（非 active）-> 422（空问句）-> 引擎。引擎主体与取舍见
     services/chat_engine（0021：两条通道行为只差鉴权与载荷白名单）。
     """
-    retry_after = limits.check_ask(str(session_id), client_ip(request))
+    retry_after = limits.check_ask_ip(client_ip(request))
     if retry_after is not None:
         raise _rate_limited(retry_after)
 
     session = db.get(ServiceSession, session_id)
-    if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
-
     token = _bearer_token(request)
     if (
-        token is None
+        session is None
+        or token is None
         or session.customer_token is None
         or not compare_digest(session.customer_token.encode(), token.encode())
     ):
         raise _unauthorized()
+
+    retry_after = limits.check_ask_session(str(session_id))
+    if retry_after is not None:
+        raise _rate_limited(retry_after)
 
     if session.status != ACTIVE:
         raise HTTPException(

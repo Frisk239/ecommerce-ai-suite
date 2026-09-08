@@ -1,16 +1,19 @@
 """顾客通道集成测试（真 PG，LLM 空凭证不调外网；见 conftest 的清理口径）。
 
-第 8 刀契约（ADR 0021/0033 + spec Must 2/5/6）：
+第 8 刀契约（ADR 0021/0033）+ 第 10 刀安全面收口：
 - 签发（无登录）-> Bearer 发问 -> SSE 与操作者版同事件序，complete 不带
   gap_id；拒答照常落缺口（操作者治理台可见）-> 操作者列表见 origin=customer
   -> 操作者回流登记（0021：回流仍是操作者动作）-> 顾客再问 409。
-- 无效/缺令牌 401（WWW-Authenticate: Bearer）；未知会话 404；空问句 422。
-- 限流：小阈值替换 app.state 后，会话发问与 IP 建会话超限 429 + Retry-After。
+- 无效/缺令牌与会话不存在统一 401 同文案（WWW-Authenticate: Bearer；自增
+  session id 不可探测）；空问句 422。
+- 限流闸序：IP 闸先于鉴权（坏令牌超 IP 闸也 429）；会话闸后于鉴权（无效
+  令牌耗不了真会话配额）；IP 口径直连默认忽略 XFF，trust 模式信第一跳。
 """
 
 import re
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sse_helpers import parse_sse_events
 
@@ -154,17 +157,21 @@ def test_customer_token_auth(api: ApiFixture) -> None:
         f"/api/customer/sessions/{sid}/messages", json=body, headers={"Authorization": "Bearer not-the-token"}
     )
     assert bad.status_code == 401
+    assert bad.json()["detail"] == "会话不存在或令牌无效"
     assert bad.headers.get("www-authenticate") == "Bearer"
     # 非Bearer方案 -> 401
     weird = client.post(
         f"/api/customer/sessions/{sid}/messages", json=body, headers={"Authorization": token}
     )
     assert weird.status_code == 401
-    # 未知会话 -> 404
+    # 未知会话 -> 401 与令牌无效同文案（自增 id 不可探测：404/401 双态是探测面）
     unknown = client.post(
         "/api/customer/sessions/999999/messages", json=body, headers={"Authorization": f"Bearer {token}"}
     )
-    assert unknown.status_code == 404
+    assert unknown.status_code == 401
+    assert unknown.json()["detail"] == "会话不存在或令牌无效"
+    assert unknown.json()["detail"] == bad.json()["detail"]
+    assert unknown.headers.get("www-authenticate") == "Bearer"
 
 
 def test_customer_cannot_ask_operator_session(api: ApiFixture) -> None:
@@ -230,9 +237,9 @@ def test_customer_rate_limit_429_with_retry_after(api: ApiFixture) -> None:
         client.app.state.customer_rate_limits = original
 
 
-def test_rate_limit_ip_key_uses_xff_first_hop(api: ApiFixture) -> None:
-    """IP 托底口径（spec Must 4）：带 X-Forwarded-For 时按第一跳记账——伪造
-    不同第一跳的请求各自占独立配额，互不挤占；无头时落回 remote addr。"""
+def test_rate_limit_ip_key_direct_mode_ignores_xff(api: ApiFixture) -> None:
+    """直连默认（XFF 信任模式收口）：完全忽略 X-Forwarded-For——伪造不同头的
+    请求落同一真实 IP 账，换头刷不过建会话闸。"""
     client, _ = api
     client.cookies.clear()
     original = client.app.state.customer_rate_limits
@@ -240,14 +247,94 @@ def test_rate_limit_ip_key_uses_xff_first_hop(api: ApiFixture) -> None:
         session_ask_limit=50, ip_ask_limit=50, ip_create_limit=1
     )
     try:
-        # 同一「第一跳」建两次会话 -> 第二次 429；换第一跳 -> 又能建（各自记账）
+        # 两次请求换了 XFF，仍同一真实对端记账 -> 第二次 429（换头无效）
+        assert (
+            client.post("/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7"}).status_code
+            == 201
+        )
+        blocked = client.post("/api/customer/sessions", headers={"X-Forwarded-For": "198.51.100.9"})
+        assert blocked.status_code == 429
+    finally:
+        client.app.state.customer_rate_limits = original
+
+
+def test_rate_limit_ip_key_trust_mode_uses_xff_first_hop(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """反代模式（monkeypatch settings）：信 XFF 第一跳——同第一跳连建第二个
+    429，换第一跳各自记账又能建。"""
+    client, _ = api
+    client.cookies.clear()
+    monkeypatch.setattr(client.app.state.settings, "customer_trust_proxy", True)
+    original = client.app.state.customer_rate_limits
+    client.app.state.customer_rate_limits = CustomerRateLimits(
+        session_ask_limit=50, ip_ask_limit=50, ip_create_limit=1
+    )
+    try:
         assert (
             client.post("/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.1"}).status_code
             == 201
         )
         blocked = client.post("/api/customer/sessions", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.2"})
-        assert blocked.status_code == 429
+        assert blocked.status_code == 429  # 第二跳变了不算数：仍同一第一跳
         other = client.post("/api/customer/sessions", headers={"X-Forwarded-For": "198.51.100.9"})
-        assert other.status_code == 201
+        assert other.status_code == 201  # 不同第一跳各账
+    finally:
+        client.app.state.customer_rate_limits = original
+
+
+def test_bad_token_cannot_burn_session_quota(api: ApiFixture) -> None:
+    """闸序重排：无效令牌在会话闸之前被 401 拦——连打超会话阈值次后，真令牌
+    同会话仍可问（发问配额未被替耗）；好令牌超出阈值后仍照常 429。"""
+    client, _ = api
+    client.cookies.clear()
+    original = client.app.state.customer_rate_limits
+    client.app.state.customer_rate_limits = CustomerRateLimits(
+        session_ask_limit=2, ip_ask_limit=20, ip_create_limit=5
+    )
+    try:
+        created = _create_customer_session(client)
+        sid, token = created["session_id"], created["token"]
+        bad_headers = {"Authorization": "Bearer not-the-token"}
+        for _ in range(5):  # 5 > 会话阈值 2：若会话闸仍在鉴权之前，这里会被替耗成 429
+            resp = client.post(
+                f"/api/customer/sessions/{sid}/messages", json={"content": "你好"}, headers=bad_headers
+            )
+            assert resp.status_code == 401
+        assert len(_customer_ask(client, sid, token, "真顾客第一问")) > 0
+        assert len(_customer_ask(client, sid, token, "真顾客第二问")) > 0
+        limited = client.post(
+            f"/api/customer/sessions/{sid}/messages",
+            json={"content": "真顾客第三问"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert limited.status_code == 429  # 会话闸自身仍有效
+        assert int(limited.headers["retry-after"]) >= 1
+    finally:
+        client.app.state.customer_rate_limits = original
+
+
+def test_ip_gate_fronts_auth_for_bad_tokens(api: ApiFixture) -> None:
+    """IP 闸前置：坏令牌把 IP 发问账打满后，坏令牌也 429（先于 401，狂刷不碰库）。"""
+    client, _ = api
+    client.cookies.clear()
+    original = client.app.state.customer_rate_limits
+    client.app.state.customer_rate_limits = CustomerRateLimits(
+        session_ask_limit=50, ip_ask_limit=3, ip_create_limit=5
+    )
+    try:
+        created = _create_customer_session(client)
+        sid = created["session_id"]
+        bad_headers = {"Authorization": "Bearer not-the-token"}
+        for _ in range(3):  # 都 401，但 IP 账已记满 3 条
+            resp = client.post(
+                f"/api/customer/sessions/{sid}/messages", json={"content": "你好"}, headers=bad_headers
+            )
+            assert resp.status_code == 401
+        fourth = client.post(
+            f"/api/customer/sessions/{sid}/messages", json={"content": "你好"}, headers=bad_headers
+        )
+        assert fourth.status_code == 429
+        assert int(fourth.headers["retry-after"]) >= 1
     finally:
         client.app.state.customer_rate_limits = original
