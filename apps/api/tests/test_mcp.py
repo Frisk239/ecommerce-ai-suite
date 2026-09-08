@@ -398,3 +398,106 @@ def test_mcp_wrong_token_fails_initialize(mcp_env: McpEnv) -> None:
         assert _has_401(excinfo.value)
     finally:
         settings.mcp_bearer_token = _TOKEN
+
+
+def test_export_published_writes_audit_trace(mcp_env: McpEnv) -> None:
+    """export 留痕钉测（第 22 刀/ADR 0041 顺手件）。
+
+    - 成功导出：每份当前已发布资产写一行 audit_log（action="export"，含当时
+      版本号），operator 归属系统行「mcp」（血缘时间线里如实显示操作者名）；
+    - 血缘写回不混入：writebacks 的 action 只有 publish/rollback，export 行
+      只出现在 versions_audit（services/lineage.WRITEBACK_ACTIONS 钉死）；
+    - 「mcp」账号永远登不进控制台（password_hash 非合法 bcrypt 串）；
+    - 留痕只记元数据（asset_id/version_no），不含导出正文。
+
+    同 host 不能第二次进 lifespan：FastMCP session manager 的 run() 每实例仅
+    允许一次（SDK 文档字符串），全链用例已耗尽 mcp_env 的 app——这里重建一个
+    app 实例（同库同存储根：export 要能读到前案登记资产的字节）。
+    """
+    _, settings, storage_root = mcp_env
+    app = create_app(
+        Settings(
+            database_url=settings.database_url,
+            storage_root=storage_root,
+            mcp_bearer_token=_TOKEN,
+        )
+    )
+    # 前案（全链）的 export 也为资产 A 写过留痕：本用例只盯自己新登记的资产
+    async def scenario() -> dict:
+        out: dict = {}
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as api:
+            login = await api.post(
+                "/api/auth/login", json={"username": "operator", "password": "operator123"}
+            )
+            assert login.status_code == 200
+            api.cookies.update(login.cookies)
+            # mcp 系统账号不可登录（留痕归属专用）
+            mcp_login = await api.post(
+                "/api/auth/login", json={"username": "mcp", "password": "!"}
+            )
+            out["mcp_login"] = mcp_login.status_code
+
+            up = await api.post(
+                "/api/assets/register",
+                files={
+                    "file": (
+                        "export-trace.txt",
+                        "导出留痕测试：净含量 500ml。".encode(),
+                        "text/plain",
+                    )
+                },
+                data={"title": "导出留痕测试"},
+            )
+            assert up.status_code == 201, up.text
+            asset_id = up.json()["id"]
+            pub = await api.post(f"/api/assets/{asset_id}/publish")
+            assert pub.status_code == 200, pub.text
+            out["asset_id"] = asset_id
+
+        async with _mcp_session(app, settings) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                exported = await session.call_tool("export_published", {})
+                assert not exported.isError
+                entries = _payload(exported)
+                mine = [e for e in entries if e["asset_id"] == asset_id]
+                out["exported"] = [
+                    {"asset_id": e["asset_id"], "version_no": e["version_no"]} for e in mine
+                ]
+                # 留痕不存正文：导出结果里有 content，audit 表列里没有
+                out["exported_has_content"] = "content" in mine[0]
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as api:
+            login = await api.post(
+                "/api/auth/login", json={"username": "operator", "password": "operator123"}
+            )
+            api.cookies.update(login.cookies)
+            out["audit"] = (await api.get("/api/audit", params={"assetId": asset_id})).json()
+            lineage = await api.get(f"/api/assets/{asset_id}/lineage")
+            assert lineage.status_code == 200
+            out["lineage"] = lineage.json()
+            return out
+
+    out = _run_with_lifespan(app, scenario)
+
+    assert out["mcp_login"] == 401
+    assert out["exported"] == [{"asset_id": out["asset_id"], "version_no": 1}]
+    assert out["exported_has_content"]  # 导出响应形状不变（正文仍在），留痕行不含
+    audit_by_action: dict[str, int] = {}
+    for row in out["audit"]:
+        audit_by_action[row["action"]] = audit_by_action.get(row["action"], 0) + 1
+    assert audit_by_action.get("export") == 1  # 导出一次=一行
+    assert audit_by_action.get("publish") == 1  # 既有发布留痕不受影响
+
+    timeline = out["lineage"]["versions_audit"]
+    export_events = [e for e in timeline if e["action"] == "export"]
+    assert len(export_events) == 1
+    assert export_events[0]["version_no"] == 1
+    assert export_events[0]["operator"] == "mcp"  # 操作者名如实显示，与真人可分辨
+    writeback_actions = {w["action"] for w in out["lineage"]["usages"]["writebacks"]}
+    assert "export" not in writeback_actions  # 不混入写回环
+    assert writeback_actions <= {"publish", "rollback"}

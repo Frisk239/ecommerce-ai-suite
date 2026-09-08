@@ -26,6 +26,7 @@ from suite_api.routes import (
     health,
     knowledge_gaps,
     material,
+    ops,
     products,
     service,
 )
@@ -113,6 +114,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 销售考核（第 19 刀/ADR 0040）：记录不是中台对象（0027），题库从已发布
     # 对话动态推导，打分 LLM rubric 无降级，四端点全操作者鉴权
     app.include_router(coach.router)
+    # 运营 Agent（第 22 刀/ADR 0041）：编排轨迹不是中台对象，三步同步就地执行、
+    # 失败续跑，投放=渠道动作不改资产三态，四端点全操作者鉴权
+    app.include_router(ops.router)
     # 顾客通道（ADR 0021/0033）：无操作者鉴权，Bearer 令牌 + 两级限流在路由内；
     # 限流器挂 app.state（测试可替换为小阈值/假时钟实例）
     app.include_router(customer.router)

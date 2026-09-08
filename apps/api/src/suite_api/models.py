@@ -311,6 +311,29 @@ class CoachRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class OpsRun(Base):
+    """ADR 0041：运营 Agent 编排轨迹=运营模块自有数据，不是中台对象（0012 口径）。
+
+    不能被检索、不能发布、不进治理台、无 MCP 触点。steps 是三步轨迹
+    ``[{key,name,status,detail,via}]``（pending|running|done|failed，同步就地
+    执行、逐步落库可观察）；output 是投放文案 ``{title,body,refs:[{asset_id,
+    version_no}]}``，refs 冻结 compose 时刻的当前已发布指针版本（0007）。
+    delivered_at 非空=已投放——那是渠道动作（mock），不改任何资产三态
+    （词条「发布」_Avoid_「投放发布」钉死），已投放不可再投放。
+    """
+
+    __tablename__ = "ops_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    steps: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    output: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class KnowledgeGap(Base):
     """ADR 0024/0030：知识缺口=无证据拒答留下的待补项，可挂商品。
 
