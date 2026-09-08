@@ -644,6 +644,9 @@ def rollback(
 @router.get("", response_model=list[AssetOut])
 def list_assets(
     status_filter: Annotated[str | None, Query(alias="status")] = None,
+    # 第 19 刀/ADR 0040 最小侵入加种类过滤（与 status 并存）：销售考核题库推导
+    # 只取已发布对话；不限枚举值，未知 kind 自然得空列表
+    kind: Annotated[str | None, Query()] = None,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> list[AssetOut]:
@@ -654,6 +657,8 @@ def list_assets(
             detail=f"status 只能是 {'/'.join(sorted(_VALID_STATUSES))}",
         )
     query = select(Asset).order_by(Asset.id.desc())
+    if kind is not None:
+        query = query.where(Asset.kind == kind)
     if status_filter == PUBLISHED:
         # 已发布口径=指针非空（含修订中：线上仍在服务）
         query = query.where(Asset.current_published_version_id.is_not(None))
