@@ -259,10 +259,10 @@ def confirm_fields(
     )
     if version is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产版本不存在")
-    if version.published_at is not None:
+    if asset.status == INGESTED or version.published_at is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="只有未发布的版本可以确认字段，已发布/历史版本不可改",
+            detail="只有待人洗（未发布）的版本可以确认字段，已发布/已接入/历史版本不可改",
         )
     product = _product_or_none(db, asset)
     schema = dict(product.spec_schema) if product is not None else {}

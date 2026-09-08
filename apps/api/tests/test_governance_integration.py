@@ -219,8 +219,12 @@ def test_machine_wash_failure_and_in_place_retry(api: ApiFixture) -> None:
     assert asset["status"] == "ingested"
     assert "UTF-8" in asset["last_error"]
 
-    # 已接入态发布被 409
+    # 已接入态发布被 409；人洗也不可改（闸门不只看 published_at）
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 409
+    assert (
+        client.patch(f"/api/assets/{asset_id}/versions/1/fields", json={"净含量": "1ml"}).status_code
+        == 409
+    )
 
     # 列表按状态过滤能找到它
     ingested = client.get("/api/assets", params={"status": "ingested"}).json()
