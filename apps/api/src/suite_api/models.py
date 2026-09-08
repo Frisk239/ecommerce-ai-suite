@@ -112,7 +112,7 @@ class AssetVersion(Base):
 
 
 class AuditLog(Base):
-    """0005/0016：谁/何时/对哪条资产哪一版做了 publish/confirm。append-only。"""
+    """0005/0016：谁/何时/对哪条资产哪一版做了 publish/confirm/rollback。append-only。"""
 
     __tablename__ = "audit_log"
     __table_args__ = (Index("ix_audit_log_asset_id", "asset_id"),)

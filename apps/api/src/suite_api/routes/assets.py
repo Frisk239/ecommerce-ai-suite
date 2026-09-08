@@ -250,7 +250,7 @@ def confirm_fields(
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> VersionOut:
-    """人洗：确认机洗值/补填弃权字段。闸门看版本未发布，不看 asset.status。"""
+    """人洗：确认机洗值/补填弃权字段。闸门看版本未发布；已接入仍拒绝。"""
     asset = _get_asset_or_404(db, asset_id)
     version = db.scalar(
         select(AssetVersion).where(
@@ -382,7 +382,6 @@ def open_revision(
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
     storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
-    knowledge_gap_id: Annotated[int | None, Query()] = None,
     body: OpenRevisionIn | None = None,
 ) -> AssetDetail:
     """开修订（0006）：复制当前已发布字节到新对象键；status/指针不动。
@@ -402,9 +401,7 @@ def open_revision(
             status_code=status.HTTP_409_CONFLICT,
             detail="同一资产同时最多一个未发布修订",
         )
-    gap_id = knowledge_gap_id
-    if body is not None and body.knowledge_gap_id is not None:
-        gap_id = body.knowledge_gap_id
+    gap_id = body.knowledge_gap_id if body is not None else None
     gap = load_attachable_gap(db, gap_id) if gap_id is not None else None
 
     published = db.get(AssetVersion, asset.current_published_version_id)
