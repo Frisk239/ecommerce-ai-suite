@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**审计刀 4**（`feat/audit-4`，closeout 见 `docs/progress/audit-4-closeout.md`）：三路子代理审第 16–20 刀——设计路 P0 零（CONTEXT 事故确认完全恢复）；技术债路 **P0=打码出口簇**（检索 chunk 进 prompt/人洗 confirmed 值/coaching 三输入全裸——17 刀只修了入口）；缺口路能力 6/7、运营 Agent 零代码。**不改产品代码**，排期：21 打码出口收口+小修 → 22 运营 Agent → 23 总览/连接演示页。第 16–20 刀已合并 main。
+上一刀：**第 21 刀打码出口收口**（`feat/redact-exports`，closeout 见 `docs/progress/redact-exports-closeout.md`）：审计刀 4 P0 簇七出口一揽子（检索 prompt/人洗值/coaching 三输入/MCP export/get_asset/血缘样例/title 源头；版本字节不动出口必掩，ADR 0038 修订段）；评审再抓 get_asset+title 两漏口均实修；零既有断言改动。第 16–20 刀+审计刀 4 已合并 main。
 
-当前阶段：工程刀。下一刀：**第 21 刀打码出口收口**（P0 簇：版本字节不动、出口必掩）；审计刀 5 于第 25 刀后触发。
+当前阶段：工程刀。下一刀：**第 22 刀运营 Agent**（能力 7/7：三步轨迹+失败重试+确认投放，照原型 Ops.tsx；复用 material 服务；顺手 MCP export 留痕）；审计刀 5 于第 25 刀后触发。
 
 ## 怎么切
 
@@ -156,9 +156,16 @@
 
 ## 更后面（现在不锁顺序，各是独立刀）
 
+## 第 21 刀：打码出口收口（已交付，`feat/redact-exports`）
+
+**路径：** 零新功能面——审计刀 4 P0 簇七出口统一 redact（检索 chunk 进 prompt/人洗 confirmed 值/coaching 三输入/MCP export+get_asset/血缘引用样例/title 源头先掩后截），**版本字节不动、出口必掩**（ADR 0038 修订段）；版本正文端点豁免钉死；ClipsPage 文案/任务词条/0038 正名/计数回写小修。评审再抓 get_asset（P0）与 title 全线（P1）两漏口均实修。零既有断言改动。集成 458 passed（基线 446 → 458）。证据见 `docs/progress/redact-exports-closeout.md`。
+
+**Out：** 打码规则扩展、多角色权限收紧、knowledge_gaps.question 出口（P2 记债）。
+
+
+
 | 刀 | 约束 |
 | --- | --- |
-| 第 21 刀打码出口收口 | P0 簇：chunk 进 prompt/confirmed 值/coaching 三输入/MCP export/血缘问句五出口统一 redact（0038 修订：字节不动出口必掩）+ 文案词条小修（ClipsPage 机洗文案/任务词条漂移/0038 正名/4→5 查询回写） |
 | 第 22 刀运营 Agent | 能力 7/7：三步轨迹+失败重试+确认投放（照原型 Ops.tsx；复用 material 服务；与治理台发布严格区分）；顺手 MCP export 留痕 |
 | 第 23 刀 | 总览页+连接层演示页（七块入口观感） |
 | 第 24–25 刀 | P1 债池：GIN 索引/题库单资产推导/N+1/material 四小条/前端收口刀 |
