@@ -47,11 +47,15 @@ from suite_api.services.asset_view import (
 )
 from suite_api.services.csv_import import CsvImportFormatError, parse_import_csv
 from suite_api.services.knowledge_gaps import load_attachable_gap, resolve_gaps_for_asset
-from suite_api.services.machine_wash import QA_FIELD, MachineWashError, run_machine_wash
+from suite_api.services.machine_wash import (
+    QA_FIELD,
+    MachineWashError,
+    run_machine_wash,
+    validate_qa_pairs,
+)
 from suite_api.services.publishing import (
     evaluate_publish_gate,
     publishable_values,
-    schema_field_names,
 )
 from suite_api.services.registration import (
     INGESTED,
@@ -331,10 +335,10 @@ def retry_machine_wash(
         )
     version = _latest_version_or_404(db, asset)
     product = _product_or_none(db, asset)
-    # 字段集与登记同口径分派：dialogue 重跑 LLM QA 抽取，文档重跑正则（第 12 刀）
+    # 字段集与登记同口径按 kind 分派：dialogue 重跑 LLM QA 抽取，文档重跑正则（第 12 刀）
     field_names = machine_wash_field_names(asset.kind, product)
     try:
-        extracted = run_machine_wash(storage, version.object_key, field_names)
+        extracted = run_machine_wash(storage, version.object_key, field_names, asset.kind)
         version.extracted_fields = extracted
         asset.status = PENDING_REVIEW
         asset.last_error = None
@@ -347,28 +351,12 @@ def retry_machine_wash(
 
 
 def _validate_qa_pairs_payload(value: Any) -> list[dict[str, str]]:
-    """qa_pairs 人洗载荷（第 12 刀）：[{q,a},...] 数组，逐项 q/a 非空串；
-    空数组合法=确认「没有 QA」。形状不合 422。"""
-    if not isinstance(value, list):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="qa_pairs 须为 [{q, a}, ...] 数组（空数组=确认没有 QA）",
-        )
-    pairs: list[dict[str, str]] = []
-    for item in value:
-        if (
-            not isinstance(item, dict)
-            or not isinstance(item.get("q"), str)
-            or not isinstance(item.get("a"), str)
-            or not item["q"].strip()
-            or not item["a"].strip()
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="qa_pairs 每项的 q/a 须为非空字符串（禁止空串冒充，0009）",
-            )
-        pairs.append({"q": item["q"].strip(), "a": item["a"].strip()})
-    return pairs
+    """qa_pairs 人洗载荷（第 12 刀）：形状校验用 machine_wash.validate_qa_pairs
+    共享口径（与 LLM 输出解析同一函数，禁两处各写），坏形状转 422。"""
+    try:
+        return validate_qa_pairs(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.patch("/{asset_id}/versions/{version_no}/fields", response_model=VersionOut)
@@ -399,8 +387,8 @@ def confirm_fields(
             detail="只有待人洗（未发布）的版本可以确认字段，已发布/已接入/历史版本不可改",
         )
     product = _product_or_none(db, asset)
-    schema = dict(product.spec_schema) if product is not None else {}
-    allowed = [QA_FIELD] if asset.kind == "dialogue" else schema_field_names(schema)
+    # 合法字段集与登记/机洗同一分派口径（按 kind；非 dialogue 的 qa_pairs 撞名字段同样拒绝）
+    allowed = machine_wash_field_names(asset.kind, product)
     unknown = sorted(set(body) - set(allowed))
     if unknown:
         raise HTTPException(

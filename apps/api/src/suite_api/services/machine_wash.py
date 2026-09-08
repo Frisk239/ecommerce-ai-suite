@@ -25,6 +25,7 @@ import asyncio
 import json
 import re
 from collections.abc import Callable, Iterable
+from typing import Any
 
 from suite_api.services import llm
 from suite_platform.storage import ObjectStorage
@@ -170,6 +171,27 @@ def extract_document_fields(text: str, field_names: Iterable[str]) -> dict[str, 
 QA_FIELD = "qa_pairs"
 QA_FAILURE_MESSAGE = "LLM QA 抽取失败"
 
+
+def validate_qa_pairs(value: Any) -> list[dict[str, str]]:
+    """qa_pairs 值校验+归一的唯一口径：[{q, a}, ...]，逐项 q/a 非空串（trim）；
+    空数组合法（=确认「没有 QA」）。形状不合抛 ValueError——LLM 输出解析
+    （parse_qa_output，转 MachineWashError）与人洗路由（PATCH fields，转 422）
+    两侧共用，禁止两处各写一套。"""
+    if not isinstance(value, list):
+        raise ValueError("qa_pairs 须为 [{q, a}, ...] 数组（空数组=确认没有 QA）")
+    pairs: list[dict[str, str]] = []
+    for item in value:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("q"), str)
+            or not isinstance(item.get("a"), str)
+            or not item["q"].strip()
+            or not item["a"].strip()
+        ):
+            raise ValueError("qa_pairs 每项的 q/a 须为非空字符串（禁止空串冒充，0009）")
+        pairs.append({"q": item["q"].strip(), "a": item["a"].strip()})
+    return pairs
+
 _QA_SYSTEM_PROMPT = (
     "你是电商客服知识治理助手，从客服对话转写中抽取可复用的问答对。\n"
     "只依据转写内容回答顾客问过且有明确答复的问题；转写里没有的不要编造。\n"
@@ -205,22 +227,9 @@ def parse_qa_output(raw: str) -> list[dict[str, str]]:
     """
     try:
         data = json.loads(_strip_code_fence(raw))
-    except ValueError as exc:
+        return validate_qa_pairs(data)
+    except (ValueError, TypeError) as exc:
         raise MachineWashError(QA_FAILURE_MESSAGE) from exc
-    if not isinstance(data, list):
-        raise MachineWashError(QA_FAILURE_MESSAGE)
-    pairs: list[dict[str, str]] = []
-    for item in data:
-        if (
-            not isinstance(item, dict)
-            or not isinstance(item.get("q"), str)
-            or not isinstance(item.get("a"), str)
-            or not item["q"].strip()
-            or not item["a"].strip()
-        ):
-            raise MachineWashError(QA_FAILURE_MESSAGE)
-        pairs.append({"q": item["q"].strip(), "a": item["a"].strip()})
-    return pairs
 
 
 def extract_qa_draft(transcript: str) -> dict:
@@ -232,8 +241,13 @@ def extract_qa_draft(transcript: str) -> dict:
       走既有就地重试端点；
     - 合法 [] = 对话无可抽问答，同样弃权（不加 reason 分叉，ADR 0035）。
 
-    asyncio.run：qa_pairs 只出现在 dialogue 机洗——登记/重试的唯一入口都是
-    同步 def 路由（FastAPI 线程池），线程上没有运行中的事件循环，安全。
+    asyncio.run 前提：LLM 分支只按 kind=dialogue 分派（见 run_machine_wash）——
+    dialogue 的登记/重试入口现均为同步 def 路由（FastAPI 线程池），线程上没有
+    运行中的事件循环，安全；文档上传登记虽是 async 路由，但 kind=document
+    永不走到这里（machine_wash_field_names 对非 dialogue 还滤掉 qa_pairs，
+    防 spec_schema 撞名）。MCP register_asset 工具同调 register_asset，现仅
+    kind=document 不触发——若未来 MCP 支持 dialogue，需先解决事件循环前提
+    （loop 线程上不可直接 asyncio.run），再加回本分支的调用方。
     """
     try:
         raw = asyncio.run(llm.complete_chat(_QA_SYSTEM_PROMPT, build_qa_prompt(transcript)))
@@ -248,12 +262,15 @@ def extract_qa_draft(transcript: str) -> dict:
 
 
 def run_machine_wash(
-    storage: ObjectStorage, object_key: str, field_names: Iterable[str]
+    storage: ObjectStorage, object_key: str, field_names: Iterable[str], kind: str
 ) -> dict[str, dict]:
     """机洗入口：从对象存储读回字节（ADR 0003，字节只住对象存储）→ 文本 → 抽取。
 
     读回或解码失败抛 MachineWashError；抽取不到字段不算失败（0009 弃权）。
-    字段集含 qa_pairs（对话种类）时走 LLM 抽取，其余字段走正则注册表。
+    LLM QA 分支**按 kind 显式判断**（ADR 0035：kind=对话 → 字段集就是
+    qa_pairs）——只有 kind==dialogue 且字段集含 qa_pairs 才走 extract_qa_draft；
+    document 即使字段集混入 qa_pairs（如 spec_schema 撞名）也只按未知字段
+    弃权，绝不在 async 上传路由的事件循环线程上 asyncio.run。
     """
     data = storage.get_bytes(object_key)  # 键不存在会抛 FileNotFoundError，同样属机洗失败
     try:
@@ -261,7 +278,8 @@ def run_machine_wash(
     except UnicodeDecodeError as exc:
         raise MachineWashError("文档字节不是合法 UTF-8 文本，无法机洗") from exc
     names = list(field_names)
-    result = extract_document_fields(text, [n for n in names if n != QA_FIELD])
-    if QA_FIELD in names:
+    if kind == "dialogue" and QA_FIELD in names:
+        result = extract_document_fields(text, [n for n in names if n != QA_FIELD])
         result[QA_FIELD] = extract_qa_draft(text)
-    return result
+        return result
+    return extract_document_fields(text, names)

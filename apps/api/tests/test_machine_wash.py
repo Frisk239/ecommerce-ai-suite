@@ -20,6 +20,7 @@ from suite_api.services.machine_wash import (
     extract_shelf_life,
     parse_qa_output,
     run_machine_wash,
+    validate_qa_pairs,
 )
 
 # ---------- 净含量 ----------
@@ -247,7 +248,7 @@ def test_run_machine_wash_dialogue_field_set_uses_llm(
 ) -> None:
     _patch_complete_chat(monkeypatch, result='[{"q": "问", "a": "答"}]')
     result: dict[str, Any] = run_machine_wash(
-        _FakeStorage(_TRANSCRIPT.encode()), "dialogue/x/1.txt", [QA_FIELD]
+        _FakeStorage(_TRANSCRIPT.encode()), "dialogue/x/1.txt", [QA_FIELD], "dialogue"
     )
     assert result == {QA_FIELD: {"value": [{"q": "问", "a": "答"}], "source": "machine"}}
 
@@ -255,7 +256,38 @@ def test_run_machine_wash_dialogue_field_set_uses_llm(
 def test_run_machine_wash_document_set_never_calls_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _patch_complete_chat(monkeypatch, result="[]")
     result = run_machine_wash(
-        _FakeStorage("净含量：550毫升".encode()), "documents/x/1.txt", ["净含量"]
+        _FakeStorage("净含量：550毫升".encode()), "documents/x/1.txt", ["净含量"], "document"
     )
     assert result == {"净含量": {"value": "550毫升", "source": "machine"}}
     assert calls == []  # 文档正则路径不触碰 LLM
+
+
+def test_run_machine_wash_dispatch_is_by_kind_not_field_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """评审必修（ADR 0035：QA 是种类级语义）：kind=document 时字段集混入
+    qa_pairs（如 spec_schema 撞名）也绝不走 extract_qa_draft——async 上传路由
+    在事件循环线程上，误触发即 asyncio.run RuntimeError。按未知字段弃权。"""
+    calls = _patch_complete_chat(monkeypatch, result='[{"q": "触发", "a": "失败"}]')
+    result = run_machine_wash(
+        _FakeStorage("净含量：550毫升".encode()),
+        "documents/x/2.txt",
+        ["净含量", QA_FIELD],
+        "document",
+    )
+    assert calls == []
+    assert result == {
+        "净含量": {"value": "550毫升", "source": "machine"},
+        QA_FIELD: {"abstained": True},  # 无正则抽取器 = 未知字段弃权
+    }
+
+
+# ---------- validate_qa_pairs：机洗解析与人洗路由共享的唯一口径 ----------
+
+
+def test_validate_qa_pairs_shape_and_errors() -> None:
+    assert validate_qa_pairs([]) == []
+    assert validate_qa_pairs([{"q": " 问 ", "a": " 答 "}]) == [{"q": "问", "a": "答"}]
+    for bad in ("不是数组", 42, None, [{"q": "缺答"}, {"q": "", "a": "答"}, "字符串项", [1]]):
+        with pytest.raises(ValueError):
+            validate_qa_pairs(bad)

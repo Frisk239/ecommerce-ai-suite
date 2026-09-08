@@ -64,3 +64,10 @@ def test_document_field_set_follows_spec_schema() -> None:
 
 def test_unlinked_document_field_set_is_empty() -> None:
     assert machine_wash_field_names("document", None) == []
+
+
+def test_document_field_set_drops_qa_pairs_name_collision() -> None:
+    """spec_schema 撞名防御：QA 是种类级语义（kind=对话才有 qa_pairs），
+    文档字段集即便 schema 混入 qa_pairs 键也滤掉——机洗与人洗闸门都不放行。"""
+    product = Product(name="怪键", category="测试", spec_schema={"净含量": {}, "qa_pairs": {}})
+    assert machine_wash_field_names("document", product) == ["净含量"]

@@ -54,10 +54,14 @@ def validate_source_kind(source_kind: str) -> str:
 
 def machine_wash_field_names(kind: str, product: Product | None) -> list[str]:
     """机洗字段集按资产种类分派（第 12 刀，ADR 0035）：对话 -> 仅 qa_pairs
-    （LLM 抽取）；文档挂商品 -> 商品 spec_schema 的 keys；文档不挂商品 -> 空集。"""
+    （LLM 抽取）；文档挂商品 -> 商品 spec_schema 的 keys；文档不挂商品 -> 空集。
+    非 dialogue 一律滤掉 qa_pairs（防御 spec_schema 撞名：QA 是种类级语义，
+    LLM 分派只认 kind，不认字段名）。"""
     if kind == "dialogue":
         return [QA_FIELD]
-    return schema_field_names(product.spec_schema) if product is not None else []
+    if product is None:
+        return []
+    return [f for f in schema_field_names(product.spec_schema) if f != QA_FIELD]
 
 
 def register_asset(
@@ -112,7 +116,7 @@ def register_asset(
 
     field_names = machine_wash_field_names(kind, product)
     try:
-        extracted = run_machine_wash(storage, object_key, field_names)
+        extracted = run_machine_wash(storage, object_key, field_names, kind)
         version.extracted_fields = extracted  # JSONB 整体赋值，确保变更可追踪
         asset.status = PENDING_REVIEW
     except (MachineWashError, FileNotFoundError) as exc:
