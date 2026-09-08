@@ -4,6 +4,8 @@
   OPERATOR_PASSWORD，默认 operator123 仅开发用，README 已写明）。
 - 商品 2 个：瓶装水（食品：净含量+保质期 required）、钛钢保温杯（器皿：
   净含量+材质 required）。0019：必填集合运行时从 spec_schema 派生。
+  0037：stock 是商品字段（mock 值，只被库存工具读）——保温杯 42（有货演示）、
+  瓶装水 0（无货演示）；已存在的行仅当 stock IS NULL 时回填，不覆盖手改值。
 - 订单 3 单（ADR 0036）：演示店铺 mock 单，只被订单工具读（工具数据源，不是
   中台对象，与商品名无外键关系）。覆盖 已发货/运输中/已签收 三态；固定时间戳
   保证模板组装与工具条摘要确定。
@@ -27,11 +29,15 @@ SEED_PRODUCTS: list[dict] = [
         "name": "瓶装水",
         "category": "食品",
         "spec_schema": {"净含量": {"required": True}, "保质期": {"required": True}},
+        # 0037：0 演示「暂时无货」事实回答路径
+        "stock": 0,
     },
     {
         "name": "钛钢保温杯",
         "category": "器皿",
         "spec_schema": {"净含量": {"required": True}, "材质": {"required": True}},
+        # 0037：42 演示「有货 · 42 件」
+        "stock": 42,
     },
 ]
 
@@ -93,9 +99,15 @@ def seed_startup_data(engine: Engine, operator_password: str) -> None:
             )
             logger.info("种子操作者已创建: %s", OPERATOR_USERNAME)
         for spec in SEED_PRODUCTS:
-            if db.scalar(select(Product).where(Product.name == spec["name"])) is None:
+            existing = db.scalar(select(Product).where(Product.name == spec["name"]))
+            if existing is None:
                 db.add(Product(**spec))
                 logger.info("种子商品已创建: %s", spec["name"])
+            elif existing.stock is None:
+                # 0037 回填：迁移只加列（存量行 NULL=未设置），mock 值在这灌；
+                # 仅当 NULL 时写——已有值（含演示中手改成 0/其他）不覆盖
+                existing.stock = spec["stock"]
+                logger.info("种子商品库存已回填: %s=%s", spec["name"], spec["stock"])
         for spec in SEED_ORDERS:
             if db.scalar(select(Order).where(Order.order_no == spec["order_no"])) is None:
                 db.add(Order(**spec))

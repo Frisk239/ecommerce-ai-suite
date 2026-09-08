@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -38,7 +39,12 @@ class Operator(Base):
 
 
 class Product(Base):
-    """0002/0019：spec_schema 按类目给规格字段模板，spec_values 是写回值+来源。"""
+    """0002/0019：spec_schema 按类目给规格字段模板，spec_values 是写回值+来源。
+
+    0037：stock 是商品上的字段语义（可空 int，NULL=库存未设置），mock 值由
+    种子灌（演示店铺语境）——只被库存工具读，不进检索/治理/MCP，不是中台对象
+    （0002 库存不升格，与 orders 同口径）。
+    """
 
     __tablename__ = "products"
 
@@ -51,6 +57,7 @@ class Product(Base):
     spec_values: Mapped[dict[str, Any]] = mapped_column(
         JSONB, server_default=text("'{}'::jsonb"), nullable=False
     )
+    stock: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Asset(Base):
