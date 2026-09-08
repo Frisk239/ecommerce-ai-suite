@@ -139,7 +139,18 @@ export default function CustomerPage() {
       // 409=会话已被操作者回流登记（令牌失去发问资格）、429=限流、其余=网络；
       // 文案来自后端 detail，重开新会话即可恢复
       setError(err)
-      setMessages((prev) => prev.map((m) => (m.key === agentKey ? { ...m, streaming: false, stopped: true } : m)))
+      setMessages((prev) =>
+        prev.flatMap((m) => {
+          if (m.key !== agentKey) return [m]
+          // 收到过任何事件（引擎先落库再流式）= 后端确有完整回答留档，
+          // 保留已收文本+停止标注；空占位=请求未进引擎（409/401/429/建流
+          // 失败），没有回答落库，「已留档」对它是不实陈述——移除，原因由 alert 表达
+          if (m.content !== '' || m.thinkingText !== null) {
+            return [{ ...m, streaming: false, stopped: true }]
+          }
+          return []
+        }),
+      )
     } finally {
       setStreaming(false)
     }
