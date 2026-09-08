@@ -225,6 +225,27 @@ export interface MaterialTask {
   created_at: string
 }
 
+// ---------- 直播切片候选（routes/clips.py 契约，第 18 刀/ADR 0014/0015/0039） ----------
+
+/** 候选两态（0039 单向状态机；不是资产三态）：pending=待拣选 /
+ * registered=已登记（registered_asset_id 回执锚指向登记出的视频资产）。
+ * 候选不是中台对象（0014）：transcript 是种子 mock 的 ASR 转写，
+ * 登记字节=「[timecode_start-timecode_end] 转写」文本（非 mp4，0039）。 */
+export type ClipCandidateStatus = 'pending' | 'registered'
+
+export interface ClipCandidate {
+  id: number
+  product_id: number
+  product_name: string
+  status: ClipCandidateStatus
+  timecode_start: string
+  timecode_end: string
+  transcript: string
+  source_video_label: string
+  registered_asset_id: number | null
+  created_at: string
+}
+
 // ---------- 顾客通道（routes/customer.py 契约，ADR 0021/0033） ----------
 
 /** POST /customer/sessions 签发：令牌只在此响应完整出现一次，顾客侧自行保存。 */

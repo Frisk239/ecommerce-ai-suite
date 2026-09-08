@@ -27,6 +27,8 @@ const KIND_LABELS: Record<string, string> = {
   document: '文档',
   dialogue: '对话',
   material: '素材',
+  // 第 18 刀/ADR 0039：切片拣选登记出的资产种类（登记字节=带时间码转写文本）
+  video: '视频',
 }
 
 export function kindLabel(kind: string): string {
@@ -60,6 +62,11 @@ export function formatGapId(id: number): string {
 /** 素材任务 ID 展示（同 A-/G- 口径补零；后端契约仍是裸 int）。 */
 export function formatTaskId(id: number): string {
   return `M-${String(id).padStart(4, '0')}`
+}
+
+/** 切片候选 ID 展示（对照原型 C-01；补零口径同 M-/A-）。 */
+export function formatClipId(id: number): string {
+  return `C-${String(id).padStart(4, '0')}`
 }
 
 export function formatDateTime(iso: string | null | undefined): string {
