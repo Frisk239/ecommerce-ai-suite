@@ -20,8 +20,8 @@ import { useAuth } from '../auth/AuthContext'
 const NAV = [
   { to: '/platform/assets', label: '中台 · 资产', icon: Database, group: '数据中台' },
   { to: '/platform/products', label: '中台 · 商品', icon: Package, group: null },
-  { to: '/material', label: '素材中心', icon: Megaphone, group: '业务能力' },
-  { to: '/service', label: 'AI 客服', icon: ChatCircleDots, group: null },
+  { to: '/service', label: 'AI 客服', icon: ChatCircleDots, group: '业务能力' },
+  { to: '/material', label: '素材中心', icon: Megaphone, group: null },
 ] as const
 
 function useCrumb(): string | null {

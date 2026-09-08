@@ -250,3 +250,8 @@ def test_redact_in_reflow_qa_pipeline(api: ApiFixture, monkeypatch: pytest.Monke
     flat = "".join(f"{p['q']}{p['a']}" for p in pairs)
     assert "13812345678" not in flat and "zhangsan@example.com" not in flat
     assert "1********78" in flat and "****@example.com" in flat
+
+    # 版本字节不动（ADR 0038：打码只在抽取侧，对象键锁原字节）——转写原文仍含裸号
+    version_text = client.get(f"/api/assets/{asset['id']}/versions/1/text")
+    assert version_text.status_code == 200
+    assert "13812345678" in version_text.text
