@@ -38,12 +38,14 @@ def test_build_prompts_marks_sources_and_includes_field_values() -> None:
 
 
 def test_build_prompts_caps_evidence_and_never_touches_credentials() -> None:
-    """证据条数收口（宁短而准）；prompt 组装不碰凭证——输出里不可能出现
-    密钥形态（钉死契约，防未来改动把 settings 值拼进 prompt）。"""
+    """证据条数收口（宁短而准）；prompt 上限与 answer 引用上限一致（进 prompt
+    的证据必须都可被引用，0007 回放口径）；prompt 组装不碰凭证——输出里不可能
+    出现密钥形态（钉死契约，防未来改动把 settings 值拼进 prompt）。"""
     hits = [_hit(i, 1, f"证据句{i}") for i in range(1, 7)]
     system_prompt, user_prompt = llm.build_prompts(hits, "问题")
-    assert user_prompt.count("[来源：") == llm._MAX_EVIDENCE
-    assert "证据句4" not in user_prompt  # 超出上限的命中不进 prompt
+    assert user_prompt.count("[来源：") == llm._MAX_PROMPT_EVIDENCE
+    assert llm._MAX_PROMPT_EVIDENCE == 2  # 与 answer._MAX_EVIDENCE 同值（口径锁）
+    assert "证据句3" not in user_prompt  # 超出上限的命中不进 prompt
     secret = "sk-test-1234567890"
     assert secret not in system_prompt
     assert secret not in user_prompt

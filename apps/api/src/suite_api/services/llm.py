@@ -27,8 +27,11 @@ logger = logging.getLogger(__name__)
 
 # 超时即降级（0 重试）：spec 工程裁决——降级模板兜住，不在等待上叠加重试延迟
 _TIMEOUT_SECONDS = 20.0
-# 进 prompt 的证据条数上限（retrieve 默认 top_k=5，这里再收口：prompt 宁短而准）
-_MAX_EVIDENCE = 3
+# 进 prompt 的证据条数上限（retrieve 默认 top_k=5，这里再收口：prompt 宁短而准）。
+# 恒与 answer.py 的 _MAX_EVIDENCE（=2，引用上限）一致：citations 由检索命中定
+# （0007），prompt 给到第 3 条而引用只取前 2 条会让「依据第 3 条作答却无引用」
+# ——进 prompt 的证据必须都可被引用（评审裁决 2026-09-08）
+_MAX_PROMPT_EVIDENCE = 2
 
 SYSTEM_PROMPT = (
     "你是商家侧电商 AI 客服，回答顾客关于商品与售后的问题。\n"
@@ -113,7 +116,7 @@ def build_prompts(hits: list[dict[str, Any]], question: str) -> tuple[str, str]:
     不触碰任何凭证（单测钉死：组装结果不含密钥）。
     """
     lines = ["已发布证据："]
-    for hit in hits[:_MAX_EVIDENCE]:
+    for hit in hits[:_MAX_PROMPT_EVIDENCE]:
         lines.append(f"[来源：A-{hit['asset_id']}·v{hit['version_no']}] {hit['chunk']}")
     lines.append(f"顾客问题：{question}")
     return SYSTEM_PROMPT, "\n".join(lines)

@@ -10,13 +10,13 @@
 - 空 LLM_API_KEY（conftest 强制 env）-> 同样降级模板（既有测试缺省路径）。
 """
 
-import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sse_helpers import parse_sse_events
 
 from suite_api.models import ServiceMessage
 from suite_api.services import llm as llm_module
@@ -51,20 +51,15 @@ def _upload_and_publish(client: TestClient, content: bytes, title: str) -> int:
     return asset_id
 
 
-def _ask(client: TestClient, question: str) -> list[tuple[str, dict]]:
+def _ask(client: TestClient, question: str) -> tuple[int, list[tuple[str, dict]]]:
+    """自建会话并发问；返回 (session_id, events)——session_id 供落库断言。"""
     session_id = client.post("/api/service/sessions").json()["id"]
     with client.stream(
         "POST", f"/api/service/sessions/{session_id}/messages", json={"content": question}
     ) as resp:
         assert resp.status_code == 200
         raw = "".join(resp.iter_text())
-    events: list[tuple[str, dict]] = []
-    for block in raw.strip().split("\n\n"):
-        lines = block.splitlines()
-        event = next(line.removeprefix("event: ") for line in lines if line.startswith("event: "))
-        data = json.loads(next(line.removeprefix("data: ") for line in lines if line.startswith("data: ")))
-        events.append((event, data))
-    return events
+    return session_id, parse_sse_events(raw)
 
 
 def _patch_stream(
@@ -107,20 +102,7 @@ def test_vendor_stream_answer_citations_and_prompts(api: ApiFixture, monkeypatch
     asset_id = _upload_and_publish(client, _VENDOR_DOC, "厂商生成验证说明")
     calls = _patch_stream(monkeypatch, pieces=_MODEL_PIECES)
 
-    session_id = client.post("/api/service/sessions").json()["id"]
-    with client.stream(
-        "POST", f"/api/service/sessions/{session_id}/messages", json={"content": "试饮装容量是多少？"}
-    ) as resp:
-        assert resp.status_code == 200
-        raw = "".join(resp.iter_text())
-    events = [
-        (
-            next(line.removeprefix("event: ") for line in block.splitlines() if line.startswith("event: ")),
-            json.loads(next(line.removeprefix("data: ") for line in block.splitlines() if line.startswith("data: "))),
-        )
-        for block in raw.strip().split("\n\n")
-        if block
-    ]
+    session_id, events = _ask(client, "试饮装容量是多少？")
 
     # prompt 契约：被调一次；证据块带来源标注与字段值；不含任何密钥形态
     assert len(calls) == 1
@@ -159,7 +141,7 @@ def test_vendor_failure_falls_back_to_template(api: ApiFixture, monkeypatch: pyt
     asset_id = _upload_and_publish(client, _FALLBACK_DOC, "降级口径备注")
     calls = _patch_stream(monkeypatch, error=llm_module.LLMUnavailable("厂商模型暂时不可用"))
 
-    events = _ask(client, "回退批号是多少？")
+    _, events = _ask(client, "回退批号是多少？")
     thinking_texts = [data["text"] for event, data in events if event == "thinking"]
     assert thinking_texts == ["正在检索已发布资产…"]  # 降级不发「正在生成回答…」
     deltas = "".join(data["text"] for event, data in events if event == "delta")
@@ -172,7 +154,7 @@ def test_vendor_failure_falls_back_to_template(api: ApiFixture, monkeypatch: pyt
 
     # 空产出（模型只吐空白）同样降级：不把空回答当成功落库
     _patch_stream(monkeypatch, pieces=["  ", ""])
-    empty_events = _ask(client, "回退批号是多少？")
+    _, empty_events = _ask(client, "回退批号是多少？")
     assert empty_events[-1][1]["fallback"] is True
     empty_deltas = "".join(data["text"] for event, data in empty_events if event == "delta")
     assert empty_deltas == _FALLBACK_TEMPLATE
@@ -184,7 +166,7 @@ def test_empty_api_key_falls_back_to_template(api: ApiFixture) -> None:
     client, _ = api
     _login(client)
     asset_id = _upload_and_publish(client, _UNKEYED_DOC, "密钥缺席口径备注")
-    events = _ask(client, "空箱数量是多少？")
+    _, events = _ask(client, "空箱数量是多少？")
     complete = events[-1][1]
     assert complete["kind"] == "answer"
     assert complete["fallback"] is True
@@ -204,7 +186,7 @@ def test_no_evidence_never_calls_llm(api: ApiFixture, monkeypatch: pytest.Monkey
         error=AssertionError("无证据问题不得调用厂商模型（0018：防编造省调用）"),
     )
 
-    events = _ask(client, "冥王星殖民基地怎么预约参观？")
+    _, events = _ask(client, "冥王星殖民基地怎么预约参观？")
     complete = events[-1][1]
     assert complete["kind"] == "refusal"
     assert complete["handoff"] is True
