@@ -212,7 +212,7 @@ async def ask(
     """发问 -> SSE 流式回答（thinking -> delta* -> complete）。
 
     引擎主体在 services/chat_engine.run_ask（0021 同一引擎：本端点只做操作者
-    鉴权 + 会话状态/输入校验；先收全再流、双 commit、断连=完整落库等取舍见
+    鉴权 + 会话状态/输入校验；先收全再流、commit 后再流、断连=完整落库等取舍见
     该模块 docstring）。complete 带 gap_id（操作者口径，0030）。
     """
     del operator
@@ -224,16 +224,25 @@ async def ask(
         )
     question = body.content.strip()
     if not question:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="消息内容不能为空")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="消息内容不能为空"
+        )
 
     outcome = await run_ask(db, session, question)
+    # SSE 生成器不碰 DB：返回前归还连接，慢客户端不再钉住池（get_db 幂等 close）
+    db.commit()
+    db.close()
     return StreamingResponse(sse_event_stream(outcome), media_type="text/event-stream")
 
 
 # ---------- 回流登记（CONTEXT「会话」：结束后由操作者回流登记为资产） ----------
 
 
-@router.post("/sessions/{session_id}/register", response_model=AssetDetail, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/sessions/{session_id}/register",
+    response_model=AssetDetail,
+    status_code=status.HTTP_201_CREATED,
+)
 def register_session(
     session_id: int,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,

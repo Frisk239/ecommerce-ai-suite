@@ -215,7 +215,9 @@ async def register(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="文档超过 2MB 上限"
         )
     if not data:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能登记")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能登记"
+        )
 
     # 缺口关联先校验（在字节落库前失败）；预填的标题/商品只是前端便利，后端不强制
     gap = load_attachable_gap(db, knowledgeGapId) if knowledgeGapId is not None else None
@@ -243,7 +245,7 @@ async def register(
 
 
 @router.post("/import-csv", response_model=CsvImportReport)
-async def import_csv(
+def import_csv(
     file: Annotated[UploadFile, File()],
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
@@ -251,6 +253,7 @@ async def import_csv(
 ) -> CsvImportReport:
     """CSV 批量导入（第 9 刀数据接入）：上传通道的批量形态（0025 不新增枚举）。
 
+    同步 def：FastAPI 丢线程池跑，200 行线性处理不冻事件循环上的伴流 SSE。
     解析规则在 services/csv_import.parse_import_csv（utf-8-sig / 表头须含
     title 与 content / 行数上限 200 / 逐行空值与超长跳过）。每行独立复用
     register_asset（0013 登记必须带字节：content 文本 UTF-8 编码即字节；
@@ -260,7 +263,7 @@ async def import_csv(
     空批次（全跳过/空文件）不报错，报告即答案。
     """
     del operator  # 写接口仅要求登录，401 口径同既有写端点
-    data = await file.read()
+    data = file.file.read()
     # 与单份登记同一把 2MB 防线（评审处置）：CSV 是文本容器，200 行小文本远低于
     # 此；无上限则巨型文件在被 422 行数拒绝前已整读进内存
     if len(data) > MAX_UPLOAD_BYTES:
@@ -409,8 +412,7 @@ def publish(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "只有待人洗的新资产或已发布资产上的未发布修订可以发布，"
-                f"当前状态: {asset.status}"
+                f"只有待人洗的新资产或已发布资产上的未发布修订可以发布，当前状态: {asset.status}"
             ),
         )
     product = _product_or_none(db, asset)
@@ -431,9 +433,7 @@ def publish(
     # -> 资产指针前移 -> 商品写回 -> 审计一行（0005/0006/0010）。
     # 切块失败（字节不可读/非 UTF-8）整体回滚：索引没写就不算发布成功（0004）。
     try:
-        index_chunks = index_chunks_for_version(
-            storage, version.object_key, asset.kind, confirmed
-        )
+        index_chunks = index_chunks_for_version(storage, version.object_key, asset.kind, confirmed)
     except ChunkingError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -443,9 +443,7 @@ def publish(
     asset.status = PUBLISHED
     asset.current_published_version_id = version.id
     db.add_all(
-        RetrievalChunk(
-            asset_id=asset.id, version_no=version.version_no, seq=seq, chunk=chunk
-        )
+        RetrievalChunk(asset_id=asset.id, version_no=version.version_no, seq=seq, chunk=chunk)
         for seq, chunk in enumerate(index_chunks)
     )
     _write_back_product(product, asset, version)

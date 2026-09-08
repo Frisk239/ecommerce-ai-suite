@@ -20,6 +20,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from suite_api.main import create_app  # noqa: E402
+from suite_api.services.rate_limit import SlidingWindowLimiter  # noqa: E402
 from suite_api.settings import Settings  # noqa: E402
 
 _REQUIRED_ENV = "SUITE_TEST_DATABASE_URL"
@@ -52,6 +53,8 @@ def api(tmp_path_factory: Path) -> tuple[TestClient, Path]:
     # llm_api_key 显式空：与模块级 env 清理同口径（app settings 不带真凭证）
     settings = Settings(database_url=url, storage_root=storage_root, llm_api_key="")
     app = create_app(settings)
+    # module 级 TestClient 下各用例多次 _login()，生产闸 10/60s 会误伤整套件
+    app.state.login_limiter = SlidingWindowLimiter(10_000, 60.0)
     with TestClient(app) as client:  # with 触发 lifespan：alembic upgrade head + 幂等种子
         yield client, storage_root
 

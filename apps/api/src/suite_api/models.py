@@ -204,12 +204,23 @@ class KnowledgeGap(Base):
     """
 
     __tablename__ = "knowledge_gaps"
-    __table_args__ = (Index("ix_knowledge_gaps_status_created_at", "status", "created_at"),)
+    __table_args__ = (
+        Index("ix_knowledge_gaps_status_created_at", "status", "created_at"),
+        # 0024/0030/0031 精确幂等工程收口：open 同行同问唯一；resolved 同文仍可并存
+        Index(
+            "uq_knowledge_gaps_open_question",
+            "question",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     question: Mapped[str] = mapped_column(Text)  # 顾客原问（strip 后与 customer 消息同文）
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
-    status: Mapped[str] = mapped_column(String(20), server_default=text("'open'"))  # open | resolved
+    status: Mapped[str] = mapped_column(
+        String(20), server_default=text("'open'")
+    )  # open | resolved
     resolved_by_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

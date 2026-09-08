@@ -5,7 +5,11 @@ from types import SimpleNamespace
 from starlette.requests import Request
 
 from suite_api.routes.customer import client_ip
-from suite_api.services.rate_limit import CustomerRateLimits, SlidingWindowLimiter
+from suite_api.services.rate_limit import (
+    _SWEEP_EVERY,
+    CustomerRateLimits,
+    SlidingWindowLimiter,
+)
 from suite_api.settings import Settings
 
 
@@ -58,6 +62,21 @@ def test_retry_after_ceils_and_never_zero() -> None:
     assert limiter.check("k") == 60  # 59.5 -> ceil 60
     clock.advance(10.0)
     assert limiter.check("k") == 50  # 49.5 -> ceil 50
+
+
+def test_sweep_drops_expired_keys_keeps_live() -> None:
+    """过期剪空的 key 在第 512 次 check 被扫掉；窗内仍有事件的 key 保留。"""
+    clock = FakeClock()
+    limiter = SlidingWindowLimiter(10, 60.0, clock=clock)
+    assert limiter.check("dead") is None
+    clock.advance(61.0)  # dead 的时间戳已滑出窗，但尚未被碰过，deque 仍占着
+    assert limiter.check("live") is None
+    # 已 2 次 check；再补到 _SWEEP_EVERY 触发生产路径 sweep
+    for i in range(_SWEEP_EVERY - 2):
+        assert limiter.check(f"other-{i}") is None
+    assert "dead" not in limiter._events
+    assert "live" in limiter._events
+    assert limiter._events["live"]
 
 
 def test_rejected_check_does_not_extend_window() -> None:
@@ -118,7 +137,9 @@ def test_session_gate_rejection_keeps_counting_ip() -> None:
 
 def _request(xff: str | None, peer: str, *, trust_proxy: bool) -> Request:
     headers = [(b"x-forwarded-for", xff.encode())] if xff is not None else []
-    fake_app = SimpleNamespace(state=SimpleNamespace(settings=Settings(customer_trust_proxy=trust_proxy)))
+    fake_app = SimpleNamespace(
+        state=SimpleNamespace(settings=Settings(customer_trust_proxy=trust_proxy))
+    )
     scope = {"type": "http", "headers": headers, "client": (peer, 50000), "app": fake_app}
     return Request(scope)
 

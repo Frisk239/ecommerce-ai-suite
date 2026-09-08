@@ -1,7 +1,9 @@
-"""顾客通道限流（ADR 0033：按会话限流、每 IP 托底；不做无令牌狂刷）。
+"""进程内滑动窗口限流（ADR 0033 顾客三闸 + 操作者登录闸）。
 
-进程内滑动窗口：单 uvicorn 进程=compose 现状（ADR 0016 单店口径），多副本
-分布式限流属部署演进，本刀不做中间件依赖。三道闸（spec Must 4）：
+单 uvicorn 进程=compose 现状（ADR 0016 单店口径），多副本分布式限流属
+部署演进，本刀不做中间件依赖。``SlidingWindowLimiter`` 被两处挂到
+``app.state``：顾客 ``CustomerRateLimits`` 三闸，以及登录
+``login_limiter``（10/60s，只信 TCP 对端）。顾客三闸（spec Must 4）：
 
 - 会话发问 ≤10/60s：令牌本身就是会话级身份（0021），同会话狂刷在此拦；
 - IP 发问 ≤30/60s：托底——换会话（重签令牌）刷不过这道；
@@ -23,6 +25,9 @@ import time
 from collections import deque
 from collections.abc import Callable
 
+# 每 N 次 check 扫一遍空 deque 的 key（进程内字典不会无限涨）；非 settings 旋钮
+_SWEEP_EVERY = 512
+
 
 class SlidingWindowLimiter:
     """单阈值滑动窗口：key -> 时间戳队列；check 通过即记账（check 与记录一体）。"""
@@ -39,6 +44,7 @@ class SlidingWindowLimiter:
         self._clock = clock
         self._events: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
+        self._checks = 0
 
     def check(self, key: str) -> int | None:
         """通过返回 None 并记账；超限返回剩余等待秒（Retry-After 口径，向上取整）。"""
@@ -50,9 +56,26 @@ class SlidingWindowLimiter:
                 events.popleft()
             if len(events) >= self._limit:
                 retry_after = self._window - (now - events[0])
-                return max(1, math.ceil(retry_after))
-            events.append(now)
-            return None
+                result = max(1, math.ceil(retry_after))
+            else:
+                events.append(now)
+                result = None
+            self._checks += 1
+            if self._checks % _SWEEP_EVERY == 0:
+                self._sweep(now)
+            return result
+
+    def _sweep(self, now: float) -> None:
+        """删掉已过期剪空的 key；仍有窗内事件的 key 保留。调用方已持锁。"""
+        cutoff = now - self._window
+        dead: list[str] = []
+        for key, events in self._events.items():
+            while events and events[0] <= cutoff:
+                events.popleft()
+            if not events:
+                dead.append(key)
+        for key in dead:
+            del self._events[key]
 
 
 # 默认阈值（spec Must 4）：窗口 60s；测试可用小阈值构造替换（app.state 注入）
@@ -60,6 +83,8 @@ SESSION_ASK_LIMIT = 10
 IP_ASK_LIMIT = 30
 IP_CREATE_LIMIT = 5
 WINDOW_SECONDS = 60.0
+LOGIN_IP_LIMIT = 10
+LOGIN_WINDOW_SECONDS = 60.0
 
 
 class CustomerRateLimits:
