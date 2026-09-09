@@ -118,6 +118,10 @@ export default function RegisterAssetDrawer({
   const [csvSubmitting, setCsvSubmitting] = useState(false)
   const [csvReport, setCsvReport] = useState<CsvImportReport | null>(null)
 
+  // 第 30 刀：缺口路径提示句（抽屉顶部提示条与登记成功横幅同句）。
+  // gap.question 是出口掩后的视图文本（0038），提示条不引入新的原文出口。
+  const gapFillNote = gap !== undefined ? `本资产用于补口径：${gap.question}——发布后该缺口将自动解决` : null
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -136,6 +140,11 @@ export default function RegisterAssetDrawer({
     setFile(picked)
     setFieldError(picked ? validateFile(picked) : null)
     setSubmitError(null)
+    // 标题兜底（第 30 刀）：标题为空且选中了文件 → 预填文件名去扩展名（可改）。
+    // 已填的标题不动——含缺口路径预填的「补口径 · …」。
+    if (picked !== null && title.trim() === '') {
+      setTitle(picked.name.replace(/\.[^.]+$/, ''))
+    }
   }
 
   const clearFile = () => {
@@ -200,7 +209,12 @@ export default function RegisterAssetDrawer({
     try {
       const detail = await api.registerAsset(form)
       onClose()
-      navigate(`/platform/assets/${detail.id}`)
+      // 登记成功提示（第 30 刀）：缺口路径把同句提示带到详情页成功横幅——
+      // 详情页是单份登记的既有落地页，成功链先例 SuccessBanner（先例 publish/rollback note）。
+      navigate(
+        `/platform/assets/${detail.id}`,
+        gap !== undefined ? { state: { registerNote: gapFillNote } } : undefined,
+      )
     } catch (err) {
       setSubmitError(detailText(err))
       setSubmitting(false)
@@ -281,23 +295,27 @@ export default function RegisterAssetDrawer({
           {mode === 'single' ? (
             <>
               {gap !== undefined ? (
-                <div className="rounded-[6px] border border-[rgba(154,91,6,0.25)] bg-[rgba(154,91,6,0.05)] px-3 py-2 text-xs leading-5 text-warn">
-                  补缺口 {formatGapId(gap.id)}：登记后进入已接入，发布后缺口关闭。
-                </div>
+                <>
+                  {/* 提示条（第 30 刀 Must 2）：显式带缺口问句，发布后自动解决——
+                      操作者补错文档时在这里就有感。 */}
+                  <div
+                    className="rounded-[6px] border border-[rgba(154,91,6,0.25)] bg-[rgba(154,91,6,0.05)] px-3 py-2 text-xs leading-5 text-warn"
+                    role="status"
+                  >
+                    {gapFillNote}
+                  </div>
+                  <div className="rounded-[6px] border border-line-2 bg-surface px-3 py-2 text-xs leading-5 text-ink-2">
+                    补缺口 {formatGapId(gap.id)}：登记后进入已接入，请确认内容能回答上面的问句再发布。
+                    {gap.product !== null ? (
+                      <span className="text-ink-3">（预选挂商品：{gap.product.name}）</span>
+                    ) : null}
+                  </div>
+                </>
               ) : (
                 <p className="text-xs leading-5 text-ink-3">
                   登记即把文件字节写入对象存储并进入已接入（来源=上传）；机洗成功直接到待人洗，失败会停在已接入并给出原因。
                 </p>
               )}
-
-              {gap !== undefined ? (
-                <div className="rounded-[6px] border border-line-2 bg-surface px-3 py-2 text-xs leading-5 text-ink-2">
-                  顾客原问：<span className="text-ink">{gap.question}</span>
-                  {gap.product !== null ? (
-                    <span className="text-ink-3">（挂商品：{gap.product.name}）</span>
-                  ) : null}
-                </div>
-              ) : null}
 
               <label className="block">
                 <span className="field-label">挂载商品</span>

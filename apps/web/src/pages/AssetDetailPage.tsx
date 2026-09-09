@@ -7,7 +7,7 @@
 // 「放弃修订」、从未发布的失败资产「废弃」——均为二次确认对话框，明示字节删除不可恢复。
 
 import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowCounterClockwise,
   ArrowLeft,
@@ -547,6 +547,14 @@ export default function AssetDetailPage() {
   const { id } = useParams()
   const assetId = Number(id)
   const [searchParams] = useSearchParams()
+  const location = useLocation()
+
+  // 第 30 刀：从缺口「去补文档」登记成功跳入时带一次性提示（navigate state，
+  // useState 初始化器只取一次——刷新/重进不带）。成功链先例：publish/rollback
+  // 等 SuccessBanner note。
+  const [registerNote] = useState(
+    () => (location.state as { registerNote?: string } | null)?.registerNote ?? null,
+  )
 
   const detailFetcher = useCallback(() => {
     if (!Number.isInteger(assetId) || assetId <= 0) {
@@ -902,6 +910,7 @@ export default function AssetDetailPage() {
       {uploadNote !== null ? <SuccessBanner>{uploadNote}</SuccessBanner> : null}
       {discardRevNote !== null ? <SuccessBanner>{discardRevNote}</SuccessBanner> : null}
       {discardAssetNote !== null ? <SuccessBanner>{discardAssetNote}</SuccessBanner> : null}
+      {registerNote !== null ? <SuccessBanner>{registerNote}</SuccessBanner> : null}
       {anchored ? (
         <div className="mb-3 text-xs leading-5 text-accent-strong">
           正在查看 v{anchorVersionNo} · 引用回放锚定——本页由引用芯片跳入，该版本已在下方版本列表中高亮。

@@ -55,6 +55,18 @@ export default function ProductsPage() {
                   <div className="mt-0.5 flex items-center gap-2">
                     <span className="kind-chip">{product.category}</span>
                     <span className="font-mono text-xs text-ink-3">P-{product.id}</span>
+                    {/* 库存列（第 30 刀）：操作者只读自查（客服工具同源 mock 值）；
+                        NULL=未设置显示 —，不可编辑（不升格为中台对象）。 */}
+                    <span
+                      className={
+                        product.stock === 0
+                          ? 'font-mono text-xs text-danger'
+                          : 'font-mono text-xs text-ink-2'
+                      }
+                      title="库存可 mock：只读自查，不可在这里编辑"
+                    >
+                      库存 {product.stock !== null ? product.stock : '—'}
+                    </span>
                   </div>
                 </div>
               </div>
