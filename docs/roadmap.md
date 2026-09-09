@@ -151,7 +151,7 @@ Out：坐席队列；无限 ReAct；内部模块改走 MCP；运营改 planner�
 | 刀 | 主题 | 来源 | Must 摘要 | ADR |
 |---|---|---|---|---|
 | **第 32 刀：多来源数据 II 收口** | 数据通道 | 旧表 32，已实现 | 合入 `feat/real-data-2`：ABCD 对话→回流登记；WANDS→切片候选。零产品代码。许可写进 `scripts/realdata/README.md`。**到此四源四通道故事可讲。Out：再灌源、浏览器交付、把空 schema 当目录** | 无 |
-| **第 33 刀：数据契约与口径** | 中台可讲 | 审计洞 | 一批商品真实 `spec_schema`（类目字段，未知弃权）；发布写回/必填闸门/检索有测试；`data/seed/` 或一键灌。README/总览/考核去掉 pgvector RAG、「AI 扮演顾客」 | 0008/0009/0010 落地，不新开 |
+| **第 33 刀：数据契约与口径** | 中台可讲 | 生产级目录 | **dump→清洗→登记，不手写种子规格。** 下载 Open Food Facts 公开 CSV/JSONL dump，过滤有条码/品名/净含量的行，用源字段拼规格字节走 `register`→机洗→确认→发布写回。Wikidata 只补有 P176/P2067 的条目。禁止编造「见包装」。详见 `docs/research/production-grade-catalog.md` | 0008/0009/0010 |
 | **第 34 刀：CI 门禁** | 工程信用 | 审计补 | GitHub Actions：ruff + 无 DB 单测必绿；集成 job 起 Postgres，**未设 `SUITE_TEST_DATABASE_URL` 则失败（禁止 skip-green）**；`npm run build && lint` | 无 |
 | **第 35 刀：RAG 评测尺** | 评测 | 旧表 33 | golden 13→80–150，四分布（正例/同义改写/跨商品/应拒答）；检索 recall@k + 拒答率；`docs/research/rag-eval-report.md`；空 key 回归不破 | 0027 延伸 |
 | **第 36 刀：检索零成本增强** | 真 RAG | 旧表 34 | 同义词归一（保修↔质保↔三包）+ chunk 元数据前缀；**同一份同义改写组 before/after**；无提升回滚 | 0023 工程标定 |

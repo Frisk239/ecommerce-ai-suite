@@ -41,7 +41,7 @@ function UnscoredBadge() {
   return <span className="badge badge-review">未评分</span>
 }
 
-/** 得分三卡 + 评语 + 扮演底座徽章（0040：model_name 是打分时刻的底座快照）。 */
+/** 得分三卡 + 评语 + 评分底座徽章（0040：model_name 是打分时刻的底座快照）。 */
 function ScorePanel({ record }: { record: CoachRecord }) {
   const score = record.score
   return (
@@ -67,7 +67,7 @@ function ScorePanel({ record }: { record: CoachRecord }) {
       ) : null}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {record.model_name ? (
-          <span className="badge badge-published">扮演底座：{record.model_name}</span>
+          <span className="badge badge-published">评分底座：{record.model_name}</span>
         ) : null}
         {record.status === 'unscored' ? (
           <span
@@ -285,7 +285,7 @@ function RecordsPanel({
             <th className="w-20">记录</th>
             <th>题面</th>
             <th className="w-36">得分（口径/证据/语气）</th>
-            <th className="w-40">扮演底座</th>
+            <th className="w-40">评分底座</th>
             <th className="w-44">时间</th>
             <th className="w-28"></th>
           </tr>

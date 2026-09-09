@@ -1,7 +1,6 @@
 # Ecommerce AI Suite
 
-商家侧电商 AI 套件：FastAPI 单体 + Vite React 控制台 + Postgres(pgvector)。
-当前刀 = **客服引用**（后端）：发布事务切块入检索索引（ADR 0004/0023）→ 客服会话 SSE 流式回答带 `{asset_id, version_no}` 引用（0007/0018：无证据拒答+转人工）→ 会话回流登记为 kind=dialogue 资产（0013）→ 治理发布后再次命中引用（闭环）。
+商家侧电商 AI 套件：FastAPI 单体 + Vite React 控制台 + Postgres。检索默认是中文词法 bigram（ADR 0023）；compose 用 `pgvector/pgvector:pg16` 镜像，**未建向量列、未跑 embedding**。
 领域决策见 `CONTEXT.md` 与 `docs/adr/`（表结构唯一依据：ADR 0022/0023）；范围与排期见 `docs/slices.md`。
 
 ## 3 分钟口述稿（演示主线）
@@ -31,7 +30,7 @@ api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者�
 
 | 端口 | 服务 | 说明 |
 | --- | --- | --- |
-| 5432 | db | `pgvector/pgvector:pg16` |
+| 5432 | db | `pgvector/pgvector:pg16`（镜像预留；检索未用 pgvector） |
 | 8000 | api | FastAPI 单体（治理发布后端 + `/health`） |
 | 5173 | web | Vite + React 19 控制台壳 |
 

@@ -52,6 +52,14 @@ EXACT_LABEL = "Exact"
 WANDS_PRODUCT_NAME = "WANDS 家具（演示）"
 WANDS_PRODUCT_CATEGORY = "家具"
 SOURCE_VIDEO_LABEL = "WANDS · wayfair 家具检索基准"
+
+
+def _wands_schema() -> dict:
+    try:
+        from suite_api.services.category_schema import schema_for_category
+    except ImportError:  # pragma: no cover
+        return {}
+    return schema_for_category(WANDS_PRODUCT_CATEGORY)
 CLIP_SECONDS = 40  # 合成切片时长：timecode 自增步长（00:00:40 起）
 
 
@@ -234,12 +242,22 @@ def load_clip_candidates(
                 .values(
                     name=WANDS_PRODUCT_NAME,
                     category=WANDS_PRODUCT_CATEGORY,
-                    spec_schema={},
+                    spec_schema=_wands_schema(),
                     spec_values={},
                     stock=0,
                 )
                 .returning(Product.id)
             ).scalar_one()
+        else:
+            current = connection.execute(
+                select(Product.spec_schema).where(Product.id == product_id)
+            ).scalar_one()
+            if not current:
+                connection.execute(
+                    Product.__table__.update()
+                    .where(Product.id == product_id)
+                    .values(spec_schema=_wands_schema())
+                )
         for row in rows:
             exists = connection.execute(
                 select(ClipCandidate.id).where(

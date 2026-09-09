@@ -1,0 +1,6 @@
+code	product_name	brands	quantity	ingredients_text	countries_en
+6921168500013	农夫山泉饮用天然水	农夫山泉	550 ml	水	China
+3017620422003	Nutella	Ferrero	400 g	Sugar, palm oil, hazelnuts	France
+		无条码水	500 ml		
+0000000000000	无净含量商品	某牌			China
+not-a-barcode	坏条码	某牌	1 L		

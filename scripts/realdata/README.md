@@ -1,17 +1,18 @@
-# scripts/realdata —— 多来源真实数据灌入（数据刀 I+II）
+# scripts/realdata —— 多来源真实数据灌入（数据刀 I–III）
 
-零产品代码改动：只经既有通道灌真实演示数据。四源均为公开数据，脚本在线拉取，
-仓库只入脚本与 50 行样本 fixture（`samples/`，离线单测用）；下载物与生成物落
-`out/`（已 gitignore，不入库）。
+只经既有通道灌公开数据。仓库入脚本与小 fixture；dump/下载物落 `out/`（gitignore）。
+
+**第 33 刀目录主数据 = Open Food Facts 公开 dump，不是手写种子。** 流式读 TSV.gz，清洗（条码+品名+可解析净含量），规格正文只用源字段，走登记→机洗→确认→发布。不编造保质期。
 
 ## 数据源与许可
 
 | 来源 | 内容 | 许可 | 出处 |
 |---|---|---|---|
-| Wikidata SPARQL | 商品类条目（按类目 QID 采样，中文标签优先） | **CC0**（最宽松，无需额外授权） | <https://www.wikidata.org> · 端点 <https://query.wikidata.org/sparql> · [数据库下载/许可页](https://www.wikidata.org/wiki/Wikidata:Database_download) |
-| online_shopping_10_cats | 6.2 万条中文电商评论，10 类目，正/负情感标注（cat/label/review） | GitHub 开放语料库，**研究用途**：演示请保留出处链接，不作商业用途 | [ChineseNlpCorpus](https://github.com/SophonPlus/ChineseNlpCorpus) · [数据集说明](https://github.com/SophonPlus/ChineseNlpCorpus/blob/master/datasets/online_shopping_10_cats/intro.ipynb) · zip 直下（脚本内置同 URL） |
-| ABCD | 1 万+ 英文人机客服对话（train/dev/test，convo_id/scenario/轮次） | **MIT** | [asappresearch/abcd](https://github.com/asappresearch/abcd) · gzip 直下（脚本内置同 URL；v1.2 路径已 404，现物 v1.1） |
-| WANDS | 480 query × 43K 商品 × 233K 三档相关性标注（Exact/Partial/Irrelevant） | **MIT**（保留 LICENSE+引用） | [wayfair/WANDS](https://github.com/wayfair/WANDS) · 三件 csv 直下（脚本内置同 URL；实为 TSV） |
+| **Open Food Facts dump** | 夜更 TSV.gz（code/product_name/brands/quantity/ingredients…） | **ODbL** | <https://world.openfoodfacts.org/data> · [CSV.gz](https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz) · [字段表](https://world.openfoodfacts.org/data/data-fields.txt) |
+| Wikidata SPARQL | 商品类条目；可选 P176 制造商 / P2067 质量 | **CC0** | <https://www.wikidata.org> |
+| online_shopping_10_cats | 6.2 万条中文电商评论 | 研究用途 | [ChineseNlpCorpus](https://github.com/SophonPlus/ChineseNlpCorpus) |
+| ABCD | 英文客服对话 | **MIT** | [asappresearch/abcd](https://github.com/asappresearch/abcd) |
+| WANDS | 家具检索标注 → 切片候选 | **MIT** | [wayfair/WANDS](https://github.com/wayfair/WANDS) |
 
 网络：标准库 urllib 自动 respect `HTTPS_PROXY` / `HTTP_PROXY` 环境变量（宿主代理
 `http://127.0.0.1:7890` 时直接可用）。Wikidata 查询服务当前激进限速约 1 请求/分钟：
@@ -20,6 +21,7 @@
 
 ## 通道映射（与六来源通道的关系）
 
+- **OFF dump → 食品目录（第 33 刀）**：`load_openfoodfacts.py` 流式清洗 → `--load` 灌 products（schema 仅净含量）→ `--register --publish` 把 dump 原文规格走既有 register/确认/发布，写回 spec_values。
 - **商品 → 种子通道**：products 无写端点，`fetch_wikidata_products.py --load` 用同仓
   uv 环境 `from suite_api.models import Product` + SQLAlchemy 直连 `DATABASE_URL`
   幂等灌入（name+category 已存在跳过）。不动 conftest 测试种子（spec 裁决）。
@@ -44,7 +46,11 @@
 # 0. 起栈（本机 5432 被占时 .env 设 PG_PORT=5433，宿主端口即 5433）
 docker compose up -d
 
-# 1. 商品：SPARQL 拉取 → out/products.csv（--load 同时直连灌库，幂等可重跑）
+# 1. Open Food Facts dump：流式清洗 N 条 → 灌库 + 登记发布（ODbL）
+uv run python scripts/realdata/load_openfoodfacts.py --n 80 --load --register --publish \
+    --db postgresql://suite:suite@localhost:5433/suite --api http://localhost:8000
+
+# 1b. Wikidata：SPARQL 拉取 → out/products.csv（--load 同时直连灌库，幂等可重跑）
 uv run python scripts/realdata/fetch_wikidata_products.py
 uv run python scripts/realdata/fetch_wikidata_products.py --load \
     --db postgresql://suite:suite@localhost:5433/suite   # 宿主连 compose db

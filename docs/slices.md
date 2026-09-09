@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 32 刀多来源数据 II 收口**（`feat/real-data-2`，closeout 见 `docs/progress/real-data-2-closeout.md`）——ABCD 对话走回流通道 + WANDS Exact 对灌切片候选；四源四通道可讲；零产品代码。集成 583 passed（基线 572 → 583）。
+上一刀：**第 33 刀数据契约与生产级目录**（`feat/data-contract`，closeout 见 `docs/progress/data-contract-closeout.md`）——Open Food Facts dump 清洗灌入，规格走登记/发布写回；不手写种子。集成 595 passed。
 
-当前阶段：**面试级**（`docs/goal.md` §6.2；施工 `docs/roadmap.md`）。形状 7/7 已达成。面试不演示。下一刀：**第 33 刀数据契约与口径**（真实 spec_schema + 写回/闸门测试 + 口径诚实）。其后 34 CI → 35 评测尺 → 36 同义词 → 37 客服真 loop。审计在第 36 刀后（每五产品刀）。
+当前阶段：**面试级**（`docs/goal.md` §6.2；施工 `docs/roadmap.md`）。下一刀：**第 34 刀 CI 门禁**。其后 35 评测尺 → 36 同义词 → 37 客服真 loop。审计在第 36 刀后（每五产品刀）。
 
 ## 怎么切
 
@@ -181,5 +181,9 @@
 ## 第 32 刀：多来源数据 II 收口（已交付，`feat/real-data-2`）
 
 **路径：** ABCD（MIT）会话转写走既有 `register_asset(kind=dialogue, source_kind=session_backflow)`；WANDS Exact 对幂等灌 `clip_candidates`。四源四通道可讲；**停灌、无数据 III**。零产品代码。集成 583 passed（基线 572 → 583）。证据见 `docs/progress/real-data-2-closeout.md`。
+
+## 第 33 刀：数据契约与生产级目录（已交付，`feat/data-contract`）
+
+**路径：** Open Food Facts 公开 TSV dump 流式清洗（条码+品名+可解析净含量）→ 规格正文=源字段 → register/确认/发布写回。不编造保质期。演示库 20 条 OFF 食品净含量写回（Chrome：Chocolate n3 80g · A-0227·v1）。goal §6.2 改为生产级目录。集成 595 passed。证据见 `docs/progress/data-contract-closeout.md`。
 
 ## 收官排期（audit-5）
