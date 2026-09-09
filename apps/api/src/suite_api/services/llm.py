@@ -167,6 +167,36 @@ async def complete_chat(system_prompt: str, user_prompt: str) -> str:
     return "".join([piece async for piece in stream_chat(system_prompt, user_prompt)])
 
 
+async def complete_tool_proposal(system_prompt: str, user_prompt: str) -> str:
+    """提议步专用非流式全文调用（第 37 刀，ADR 0043「模型提议、代码授权」）。
+
+    刻意不复用 stream_chat/complete_chat：既有替身测试把 stream_chat 钉为
+    「生成步唯一 LLM 等待点」的哨兵（0018 无证据不调模型、prompt 恰好一次
+    等断言）——提议步若复用同一通道会把哨兵提前击穿，既有测试语义全漂。
+    提议是单行格式化约定，无流式需要：非流式一次拿全文，同端点、同超时/
+    0 重试、同网关 session 头、同 LLMError 错误契约（只抛 LLMError 子类，
+    异常类型名进日志、密钥/端点不外泄）。空 key 同样 LLMNotConfigured——
+    引擎提议步据此降级为纯检索（36 刀前行为）。"""
+    client = _get_client()
+    try:
+        resp = await client.chat.completions.create(
+            model=get_settings().llm_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            # opencode 网关硬性要求每对话带稳定 session 头（同 stream_chat 口径）
+            extra_headers={"x-opencode-session": uuid.uuid4().hex},
+        )
+        content = resp.choices[0].message.content if resp.choices else None
+        return content or ""
+    except LLMError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 统一转通用文案，凭证/端点不外泄
+        logger.warning("厂商 Chat API 调用失败: %s", type(exc).__name__)
+        raise LLMUnavailable("厂商模型暂时不可用") from exc
+
+
 def build_prompts(hits: list[dict[str, Any]], question: str) -> tuple[str, str]:
     """组装 (system_prompt, user_prompt)：证据块各带「来源：A-{id}·v{N}」标注。
 
