@@ -118,6 +118,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
   MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py 保温杯 1 1
   ```
 
+- **协议证据**：`MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py --evidence`（goal §6.2.5 三断言：工具恰四无 publish、未发布 search 空、register 落已接入；pytest 版见 `apps/api/tests/test_mcp_evidence.py`）
 - **Cursor mcp.json**：
 
   ```json
