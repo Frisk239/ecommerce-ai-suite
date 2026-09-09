@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 35 刀 RAG 评测尺**（`feat/rag-eval-ruler`，closeout 见 `docs/progress/rag-eval-ruler-closeout.md`）——goal §6.2.2 验收物落地：96 条四分布大集（演示库 52 已发布资产动态生成，固定种子）+首份实测报告 `docs/research/rag-eval-report.md`（**recall@1 63.7%/@3 72.5%/拒答率 100%/同义组 -14pp=36 刀 before 基线**）；synonyms.py 供 36 刀复用。第 28-34 刀已合并 main。
+上一刀：**审计刀 6**（`feat/audit-6`，closeout 见 `docs/progress/audit-6-closeout.md`）：三路子代理审第 26–35 刀——**三路 P0 零**（评测数字三方复跑逐位一致/ADR 逐条对账/四源四通道账实相符）；P1×5（roadmap 残留旧审计口径/slices §35 措辞失实/91 商品空 schema 字面未达/三写路径重跑重复/after 报告须注明闭包局限）全数吸收进 36 刀 Must。goal §6.2 八条：2/4/5/7 达成。第 26–35 刀已合并 main。
 
-当前阶段：**计数线到——下一刀=审计刀 6**（三路子代理审第 26–35 刀：设计符合性/评测数字底座/数据契约与多来源）；其后 36 同义词接线（before 基线已立）→ 37 客服真 loop。
+当前阶段：**面试级**（goal §6.2）。下一刀：**第 36 刀检索同义词接线**（before 基线同义组 56%@1 已立；Must 吸收审计 6 五项 P1：after 报告注明闭包局限+文档三修+README 幂等标注）；其后 37 客服真 loop（开 ADR）→38 MCP 证据→39 仪表→40 忠实度→审计刀 7。
 
 ## 怎么切
 
@@ -194,4 +194,7 @@
 
 **路径：** 评测尺两层——CI 回归集（golden.json 13 条零改动）+动态大集（96 条四分布，直调 retrieve/compose 零 LLM 依赖，双跑逐位一致）；首份实测报告进 `docs/research/rag-eval-report.md`：recall@1 63.7%、@3 72.5%、拒答组拒答率 100%、正例误拒 2.5%、**同义改写组比正例低 14pp——第 36 刀同义词接线的 before 基线**；synonyms.py（15 对）落检索侧。内置浏览器实证线上引用与评测 expect 一致（A-0245）。集成 611 passed（593→611）。证据见 `docs/progress/rag-eval-ruler-closeout.md`。
 
-## 收官排期（audit-5）
+## 审计刀 6（已交付，`feat/audit-6`）
+
+三路子代理（设计符合性/评测数字底座/数据契约与多来源）审 `24998d3..main` 十刀：**P0 零**——评测数字三方复跑逐位一致（apply_synonyms 未接检索核实，无自我实现预言）；goal §6.1 恢复机械 diff 逐字一致；四源四通道账实相符（WANDS 0 登记如实）；OFF 写回链完整+ODbL 署名入正文。P1×5 全数吸收进 36 刀；goal §6.2 八条：2/4/5/7 已达成、1/8 大体、6 部分、3 未开始（诚实计分）。证据见 `docs/progress/audit-6-closeout.md`。
+
