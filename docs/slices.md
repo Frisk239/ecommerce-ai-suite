@@ -192,7 +192,7 @@
 
 ## 第 35 刀：RAG 评测尺（已交付，`feat/rag-eval-ruler`）
 
-**路径：** 评测尺两层——CI 回归集（golden.json 13 条零改动）+动态大集（96 条四分布，直调 retrieve/compose 零 LLM 依赖，双跑逐位一致）；首份实测报告进 `docs/research/rag-eval-report.md`：recall@1 63.7%、@3 72.5%、拒答组拒答率 100%、正例误拒 2.5%、**同义改写组比正例低 14pp——第 36 刀同义词接线的 before 基线**；synonyms.py（15 对）落检索侧。内置浏览器实证线上引用与评测 expect 一致（A-0245）。集成 611 passed（593→611）。证据见 `docs/progress/rag-eval-ruler-closeout.md`。
+**路径：** 评测尺两层——CI 回归集（golden.json 13 条零改动）+动态大集（96 条四分布，直调 retrieve/compose 零 LLM 依赖，双跑逐位一致）；首份实测报告进 `docs/research/rag-eval-report.md`：recall@1 63.7%、@3 72.5%、拒答组拒答率 100%、正例误拒 2.5%、**同义改写组比正例低 14pp——第 36 刀同义词接线的 before 基线**；synonyms.py（15 对）落库（第 36 刀接线检索侧）。内置浏览器实证线上引用与评测 expect 一致（A-0245）。集成 611 passed（593→611）。证据见 `docs/progress/rag-eval-ruler-closeout.md`。
 
 ## 审计刀 6（已交付，`feat/audit-6`）
 

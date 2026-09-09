@@ -116,7 +116,9 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
     assert session["status"] == "active"
     sid = session["id"]
 
-    events = _ask(client, sid, "保温杯的净含量是多少？")
+    # 36 刀接线：查询侧归一（0023 口径）把表词轮转一位——「容量」转回「净含量」
+    # 命中净含量块；分派/标题/摘要仍用原句（接线只动 retrieve 内部）。
+    events = _ask(client, sid, "保温杯的容量是多少？")
     kinds = [event for event, _ in events]
     assert kinds[0] == "thinking"
     assert events[0][1]["text"] == "正在检索已发布资产…"
@@ -172,7 +174,7 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
     assert dialogue_asset["versions"][0]["version_no"] == 1
     object_key = dialogue_asset["versions"][0]["object_key"]
     assert re.fullmatch(r"dialogue/[0-9a-f]{32}/[0-9a-f]{16}\.txt", object_key)
-    assert dialogue_asset["title"] == "保温杯的净含量是多少？"  # 首问做标题
+    assert dialogue_asset["title"] == "保温杯的容量是多少？"  # 首问做标题
 
     closed = client.get(f"/api/service/sessions/{sid}").json()
     assert closed["status"] == "registered"
@@ -194,7 +196,8 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
     assert dialogue_published.status_code == 200
 
     loop_session = client.post("/api/service/sessions").json()
-    loop_events = _ask(client, loop_session["id"], "客服为什么说抱歉？")
+    # 36 刀接线：「售后」轮转成「客服」命中对话块（同一 retrieve 入口归一）。
+    loop_events = _ask(client, loop_session["id"], "售后为什么说抱歉？")
     loop_complete = loop_events[-1][1]
     assert loop_complete["kind"] == "answer"
     assert {"asset_id": dialogue_id, "version_no": 1} in loop_complete["citations"]
@@ -206,14 +209,15 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
     assert listing[0]["id"] == loop_session["id"]
     registered_row = next(row for row in listing if row["id"] == sid)
     assert registered_row["status"] == "registered"
-    assert registered_row["first_question"] == "保温杯的净含量是多少？"
+    assert registered_row["first_question"] == "保温杯的容量是多少？"
     assert registered_row["message_count"] == 4  # 两问两答
 
 
 def test_version_follows_published_pointer(api: ApiFixture) -> None:
     """版本跟随指针：开修订期间仍引 v1；发布 v2 后引 v2；回滚后回到 v1。
 
-    「刻度容量」是本资产独有关键词，不与其他已发布块串台。开修订不得把
+    「刻度」是本资产独有关键词，不与其他已发布块串台（36 刀接线按新语义更新：
+    查询避开表词「容量」——归一会把它轮转走，改用表外词「刻度」直接命中）。开修订不得把
     status 打回 pending_review（地雷：检索还滤 status==published）。
     """
     client, _ = api
@@ -223,7 +227,7 @@ def test_version_follows_published_pointer(api: ApiFixture) -> None:
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
 
     sid = client.post("/api/service/sessions").json()["id"]
-    v1_events = _ask(client, sid, "刻度容量是多少？")
+    v1_events = _ask(client, sid, "刻度是多少？")
     assert v1_events[-1][1]["citations"] == [{"asset_id": asset_id, "version_no": 1}]
 
     opened = client.post(f"/api/assets/{asset_id}/revisions")
@@ -231,12 +235,12 @@ def test_version_follows_published_pointer(api: ApiFixture) -> None:
     assert opened.json()["status"] == "published"
     assert opened.json()["current_published_version_no"] == 1
     # 修订中线上仍服务 v1，不得拒答
-    still_v1 = _ask(client, client.post("/api/service/sessions").json()["id"], "刻度容量是多少？")
+    still_v1 = _ask(client, client.post("/api/service/sessions").json()["id"], "刻度是多少？")
     assert still_v1[-1][1]["kind"] == "answer"
     assert still_v1[-1][1]["citations"] == [{"asset_id": asset_id, "version_no": 1}]
 
     assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
-    v2_events = _ask(client, client.post("/api/service/sessions").json()["id"], "刻度容量是多少？")
+    v2_events = _ask(client, client.post("/api/service/sessions").json()["id"], "刻度是多少？")
     complete = v2_events[-1][1]
     assert complete["kind"] == "answer"
     assert complete["citations"] == [{"asset_id": asset_id, "version_no": 2}]
@@ -255,7 +259,7 @@ def test_version_follows_published_pointer(api: ApiFixture) -> None:
     rolled = client.post(f"/api/assets/{asset_id}/rollback", json={"version_no": 1})
     assert rolled.status_code == 200
     assert rolled.json()["current_published_version_no"] == 1
-    back = _ask(client, client.post("/api/service/sessions").json()["id"], "刻度容量是多少？")
+    back = _ask(client, client.post("/api/service/sessions").json()["id"], "刻度是多少？")
     assert back[-1][1]["citations"] == [{"asset_id": asset_id, "version_no": 1}]
 
 

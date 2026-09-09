@@ -231,7 +231,8 @@ def test_stock_word_hit_product_miss_falls_back_to_retrieval_refusal(api: ApiFix
 
 
 def test_spec_question_still_retrieves(api: ApiFixture) -> None:
-    """「保温杯的净含量是多少」词表外：登记+发布文档后仍走检索并引用（不变）。"""
+    """「保温杯的容量是多少」表词问句（36 刀接线按新语义更新：查询轮转回
+    「净含量」命中原文块）：登记+发布文档后仍走检索并引用（不变）。"""
     client, _ = api
     _login(client)
     cup_id = next(p["id"] for p in client.get("/api/products").json() if p["name"] == "钛钢保温杯")
@@ -249,7 +250,7 @@ def test_spec_question_still_retrieves(api: ApiFixture) -> None:
     assert client.post(f"/api/assets/{doc_id}/publish").status_code == 200
 
     sid = client.post("/api/service/sessions").json()["id"]
-    events = _ask(client, sid, "保温杯的净含量是多少？")
+    events = _ask(client, sid, "保温杯的容量是多少？")
     kinds = [event for event, _ in events]
     assert events[0][1] == {"text": "正在检索已发布资产…"}  # 检索状态行原样
     assert "tool" not in kinds  # 库存工具零接触

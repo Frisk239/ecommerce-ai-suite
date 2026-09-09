@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, RetrievalChunk
 from suite_api.services.machine_wash import QA_FIELD, redact
+from suite_api.services.synonyms import apply_synonyms
 from suite_platform.storage import ObjectStorage
 
 # 切块数上限：单版本切块超限即截断（防长文档/长转写把索引写爆；截断即丢尾部证据，
@@ -224,6 +225,11 @@ def score_chunk(terms: frozenset[str], chunk: str) -> float:
 def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]:
     """检索当前已发布版本的切块，按分数降序返回 [{asset_id, version_no, chunk, score}]。
 
+    查询先过同义词轮转改写（``apply_synonyms``，第 36 刀接线：search-time
+    查询侧归一，ES synonym 惯例同款；块侧不动）再进词法管线——表内词问句
+    换成同组另一说法撞回原文证据；表外问句逐字节等价（零漂移）。多轮记忆
+    的代词拼接检索词（conversation_memory.retrieval_query）走同一入口，同受益。
+
     候选集 SQL：retrieval_chunks join asset_versions join assets，其中
     asset_versions.id == assets.current_published_version_id 且
     (chunk.asset_id, chunk.version_no) == (asset_versions.asset_id, version_no)。
@@ -231,6 +237,9 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
     保证而非事后过滤）；发布新版指针前移后，旧版 chunk 因 version_no 不再
     匹配指针版本而自动出榜（派生视图语义）。
     """
+    # 查询侧同义词轮转（0023 词法口径内的确定性扩展，非向量）：只归一查询
+    # 不动块；无表词查询原样通过，行为与接线前逐字节等价（零漂移）。
+    query = apply_synonyms(query)
     terms = query_terms(query)
     if not terms:
         return []
