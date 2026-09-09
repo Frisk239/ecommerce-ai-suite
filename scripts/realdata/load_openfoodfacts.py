@@ -286,12 +286,22 @@ def register_and_publish(
                 continue
             registered += 1
             asset_id = int(asset["id"])
-            extracted = (asset.get("versions") or [{}])[0].get("extracted_fields") or {}
+            versions = asset.get("versions") or []
+            # register 每次新建 v1：本脚本语境刚登记的资产恒单版本；版本号取自
+            # 登记响应而非硬编码 /versions/1——形态异常时显式报错跳过，不猜。
+            if len(versions) != 1 or versions[0].get("version_no") != 1:
+                print(
+                    f"  资产 {asset_id} 登记响应非单 v1（{len(versions)} 版），跳过净含量确认",
+                    file=sys.stderr,
+                )
+                continue
+            extracted = versions[0].get("extracted_fields") or {}
             net = (extracted.get("净含量") or {}).get("value")
             if not net:
                 continue
+            version_no = versions[0]["version_no"]
             patch = urllib.request.Request(
-                base_url.rstrip("/") + f"/api/assets/{asset_id}/versions/1/fields",
+                base_url.rstrip("/") + f"/api/assets/{asset_id}/versions/{version_no}/fields",
                 data=json.dumps({"净含量": net}).encode(),
                 headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
                 method="PATCH",
@@ -319,6 +329,14 @@ def register_and_publish(
     return registered, published
 
 
+def cached_data_rows(path: Path) -> int:
+    """缓存 TSV 已有数据行数（不含首行表头；文件不存在按 0，触发重拉）。"""
+    if not path.exists():
+        return 0
+    with open(path, encoding="utf-8") as handle:
+        return sum(1 for _ in handle) - 1
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Open Food Facts dump 清洗灌入（ODbL）")
     parser.add_argument("--n", type=int, default=DEFAULT_N)
@@ -340,7 +358,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.fixture:
         rows = load_fixture_tsv(args.fixture, args.n)
         print(f"fixture {args.fixture} → {len(rows)} 条干净行")
-    elif args.cache.exists() and args.n <= sum(1 for _ in args.cache.open(encoding="utf-8")) - 1:
+    elif cached_data_rows(args.cache) >= args.n:
+        # 缓存干净行已够本轮（缓存由本脚本写出、首行是表头），免再拉全量 dump
         rows = load_fixture_tsv(args.cache, args.n)
         print(f"缓存 {args.cache} → {len(rows)} 条")
     else:

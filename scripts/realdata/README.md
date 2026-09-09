@@ -9,7 +9,7 @@
 | 来源 | 内容 | 许可 | 出处 |
 |---|---|---|---|
 | **Open Food Facts dump** | 夜更 TSV.gz（code/product_name/brands/quantity/ingredients…） | **ODbL** | <https://world.openfoodfacts.org/data> · [CSV.gz](https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz) · [字段表](https://world.openfoodfacts.org/data/data-fields.txt) |
-| Wikidata SPARQL | 商品类条目；可选 P176 制造商 / P2067 质量 | **CC0** | <https://www.wikidata.org> |
+| Wikidata SPARQL | 商品类条目（类目+名称标签） | **CC0** | <https://www.wikidata.org> |
 | online_shopping_10_cats | 6.2 万条中文电商评论 | 研究用途 | [ChineseNlpCorpus](https://github.com/SophonPlus/ChineseNlpCorpus) |
 | ABCD | 英文客服对话 | **MIT** | [asappresearch/abcd](https://github.com/asappresearch/abcd) |
 | WANDS | 家具检索标注 → 切片候选 | **MIT** | [wayfair/WANDS](https://github.com/wayfair/WANDS) |
@@ -101,7 +101,7 @@ transcript = `顾客问 {query} —— {product_name}（标注：Exact）`）。
 
 ## 测试
 
-`apps/api/tests/test_realdata_scripts.py`（27 例，离线）：转换纯函数 + `samples/`
+`apps/api/tests/test_realdata_scripts.py`（29 例，离线）：转换纯函数 + `samples/`
 fixture 断言，含交叉验证——脚本产的批字节能被既有 `parse_import_csv` 直接受理；
 ABCD 转写与回流端点同构、WANDS 候选形状与模型列宽对齐。网络/DB 路径不在单测
 范围（实跑即验）。
@@ -110,3 +110,7 @@ ABCD 转写与回流端点同构、WANDS 候选形状与模型列宽对齐。网
 
 JDDC（注册门槛）、评论类目→商品挂接、WANDS 视频本体与真时间码、Open Food
 Facts 连接层登记、直播数据集（观察项）、定期同步。
+
+> 商品规格文档接线（Wikidata 属性→中台规格资产）记入 roadmap 待办——本仓
+> SPARQL 属性（P176/P2067）覆盖稀疏且无消费者，相关死路径已于 2026-09-09
+> 交接修复删除；属性覆盖补齐后再接线。

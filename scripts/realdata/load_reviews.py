@@ -49,14 +49,6 @@ BATCH_ROWS = 200
 DEFAULT_N = 2000
 DEFAULT_SEED = 42
 TITLE_HEAD_CHARS = 18  # spec：title = {类目}评论 · {前 18 字}
-# 评论集类目 → 中台商品类目（能挂则挂；对不上的保持独立文档）
-REVIEW_CAT_TO_PRODUCT_CATEGORY = {
-    "手机": "智能手机",
-    "平板": "平板电脑",
-    "书籍": "图书",
-    "水果": "食品",
-    "电脑": "笔记本电脑",
-}
 
 
 # ---------------------------------------------------------------- 纯函数（可单测）
@@ -112,11 +104,6 @@ def sample_reviews(
     if n >= len(rows):
         return list(rows)
     return random.Random(seed).sample(rows, n)
-
-
-def product_category_for_review_cat(cat: str) -> str | None:
-    """评论类目能否挂中台商品类目。对不上返回 None（保持独立文档）。"""
-    return REVIEW_CAT_TO_PRODUCT_CATEGORY.get(cat.strip())
 
 
 def review_to_title_content(cat: str, review: str) -> tuple[str, str]:

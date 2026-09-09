@@ -56,7 +56,6 @@ def test_sparql_query_shape() -> None:
     assert query.count(f"LIMIT {fwp.DEFAULT_PER_CATEGORY}") == len(fwp.CATEGORIES)
     assert fwp.LABEL_LANGUAGES in query  # zh 优先，en 兜底
     assert "SERVICE wikibase:label" in query
-    assert "wdt:P176" in query and "wdt:P2067" in query  # 制造商 / 质量，有值才进规格正文
 
 
 def test_sparql_query_respects_per_category() -> None:
@@ -145,35 +144,6 @@ def test_products_csv_roundtrip(tmp_path: Path) -> None:
     assert read_back[1][0] == rows[0]["name"]
     assert json.loads(read_back[1][2]) == rows[0]["spec_schema"]
     assert int(read_back[1][4]) == rows[0]["stock"]
-
-
-def test_wikidata_spec_doc_only_when_attributes_present() -> None:
-    empty = fwp.wikidata_spec_doc({"manufacturer": "", "mass": ""})
-    assert empty == ""
-    filled = fwp.wikidata_spec_doc({"manufacturer": "Samsung", "mass": "0.18"})
-    assert "品牌：Samsung" in filled
-    assert "净含量：0.18 g" in filled
-    assert "见包装" not in filled
-
-
-def test_sparql_row_carries_manufacturer_into_spec_doc() -> None:
-    payload = {
-        "results": {
-            "bindings": [
-                {
-                    "category": {"value": "智能手机"},
-                    "item": {"value": "http://www.wikidata.org/entity/Q1"},
-                    "itemLabel": {"value": "示例旗舰"},
-                    "mfrLabel": {"value": "Samsung"},
-                    "mass": {"value": "0.2"},
-                }
-            ]
-        }
-    }
-    row = fwp.sparql_json_to_rows(payload)[0]
-    assert row["manufacturer"] == "Samsung"
-    assert "品牌：Samsung" in row["spec_doc"]
-    assert row["spec_values"] == {}  # 0010 不直写
 
 
 # ---------------------------------------------------------------- 评论 csv 解析 / zip
@@ -465,8 +435,3 @@ def test_off_dump_fixture_cleans_to_complete_rows_only() -> None:
     extracted = extract_document_fields(text, ["净含量", "保质期"])
     assert extracted["净含量"]["value"] == "550ml"
     assert extracted["保质期"].get("abstained") is True
-
-
-def test_review_cat_maps_to_product_category_or_none() -> None:
-    assert lr.product_category_for_review_cat("手机") == "智能手机"
-    assert lr.product_category_for_review_cat("衣服") is None

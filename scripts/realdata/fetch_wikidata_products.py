@@ -107,14 +107,12 @@ def build_sparql_query(
         "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
         "PREFIX wikibase: <http://wikiba.se/ontology#>\n"
         "PREFIX bd: <http://www.bigdata.com/rdf#>\n"
-        "SELECT ?category ?item ?itemLabel ?mfrLabel ?mass WHERE {\n"
+        "SELECT ?category ?item ?itemLabel WHERE {\n"
         + "\n  UNION\n".join(blocks)
         + "\n"
-        + "  OPTIONAL { ?item wdt:P176 ?mfr. }\n"
-        + "  OPTIONAL { ?item wdt:P2067 ?mass. }\n"
         + '  SERVICE wikibase:label { bd:serviceParam wikibase:language "'
         + LABEL_LANGUAGES
-        + '". ?item rdfs:label ?itemLabel. ?mfr rdfs:label ?mfrLabel. }\n'
+        + '". ?item rdfs:label ?itemLabel. }\n'
         + "}"
     )
 
@@ -122,23 +120,6 @@ def build_sparql_query(
 def _binding_value(binding: dict[str, Any], key: str) -> str:
     cell = binding.get(key) or {}
     return str(cell.get("value", "")).strip() if isinstance(cell, dict) else ""
-
-
-def wikidata_spec_doc(row: dict[str, Any]) -> str:
-    """有制造商或质量才生成规格正文；空属性不造文档（避免空壳登记）。"""
-    lines = ["【Wikidata 规格】"]
-    manufacturer = (row.get("manufacturer") or "").strip()
-    mass = (row.get("mass") or "").strip()
-    if manufacturer:
-        lines.append(f"品牌：{manufacturer}")
-    if mass:
-        if mass.replace(".", "", 1).isdigit():
-            mass = f"{mass} g"
-        lines.append(f"净含量：{mass}")
-    if len(lines) == 1:
-        return ""
-    lines.append("来源：Wikidata（CC0）")
-    return "\n".join(lines) + "\n"
 
 
 def sparql_json_to_rows(
@@ -169,18 +150,13 @@ def sparql_json_to_rows(
         if (name, cat) in seen:
             continue
         seen.add((name, cat))
-        manufacturer = _binding_value(binding, "mfrLabel")
-        mass = _binding_value(binding, "mass")
         row = {
             "name": name,
             "category": cat,
             "spec_schema": _schema_for(cat),
             "spec_values": {},
             "stock": rng.randrange(0, 100),
-            "manufacturer": manufacturer,
-            "mass": mass,
         }
-        row["spec_doc"] = wikidata_spec_doc(row)
         rows.append(row)
         if len(rows) >= limit:
             break
