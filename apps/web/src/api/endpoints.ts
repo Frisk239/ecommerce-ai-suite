@@ -91,6 +91,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ version_no: versionNo }),
     }),
+  // 生命周期出口三件（第 28 刀/ADR 0042）：待人洗版换正文（multipart，同登记
+  // 通道）、放弃未发布修订、废弃从未发布的失败资产。后端各自带状态机闸门 409。
+  replaceVersionBytes: (assetId: number, versionNo: number, form: FormData) =>
+    request<AssetDetail>(`/assets/${assetId}/versions/${versionNo}/bytes`, {
+      method: 'PUT',
+      body: form,
+    }),
+  discardRevision: (assetId: number) =>
+    request<AssetDetail>(`/assets/${assetId}/revisions/discard`, { method: 'POST' }),
+  discardAsset: (assetId: number) =>
+    request<AssetDetail>(`/assets/${assetId}/discard`, { method: 'POST' }),
 
   // 血缘视图（第 20 刀/ADR 0026）：派生拼装只读，详情加载后独立请求
   getAssetLineage: (assetId: number) => request<AssetLineage>(`/assets/${assetId}/lineage`),
