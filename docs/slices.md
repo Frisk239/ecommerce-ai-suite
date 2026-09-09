@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 37 刀客服真 loop**（`feat/agent-loop`，closeout 见 `docs/progress/agent-loop-closeout.md`）——goal §6.2.3 达成（ADR 0043 修订 0036/0037）：模型提议工具+代码授权三道校验+max_steps=3+越狱钉测；快路径零回归铁证（哨兵测试证快路径零 LLM）。内置浏览器混意图实证（无单号→诚实双答）。第 26–36 刀+审计刀 6 已合并 main。
+上一刀：**第 38 刀连接层协议证据**（`feat/mcp-evidence`，closeout 见 `docs/progress/mcp-evidence-closeout.md`）——goal §6.2.5 达成：`mcp_smoke --evidence` 四断言结构化摘要（E2 未发布不进检索对分词鲁棒设计）+pytest 版进 CI；Owner 修复默认探针资产修订流转鲁棒性。第 26–37 刀+审计刀 6 已合并 main。
 
-当前阶段：**面试级**（goal §6.2）。下一刀：**第 38 刀连接层协议证据**（MCP 独立脚本+测试全链）→ 39 自进化仪表 → 40 忠实度/反馈/两阶段写 → **审计刀 7**（第 40 刀后）。
+当前阶段：**面试级**（goal §6.2，八条 2/3/4/5/7 已达成）。下一刀：**第 39 刀自进化仪表**（缺口热度+保鲜元数据+0031 修订）→ 40 忠实度/反馈/两阶段写 → **审计刀 7**（第 40 刀后）。
 
 ## 怎么切
 
@@ -194,8 +194,8 @@
 
 **路径：** 评测尺两层——CI 回归集（golden.json 13 条零改动）+动态大集（96 条四分布，直调 retrieve/compose 零 LLM 依赖，双跑逐位一致）；首份实测报告进 `docs/research/rag-eval-report.md`：recall@1 63.7%、@3 72.5%、拒答组拒答率 100%、正例误拒 2.5%、**同义改写组比正例低 14pp——第 36 刀同义词接线的 before 基线**；synonyms.py（15 对）落库（第 36 刀接线检索侧）。内置浏览器实证线上引用与评测 expect 一致（A-0245）。集成 611 passed（593→611）。证据见 `docs/progress/rag-eval-ruler-closeout.md`。
 
-## 第 37 刀：客服真 loop（已交付，`feat/agent-loop`）
+## 第 38 刀：连接层协议证据（已交付，`feat/mcp-evidence`）
 
-**路径：** goal §6.2.3「不是 if 链」——工具注册表（get_order_status/get_stock，TOOL 标记约定+三道校验）+步进循环 max_steps=3（快路径零 LLM 铁证保留→模型提议步[代码授权执行/被拒转人工不缺口]→检索生成照旧）；越狱两形态钉测；LLM 失败降级快路径。ADR 0043 修订 0036/0037。内置浏览器混意图实证：无单号问「订单到哪+退货政策」→诚实双答（物流无证据不编造+退货引 A-0006/A-0013）。集成 642 passed（617→642）。证据见 `docs/progress/agent-loop-closeout.md`。
+**路径：** goal §6.2.5 答辩级证据——`mcp_smoke --evidence` 四断言（E0 register 未发布/E1 工具恰四无 publish 集合相等/E2 **未发布不进检索**[登记前后零差异+探针永不出现，分词鲁棒]/E3 活状态不暴露反向断言）结构化摘要逐行输出；pytest 版进 CI。Owner 修复默认探针资产 1→3（修订流转鲁棒）。集成 645 passed（642→645）。证据见 `docs/progress/mcp-evidence-closeout.md`。
 
-## 第 36 刀：检索同义词接线
+## 第 37 刀：客服真 loop
