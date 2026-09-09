@@ -77,6 +77,9 @@ class Asset(Base):
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     # 机洗失败原因（运行状态，非领域新语义）；成功时清空
     last_error: Mapped[str | None] = mapped_column(Text)
+    # 0042 废弃标记（治理动作后的隐藏标记，不是第四态）：非空=已废弃，列表
+    # 默认过滤；仅「已接入且从未发布」的失败资产可置，行不删、字节已清
+    discarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # use_alter：与 asset_versions.asset_id 构成循环外键，迁移里用 ALTER ADD FK
     current_published_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("asset_versions.id", use_alter=True, name="fk_assets_current_published_version")

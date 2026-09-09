@@ -3,8 +3,10 @@
 // 只读语义：待人洗以外状态字段不可编辑（已发布版本是只读证据）。
 // dialogue 资产（第 12 刀/ADR 0035）：转写正文只读查看 + qa_pairs QA 对编辑器
 // （人洗必须看见转写；机洗草稿改/删/增后确认，confirmed 才在发布时成块入索引）。
+// 生命周期出口三件（第 28 刀/ADR 0042）：待人洗版「上传新正文」、未发布修订
+// 「放弃修订」、从未发布的失败资产「废弃」——均为二次确认对话框，明示字节删除不可恢复。
 
-import { type ReactNode, useCallback, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowCounterClockwise,
@@ -18,7 +20,9 @@ import {
   Prohibit,
   SealCheck,
   Trash,
+  UploadSimple,
   Warning,
+  XCircle,
 } from '@phosphor-icons/react'
 import { ApiError, detailText, parsePublishGate, type PublishGateDetail } from '../api/client'
 import { api } from '../api/endpoints'
@@ -519,10 +523,24 @@ function auditActionLabel(action: string): string {
   if (action === 'publish') return '发布'
   if (action === 'confirm') return '确认字段'
   if (action === 'rollback') return '回滚'
+  // 0042 负向出口动作：留痕列不裸显英文码
+  if (action === 'discard_revision') return '放弃修订'
+  if (action === 'discard_asset') return '废弃'
   // 第 26 刀：连接层导出留痕（22 刀起在写）不再裸显英文码；留痕列已带操作者，
   // 标签点明「导出 · MCP」与血缘导出块同口径
   if (action === 'export') return '导出 · MCP'
   return action
+}
+
+/** 换正文文件校验（对齐登记抽屉口径）：.txt/.md、≤2MB、非空；后端闸门兜底。 */
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
+
+function validateTextFile(file: File): string | null {
+  const lower = file.name.toLowerCase()
+  if (!lower.endsWith('.txt') && !lower.endsWith('.md')) return '仅接受 .txt 或 .md 文本文件'
+  if (file.size > MAX_UPLOAD_BYTES) return '文件超过 2MB 上限'
+  if (file.size === 0) return '空文件不能上传'
+  return null
 }
 
 export default function AssetDetailPage() {
@@ -569,6 +587,21 @@ export default function AssetDetailPage() {
   const [rollingBack, setRollingBack] = useState(false)
   const [rollbackError, setRollbackError] = useState<unknown>(null)
   const [rollbackNote, setRollbackNote] = useState<string | null>(null)
+  // 生命周期出口（0042）：换正文/放弃修订/废弃
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadFieldError, setUploadFieldError] = useState<string | null>(null)
+  const [uploadingBytes, setUploadingBytes] = useState(false)
+  const [uploadError, setUploadError] = useState<unknown>(null)
+  const [uploadNote, setUploadNote] = useState<string | null>(null)
+  const [discardRevOpen, setDiscardRevOpen] = useState(false)
+  const [discardingRevision, setDiscardingRevision] = useState(false)
+  const [discardRevError, setDiscardRevError] = useState<unknown>(null)
+  const [discardRevNote, setDiscardRevNote] = useState<string | null>(null)
+  const [discardAssetOpen, setDiscardAssetOpen] = useState(false)
+  const [discardingAsset, setDiscardingAsset] = useState(false)
+  const [discardAssetError, setDiscardAssetError] = useState<unknown>(null)
+  const [discardAssetNote, setDiscardAssetNote] = useState<string | null>(null)
 
   const reloadDetail = useCallback(() => {
     reloadDetailData()
@@ -702,6 +735,86 @@ export default function AssetDetailPage() {
     }
   }
 
+  // 生命周期出口三件（0042）：闸门与后端同口径——换正文=待人洗未发布版；
+  // 放弃修订=有 version_no>1 的未发布版；废弃=已接入且从未发布（指针空）。
+  const canUploadBytes = editable && activeVersion !== null
+  const canDiscardRevision = unpublished !== null && unpublished.version_no > 1
+  const canDiscardAsset = detail?.status === 'ingested' && currentPublishedNo === null
+
+  const pickUploadFile = () => {
+    if (uploadingBytes) return
+    setUploadFieldError(null)
+    fileInputRef.current?.click()
+  }
+
+  const onUploadFilePicked = (files: FileList | null) => {
+    const file = files?.[0] ?? null
+    if (file === null) return
+    const err = validateTextFile(file)
+    if (err !== null) {
+      setUploadFieldError(err)
+      return
+    }
+    setUploadFieldError(null)
+    setUploadFile(file) // 只暂存：确认对话框里明示后果，确认才上传
+  }
+
+  const replaceBytes = async () => {
+    if (detail === null || activeVersion === null || uploadFile === null || uploadingBytes) return
+    setUploadingBytes(true)
+    setUploadError(null)
+    try {
+      const form = new FormData()
+      form.append('file', uploadFile)
+      const versionNo = activeVersion.version_no
+      await api.replaceVersionBytes(detail.id, versionNo, form)
+      setUploadFile(null)
+      setUploadNote(
+        `已替换 v${versionNo} 正文：机洗已按新字节重跑，已确认/继承的字段保留。`,
+      )
+      reloadDetail()
+    } catch (err) {
+      setUploadError(err)
+    } finally {
+      setUploadingBytes(false)
+    }
+  }
+
+  const discardRevision = async () => {
+    if (detail === null || discardingRevision) return
+    setDiscardingRevision(true)
+    setDiscardRevError(null)
+    try {
+      const versionNo = unpublished?.version_no ?? '—'
+      await api.discardRevision(detail.id)
+      setDiscardRevOpen(false)
+      setDiscardRevNote(`已放弃修订：v${versionNo} 已删除，现在可以回滚或重新开修订。`)
+      reloadDetail()
+    } catch (err) {
+      setDiscardRevOpen(false)
+      setDiscardRevError(err)
+    } finally {
+      setDiscardingRevision(false)
+    }
+  }
+
+  const discardAsset = async () => {
+    if (detail === null || discardingAsset) return
+    setDiscardingAsset(true)
+    setDiscardAssetError(null)
+    try {
+      await api.discardAsset(detail.id)
+      setDiscardAssetOpen(false)
+      setDiscardAssetNote('已废弃：资产从列表隐藏，全部字节已清除，留痕保留。')
+      reloadDetail()
+    } catch (err) {
+      setDiscardAssetOpen(false)
+      setDiscardAssetError(err)
+    } finally {
+      setDiscardingAsset(false)
+    }
+  }
+
   const backLink = (
     <Link
       to="/platform/assets"
@@ -786,6 +899,9 @@ export default function AssetDetailPage() {
 
       {publishedNote !== null ? <SuccessBanner>{publishedNote}</SuccessBanner> : null}
       {rollbackNote !== null ? <SuccessBanner>{rollbackNote}</SuccessBanner> : null}
+      {uploadNote !== null ? <SuccessBanner>{uploadNote}</SuccessBanner> : null}
+      {discardRevNote !== null ? <SuccessBanner>{discardRevNote}</SuccessBanner> : null}
+      {discardAssetNote !== null ? <SuccessBanner>{discardAssetNote}</SuccessBanner> : null}
       {anchored ? (
         <div className="mb-3 text-xs leading-5 text-accent-strong">
           正在查看 v{anchorVersionNo} · 引用回放锚定——本页由引用芯片跳入，该版本已在下方版本列表中高亮。
@@ -794,6 +910,14 @@ export default function AssetDetailPage() {
       {retryError !== null ? <ErrorBanner error={retryError} /> : null}
       {revisionError !== null ? <ErrorBanner error={revisionError} /> : null}
       {rollbackError !== null ? <ErrorBanner error={rollbackError} /> : null}
+      {uploadError !== null ? <ErrorBanner error={uploadError} onRetry={pickUploadFile} /> : null}
+      {discardRevError !== null ? <ErrorBanner error={discardRevError} /> : null}
+      {discardAssetError !== null ? <ErrorBanner error={discardAssetError} /> : null}
+      {uploadFieldError !== null ? (
+        <div className="mb-3 rounded-[6px] border border-[rgba(180,35,24,0.2)] bg-[rgba(180,35,24,0.04)] px-3 py-2 text-[13px] leading-5 text-danger">
+          {uploadFieldError}
+        </div>
+      ) : null}
       {publishError !== null ? <ErrorBanner error={publishError} onRetry={() => setConfirmOpen(true)} /> : null}
 
       <PageHeader
@@ -962,10 +1086,56 @@ export default function AssetDetailPage() {
                     ) : null}
                   </div>
                 ) : null}
+                {/* 0042 出口：待人洗版换正文；有未发布修订（v>1）可放弃 */}
+                <div className="flex flex-wrap items-center gap-2 border-t border-line-1 pt-2.5">
+                  {canUploadBytes ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={uploadingBytes}
+                      onClick={pickUploadFile}
+                    >
+                      <UploadSimple aria-hidden size={13} />
+                      {uploadingBytes ? '上传中…' : '上传新正文'}
+                    </button>
+                  ) : null}
+                  {canDiscardRevision ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm text-danger"
+                      disabled={discardingRevision}
+                      onClick={() => setDiscardRevOpen(true)}
+                    >
+                      <XCircle aria-hidden size={13} />
+                      {discardingRevision ? '放弃中…' : `放弃修订 v${unpublished?.version_no}`}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="text-xs leading-5 text-ink-3">
+                  传错了文件可在这里替换正文：旧对象键字节删除，机洗按新正文重跑，已确认字段保留。
+                </div>
               </div>
             ) : detail.status === 'ingested' ? (
-              <div className="text-xs leading-5 text-ink-3">
-                已接入资产需先完成机洗（上方可就地重试），才能进入人洗与发布。
+              <div className="space-y-2.5">
+                <div className="text-xs leading-5 text-ink-3">
+                  已接入资产需先完成机洗（上方可就地重试），才能进入人洗与发布。
+                </div>
+                {canDiscardAsset ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm text-danger"
+                      disabled={discardingAsset}
+                      onClick={() => setDiscardAssetOpen(true)}
+                    >
+                      <Trash aria-hidden size={13} />
+                      {discardingAsset ? '废弃中…' : '废弃这份资产'}
+                    </button>
+                    <div className="text-xs leading-5 text-ink-3">
+                      传错文件的最终出口：从未发布过的失败资产可废弃——字节清除不可恢复，列表随即隐藏。
+                    </div>
+                  </>
+                ) : null}
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -1149,6 +1319,70 @@ export default function AssetDetailPage() {
         busy={rollingBack}
         onCancel={() => setRollbackTarget(null)}
         onConfirm={() => void rollback()}
+      />
+
+      {/* 0042 出口三件的确认框与隐藏文件选择器；均明示字节删除不可恢复 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".txt,.md,text/plain,text/markdown"
+        className="hidden"
+        onChange={(e) => {
+          onUploadFilePicked(e.target.files)
+          e.target.value = '' // 允许再次选择同一文件
+        }}
+      />
+      <ConfirmDialog
+        open={uploadFile !== null}
+        title={`替换正文 ${formatAssetId(detail.id)} · v${activeVersion?.version_no ?? '—'}`}
+        body={
+          <div className="space-y-2">
+            <div>
+              将以 <span className="font-medium text-ink">{uploadFile?.name}</span>（{uploadFile === null ? '' : `${Math.ceil(uploadFile.size / 1024)} KB`}
+              ）替换 v{activeVersion?.version_no ?? '—'} 的正文。
+            </div>
+            <div className="text-danger">
+              该版旧对象键的字节随即删除，不可恢复；机洗将按新正文重跑，已确认/继承的字段保留。
+              线上版本不受影响。
+            </div>
+          </div>
+        }
+        confirmLabel="确认上传"
+        busy={uploadingBytes}
+        onCancel={() => setUploadFile(null)}
+        onConfirm={() => void replaceBytes()}
+      />
+      <ConfirmDialog
+        open={discardRevOpen}
+        title={`放弃修订 ${formatAssetId(detail.id)} · v${unpublished?.version_no ?? '—'}`}
+        body={
+          <div className="space-y-2">
+            <div>将放弃未发布修订 v{unpublished?.version_no ?? '—'}（不是线上版本）。</div>
+            <div className="text-danger">
+              该修订版本与字节一并删除，不可恢复；放弃后可回滚到历史版本，或重新开修订。
+            </div>
+          </div>
+        }
+        confirmLabel="确认放弃"
+        busy={discardingRevision}
+        onCancel={() => setDiscardRevOpen(false)}
+        onConfirm={() => void discardRevision()}
+      />
+      <ConfirmDialog
+        open={discardAssetOpen}
+        title={`废弃资产 ${formatAssetId(detail.id)}`}
+        body={
+          <div className="space-y-2">
+            <div>
+              这份资产从未发布过（机洗失败停在已接入），废弃后从列表隐藏，不是删除记录；留痕保留。
+            </div>
+            <div className="text-danger">全部版本字节将被删除，不可恢复。</div>
+          </div>
+        }
+        confirmLabel="确认废弃"
+        busy={discardingAsset}
+        onCancel={() => setDiscardAssetOpen(false)}
+        onConfirm={() => void discardAsset()}
       />
     </div>
   )
