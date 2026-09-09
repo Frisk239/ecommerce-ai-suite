@@ -152,6 +152,33 @@ def test_stream_chat_yields_text_pieces_with_chat_shape(monkeypatch: pytest.Monk
     ]
 
 
+def test_stream_chat_with_history_inserts_turn_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    """第 29 刀多轮记忆：history 映射 user/assistant 插在 system 与本轮
+    user 之间；不传 history 时 messages 与旧两消息形状一致（零改动兼容）。"""
+    calls = _install_fake_client(monkeypatch, _FakeStream(["ok"]))
+
+    async def run_with_history() -> list[str]:
+        return [
+            piece
+            async for piece in llm.stream_chat(
+                "系统提示",
+                "本轮问题",
+                history=[
+                    {"role": "customer", "content": "上一轮问句"},
+                    {"role": "agent", "content": "上一轮回答"},
+                ],
+            )
+        ]
+
+    assert asyncio.run(run_with_history()) == ["ok"]
+    assert calls[0]["messages"] == [
+        {"role": "system", "content": "系统提示"},
+        {"role": "user", "content": "上一轮问句"},
+        {"role": "assistant", "content": "上一轮回答"},
+        {"role": "user", "content": "本轮问题"},
+    ]
+
+
 def test_stream_chat_sends_session_header_per_request(monkeypatch: pytest.MonkeyPatch) -> None:
     """opencode 网关硬性要求 x-opencode-session（缺则 400 MissingSessionID，
     2026-09-08 Owner 验收实测）；每问独立（0023 无多轮记忆）= 请求级新 id。"""

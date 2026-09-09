@@ -102,7 +102,11 @@ def _patch_stream(
 ) -> list[dict[str, str]]:
     calls: list[dict[str, str]] = []
 
-    async def fake_stream(system_prompt: str, user_prompt: str) -> Any:
+    async def fake_stream(
+        system_prompt: str, user_prompt: str, history: list[dict[str, str]] | None = None
+    ) -> Any:
+        # 第 29 刀多轮化：stream_chat 增 history 参数（默认 None）——替身按新
+        # 形状补默认参数；捕获记录形状不变（既有 prompt 断言零改动）
         calls.append({"system": system_prompt, "user": user_prompt})
         for piece in pieces or []:
             yield piece
