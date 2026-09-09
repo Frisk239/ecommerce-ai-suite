@@ -1,12 +1,15 @@
 """治理台资产路由：登记（0013）、CSV 批量导入（第 9 刀，上传通道的批量形态）、
-机洗重试（0012 就地）、人洗确认、发布（0005/0010）、开修订/回滚（0006）。
+机洗重试（0012 就地）、人洗确认、发布（0005/0010）、开修订/回滚（0006）、
+生命周期出口三件（0042：修订换字节/放弃修订/废弃失败资产）。
 
 状态机：ingested --机洗成功--> pending_review --发布--> published；
 机洗失败停 ingested 存 last_error。开修订不改 status、不移指针（线上继续
 服务当前已发布版）；人洗闸门看版本行未发布，不要求 status==pending_review。
 发布为单事务：版本 published -> 切块入索引 -> 资产指针前移 -> 商品写回 ->
 审计一行 -> 解决关联的知识缺口（0024：解决动作随发布发生）。回滚是单独
-移指针（audit rollback），不复用 publish body。
+移指针（audit rollback），不复用 publish body。出口三件（0042）都是负向动作：
+换字节只碰未发布版（线上字节永不动）、放弃修订删未发布版（字节+行）、
+废弃只限「已接入且从未发布」（discarded_at 标记隐藏，不是第四态）。
 
 登记骨架（put_bytes -> Asset/AssetVersion -> 机洗推进）与资产读视图装配
 分别在 services/registration.py 与 services/asset_view.py，供 service 路由共用。
@@ -14,6 +17,7 @@ source_kind（0025）与补文档/修订缺口关联（0024/0031）都在本路�
 """
 
 import copy
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -197,6 +201,52 @@ def _can_publish(asset: Asset, version: AssetVersion) -> bool:
     return asset.status == PENDING_REVIEW or (
         asset.status == PUBLISHED and asset.current_published_version_id is not None
     )
+
+
+# ---------- 生命周期出口闸门与对象存储侧副作用（ADR 0042；纯函数便于单测） ----------
+
+
+def _can_replace_version_bytes(asset: Asset, version: AssetVersion) -> bool:
+    """换字节闸门（纯谓词）：仅未发布且非当前指针的版本可换（待人洗修订版/
+    新登记版均属此类）；published_at 已非空或指针所指（线上版）恒 False。"""
+    return version.published_at is None and version.id != asset.current_published_version_id
+
+
+def _is_revision(asset: Asset, version: AssetVersion) -> bool:
+    """未发布版是否「修订」而非新资产首发 v1（纯谓词）：version_no>1，或资产
+    曾发布过（指针非空——指针只随发布设置、从不清空）。v1 未发布的普通资产
+    不算修订：放弃它不是本端点的事，409 引导走「废弃」。"""
+    return version.version_no > 1 or asset.current_published_version_id is not None
+
+
+def _can_discard_asset(asset: Asset, *, has_published_version: bool) -> bool:
+    """废弃闸门（纯谓词）：已接入（机洗失败）且从未发布（指针空且无任何
+    published_at 非空的版本）才可废弃；已发布历史（权威证据）不可抹。"""
+    return (
+        asset.status == INGESTED
+        and asset.current_published_version_id is None
+        and not has_published_version
+    )
+
+
+def _swap_version_bytes(
+    storage: ObjectStorage, kind: str, version: AssetVersion, data: bytes
+) -> str:
+    """换字节的对象存储侧（0003 键不复用 + 0042 孤儿清理首接线）：新键先写、
+    旧键后删（未发布版的旧键从此无引用），版本行改指新键。副作用收口在
+    一个函数里，便于单测钉死「新键写、旧键删」调用序。"""
+    new_key = make_object_key(kind, data)
+    storage.put_bytes(new_key, data)
+    storage.delete(version.object_key)
+    version.object_key = new_key
+    return new_key
+
+
+def _delete_version_bytes(storage: ObjectStorage, versions: Sequence[AssetVersion]) -> None:
+    """删一组版本的对象字节（放弃修订/废弃资产共用；delete 幂等，键不存在
+    不报错）。已发布版本的键永不进本函数（两个调用方都只喂未发布版）。"""
+    for v in versions:
+        storage.delete(v.object_key)
 
 
 # ---------- 写接口（全部要求登录，401 未登录） ----------
@@ -669,6 +719,167 @@ def rollback(
     return to_asset_detail(db, asset)
 
 
+# ---------- 生命周期出口三件（第 28 刀/ADR 0042：操作者的「开错了/传错了」退路） ----------
+
+
+@router.put("/{asset_id}/versions/{version_no}/bytes", response_model=AssetDetail)
+def replace_version_bytes(
+    asset_id: int,
+    version_no: int,
+    file: Annotated[UploadFile, File()],
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> AssetDetail:
+    """修订/待人洗版换字节（0042）：上传新正文替换该版内容——新对象键写入、
+    旧修订键字节删除（孤儿清理，storage.delete 首个接线方）、重跑机洗。
+
+    闸门：版本须存在且未发布且非当前指针（线上字节永不动，409）。extracted
+    按新字节重算（字段集与登记同口径按 kind+product 分派）、confirmed 保留
+    （继承/人洗确认值不逼重存）。上传校验对齐登记（类型/2MB/空文件）。
+
+    同步 def（同 CSV/重试先例）：dialogue 重跑机洗含 LLM（asyncio.run，≤20s），
+    必须跑在线程池线程而非事件循环；字节换序在 commit 后、机洗窗口外（P1#2
+    不 idle-in-transaction）。机洗失败不停在半换状态：字节已换是事实，资产按
+    登记同口径停 ingested 存 last_error（修订中资产 status/指针不动，线上
+    继续 v1，可重传或重试）。
+    """
+    del operator  # 写接口仅要求登录，401 口径同既有写端点
+    if file.content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"仅接受 {' / '.join(sorted(ALLOWED_CONTENT_TYPES))}，收到: {file.content_type}",
+        )
+    data = file.file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="文档超过 2MB 上限"
+        )
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能上传"
+        )
+
+    asset = _get_asset_or_404(db, asset_id)
+    version = db.scalar(
+        select(AssetVersion).where(
+            AssetVersion.asset_id == asset.id, AssetVersion.version_no == version_no
+        )
+    )
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产版本不存在")
+    if not _can_replace_version_bytes(asset, version):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="只有待人洗（未发布）的版本可以换正文，线上版本字节不可触碰",
+        )
+    product = _product_or_none(db, asset)
+    # 字段集在 commit 前算完（读 spec_schema 会 autobegin，别把只读事务
+    # 留进机洗窗口）；confirmed 不动——重跑只重算 extracted
+    field_names = machine_wash_field_names(asset.kind, product)
+    _swap_version_bytes(storage, asset.kind, version, data)
+    db.commit()  # P1#2：字节换序先落库，机洗（dialogue 含 LLM ≤20s）不持事务
+
+    try:
+        extracted = run_machine_wash(storage, version.object_key, field_names, asset.kind)
+        version.extracted_fields = extracted
+        if asset.status != PUBLISHED:
+            asset.status = PENDING_REVIEW
+        asset.last_error = None
+    except (MachineWashError, FileNotFoundError) as exc:
+        asset.last_error = str(exc)[:500] or exc.__class__.__name__
+        if asset.status != PUBLISHED:
+            asset.status = INGESTED
+    db.commit()
+    db.refresh(asset)
+    db.refresh(version)
+    return to_asset_detail(db, asset)
+
+
+@router.post("/{asset_id}/revisions/discard", response_model=AssetDetail)
+def discard_revision(
+    asset_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> AssetDetail:
+    """放弃修订（0042）：删未发布修订版（清字节 + 删版本行），解锁回滚与
+    再开修订（无状态需清——两者闸门本就只看「有无未发布版」）。
+
+    无未发布版 409；未发布版是 v1 新资产（从未发布过的普通资产）时 409
+    引导走「废弃」。audit 记 discard_revision（谁/何时/哪版）。
+    """
+    asset = _get_asset_or_404(db, asset_id)
+    version = _unpublished_version(db, asset)
+    if version is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="没有未发布修订可放弃",
+        )
+    if not _is_revision(asset, version):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="未发布的 v1 是新资产首发而不是修订；机洗失败的传错文件请走「废弃」",
+        )
+    version_no = version.version_no
+    _delete_version_bytes(storage, [version])
+    db.delete(version)
+    db.add(
+        AuditLog(
+            operator_id=operator.id,
+            asset_id=asset.id,
+            version_no=version_no,
+            action="discard_revision",
+        )
+    )
+    db.commit()
+    db.refresh(asset)
+    return to_asset_detail(db, asset)
+
+
+@router.post("/{asset_id}/discard", response_model=AssetDetail)
+def discard_asset(
+    asset_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> AssetDetail:
+    """废弃失败资产（0042）：仅「已接入（机洗失败）且从未发布（所有版本
+    published_at 全空且指针空）」——已发布历史（含指针已回退）不可抹，409。
+
+    资产行不删：discarded_at 置标记（迁移 0014；列表默认过滤，不是第四态），
+    全部版本字节清掉（每键 storage.delete；版本行保留作审计锚，键已悬空）。
+    audit 记 discard_asset。检索/血缘无影响：从未发布本就不进索引。
+    """
+    asset = _get_asset_or_404(db, asset_id)
+    versions = list(
+        db.scalars(select(AssetVersion).where(AssetVersion.asset_id == asset.id))
+    )
+    has_published = any(v.published_at is not None for v in versions)
+    if not _can_discard_asset(asset, has_published_version=has_published):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "只有机洗失败（已接入）且从未发布过的资产可以废弃，"
+                f"已发布历史不可抹，当前状态: {asset.status}"
+            ),
+        )
+    asset.discarded_at = datetime.now(UTC)
+    _delete_version_bytes(storage, versions)
+    latest_no = max((v.version_no for v in versions), default=1)
+    db.add(
+        AuditLog(
+            operator_id=operator.id,
+            asset_id=asset.id,
+            version_no=latest_no,
+            action="discard_asset",
+        )
+    )
+    db.commit()
+    db.refresh(asset)
+    return to_asset_detail(db, asset)
+
+
 # ---------- 读接口 ----------
 
 
@@ -687,7 +898,9 @@ def list_assets(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"status 只能是 {'/'.join(sorted(_VALID_STATUSES))}",
         )
-    query = select(Asset).order_by(Asset.id.desc())
+    # 0042：discarded 是治理动作后的隐藏标记——列表（含各状态页签）默认
+    # 不可见；详情/血缘按 id 直达不受影响，检索本就只有已发布
+    query = select(Asset).where(Asset.discarded_at.is_(None)).order_by(Asset.id.desc())
     if kind is not None:
         query = query.where(Asset.kind == kind)
     if status_filter == PUBLISHED:
