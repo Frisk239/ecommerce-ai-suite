@@ -56,6 +56,9 @@ class AssetOut(BaseModel):
     product: ProductRef | None
     last_error: str | None
     current_published_version_no: int | None
+    # 第 39 刀保鲜元数据（发布=验证快照；verify 端点刷新）。NULL=未验证：
+    # 检索侧不降权（保守裁决），前端不显 stale 徽章。
+    last_verified_at: datetime | None
     revising: bool  # 指针已设且存在未发布版本（修订中；线上仍服务指针版）
 
 
@@ -145,6 +148,7 @@ def to_asset_out(
             else None
         ),
         revising=asset.id in (revising_ids or set()),
+        last_verified_at=asset.last_verified_at,
     )
 
 

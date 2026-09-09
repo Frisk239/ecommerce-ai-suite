@@ -684,7 +684,11 @@ def test_rollback_clears_fields_absent_from_target_version(api: ApiFixture) -> N
 
 
 def test_open_revision_associates_knowledge_gap(api: ApiFixture) -> None:
-    """0031：已发布规格上开修订并挂缺口；发布事务内 resolved；二次挂 409。"""
+    """0031：已发布规格上开修订并挂缺口；发布事务内 resolved；二次挂 409。
+
+    第 39 刀验证闸适配：缺口问句取「已发布规格答得上的」（保质期）——补对
+    文档才 resolved；答不上的（补错文档）保持 open 由
+    test_service_integration 的验证闸用例单独钉死。"""
     client, _ = api
     _login(client)
     published = _confirm_and_publish_water(client, title="瓶装水规格·缺口修订")
@@ -693,7 +697,9 @@ def test_open_revision_associates_knowledge_gap(api: ApiFixture) -> None:
 
     session_factory = client.app.state.session_factory
     with session_factory() as db:
-        gap = KnowledgeGap(question="瓶装水口感如何", product_id=water_id, status="open")
+        gap = KnowledgeGap(
+            question="瓶装水的保质期是多久", product_id=water_id, status="open"
+        )
         db.add(gap)
         db.commit()
         gap_id = gap.id
@@ -716,3 +722,36 @@ def test_open_revision_associates_knowledge_gap(api: ApiFixture) -> None:
     assert resolved["status"] == "resolved"
     assert resolved["resolved_by_asset_id"] == asset_id
     assert resolved["resolved_at"] is not None
+
+
+# ---------- 重新验证（第 39 刀保鲜） ----------
+
+
+def test_verify_refreshes_freshness_and_audits(api: ApiFixture) -> None:
+    """verify 端点：发布即验证快照（last_verified_at 落值）；「重新验证」刷新
+    时间 + audit 记 verify 行（指向当前已发布版本）；未发布资产 409。"""
+    client, _ = api
+    _login(client)
+    published = _confirm_and_publish_water(client, title="瓶装水规格·重新验证")
+    asset_id = published["id"]
+
+    detail = client.get(f"/api/assets/{asset_id}").json()
+    assert detail["last_verified_at"] is not None  # 发布=验证快照（发布事务内置）
+
+    verified = client.post(f"/api/assets/{asset_id}/verify")
+    assert verified.status_code == 200
+    refreshed = verified.json()
+    assert refreshed["last_verified_at"] is not None
+    assert refreshed["last_verified_at"] >= detail["last_verified_at"]
+
+    audits = client.get(f"/api/audit?assetId={asset_id}").json()
+    actions = [a["action"] for a in audits]
+    assert "publish" in actions
+    assert "verify" in actions
+    verify_row = next(a for a in audits if a["action"] == "verify")
+    assert verify_row["version_no"] == refreshed["current_published_version_no"]
+
+    # 未发布的资产不可验证（409 闸门）：待人洗与已接入都挡在门外
+    pending = _upload(client, _WATER_DOC, title="瓶装水规格·未发布不可验证")
+    assert pending.status_code == 201
+    assert client.post(f"/api/assets/{pending.json()['id']}/verify").status_code == 409

@@ -21,7 +21,9 @@
 """
 
 import math
+import os
 import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -219,6 +221,35 @@ def score_chunk(terms: frozenset[str], chunk: str) -> float:
     return overlap / math.sqrt(len(chunk_units))
 
 
+# ---------- 过期降权（第 39 刀保鲜；打分公式的后处理乘数，不动 score_chunk） ----------
+
+# 过期资产的块打分乘以该乘数（score*=0.5）后再排序——打分口径本体（ADR 0023
+# 工程标定）保持不变，可独立校准。
+STALE_MULTIPLIER = 0.5
+# 过期阈值（天）：env STALE_DAYS 可配，缺省 90。读取在调用时（非 import 时），
+# 便于测试 monkeypatch 与部署侧不重启调参。
+STALE_DAYS_DEFAULT = 90
+
+
+def stale_days() -> int:
+    raw = os.environ.get("STALE_DAYS", "")
+    return int(raw) if raw else STALE_DAYS_DEFAULT
+
+
+def is_stale(last_verified_at: datetime | None, *, now: datetime, days: int) -> bool:
+    """过期判定（纯函数便于单测）。last_verified_at 为 NULL 时恒 False。
+
+    保守裁决（spec 内嵌裁决，钉死在此）：曾考虑「NULL=未灌即按 stale 处理」
+    逼操作者发布后点一次验证，但存量/演示库资产 last_verified_at 全 NULL，
+    NULL 降权=整库降权，评测基线（run_eval 96 条大集）数字会被打破——故改
+    「NULL 不降权」：只有**显式验证过**（发布快照或重新验证）后距今超过
+    days 天的资产才降权。仪表先可观测，降权动作保守。
+    """
+    if last_verified_at is None:
+        return False
+    return now - last_verified_at > timedelta(days=days)
+
+
 # ---------- 检索（只查当前已发布版本，join 保证） ----------
 
 
@@ -238,14 +269,25 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
     待人洗/已接入资产的指针为 NULL，join 天然不出现（0004/0017：由 join 语义
     保证而非事后过滤）；发布新版指针前移后，旧版 chunk 因 version_no 不再
     匹配指针版本而自动出榜（派生视图语义）。
+
+    过期降权（第 39 刀保鲜）：候选 SQL 随带 assets.last_verified_at，打分后
+    对「显式验证过且距今 > stale_days() 天」的资产块 score*=STALE_MULTIPLIER
+    （后处理乘数，不动 score_chunk 本体；NULL 不降权=保守裁决，见 is_stale）。
     """
     # 查询侧同义词扩展（0023 词法口径内的确定性扩展，非向量）：原查询词与
     # 归一后词取并集——只增不删，保证既有命中不丢（after 评测裁决的修正）。
     terms = query_terms(query) | query_terms(apply_synonyms(query))
     if not terms:
         return []
+    now = datetime.now(UTC)
+    days = stale_days()
     rows = db.execute(
-        select(RetrievalChunk.asset_id, RetrievalChunk.version_no, RetrievalChunk.chunk)
+        select(
+            RetrievalChunk.asset_id,
+            RetrievalChunk.version_no,
+            RetrievalChunk.chunk,
+            Asset.last_verified_at,
+        )
         .join(
             AssetVersion,
             (AssetVersion.asset_id == RetrievalChunk.asset_id)
@@ -268,8 +310,16 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
     # 全程仍用原文块（score_chunk 吃 comprehension 的 chunk 变量，不动检索
     # 打分）；索引行与版本字节永不回写掩码（不可变锁死，出口只现掩）。
     scored = [
-        {"asset_id": asset_id, "version_no": version_no, "chunk": redact(chunk), "score": score}
-        for asset_id, version_no, chunk in rows
+        {
+            "asset_id": asset_id,
+            "version_no": version_no,
+            "chunk": redact(chunk),
+            # 过期降权是乘数后处理：打分本体（score_chunk）不动，只有显式验证
+            # 过且超过阈值才乘 0.5（null 恒不降——保守裁决见 is_stale docstring）
+            "score": score
+            * (STALE_MULTIPLIER if is_stale(verified_at, now=now, days=days) else 1.0),
+        }
+        for asset_id, version_no, chunk, verified_at in rows
         if (score := score_chunk(terms, chunk)) > 0.0
     ]
     # 去重：文档原文的「字段：值」行与确认字段生成的块可能同文（合法：两路证据），

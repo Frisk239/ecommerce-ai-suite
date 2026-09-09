@@ -6,6 +6,7 @@
 - 多轮代词拼接检索词经同一 retrieve 入口归一（conversation_memory 拼接串受益）。
 """
 
+from datetime import datetime
 from typing import Any
 
 from suite_api.services.conversation_memory import retrieval_query
@@ -14,18 +15,22 @@ from suite_api.services.synonyms import apply_synonyms
 
 
 class _FakeResult:
-    def __init__(self, rows: list[tuple[int, int, str]]) -> None:
+    def __init__(self, rows: list[tuple[int, int, str, datetime | None]]) -> None:
         self._rows = rows
 
-    def all(self) -> list[tuple[int, int, str]]:
+    def all(self) -> list[tuple[int, int, str, datetime | None]]:
         return self._rows
 
 
 class _FakeDb:
-    """只够 retrieve() 用的候选行源：execute(stmt).all() 返回预置 (asset, version, chunk)。"""
+    """只够 retrieve() 用的候选行源：execute(stmt).all() 返回候选行。
+
+    调用方仍给 3 元组 (asset, version, chunk)；第 39 刀起候选 SQL 随带保鲜
+    元数据（last_verified_at），retrieve 按 4 元组解包——fake 在此统一补
+    第 4 列 None（未验证不降权），既有用例正文零改动。"""
 
     def __init__(self, rows: list[tuple[int, int, str]]) -> None:
-        self._rows = rows
+        self._rows = [(a, v, c, None) for a, v, c in rows]
 
     def execute(self, stmt: Any) -> _FakeResult:
         return _FakeResult(self._rows)

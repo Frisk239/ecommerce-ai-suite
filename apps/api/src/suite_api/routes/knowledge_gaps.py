@@ -37,6 +37,8 @@ class KnowledgeGapOut(BaseModel):
     resolved_by_asset_id: int | None
     created_at: datetime
     resolved_at: datetime | None
+    # 第 39 刀热度：被问次数（归一化幂等命中既有 open 缺口时 +1）
+    hit_count: int
 
 
 @router.get("", response_model=list[KnowledgeGapOut])
@@ -60,7 +62,8 @@ def list_knowledge_gaps(
         db.scalars(
             select(KnowledgeGap)
             .where(KnowledgeGap.status == status_filter)
-            .order_by(KnowledgeGap.id.desc())
+            # 第 39 刀：按热度排（被问次数多=最需要补的排前），同热度新者先
+            .order_by(KnowledgeGap.hit_count.desc(), KnowledgeGap.created_at.desc(), KnowledgeGap.id.desc())
         )
     )
     product_ids = {g.product_id for g in gaps if g.product_id is not None}
@@ -83,6 +86,7 @@ def list_knowledge_gaps(
             resolved_by_asset_id=g.resolved_by_asset_id,
             created_at=g.created_at,
             resolved_at=g.resolved_at,
+            hit_count=g.hit_count,
         )
         for g in gaps
     ]
