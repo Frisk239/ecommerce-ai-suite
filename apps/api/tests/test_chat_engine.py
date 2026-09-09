@@ -38,7 +38,11 @@ def test_run_ask_commits_before_llm_stream(monkeypatch: pytest.MonkeyPatch) -> N
         lambda *_a, **_k: ("sys", "usr"),
     )
 
-    async def fake_stream(_system: str, _user: str) -> Any:
+    async def fake_stream(
+        _system: str, _user: str, history: list[dict[str, str]] | None = None
+    ) -> Any:
+        # 第 29 刀多轮化：stream_chat 增 history 参数（默认 None）——替身按新
+        # 形状补默认参数，行为断言（commit 序）零改动
         order.append("stream_chat")
         yield "模型回答"
 

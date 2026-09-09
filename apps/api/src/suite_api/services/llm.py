@@ -14,6 +14,9 @@
   0010：confirmed 才进索引——字段值与切块文本同路，无第二条取数），各带
   「来源：A-{id}·v{N}」标注（0007 版本口径）；引用最终由服务端从检索命中
   定（模型无引用决定权），系统提示明确要求模型不输出引用编号。
+- 多轮记忆（第 29 刀 feat/multi-turn）：`stream_chat` 增 history 参数——
+  会话内最近轮映射为 user/assistant 消息插在 system 与本轮 user 之间；
+  默认 None 时与旧两消息形状逐字节一致（既有调用与替身零改动兼容）。
 """
 
 import asyncio
@@ -98,8 +101,31 @@ def _get_client() -> AsyncOpenAI:
     return client
 
 
-async def stream_chat(system_prompt: str, user_prompt: str) -> AsyncIterator[str]:
+def history_messages(history: list[dict[str, str]] | None) -> list[dict[str, str]]:
+    """多轮历史（第 29 刀 feat/multi-turn）-> Chat Completions messages 段：
+    customer -> user、agent -> assistant。
+
+    历史内容已在 conversation_memory.recent_turns 返回处统一 redact（0038
+    修订纪律：厂商 prompt 必掩——收口单点，消费方不再重复掩）。None/空 ->
+    []：无历史的调用 messages 与既有两消息形状逐字节一致（旧调用零改动）。
+    """
+    role_map = {"customer": "user", "agent": "assistant"}
+    return [
+        {"role": role_map[turn["role"]], "content": turn["content"]}
+        for turn in history or []
+    ]
+
+
+async def stream_chat(
+    system_prompt: str,
+    user_prompt: str,
+    history: list[dict[str, str]] | None = None,
+) -> AsyncIterator[str]:
     """Chat Completions 流式生成，逐块 yield 文本增量。
+
+    history（第 29 刀多轮记忆）：``[{role:"customer"|"agent", content}]`` 由
+    history_messages 映射为 user/assistant 消息，插在 system 与本轮 user
+    之间（指代消解所需的对话历史段）；None/空 -> 与旧形状完全一致。
 
     契约：除 `LLMError` 子类外不向外抛——openai 的超时/连接/响应异常全部包装
     为 `LLMUnavailable`（通用文案）。日志只记异常类型名，不带 str(exc)（其中
@@ -111,12 +137,14 @@ async def stream_chat(system_prompt: str, user_prompt: str) -> AsyncIterator[str
             model=get_settings().llm_model,
             messages=[
                 {"role": "system", "content": system_prompt},
+                *history_messages(history),
                 {"role": "user", "content": user_prompt},
             ],
             stream=True,
             # opencode 网关硬性要求每对话带稳定 session 头，缺则 400
-            # MissingSessionID；本产品每问独立（0023 无多轮记忆）= 一问一对话，
-            # 请求级新 id 即「该对话的稳定 id」，也避免跨问关联
+            # MissingSessionID；每问仍是一次独立请求（第 29 刀多轮记忆在
+            # messages 内携带，不改变请求粒度）= 请求级新 id 即「该对话的
+            # 稳定 id」，也避免跨问关联
             extra_headers={"x-opencode-session": uuid.uuid4().hex},
         )
         async for chunk in stream:

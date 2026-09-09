@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 from suite_api.models import Asset, KnowledgeGap, ServiceMessage, ServiceSession
 from suite_api.services import llm
 from suite_api.services.answer import ComposedAnswer, build_refusal_handoff_content, compose_answer
+from suite_api.services.conversation_memory import PRONOUN_RE, recent_turns, retrieval_query
 from suite_api.services.knowledge_gaps import record_refusal_gap
 from suite_api.services.order_tools import (
     find_order_no,
@@ -114,7 +115,8 @@ async def run_ask(
 ) -> AskOutcome:
     """发问主体（调用方已完成鉴权与会话状态校验，question 已 strip 非空）。
 
-    每问独立检索：无多轮记忆（ADR 0023 不预埋）。无命中 -> refusal 消息
+    每问独立检索与拒答判定（第 29 刀起补会话内多轮记忆，见模块尾段：记忆只
+    进生成 prompt 与检索词补全，不改检索/拒答语义）。无命中 -> refusal 消息
     （0018）：固定文案 + handoff=true，不编造不闲聊，且不调模型（防编造省
     调用）。有命中 -> 厂商模型流式生成（0033）；LLM 未配置/失败/空产出 ->
     降级 compose_answer 模板回答（错误细节只进服务端日志，不含密钥）。
@@ -136,9 +138,16 @@ async def run_ask(
     ``expose_gap_id``（第 27 刀）：与 sse_event_stream 同名白名单闸——顾客
     路由传 False，拒答消息文本不带「缺口：G-xxxx」段（问句摘要两通道都带）；
     操作者默认 True。缺口本身两通道照常落库（0024 语义不动）。
+
+    第 29 刀（feat/multi-turn）：会话内最近轮记忆（最近 N=4 轮，拒答/转人工/
+    工具轮整轮跳过，见 conversation_memory）只影响两处——检索词补全（本问
+    含代词且上轮有主题 -> 上一问+本问拼接检索，retrieve 打分口径不变）与
+    生成 prompt 的 history 段；拒答判定/缺口/工具分派语义零改动，无证据仍
+    拒答（记忆不制造证据）。
     """
-    # 1) 先落 customer 消息
-    db.add(ServiceMessage(session_id=session.id, role="customer", content=question))
+    # 1) 先落 customer 消息（留引用：多轮记忆取历史时排除本轮刚落的问句）
+    customer_message = ServiceMessage(session_id=session.id, role="customer", content=question)
+    db.add(customer_message)
     db.commit()
 
     # 1.5) 订单号命中 -> 工具路径（跳过检索，ADR 0036；单独钉序列）
@@ -155,8 +164,19 @@ async def run_ask(
             return _run_stock_ask(db, session, question, stock_result)
 
     # 2) 检索当前已发布版本 -> 组装（模板回答=降级兜底，citations 选取也以它为准）
-    hits = retrieve(db, question)
+    #    第 29 刀检索词补全：本问含代词（它|他|她|这个|那个|这款）且会话里有
+    #    上一轮 -> retrieve 吃「上一问+本问」拼接（bigram 并集，阈值不变），
+    #    否则原问原样。history 惰性取（含代词才查库）；无代词的拒答路径零
+    #    额外查询——记忆不改变拒答语义。
+    history: list[dict[str, str]] | None = None
+    if PRONOUN_RE.search(question):
+        history = recent_turns(db, session.id, exclude_message_id=customer_message.id)
+    hits = retrieve(db, retrieval_query(question, history or []))
     answer = compose_answer(hits, assets_meta(db, hits))
+    # 生成分支才补取记忆（拒答分支不取，零成本）；必须在下方 commit 前——
+    # LLM 等待（至多 20s）不得 idle-in-transaction 占连接（同一纪律）。
+    if answer.kind == "answer" and history is None:
+        history = recent_turns(db, session.id, exclude_message_id=customer_message.id)
     # 结束只读事务：LLM 等待（至多 20s）不得 idle-in-transaction 占连接。
     # 写阶段（agent 消息）autobegin 再取连接。citations 仍以本问检索快照为准。
     db.commit()
@@ -164,11 +184,17 @@ async def run_ask(
     # 2.5) 厂商生成（第 7 刀，ADR 0033）：有证据才调模型（0018 无证据不调）。
     #      stream_chat 契约：只抛 LLMError 子类（超时/连接已转通用文案）；
     #      空产出视同失败降级。先收全再落库再流式（断连=完整落库契约不变）。
+    #      第 29 刀：最近轮历史随 messages 传厂商（拒答/转人工/工具轮已在
+    #      recent_turns 滤掉，内容已过 redact）——记忆只改生成语言（指代
+    #      消解），citations/tool 语义不变。
     generated: str | None = None
     if answer.kind == "answer":
         system_prompt, user_prompt = llm.build_prompts(hits, question)
         try:
-            pieces = [piece async for piece in llm.stream_chat(system_prompt, user_prompt)]
+            pieces = [
+                piece
+                async for piece in llm.stream_chat(system_prompt, user_prompt, history=history)
+            ]
             generated = "".join(pieces).strip() or None
         except llm.LLMError as exc:
             # 错误细节只进服务端日志（llm.stream_chat 已保证消息不含密钥/端点）
