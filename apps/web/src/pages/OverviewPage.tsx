@@ -84,7 +84,7 @@ const REMAINING: { to: string; label: string; line: string }[] = [
     label: '中台 · 商品',
     line: '结构化事实；规格来自已发布资产的写回',
   },
-  { to: '/coach', label: '销售考核', line: '从已发布对话资产抽场景，AI 扮演顾客打分' },
+  { to: '/coach', label: '销售考核', line: '从已发布对话资产抽场景，按维打分（题面即开场）' },
   {
     to: '/connect',
     label: '连接层（MCP）',

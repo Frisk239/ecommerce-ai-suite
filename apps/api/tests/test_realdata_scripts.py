@@ -28,6 +28,7 @@ sys.path.insert(0, str(REALDATA_DIR))
 
 import fetch_wikidata_products as fwp  # noqa: E402
 import load_abcd_dialogues as lad  # noqa: E402
+import load_openfoodfacts as loff  # noqa: E402
 import load_reviews as lr  # noqa: E402
 import load_wands_clips as lwc  # noqa: E402
 
@@ -70,7 +71,10 @@ def test_sparql_sample_fixture_converts() -> None:
     rows = fwp.sparql_json_to_rows(_load_sparql_sample())
     assert len(rows) == 46
     assert all(row["name"] and row["category"] for row in rows)
-    assert all(row["spec_schema"] == {} and row["spec_values"] == {} for row in rows)
+    assert all(row["spec_values"] == {} for row in rows)
+    assert all(row["spec_schema"] for row in rows)  # 类目模板非空（第 33 刀）
+    phones = [row for row in rows if row["category"] == "智能手机"]
+    assert phones and "品牌" in phones[0]["spec_schema"]
     assert all(0 <= row["stock"] <= 99 for row in rows)
     names_by_cat = {(row["name"], row["category"]) for row in rows}
     assert len(names_by_cat) == len(rows)  # name+category 唯一
@@ -138,7 +142,7 @@ def test_products_csv_roundtrip(tmp_path: Path) -> None:
     assert tuple(read_back[0]) == fwp.CSV_COLUMNS
     assert len(read_back) == 6
     assert read_back[1][0] == rows[0]["name"]
-    assert json.loads(read_back[1][2]) == {}
+    assert json.loads(read_back[1][2]) == rows[0]["spec_schema"]
     assert int(read_back[1][4]) == rows[0]["stock"]
 
 
@@ -376,6 +380,11 @@ def test_wands_candidate_rows_timecodes_increase() -> None:
     assert lwc.format_timecode(3600 + 120 + 3) == "01:02:03"
 
 
+def test_wands_carrier_schema_is_furniture() -> None:
+    schema = lwc._wands_schema()
+    assert schema["材质"]["required"] is True
+
+
 def test_wands_sampling_deterministic() -> None:
     pairs = [{"query_id": str(i), "query": f"q{i}", "product_id": str(i),
               "query_class": "", "product_name": f"p{i}", "product_class": ""} for i in range(20)]
@@ -404,3 +413,25 @@ def test_wands_candidates_csv_roundtrip(tmp_path: Path) -> None:
         read_back = list(csv.reader(handle))
     assert read_back[0] == ["timecode_start", "timecode_end", "transcript", "source_video_label"]
     assert read_back[1][2] == rows[0]["transcript"]
+
+
+def test_off_dump_fixture_cleans_to_complete_rows_only() -> None:
+    """dump 样本 5 行：2 条有条码+品名+可解析净含量，3 条清洗丢掉。不编造保质期。"""
+    rows = loff.load_fixture_tsv(SAMPLES_DIR / "off_dump_sample.tsv", limit=10)
+    assert [row["barcode"] for row in rows] == ["6921168500013", "3017620422003"]
+    nongfu = rows[0]
+    assert nongfu["name"] == "农夫山泉饮用天然水"
+    assert nongfu["brands"] == "农夫山泉"
+    assert nongfu["spec_schema"] == {"净含量": {"required": True}}
+    assert nongfu["spec_values"] == {}
+    text = loff.spec_text_from_row(nongfu)
+    assert "净含量：550 ml" in text
+    assert "保质期" not in text
+    assert "见包装" not in text
+    assert "6921168500013" in text
+    from suite_api.services.machine_wash import extract_document_fields, extract_net_content
+
+    assert extract_net_content("550 ml") == "550ml"
+    extracted = extract_document_fields(text, ["净含量", "保质期"])
+    assert extracted["净含量"]["value"] == "550ml"
+    assert extracted["保质期"].get("abstained") is True

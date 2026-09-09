@@ -68,6 +68,19 @@ NAME_MAX = 200
 CATEGORY_MAX = 50
 
 
+def _schema_for(category: str) -> dict:
+    """类目规格模板：与 suite_api.services.category_schema 同一份。
+
+    SPARQL→行是纯函数、离线单测不连库；这里延迟 import，避免脚本 --help
+    在无 workspace 时炸。测不到模板时退回 {}（测试环境有 suite_api）。
+    """
+    try:
+        from suite_api.services.category_schema import schema_for_category
+    except ImportError:  # pragma: no cover - uv workspace 外的防御
+        return {}
+    return schema_for_category(category)
+
+
 def build_sparql_query(
     categories: tuple[tuple[str, str], ...] = CATEGORIES,
     per_category: int = DEFAULT_PER_CATEGORY,
@@ -137,15 +150,14 @@ def sparql_json_to_rows(
         if (name, cat) in seen:
             continue
         seen.add((name, cat))
-        rows.append(
-            {
-                "name": name,
-                "category": cat,
-                "spec_schema": {},
-                "spec_values": {},
-                "stock": rng.randrange(0, 100),
-            }
-        )
+        row = {
+            "name": name,
+            "category": cat,
+            "spec_schema": _schema_for(cat),
+            "spec_values": {},
+            "stock": rng.randrange(0, 100),
+        }
+        rows.append(row)
         if len(rows) >= limit:
             break
     return rows
@@ -231,6 +243,15 @@ def load_products(db_url: str, rows: list[dict[str, Any]]) -> tuple[int, int]:
             ).first()
             if exists is not None:
                 skipped += 1
+                current = connection.execute(
+                    select(Product.spec_schema).where(Product.id == exists[0])
+                ).scalar_one()
+                if not current and row["spec_schema"]:
+                    connection.execute(
+                        Product.__table__.update()
+                        .where(Product.id == exists[0])
+                        .values(spec_schema=row["spec_schema"])
+                    )
                 continue
             connection.execute(
                 Product.__table__.insert().values(

@@ -298,7 +298,7 @@ class CoachRecord(Base):
     dialogue 动态推导，记录只存作答时刻的题面/标准答案快照。score 为三维分
     + 评语 {accurate, evidence, tone, comment}，NULL=未评分（LLM 未配置/失败/
     坏输出，无降级——打分是考核的本体），last_error 记原因可重评。
-    model_name 是打分时刻的 settings.llm_model 快照（回放显示扮演底座）。
+    model_name 是打分时刻的 settings.llm_model 快照（回放显示评分底座）。
     """
 
     __tablename__ = "coach_records"

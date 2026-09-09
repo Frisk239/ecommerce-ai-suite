@@ -12,7 +12,7 @@
   （score=NULL、last_error 记原因），**不向调用方抛**——前端拿 200 +
   unscored 状态给「重新评分」按钮；rescore 从记录字段重组同题 prompt 重跑。
 - **记录不是中台对象**（0027）：只写 coach_records，不碰检索/发布/审计；
-  成功打分时快照 model_name=评分时刻 settings.llm_model（回放显示扮演底座）。
+  成功打分时快照 model_name=评分时刻 settings.llm_model（回放显示评分底座）。
 - asyncio.run 前提：消费方路由恒为同步 def（FastAPI 线程池，线程上无运行中
   事件循环），与 machine_wash QA 抽取、material 生成同一先例（第 16 刀 P1#1
   的按 loop 缓存客户端也依赖这一点）。

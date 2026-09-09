@@ -23,6 +23,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from suite_api.models import ClipCandidate, Operator, Order, Product
+from suite_api.services.category_schema import schema_for_category
 from suite_api.services.clips import PENDING as CLIP_PENDING
 
 logger = logging.getLogger(__name__)
@@ -151,11 +152,17 @@ def seed_startup_data(engine: Engine, operator_password: str) -> None:
             if existing is None:
                 db.add(Product(**spec))
                 logger.info("种子商品已创建: %s", spec["name"])
-            elif existing.stock is None:
-                # 0037 回填：迁移只加列（存量行 NULL=未设置），mock 值在这灌；
-                # 仅当 NULL 时写——已有值（含演示中手改成 0/其他）不覆盖
-                existing.stock = spec["stock"]
-                logger.info("种子商品库存已回填: %s=%s", spec["name"], spec["stock"])
+            else:
+                if existing.stock is None:
+                    # 0037 回填：迁移只加列（存量行 NULL=未设置），mock 值在这灌；
+                    # 仅当 NULL 时写——已有值（含演示中手改成 0/其他）不覆盖
+                    existing.stock = spec["stock"]
+                    logger.info("种子商品库存已回填: %s=%s", spec["name"], spec["stock"])
+                if not existing.spec_schema:
+                    existing.spec_schema = schema_for_category(existing.category) or spec[
+                        "spec_schema"
+                    ]
+                    logger.info("种子商品规格模板已回填: %s", spec["name"])
         for spec in SEED_ORDERS:
             if db.scalar(select(Order).where(Order.order_no == spec["order_no"])) is None:
                 db.add(Order(**spec))
