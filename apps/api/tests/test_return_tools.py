@@ -197,3 +197,16 @@ def test_create_return_is_not_in_registry() -> None:
     assert decision.proposal is None
     assert decision.raw_name == "create_return"
     assert "create_return" in (decision.reject_reason or "")
+
+
+def test_policy_questions_not_return_intent() -> None:
+    """审计刀 7 P1#3：带单号的政策问句不得走资格快路径（会吞检索可答的
+    退货政策资产并制造虚假「退货申请已生成/待确认」状态）。"""
+    from suite_api.services.return_tools import has_return_intent
+
+    assert has_return_intent("SO-1001 退货政策是什么") is False
+    assert has_return_intent("SO-1001 退换货条件") is False
+    assert has_return_intent("SO-1001 怎么退货") is False
+    assert has_return_intent("你们支持退货吗 SO-1001") is False
+    assert has_return_intent("SO-1001 我想退货") is True  # 真发起不受影响
+    assert has_return_intent("SO-1001 退货进度") is False  # 原有负例不回归
