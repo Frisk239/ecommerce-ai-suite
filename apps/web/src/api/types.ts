@@ -275,7 +275,27 @@ export interface ServiceAnswerComplete {
   handoff: boolean
   gap_id: number | null
   fallback?: boolean
+  /** 第 40 刀：忠实度闸触发原因（仅闸触发时出现，值 'coverage'）。普通厂商
+   * 失败降级只带 fallback 不带该键——运行时返回口径，消息表不加列。 */
+  fallback_reason?: string
   tool: ToolCallRecord | null
+}
+
+// ---------- 顾客反馈与退货确认（第 40 刀，ADR 0044 §一/§四） ----------
+
+/** 「没有帮助」反馈结果：feedback 非空即已落档；triaged_asset_ids 是本次负
+ * 反馈撤销验证的资产（分诊即答案，复审由治理台未验证面承接）。 */
+export interface FeedbackResult {
+  message_id: number
+  feedback: { helpful: boolean; at: string }
+  triaged_asset_ids: number[]
+}
+
+/** 退货确认结果：确认后订单全部物流事件（含新追加的确认事件）。 */
+export interface ConfirmReturnResult {
+  message_id: number
+  order_no: string
+  events: { at: string; text: string }[]
 }
 
 // ---------- 素材中心任务（routes/material.py 契约，第 17 刀/ADR 0038） ----------

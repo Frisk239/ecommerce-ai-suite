@@ -11,9 +11,11 @@ import type {
   CoachQuestion,
   CoachQuestionKey,
   CoachRecord,
+  ConfirmReturnResult,
   CustomerAnswerComplete,
   CustomerSessionCreated,
   CsvImportReport,
+  FeedbackResult,
   KnowledgeGap,
   KnowledgeGapStatus,
   MaterialTask,
@@ -230,4 +232,21 @@ export const api = {
       signal,
       { Authorization: `Bearer ${token}` },
     ),
+
+  // 顾客「没有帮助」（第 40 刀，ADR 0044 §四）：负反馈触发分诊——逐 citation
+  // 资产撤销验证；同消息二次反馈 409（幂等）。401/409 文案由后端 detail 呈现。
+  leaveFeedback: (sessionId: number, token: string, messageId: number) =>
+    request<FeedbackResult>(`/customer/sessions/${sessionId}/messages/${messageId}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify({ helpful: false }),
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  // 两阶段写阶段二（第 40 刀，ADR 0044 §一）：操作者对资格消息确认退货；
+  // 服务端验签+资格重查后写订单事件并落 create_return 轨迹（刷新会话即见）。
+  confirmReturn: (sessionId: number, messageId: number, confirmationToken: string) =>
+    request<ConfirmReturnResult>(`/service/sessions/${sessionId}/confirm-return`, {
+      method: 'POST',
+      body: JSON.stringify({ message_id: messageId, confirmation_token: confirmationToken }),
+    }),
 }

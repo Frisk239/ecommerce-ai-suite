@@ -7,10 +7,10 @@
 // 429（0033 限流）与 409（会话已被操作者回流登记）都以后端 detail 文案呈现，
 // 「新会话」随时可重签令牌。
 
-import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, ChatCircleDots } from '@phosphor-icons/react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ArrowUp, ChatCircleDots, ThumbsDown } from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
-import MessageBubble from '../components/MessageBubble'
+import MessageBubble, { type UiMessage } from '../components/MessageBubble'
 import { ErrorBanner } from '../components/Banner'
 import Empty from '../components/Empty'
 import { useAskStream } from '../hooks/useAskStream'
@@ -34,6 +34,10 @@ export default function CustomerPage() {
   const [input, setInput] = useState('')
   const [error, setError] = useState<unknown>(null)
   const [creating, setCreating] = useState(false)
+
+  // 第 40 刀（ADR 0044 §四）：「没有帮助」反馈——已反馈的消息 id 集合（本地
+  // 表达；幂等服务端钉死：同消息二次反馈 409）。换会话即清空。
+  const [feedbackSent, setFeedbackSent] = useState<number[]>([])
 
   // 发问状态机与操作者预览共用 useAskStream（第 25 刀）：顾客版 complete 载荷
   // 无 gap_id（服务端白名单裁剪），失败剪掉未进引擎的空占位——口径参数化
@@ -69,6 +73,7 @@ export default function CustomerPage() {
       const created = await api.createCustomerSession()
       setSession({ id: created.session_id, token: created.token })
       resetMessages()
+      setFeedbackSent([])
       taRef.current?.focus()
     } catch (err) {
       setError(err)
@@ -88,6 +93,44 @@ export default function CustomerPage() {
     if (taRef.current) taRef.current.style.height = 'auto'
     setError(null)
     await sendStream(question)
+  }
+
+  // 「没有帮助」（第 40 刀，ADR 0044 §四）：仅 kind=answer 且 citations 非空的
+  // 消息出现（拒答/转人工不收反馈）；点击调反馈端点，服务端分诊=逐 citation
+  // 资产撤销验证（治理台复审队列承接）。
+  const sendFeedback = async (messageId: number) => {
+    if (session === null) return
+    setError(null)
+    try {
+      await api.leaveFeedback(session.id, session.token, messageId)
+      setFeedbackSent((prev) => [...prev, messageId])
+    } catch (err) {
+      setError(err)
+    }
+  }
+
+  const feedbackFooter = (m: UiMessage): ReactNode => {
+    if (session === null || m.streaming) return undefined
+    if (m.role !== 'agent' || m.kind !== 'answer' || m.id === null) return undefined
+    if (m.citations === null || m.citations.length === 0) return undefined
+    if (feedbackSent.includes(m.id)) {
+      return (
+        <span className="text-[11px] text-caption" title="反馈已记档：引用资料已进入复审">
+          已反馈 · 感谢
+        </span>
+      )
+    }
+    return (
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        onClick={() => void sendFeedback(m.id as number)}
+        title="没有帮助：引用的资料可能有错或过期，触发人工复审"
+      >
+        <ThumbsDown aria-hidden size={12} />
+        没有帮助
+      </button>
+    )
   }
 
   const canAsk = session !== null && !streaming
@@ -163,7 +206,7 @@ export default function CustomerPage() {
                 </div>
               )}
               {messages.map((m, i) => (
-                <MessageBubble key={m.key} m={m} prev={messages[i - 1]} citationAsLink={false} />
+                <MessageBubble key={m.key} m={m} prev={messages[i - 1]} citationAsLink={false} footer={feedbackFooter(m)} />
               ))}
               <div ref={endRef} />
             </div>
