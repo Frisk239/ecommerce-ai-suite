@@ -213,6 +213,11 @@ class ServiceMessage(Base):
     # 回放完整性——重载会话也要还原灰底工具条（与 gap_id 的「运行时返回」口径
     # 不同：工具条是已发生动作的留档，随消息落列，迁移 0007）
     tool: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # 第 40 刀（ADR 0044 §四）：顾客 thumbs-down 反馈 {"helpful": false, "at": iso}
+    # ——一条消息至多一次（非空即已反馈，应用层 409 幂等）；分诊在代码：
+    # kind=answer 且 citations 非空的消息收到负反馈 -> 逐 citation 资产撤销
+    # 验证（last_verified_at=NULL，迁移 0017；复审=治理台未验证面自然承接）。
+    feedback: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

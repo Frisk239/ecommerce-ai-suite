@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
 from suite_api.models import Operator, ServiceMessage, ServiceSession
+from suite_api.services import return_tools
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.machine_wash import redact
@@ -83,6 +84,20 @@ class SessionDetail(SessionOut):
 
 class AskBody(BaseModel):
     content: str
+
+
+class ConfirmReturnBody(BaseModel):
+    """两阶段写阶段二请求（ADR 0044 §一）：确认卡消息 + 阶段一签发的令牌。"""
+
+    message_id: int
+    confirmation_token: str
+
+
+class ConfirmReturnOut(BaseModel):
+    message_id: int
+    order_no: str
+    # 确认后订单全部物流事件（含新追加的确认事件；前端可就地刷新时间轴）
+    events: list[dict[str, Any]]
 
 
 # ---------- 查询辅助 ----------
@@ -250,6 +265,72 @@ async def ask(
     db.commit()
     db.close()
     return StreamingResponse(sse_event_stream(outcome), media_type="text/event-stream")
+
+
+# ---------- 两阶段写阶段二（第 40 刀，ADR 0044 §一：确认在人） ----------
+
+# 确认失败 reason -> (HTTP 状态, 文案)：令牌问题 400（请求内容错），订单态
+# 问题 409（与当前状态冲突），确认卡缺失 404。
+_CONFIRM_RETURN_ERRORS: dict[str, tuple[int, str]] = {
+    "invalid_token": (400, "确认令牌无效或已过期"),
+    "not_found": (409, "订单不存在"),
+    "window_changed": (409, "订单已不在退货窗内，无法确认"),
+    "duplicate": (409, "该退货申请已确认过"),
+}
+
+
+@router.post("/sessions/{session_id}/confirm-return", response_model=ConfirmReturnOut)
+def confirm_return(
+    session_id: int,
+    body: ConfirmReturnBody,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> ConfirmReturnOut:
+    """操作者对「退货资格」消息确认执行 create_return（两阶段写阶段二）。
+
+    create_return 不在模型注册表——写工具只能经本端点由人确认（ADR 0044：
+    资格在代码、确认在人）。校验链：操作者登录 -> 确认卡消息必须属于本会话
+    且是 check_return_eligibility 的工具轨迹（404）-> 服务层验签+资格重查
+    未变+幂等（400/409）-> orders.events 追加确认事件 -> 同事务落一条
+    create_return 工具轨迹 agent 消息（回放完整：两步工具动作都在会话里，
+    客服页刷新即见「已确认」）。返回更新后的事件时间轴。顾客通道无此面
+    （get_current_operator 401；两阶段确认是操作者动作）。
+    """
+    del operator
+    _get_session_or_404(db, session_id)
+    message = db.get(ServiceMessage, body.message_id)
+    if (
+        message is None
+        or message.session_id != session_id
+        or message.role != "agent"
+        or message.tool is None
+        or message.tool.get("name") != "check_return_eligibility"
+        or message.tool.get("rejected")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="确认卡对应的退货资格消息不存在"
+        )
+    order_no = str(message.tool.get("arg") or "")
+    result = return_tools.confirm_return(db, order_no, body.confirmation_token)
+    if not result.get("ok"):
+        status_code, detail = _CONFIRM_RETURN_ERRORS.get(
+            str(result.get("reason")), (400, "确认失败")
+        )
+        raise HTTPException(status_code=status_code, detail=detail)
+    events = list(result["events"])
+    follow_up = ServiceMessage(
+        session_id=session_id,
+        role="agent",
+        content=f"订单 {order_no} 的退货申请已确认，已写入物流事件。",
+        citations=[],
+        kind="answer",
+        handoff=False,
+        tool={"name": "create_return", "arg": order_no, "result": "已确认退货 · 事件已写入"},
+    )
+    db.add(follow_up)
+    db.commit()
+    db.refresh(follow_up)
+    return ConfirmReturnOut(message_id=follow_up.id, order_no=order_no, events=events)
 
 
 # ---------- 回流登记（CONTEXT「会话」：结束后由操作者回流登记为资产） ----------

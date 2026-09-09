@@ -22,8 +22,13 @@ from suite_api.services.agent_tools import (
 # ---------- 注册表形状 ----------
 
 
-def test_registry_contains_exactly_two_readonly_tools() -> None:
-    assert set(TOOL_REGISTRY) == {"get_order_status", "get_stock"}
+def test_registry_contains_exactly_three_readonly_tools() -> None:
+    # 第 40 刀：加退货资格查询（仍是只读；写工具 create_return 不进注册表）
+    assert set(TOOL_REGISTRY) == {
+        "get_order_status",
+        "get_stock",
+        "check_return_eligibility",
+    }
     for spec in TOOL_REGISTRY.values():
         assert spec.description
         assert callable(spec.run)
@@ -33,6 +38,11 @@ def test_registry_contains_exactly_two_readonly_tools() -> None:
     assert "order_no" in order_spec.params
     stock_spec = TOOL_REGISTRY["get_stock"]
     assert stock_spec.required == ()
+    # 第 40 刀：资格查询与订单工具同参数契约（必填单号 + SO-数字格式）
+    return_spec = TOOL_REGISTRY["check_return_eligibility"]
+    assert return_spec.required == ("order_no",)
+    assert return_spec.arg_patterns["order_no"].fullmatch("SO-1001") is not None
+    assert return_spec.arg_patterns["order_no"].fullmatch("所有订单") is None
 
 
 # ---------- parse 三态：合法 ----------

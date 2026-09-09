@@ -9,14 +9,21 @@
   发问走 chat_engine（0021 同一引擎：与操作者预览同事件序 thinking ->
   delta* -> complete），**complete 不带 gap_id**（spec 工程裁决：顾客不暴露
   内部缺口 id，事件载荷白名单裁剪——拒答照常落缺口，操作者在治理台可见）。
+- ``POST /api/customer/sessions/{id}/messages/{mid}/feedback``（第 40 刀，
+  ADR 0044 §四）：顾客 thumbs-down「没有帮助」——闸序与鉴权同发问；body
+  白名单只有 helpful（v1 拒绝 true，thumbs-up 是 Out）；仅 kind=answer 且
+  citations 非空的消息可反馈（拒答/转人工无按钮也不收反馈），幂等=已反馈
+  409；分诊在代码：逐 citation 资产 last_verified_at=NULL（撤销验证，复审
+  由治理台未验证面自然承接）。
 
 顾客没有 GET/列表/回流端点（0021：回流登记仍是操作者动作，顾客接口不能
 发布；拉历史属本刀 Out）。限流三道闸见 services/rate_limit（ADR 0033）。
 """
 
 import secrets
+from datetime import UTC, datetime
 from hmac import compare_digest
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -24,11 +31,19 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_db
-from suite_api.models import ServiceSession
+from suite_api.models import Asset, ServiceMessage, ServiceSession
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.rate_limit import CustomerRateLimits
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
+
+
+def triage_asset_ids(citations: list[dict[str, Any]]) -> list[int]:
+    """负反馈分诊的资产集合（纯函数便于单测）：逐 citation 收集 asset_id
+    去重升序——分诊语义见 leave_feedback（ADR 0044 §四）。"""
+    return sorted(
+        {int(c["asset_id"]) for c in citations if isinstance(c, dict) and "asset_id" in c}
+    )
 
 ACTIVE = "active"
 
@@ -171,4 +186,85 @@ async def ask(
     db.close()
     return StreamingResponse(
         sse_event_stream(outcome, expose_gap_id=False), media_type="text/event-stream"
+    )
+
+
+# ---------- 反馈（第 40 刀，ADR 0044 §四：thumbs-down 分诊） ----------
+
+
+class FeedbackBody(BaseModel):
+    helpful: bool
+
+
+class FeedbackOut(BaseModel):
+    message_id: int
+    feedback: dict[str, str | bool]
+    # 分诊即答案：本次负反馈撤销验证的资产（前端可提示「已反馈，资料进入复审」）
+    triaged_asset_ids: list[int]
+
+
+@router.post("/sessions/{session_id}/messages/{message_id}/feedback")
+def leave_feedback(
+    session_id: int,
+    message_id: int,
+    body: FeedbackBody,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)] = None,
+    limits: Annotated[CustomerRateLimits, Depends(get_rate_limits)] = None,
+) -> FeedbackOut:
+    """顾客 thumbs-down「没有帮助」（ADR 0044 §四）。
+
+    闸序与鉴权同发问：IP 闸（先于鉴权省 DB）-> 401（会话不存在与令牌无效
+    统一文案）-> 409（非 active：会话终结后反馈面一并收口）。仅 kind=answer
+    且 citations 非空的消息可反馈（拒答/转人工无按钮也不收——404/409）；幂等
+    =已反馈 409；body 白名单只有 helpful，v1 拒绝 true（thumbs-up 是 Out）。
+    分诊（在代码）：逐 citation 资产 last_verified_at=None——「发布=验证快照」
+    被负反馈推翻，复审由治理台未验证/stale 面自然承接；commit 后返回分诊
+    资产列表（分诊即答案）。"""
+    retry_after = limits.check_ask_ip(client_ip(request))
+    if retry_after is not None:
+        raise _rate_limited(retry_after)
+
+    session = db.get(ServiceSession, session_id)
+    token = _bearer_token(request)
+    if (
+        session is None
+        or token is None
+        or session.customer_token is None
+        or not compare_digest(session.customer_token.encode(), token.encode())
+    ):
+        raise _unauthorized()
+    if session.status != ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"只有进行中的会话可以反馈，当前状态: {session.status}",
+        )
+    if body.helpful is not False:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="本版本只接受「没有帮助」反馈",
+        )
+
+    message = db.get(ServiceMessage, message_id)
+    if message is None or message.session_id != session_id or message.role != "agent":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在")
+    if message.kind != "answer" or not message.citations:
+        # 拒答/转人工/无引用的消息没有「没有帮助」入口（ADR 0044：citations
+        # 空则分诊无从谈起）
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该消息不接受反馈")
+    if message.feedback is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该消息已反馈过")
+
+    triaged = triage_asset_ids(message.citations)
+    for asset_id in triaged:
+        asset = db.get(Asset, asset_id)
+        if asset is not None:
+            asset.last_verified_at = None
+    message.feedback = {"helpful": False, "at": datetime.now(UTC).isoformat()}
+    db.commit()
+    db.refresh(message)
+    return FeedbackOut(
+        message_id=message.id,
+        feedback=dict(message.feedback),
+        triaged_asset_ids=triaged,
     )
