@@ -377,8 +377,14 @@ def test_products_endpoints_expose_schema_and_values(api: ApiFixture) -> None:
         "净含量": {"required": True},
         "保质期": {"required": True},
     }
+    # 第 30 刀：stock 只读泄漏到操作者面（治理台商品页库存列；种子 mock 值
+    # 0/42）。ProductOut 仅本路由消费——不进 MCP/顾客面（出口面钉死）。
+    stock_by_name = {p["name"]: p["stock"] for p in products}
+    assert stock_by_name["瓶装水"] == 0
+    assert stock_by_name["钛钢保温杯"] == 42
     detail = client.get(f"/api/products/{water['id']}").json()
     assert detail["category"] == "食品"
+    assert detail["stock"] == 0
     assert client.get("/api/products/999999").status_code == 404
 
 

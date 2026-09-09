@@ -7,7 +7,7 @@
 回流登记 -> kind=dialogue 资产待人洗 -> 发布 -> 再问命中引用该对话（闭环）->
 版本跟随指针（开修订发布 v2 后命中 v2；回滚 v1 后引用回到 v1）。
 
-知识缺口契约组（0024/0030，第 4 刀）：拒答落缺口（精确幂等）、answer 不落、
+知识缺口契约组（0024/0030，第 4 刀）：拒答落缺口（第 30 刀起归一化幂等）、answer 不落、
 complete 带 gap_id、补文档登记关联 -> 发布事务内 resolved -> 同问法再问命中。
 """
 
@@ -359,8 +359,8 @@ def test_refusal_creates_gap_and_answer_does_not(api: ApiFixture) -> None:
 
 
 def test_refusal_gap_exact_idempotency(api: ApiFixture) -> None:
-    """精确幂等（ADR 0030 工程裁决）：同 question 文本再拒答不新建（库内 count
-    不变、前后 gap_id 相同）；不同问法各建各的。"""
+    """精确幂等（ADR 0030 工程裁决；第 30 刀起键=归一化问）：同 question 文本
+    再拒答不新建（库内 count 不变、前后 gap_id 相同）；不同问法各建各的。"""
     client, _ = api
     _login(client)
     question = "发票可以开企业抬头吗"
@@ -378,13 +378,47 @@ def test_refusal_gap_exact_idempotency(api: ApiFixture) -> None:
         assert db.scalar(select(func.count()).select_from(KnowledgeGap)) == count_before
 
     other = _ask(client, client.post("/api/service/sessions").json()["id"], "发票丢失了能补开吗")
-    assert other[-1][1]["gap_id"] != gap_id  # 不同问法不合并（只做精确幂等）
+    assert other[-1][1]["gap_id"] != gap_id  # 不同问法不合并（只做归一化幂等）
+
+
+def test_refusal_gap_normalized_idempotency(api: ApiFixture) -> None:
+    """第 30 刀归一化幂等：幂等键=normalize_question（去首尾空白+全角标点
+    转半角+去尾部问句标点）——「…兑换？」与「…兑换」同一 open 缺口（gap_id
+    相同、库内同归一化问只一条 open）；question 原问列仍存首次原问（带问号），
+    normalized_question 落归一化值。"""
+    client, _ = api
+    _login(client)
+    question_with_mark = "会员积分能跨店兑换吗？"
+    first = _ask(client, client.post("/api/service/sessions").json()["id"], question_with_mark)
+    assert first[-1][1]["kind"] == "refusal"
+    gap_id = first[-1][1]["gap_id"]
+
+    second = _ask(
+        client,
+        client.post("/api/service/sessions").json()["id"],
+        "会员积分能跨店兑换吗",  # 差一个尾问号：走查 G-0001/G-0003 形态
+    )
+    assert second[-1][1]["gap_id"] == gap_id  # 复用同一缺口，不另开一条
+
+    session_factory = client.app.state.session_factory
+    with session_factory() as db:
+        gaps = list(
+            db.scalars(
+                select(KnowledgeGap).where(
+                    KnowledgeGap.normalized_question == "会员积分能跨店兑换吗"
+                )
+            )
+        )
+        assert len(gaps) == 1  # 库内只一条
+        assert gaps[0].id == gap_id
+        assert gaps[0].question == question_with_mark  # 原问列不动（存首次原问）
+        assert gaps[0].status == "open"
 
 
 def test_refusal_gap_question_masked_on_exit(api: ApiFixture) -> None:
     """第 26 刀缺口路（0038 修订口径）：gaps.question 出口掩——拒答仍按顾客
     原问落库（同 service_messages 落库豁免，不回写），治理台列表视图（出口）
-    呈掩码；幂等复用走库内原文比对，不受出口掩影响。"""
+    呈掩码；幂等复用走库内归一化问比对（第 30 刀），不受出口掩影响。"""
     client, _ = api
     _login(client)
     question = "以旧换新补贴是打款到 13812345678 吗"

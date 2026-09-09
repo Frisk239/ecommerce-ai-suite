@@ -101,6 +101,8 @@ export interface Product {
   category: string
   spec_schema: Record<string, SpecRule>
   spec_values: Record<string, SpecValueEntry>
+  /** 库存可 mock（0037）：操作者只读自查（第 30 刀），NULL=未设置。 */
+  stock: number | null
 }
 
 export interface AuditEntry {
