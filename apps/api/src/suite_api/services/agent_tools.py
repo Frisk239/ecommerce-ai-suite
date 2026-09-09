@@ -5,7 +5,7 @@
   stock_tools 既有实现（不重写，0036/0037 语义零改动）。**authority lives
   in code**：模型只能提议注册表内工具、只能填白名单参数，参数不合法即拒绝
   转人工——提示注入改不了工具资格。
-- ``propose_prompt(question, history)``：提议步双 prompt——system 含两工具
+- ``propose_prompt(question, history)``：提议步双 prompt——system 含三工具
   描述与 ``TOOL: 工具名 {"参数": "值"}`` 单行输出约定（格式化约定而非
   function calling API：厂商网关零特殊依赖，ADR 0043 动机段）与「无需工具
   则直接回答」指引；顾客问句过 redact（0038 纪律：进厂商 prompt 必掩）。
@@ -14,7 +14,11 @@
   坏 JSON/未注册/参数不合法/格式坏）、纯文本（两者皆 None=模型认为无需
   工具，调用方走检索步）。被拒时带 ``raw_name/raw_args`` 轨迹字段供消息
   落库回放。
-- Out（spec）：写工具（第 40 刀两阶段）、function calling API、新表。
+- ``check_return_eligibility``（第 40 刀，ADR 0044 §一）：第三个可提议工具，
+  阶段一资格查询（只读：窗期判定在代码 + eligible 时签发 HMAC 确认令牌）；
+  **create_return 不进注册表**——写工具不在模型可提议集，创建只能由操作者
+  确认端点携 token 执行（services/return_tools）。
+- Out（spec）：function calling API、新表。
 """
 
 import json
@@ -28,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.services.machine_wash import redact
 from suite_api.services.order_tools import get_order_status
+from suite_api.services.return_tools import check_return_eligibility
 from suite_api.services.stock_tools import query_stock
 
 logger = logging.getLogger(__name__)
@@ -42,19 +47,17 @@ _TOOL_MENTION_RE = re.compile(r"\bTOOL\b", re.IGNORECASE)
 
 PROPOSE_SYSTEM_PROMPT = (
     "你是商家侧电商 AI 客服的工具分派器，根据顾客问题决定是否调用工具。\n"
-    "可用工具只有两个：\n"
+    "可用工具只有三个：\n"
     "- get_order_status：查询订单状态与物流轨迹。参数 order_no 必填，"
     "格式为 SO-数字（如 SO-1001）。一次只能查一个订单。\n"
     "- get_stock：查询商品是否有货。参数 product_name 可选（商品名）。\n"
-    "需要调用工具时，只输出一行：TOOL: 工具名 {\"参数名\": \"参数值\"}\n"
+    '需要调用工具时，只输出一行：TOOL: 工具名 {"参数名": "参数值"}\n'
     "无需工具（政策、售后、闲聊等）时，直接输出给顾客的回答文本，不要输出 TOOL。\n"
-    "除上述两个工具外不要提议任何操作；不能列出订单清单、不能导出、不能修改数据。"
+    "除上述三个工具外不要提议任何操作；不能列出订单清单、不能导出、不能修改数据。"
 )
 
 
-def propose_prompt(
-    question: str, history: list[dict[str, str]] | None = None
-) -> tuple[str, str]:
+def propose_prompt(question: str, history: list[dict[str, str]] | None = None) -> tuple[str, str]:
     """组装提议步 (system, user) prompt。history（recent_turns 产出，已掩）
     渲染为对话段帮模型消解代词指代（单号常在上一问）；顾客问题过 redact
     （0038：本模块是厂商 prompt 边界，收口在此，调用方不重复掩）。"""
@@ -100,7 +103,9 @@ class ToolSpec:
     run: Callable[[Session, dict[str, str], str], dict[str, Any]]
 
 
-def _validate_args(spec: ToolSpec, args: dict[str, Any]) -> tuple[dict[str, str] | None, str | None]:
+def _validate_args(
+    spec: ToolSpec, args: dict[str, Any]
+) -> tuple[dict[str, str] | None, str | None]:
     """白名单校验：键必须在 params 内（多余键拒绝——「查所有订单」类越狱
     载荷进不来）、值必须是字符串且匹配格式正则、必填键必须在场。返回
     (规范化参数, None) 或 (None, 拒绝原因)。"""
@@ -163,9 +168,7 @@ def execute_tool(db: Session, proposal: ToolProposal, question: str) -> dict[str
     return spec.run(db, proposal.args, question)
 
 
-def _run_get_order_status(
-    db: Session, args: dict[str, str], _question: str
-) -> dict[str, Any]:
+def _run_get_order_status(db: Session, args: dict[str, str], _question: str) -> dict[str, Any]:
     return get_order_status(db, args["order_no"])
 
 
@@ -173,8 +176,15 @@ def _run_get_stock(db: Session, args: dict[str, str], question: str) -> dict[str
     return query_stock(db, args.get("product_name") or question)
 
 
-# 注册表（ADR 0043）：v1 两个只读工具。get_stock 无必填参数=宽松校验器——
-# 裸「有货吗」提议允许空参数，按原问句走商品匹配；白名单键外一律拒绝。
+def _run_check_return_eligibility(
+    db: Session, args: dict[str, str], _question: str
+) -> dict[str, Any]:
+    return check_return_eligibility(db, args["order_no"])
+
+
+# 注册表（ADR 0043）：v1 三个只读工具（第 40 刀加退货资格查询——写工具
+# create_return 仍不在注册表，ADR 0044 §一）。get_stock 无必填参数=宽松校验
+# 器——裸「有货吗」提议允许空参数，按原问句走商品匹配；白名单键外一律拒绝。
 TOOL_REGISTRY: dict[str, ToolSpec] = {
     "get_order_status": ToolSpec(
         name="get_order_status",
@@ -191,5 +201,13 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         required=(),
         arg_patterns={},
         run=_run_get_stock,
+    ),
+    "check_return_eligibility": ToolSpec(
+        name="check_return_eligibility",
+        description="查询订单是否在退货窗内、能否退货（只读资格判定，退货创建须客服确认）",
+        params={"order_no": "订单号，SO-数字，如 SO-1001"},
+        required=("order_no",),
+        arg_patterns={"order_no": re.compile(r"SO-\d+", re.IGNORECASE)},
+        run=_run_check_return_eligibility,
     ),
 }

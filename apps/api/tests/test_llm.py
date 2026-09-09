@@ -34,9 +34,12 @@ def test_build_prompts_marks_sources_and_includes_field_values() -> None:
     assert "[来源：A-3·v1] 净含量：480ml" in user_prompt
     assert "[来源：A-9·v2] 客服：净含量为480ml。" in user_prompt
     assert "顾客问题：保温杯的净含量是多少？" in user_prompt
-    # 系统提示要点（任务锁定）：只依据证据、不编造、简洁、不输出引用编号
-    for keyword in ("只依据", "证据", "不要编造", "简洁", "不要输出引用编号"):
+    # 系统提示要点（任务锁定）：只依据证据、不编造、简洁；第 40 刀起引用约束
+    # 从「不输出引用编号」升级为逐句引用（ADR 0044 §三：标注证据编号）
+    for keyword in ("只依据", "证据", "不要编造", "简洁", "证据编号"):
         assert keyword in system_prompt
+    assert "每个事实句末尾标注其依据的证据编号" in system_prompt
+    assert "证据未覆盖的内容不得陈述" in system_prompt
 
 
 def test_build_prompts_caps_evidence_and_never_touches_credentials() -> None:

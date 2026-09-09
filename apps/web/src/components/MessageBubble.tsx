@@ -2,6 +2,7 @@
 // 从 ServicePage 抽出，行为不变；citationAsLink 控制引用芯片是否可跳转——
 // 操作者预览默认可跳资产详情（0007 版本锚定），顾客侧只读展示（顾客不进控制台）。
 
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ChatCircleDots, HandArrowUp, UserCircle } from '@phosphor-icons/react'
 import type { ServiceCitation, ToolCallRecord } from '../api/types'
@@ -111,10 +112,14 @@ export default function MessageBubble({
   m,
   prev,
   citationAsLink = true,
+  footer,
 }: {
   m: UiMessage
   prev?: UiMessage
   citationAsLink?: boolean
+  /** 消息下沿的可选动作区（第 40 刀）：顾客页「没有帮助」/客服页「确认退货」
+   * 由各页面按消息条件构造后传入，共享组件不感知业务规则。 */
+  footer?: ReactNode
 }) {
   const grouped = !!prev && prev.role === m.role && !m.streaming
   if (m.role === 'customer') {
@@ -197,6 +202,9 @@ export default function MessageBubble({
           <div className="text-[11px] text-caption">{m.thinkingText ?? '正在检索已发布资产…'}</div>
         )}
         {m.tool !== null && !m.streaming && <ToolStrip tool={m.tool} />}
+        {footer !== undefined && !m.streaming && (
+          <div className="flex flex-wrap items-center gap-2">{footer}</div>
+        )}
         {m.citations !== null && m.citations.length > 0 && !m.streaming && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-caption">引用：</span>

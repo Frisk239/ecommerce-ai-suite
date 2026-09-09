@@ -221,6 +221,28 @@ def score_chunk(terms: frozenset[str], chunk: str) -> float:
     return overlap / math.sqrt(len(chunk_units))
 
 
+# ---------- 忠实度闸（第 40 刀，ADR 0044 §二：覆盖不足不生成） ----------
+
+# 覆盖度阈值：问句有效 bigram 与命中块并集的交集占比低于该值且命中数 ≤1 时
+# 降级模板（工程初值，评测集可校准——校准只动这一个常量）。
+FIDELITY_MIN_COVERAGE = 0.4
+
+
+def coverage_ratio(query: str, chunks: list[str]) -> float:
+    """忠实度闸的证据覆盖度（纯函数便于单测）：|query_terms ∩ ∪chunk_terms|
+    / |query_terms|。与打分函数同一套词法单元（query_terms/_chunk_terms）。
+
+    query_terms 为空（空查询/纯停用词）恒 1.0——该形态根本到不了生成（retrieve
+    返回空 -> 0018 拒答），闸保守不触发。"""
+    query_units = query_terms(query)
+    if not query_units:
+        return 1.0
+    if not chunks:
+        return 0.0
+    chunk_units: frozenset[str] = set().union(*(_chunk_terms(chunk) for chunk in chunks))
+    return len(query_units & chunk_units) / len(query_units)
+
+
 # ---------- 过期降权（第 39 刀保鲜；打分公式的后处理乘数，不动 score_chunk） ----------
 
 # 过期资产的块打分乘以该乘数（score*=0.5）后再排序——打分口径本体（ADR 0023

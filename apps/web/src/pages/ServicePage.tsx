@@ -4,7 +4,7 @@
 // 中断 SSE 订阅，已收文本保留（后端断连仍完整落库，stopped 只是前端表达）。
 // 不搬的：35ms 定时器模拟、mock 大脑、localStorage 补全——传输由真实 SSE 驱动。
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUDownLeft, ArrowUp, ChatCircleDots, Prohibit, Stop } from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
@@ -77,6 +77,11 @@ export default function ServicePage() {
   const [registering, setRegistering] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
 
+  // 第 40 刀（ADR 0044 §一）：两阶段写确认卡状态——待确认消息 id 集合与
+  // 在途确认 id；确认成功后刷新会话即见服务端落的 create_return 工具轨迹。
+  const [returnConfirmed, setReturnConfirmed] = useState<number[]>([])
+  const [returnConfirming, setReturnConfirming] = useState<number | null>(null)
+
   // 本地流式追加的消息（换会话/回流登记/同步时清空，以服务器为准）——占位构造、
   // SSE 事件回填与停止/失败口径都收敛在共享 hook（第 25 刀；顾客通道同钩）
   const {
@@ -115,6 +120,7 @@ export default function ServicePage() {
   const selectSession = useCallback(
     (id: number) => {
       resetLive()
+      setReturnConfirmed([])
       setStreamError(null)
       setChosenId(id)
     },
@@ -192,6 +198,53 @@ export default function ServicePage() {
 
   const isActiveSession = session !== null && session.status === 'active'
   const canAsk = isActiveSession && !streaming
+  // 两阶段写阶段二（第 40 刀，ADR 0044 §一）：资格消息工具条里的
+  // 「待确认 token=…」即确认卡——本端点验签+资格重查后写订单事件并落
+  // create_return 工具轨迹（detail.reload() 刷新即见，回放完整）。
+  const confirmReturn = async (messageId: number, token: string) => {
+    if (selectedId === null || returnConfirming !== null) return
+    setReturnConfirming(messageId)
+    setActionError(null)
+    try {
+      await api.confirmReturn(selectedId, messageId, token)
+      setReturnConfirmed((prev) => [...prev, messageId])
+      detail.reload()
+    } catch (err) {
+      setActionError(err)
+    } finally {
+      setReturnConfirming(null)
+    }
+  }
+
+  // 资格消息的确认卡 footer：工具条 result 含「待确认 token=…」才有按钮
+  // （不可退货/查无没有令牌，自然不渲染）；已确认就地标注，无复杂 UI。
+  const confirmFooter = (m: UiMessage): ReactNode => {
+    if (m.tool === null || m.tool.name !== 'check_return_eligibility') return undefined
+    if (m.streaming) return undefined
+    const confirmed = (m.id !== null && returnConfirmed.includes(m.id)) || m.tool.result.includes('已确认')
+    if (confirmed) {
+      return (
+        <span className="text-[11px] text-caption" title="确认后已写入订单退货事件">
+          已确认退货
+        </span>
+      )
+    }
+    if (m.id === null) return undefined
+    const match = /token=([0-9a-f]+)/.exec(m.tool.result)
+    if (match === null) return undefined
+    return (
+      <button
+        type="button"
+        className="btn btn-primary btn-sm"
+        disabled={returnConfirming !== null}
+        onClick={() => void confirmReturn(m.id as number, match[1])}
+        title="两阶段写第二段：确认后执行退货并写入订单事件"
+      >
+        {returnConfirming === m.id ? '确认中…' : '确认退货'}
+      </button>
+    )
+  }
+
   const canRegister =
     isActiveSession && !streaming && messages.length > 0 && detail.state.phase === 'ok'
 
@@ -382,7 +435,7 @@ export default function ServicePage() {
                 </div>
               )}
               {messages.map((m, i) => (
-                <MessageBubble key={m.key} m={m} prev={messages[i - 1]} />
+                <MessageBubble key={m.key} m={m} prev={messages[i - 1]} footer={confirmFooter(m)} />
               ))}
               <div ref={endRef} />
             </div>

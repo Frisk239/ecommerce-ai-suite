@@ -74,7 +74,17 @@ from suite_api.services.order_tools import (
     render_order_answer,
     summarize_tool_result,
 )
-from suite_api.services.retrieval import retrieve
+from suite_api.services.retrieval import (
+    FIDELITY_MIN_COVERAGE,
+    coverage_ratio,
+    retrieve,
+)
+from suite_api.services.return_tools import (
+    check_return_eligibility,
+    has_return_intent,
+    render_eligibility_answer,
+    summarize_eligibility,
+)
 from suite_api.services.stock_tools import (
     STOCK_KEYWORD_PATTERN,
     query_stock,
@@ -92,6 +102,8 @@ THINKING_TEXT = "正在检索已发布资产…"
 ORDER_THINKING_TEXT = "查询订单中…"
 # 第 14 刀（ADR 0037）：库存工具路径的状态行（同口径，按 outcome.tool.name 区分）
 STOCK_THINKING_TEXT = "查询库存中…"
+# 第 40 刀（ADR 0044 §一）：退货资格工具路径的状态行（同口径，按 tool.name 区分）
+RETURN_THINKING_TEXT = "查询退货资格中…"
 # 第 7 刀：检索命中后走厂商模型生成（状态行随最新 thinking 事件更新——降级
 # 路径不发本事件，状态行停在检索，不装作生成过）
 GENERATING_THINKING_TEXT = "正在生成回答…"
@@ -124,6 +136,9 @@ class AskOutcome:
     # 0043 混意图：工具步执行后接了检索步（SSE 在 tool 后补「正在检索」
     # 状态行——真实动作链，快路径恒为 False）
     retrieved_after_tool: bool = False
+    # 第 40 刀（ADR 0044 §二）：忠实度闸触发原因（complete 带 fallback_reason
+    # 供观测与校准；普通厂商失败降级为 None——该键不出场，事件形状不破）
+    fallback_reason: str | None = None
 
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
@@ -190,6 +205,16 @@ async def run_ask(
     # 步 1 快路径（零 LLM）：订单号命中 -> 工具路径（跳过检索，ADR 0036）
     order_no = find_order_no(question)
     if order_no is not None:
+        # 第 40 刀（ADR 0044 §一）：单号+退货发起意图 -> 阶段一资格查询
+        #（同一分派哲学：结构化信号直取工具，零 LLM——「SO-1001 我想退货」
+        # 的演示路径由此确定性成立；问进度的照旧走订单工具看事件时间轴）
+        if has_return_intent(question):
+            return _run_return_eligibility_ask(
+                db,
+                session,
+                ToolProposal(name="check_return_eligibility", args={"order_no": order_no}),
+                check_return_eligibility(db, order_no),
+            )
         return _run_order_ask(db, session, order_no)
 
     # 步 1 快路径（续）：库存工具分派（ADR 0037 修订，第 16 刀：词表+商品
@@ -222,6 +247,11 @@ async def run_ask(
         # 合法提议 -> 代码授权执行（复用 order/stock 工具既有实现）；
         # 结果作为 history 附加轮进步 3 生成 prompt（检索仍按原问句）
         result = execute_tool(db, decision.proposal, question)
+        if decision.proposal.name == "check_return_eligibility":
+            # 第 40 刀（ADR 0044 §一）：阶段一资格查询走确定性模板出口（资格+
+            # 确认令牌是结构化事实，不进 LLM；阶段二创建由操作者确认端点凭
+            # token 执行——create_return 不在注册表，写工具在确认闸之后）
+            return _run_return_eligibility_ask(db, session, decision.proposal, result)
         tool_record = _proposal_tool_record(decision.proposal, result, question)
         line = f"[工具结果] {tool_record['name']}({tool_record['arg']})：{tool_record['result']}"
         tool_history = [{"role": "agent", "content": redact(line)}]
@@ -231,8 +261,20 @@ async def run_ask(
     # 它为准）。检索词补全（第 29 刀）：本问含代词且会话里有上一轮 -> 上一问
     # +本问拼接（retrieve 打分阈值不变）；工具结果不进检索 query（裁决：作为
     # history 附加轮进生成）。
-    hits = retrieve(db, retrieval_query(question, history))
+    query_text = retrieval_query(question, history)
+    hits = retrieve(db, query_text)
     answer = compose_answer(hits, assets_meta(db, hits))
+    # 第 40 刀（ADR 0044 §二）忠实度闸：问句有效 bigram 与命中块并集的交集
+    # 占比过低且证据单薄（≤1 条）时不调模型——覆盖不足时模型大概率编造，
+    # 降级证据组装模板（复用既有 fallback 徽章通道；fallback_reason 随
+    # complete 带出可观测；阈值 FIDELITY_MIN_COVERAGE 为工程初值可校准）。
+    # 零命中照旧拒答（0018 不动）；评测 runner 直调 retrieve+compose_answer
+    # 不经本闸，评测基线不受影响。
+    gate_fallback = (
+        answer.kind == "answer"
+        and len(hits) <= 1
+        and (coverage_ratio(query_text, [hit["chunk"] for hit in hits]) < FIDELITY_MIN_COVERAGE)
+    )
     # 结束只读事务：LLM 等待（至多 20s）不得 idle-in-transaction 占连接。
     # 写阶段（agent 消息）autobegin 再取连接。citations 仍以本问检索快照为准。
     db.commit()
@@ -243,7 +285,7 @@ async def run_ask(
     # 第 29 刀：本问含代词时带会话历史；0043：工具结果附加轮恒带——记忆只改
     # 生成语言（指代消解），citations/tool 语义不变。
     generated: str | None = None
-    if answer.kind == "answer":
+    if answer.kind == "answer" and not gate_fallback:
         system_prompt, user_prompt = llm.build_prompts(hits, question)
         gen_history = (history if PRONOUN_RE.search(question) else []) + tool_history
         try:
@@ -298,6 +340,7 @@ async def run_ask(
         fallback=fallback,
         tool=tool_record,
         retrieved_after_tool=tool_record is not None,
+        fallback_reason="coverage" if gate_fallback else None,
     )
 
 
@@ -315,9 +358,7 @@ async def _propose_tool(question: str, history: list[dict[str, str]]) -> ToolDec
         return ToolDecision()
     decision = parse_tool_proposal(text)
     if decision.reject_reason is not None:
-        logger.info(
-            "工具提议被拒绝: name=%s reason=%s", decision.raw_name, decision.reject_reason
-        )
+        logger.info("工具提议被拒绝: name=%s reason=%s", decision.raw_name, decision.reject_reason)
     return decision
 
 
@@ -340,7 +381,9 @@ def _proposal_tool_record(
     return {"name": proposal.name, "arg": arg, "result": summarize_tool_result(result)}
 
 
-def _run_rejected_proposal(db: Session, session: ServiceSession, decision: ToolDecision) -> AskOutcome:
+def _run_rejected_proposal(
+    db: Session, session: ServiceSession, decision: ToolDecision
+) -> AskOutcome:
     """提议被拒（越狱/坏参/未注册）出口：kind="handoff" 转人工。
 
     不检索、不调模型、不留缺口（0024 同口径：工具通道失败不产生知识缺口，
@@ -373,6 +416,56 @@ def _run_rejected_proposal(db: Session, session: ServiceSession, decision: ToolD
         gap=None,
         generated=False,  # 不调模型：不多发「正在生成回答…」thinking
         fallback=False,  # 非降级——转人工是本路径的正式产出
+        tool=tool_record,
+    )
+
+
+def _run_return_eligibility_ask(
+    db: Session, session: ServiceSession, proposal: ToolProposal, result: dict[str, Any]
+) -> AskOutcome:
+    """退货资格路径（第 40 刀/ADR 0044 §一 阶段一；customer 消息已由 run_ask
+    落库提交，本函数只落 agent 消息）。
+
+    命中且资格可判 -> kind="answer" 确定性模板（token 只进工具条/轨迹——
+    操作者客服页据此渲染「确认退货」卡片，顾客可见文本不带 token）；查无/
+    故障 -> kind="handoff"（与订单工具同口径：失败不拿检索顶、不产生缺口，
+    0024）。不检索、不调 LLM、citations 恒空；阶段二创建由确认端点执行
+    （create_return 不在注册表——写工具在操作者确认闸之后）。
+    """
+    order_no = str(result.get("order_no") or proposal.args.get("order_no", ""))
+    tool_record = {
+        "name": proposal.name,
+        "arg": order_no,
+        "result": summarize_eligibility(result),
+    }
+    if result.get("found"):
+        kind, handoff = "answer", False
+        content = render_eligibility_answer(result)
+    else:
+        kind, handoff = "handoff", True
+        content = render_handoff_content(order_no, result)
+        logger.info("退货资格工具转人工: order_no=%s %s", order_no, tool_record["result"])
+
+    agent_message = ServiceMessage(
+        session_id=session.id,
+        role="agent",
+        content=content,
+        citations=[],
+        kind=kind,
+        handoff=handoff,
+        tool=tool_record,
+    )
+    db.add(agent_message)
+    db.commit()
+    db.refresh(agent_message)
+
+    answer = ComposedAnswer(content=content, citations=[], kind=kind, handoff=handoff)
+    return AskOutcome(
+        agent_message=agent_message,
+        answer=answer,
+        gap=None,
+        generated=False,  # 资格判定是结构化事实，不调 LLM（同订单工具口径）
+        fallback=False,  # 模板组装是本路径的正式产出，非降级
         tool=tool_record,
     )
 
@@ -500,11 +593,11 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
         if outcome.tool.get("rejected"):
             thinking_text = REJECTED_THINKING_TEXT
         else:
-            thinking_text = (
-                STOCK_THINKING_TEXT
-                if outcome.tool.get("name") == "get_stock"
-                else ORDER_THINKING_TEXT
-            )
+            thinking_text = {
+                "get_stock": STOCK_THINKING_TEXT,
+                # 第 40 刀：退货资格查询（ADR 0044 阶段一，只读）
+                "check_return_eligibility": RETURN_THINKING_TEXT,
+            }.get(str(outcome.tool.get("name")), ORDER_THINKING_TEXT)
         yield sse_event("thinking", {"text": thinking_text})
         yield sse_event("tool", outcome.tool)
         if outcome.retrieved_after_tool:
@@ -531,4 +624,8 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     # 第 7 刀：true=厂商生成失败降级模板（前端「模板回退」徽章；运行时返回，
     # 同 gap_id 口径，消息表不加列）
     complete["fallback"] = outcome.fallback
+    if outcome.fallback_reason is not None:
+        # 第 40 刀：忠实度闸触发原因（可观测可校准；普通厂商失败降级不带
+        # 该键——运行时返回口径同 fallback，消息表不加列）
+        complete["fallback_reason"] = outcome.fallback_reason
     yield sse_event("complete", complete)
