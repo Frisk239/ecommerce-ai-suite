@@ -1,0 +1,758 @@
+{
+ "head": {
+  "vars": [
+   "category",
+   "item",
+   "itemLabel"
+  ]
+ },
+ "results": {
+  "bindings": [
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000001"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Vivo X300 Pro"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "笔记本电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000002"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "ThinkPad X1 Carbon"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "平板电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000003"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "iPad Pro 13"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "电视机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000004"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Neo QLED 8K"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "洗衣机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000005"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "小天鹅滚筒 10KG"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "图书"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000006"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "看见"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000007"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Meizu 20 Infinity"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "笔记本电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000008"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "ThinkPad X240"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "平板电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000009"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "MatePad Pro 13.2"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "电视机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000010"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "OLED evo C4"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "洗衣机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000011"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "海尔精华洗 176"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "图书"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000012"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "三体"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000013"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Motorola Edge 60 Pro"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "笔记本电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000014"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "MacBook Air M3"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "平板电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000015"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Galaxy Tab S10"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "电视机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000016"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Mini LED 85X"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "洗衣机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000017"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "西门子 iQ300"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "图书"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000018"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "活着"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000019"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "一加 13"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "笔记本电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000020"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "MateBook X Pro"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "平板电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000021"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "小米平板 7 Pro"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "电视机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000022"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "海信 U8N"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "洗衣机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000023"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "松下白月光二代"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "图书"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000024"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "百年孤独"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000025"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Redmi K80 Pro"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "笔记本电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000026"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Surface Laptop Go"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "平板电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000027"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Surface Pro 11"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "电视机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000028"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "TCL Q10K"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "洗衣机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000029"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "美的元气轻呼啦"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "图书"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000030"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "白夜行"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000031"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Galaxy S25 Ultra"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "笔记本电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000032"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "ROG 幻16"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "平板电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000033"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "红米 Pad Pro"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "电视机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000034"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "索尼 XR-95"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "洗衣机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000035"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "LG 蒸汽洗衣机"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "图书"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000036"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "人类简史"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000037"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Nothing Phone 3"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "笔记本电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000038"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "小新 Pro 16"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "平板电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000039"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "OPPO Pad 3"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "电视机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000040"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "创维 A7D"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "洗衣机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000041"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "TCL 双子星"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "图书"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000042"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "克拉拉与太阳"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000043"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "荣耀 Magic7"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "笔记本电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000044"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Dell XPS 13"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "平板电脑"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000045"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "vivo Pad3 Pro"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "电视机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000046"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "小米电视 S Pro"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000047"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Q1000000047"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000000048"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Q1000000048"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "图书"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1999999999"
+    }
+   },
+   {
+    "category": {
+     "type": "literal",
+     "value": "智能手机"
+    },
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1888888888"
+    },
+    "itemLabel": {
+     "xml:lang": "zh",
+     "type": "literal",
+     "value": "Vivo X300 Pro"
+    }
+   }
+  ]
+ }
+}

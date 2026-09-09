@@ -24,3 +24,6 @@ data/
 
 # Browser tooling residue
 .playwright-cli/
+
+# Realdata script outputs (downloaded zips / generated CSVs stay local)
+scripts/realdata/out/
