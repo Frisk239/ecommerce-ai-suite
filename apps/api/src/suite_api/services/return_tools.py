@@ -50,14 +50,20 @@ _SIG_CHARS = 32
 RETURN_INTENT_RE = re.compile(r"退货|退换|退了")
 # 但问进度/轨迹的（「退货进度」）不是要发起退货——回订单工具看事件时间轴。
 _RETURN_PROGRESS_RE = re.compile(r"进度|轨迹|物流|事件|到哪|状态|查询")
+# 审计刀 7 P1#3：问政策/条件/流程/支持/规则的是知识问答（检索可答），
+# 不是发起退货——走快路径会吞掉退货政策资产并制造虚假「退货申请已生成」。
+_RETURN_POLICY_RE = re.compile(r"政策|条件|流程|支持|规则|怎么退|如何退|可以退吗|能退吗")
 
 
 def has_return_intent(text: str) -> bool:
-    """退货发起意图（纯函数便于单测）：含退货词且非问进度/轨迹。
+    """退货发起意图（纯函数便于单测）：含退货词、非问进度/轨迹、非问政策。
 
     「SO-1001 我想退货」-> True（走资格查询）；「SO-1001 退货进度」-> False
-    （走订单状态工具看事件——确认后的事件由此对顾客可见，演示闭环）。"""
-    return bool(RETURN_INTENT_RE.search(text)) and not bool(_RETURN_PROGRESS_RE.search(text))
+    （走订单状态工具看事件——确认后的事件由此对顾客可见，演示闭环）；
+    「SO-1001 退货政策是什么」-> False（走检索/提议，政策资产可答）。"""
+    if _RETURN_PROGRESS_RE.search(text) or _RETURN_POLICY_RE.search(text):
+        return False
+    return bool(RETURN_INTENT_RE.search(text))
 
 
 def return_secret() -> bytes:

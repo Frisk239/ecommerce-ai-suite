@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 40 刀忠实度、反馈与两阶段写**（`feat/fidelity-feedback`，closeout 见 `docs/progress/fidelity-feedback-closeout.md`）——**收官刀**（ADR 0044 四段一揽子）：两阶段写（资格在代码+人确认+mock create_return）/忠实度闸/逐句引用/反馈分诊。**goal §6.2 终态：八条全部达成或大体**（3/6/8 由本刀补齐）。第 26–39 刀+审计刀 6 已合并 main。
+上一刀：**审计刀 7**（`feat/audit-7`，closeout 见 `docs/progress/audit-7-closeout.md`）：三路审第 36–40 刀——P0 零、P1×3（slices 节丢失/goal 口径/退货词表）均已实修、评测数字三方吻合、八条终态对账无虚报。**面试级收官：36–40 五刀+审计刀 6/7 已合并 main，goal §6.2 终态达成。**
 
-当前阶段：**收官审计**——下一刀=**审计刀 7**（三路子代理审第 36–40 刀：设计符合性/评测与数字底座/Agent 契约）。其后按观察项裁决（目录加厚/rerank/部署项）。
+当前阶段：**面试级收官完成**。观察项按需裁决（目录加厚/judge 补跑/rerank/部署项）；审计刀 8 于下一轮五刀后。
 
 ## 怎么切
 
@@ -194,8 +194,30 @@
 
 **路径：** 评测尺两层——CI 回归集（golden.json 13 条零改动）+动态大集（96 条四分布，直调 retrieve/compose 零 LLM 依赖，双跑逐位一致）；首份实测报告进 `docs/research/rag-eval-report.md`：recall@1 63.7%、@3 72.5%、拒答组拒答率 100%、正例误拒 2.5%、**同义改写组比正例低 14pp——第 36 刀同义词接线的 before 基线**；synonyms.py（15 对）落库（第 36 刀接线检索侧）。内置浏览器实证线上引用与评测 expect 一致（A-0245）。集成 611 passed（593→611）。证据见 `docs/progress/rag-eval-ruler-closeout.md`。
 
-## 第 40 刀：忠实度、反馈与两阶段写（已交付，`feat/fidelity-feedback`）——收官刀
+## 第 36 刀：检索同义词接线（已交付已合并，PR #45）
+
+**路径：** goal §6.2.2 before/after 纪律首战——替换式归一 after 净负（正例 -5pp/混淆 -13.3pp）按「无提升不留」改**并集扩展**（原∪归一，ES synonym 惯例；分子只增不减）；after 全分布非降：正例/混淆零漂移、同义组 @1 56.0→60.0/@3 64.0→72.0、overall 63.7→65.0/72.5→75.0；闭包局限声明（表内 16 组自测+表外探针 0/461）。审计刀 6 P1×5 全修。内置浏览器实证「保温瓶的容量」双改写命中 A-0009。集成 617 passed。证据见 `docs/progress/synonym-wiring-closeout.md`。
+
+## 第 37 刀：客服真 loop（已交付已合并，PR #46）
+
+**路径：** goal §6.2.3「不是 if 链」——工具注册表（get_order_status/get_stock，TOOL 标记约定+三道校验）+步进循环 max_steps=3（快路径零 LLM 铁证保留→模型提议步[代码授权执行/被拒转人工不缺口]→检索生成照旧）；越狱两形态钉测；LLM 失败降级快路径。ADR 0043 修订 0036/0037。内置浏览器混意图实证：无单号问「订单到哪+退货政策」→诚实双答（物流无证据不编造+退货引 A-0006/A-0013）。集成 642 passed（617→642）。证据见 `docs/progress/agent-loop-closeout.md`。
+
+## 第 38 刀：连接层协议证据（已交付已合并，PR #47）
+
+**路径：** goal §6.2.5 答辩级证据——`mcp_smoke --evidence` 四断言（E0 register 未发布/E1 工具恰四无 publish 集合相等/E2 **未发布不进检索**[登记前后零差异+探针永不出现，分词鲁棒]/E3 活状态不暴露反向断言）结构化摘要逐行输出；pytest 版进 CI。Owner 修复默认探针资产 1→3（修订流转鲁棒）。集成 645 passed（642→645）。证据见 `docs/progress/mcp-evidence-closeout.md`。
+
+## 第 39 刀：自进化仪表（已交付已合并，PR #48）
+
+**路径：** 缺口热度（归一化命中 hit_count+1 不新建，列表热度降序+「被问 N 次」徽章）；保鲜（last_verified_at 发布即置+「重新验证」audit verify+90 天 stale score×0.5——null 不降权，评测基线逐位一致实证）；**0031 修订验证闸**：发布事务内 retrieve(normalized_question) 命中才 resolved——补错文档发布缺口保持 open（闭环自愈从被动再排队升为发布即验证）。迁移 0016。Owner API 全链验收（热度 2/verify 200/错文档 open 对文档 resolved）。集成 652 passed（645→652）。证据见 `docs/progress/evo-dashboard-closeout.md`。
+
+## 第 40 刀：忠实度、反馈与两阶段写（已交付已合并，PR #49）——收官刀
 
 **路径：** ADR 0044 四段——两阶段写（check_return_eligibility 注册表可提议+15 天窗在代码+HMAC token；create_return **不在模型注册表**只能操作者确认端点触发：验签+资格重查+幂等→orders.events 追加确认事件）；忠实度闸（coverage<0.4 且命中≤1→模板回退不调模型，评测逐位一致）；逐句引用 prompt 约束；反馈分诊（顾客「没有帮助」→幂等→citations 资产置未验证→复审队列）。Owner API 全链：资格 token→确认→进度含事件→幂等 409。集成 687 passed（652→687）。**goal §6.2 收官对账表见 closeout**。证据见 `docs/progress/fidelity-feedback-closeout.md`。
 
-## 第 39 刀：自进化仪表
+## 审计刀 7（已交付，`feat/audit-7`）
+
+三路子代理（设计符合性/评测数字底座/Agent 契约）审第 36–40 刀：**P0 零**；P1×3（slices 36–38 节合并丢失/goal 未完成行口径矛盾/退货词表吞政策问句）均已实修；P2×6 记债（ADR 修订未回写原文件/闸回退率无观测列/token 顾客面可见/unverify 无审计/HMAC 缺省密钥/stale 降权零实跑）。评测数字三方复跑逐位吻合、八条终态对账无虚报。证据见 `docs/progress/audit-7-closeout.md`。
+
+## 收官排期（审计刀 7 后）
+
+观察项按需裁决，不预排：目录加厚（Wikidata 91 空 schema，production-grade-catalog 方案）、faithfulness judge 补跑（网关稳定后）、rerank/hybrid（评测数据触发）、token 顾客面裁剪与 unverify 审计（P2 债）、部署项（HTTPS/备份/监控）。
