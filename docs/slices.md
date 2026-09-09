@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 33 刀数据契约与生产级目录**（`feat/data-contract`，closeout 见 `docs/progress/data-contract-closeout.md`）——Open Food Facts dump 清洗灌入，规格走登记/发布写回；不手写种子。集成 595 passed。
+上一刀：**第 34 刀 CI 门禁**（`feat/ci-gate-final`，closeout 见 `docs/progress/ci-gate-closeout.md`）：双 job（ruff/npm 与 pgvector 全量测试，**skip-green 显式失败**）+meta 测试钉门禁；带 DB 全量从本地习惯变合并必绿（goal §6.2.2 工程信用前提）。第 33 刀数据契约+交接修复已合并（PR #41：两轴评审重跑 P1×2 实修/goal §6.1 原文恢复+§6.2 签核/审计裁决落地）。
 
-当前阶段：**面试级**（`docs/goal.md` §6.2；施工 `docs/roadmap.md`）。下一刀：**第 34 刀 CI 门禁**。其后 35 评测尺 → **审计刀 6（第 35 刀后，三路审 26–35——Owner 裁决 2026-09-09 恢复审计债）** → 36 同义词 → 37 客服真 loop；审计刀 7 于第 40 刀后。
+当前阶段：**面试级**（goal §6.2；施工 `docs/roadmap.md`）。下一刀：**第 35 刀 RAG 评测尺**（golden 四分布+recall@k+拒答率报告）→ **审计刀 6（第 35 刀后，三路审 26–35）** → 36 同义词 → 37 客服真 loop。
 
 ## 怎么切
 
@@ -185,5 +185,9 @@
 ## 第 33 刀：数据契约与生产级目录（已交付，`feat/data-contract`）
 
 **路径：** Open Food Facts 公开 TSV dump 流式清洗（条码+品名+可解析净含量）→ 规格正文=源字段 → register/确认/发布写回。不编造保质期。演示库 20 条 OFF 食品净含量写回（Chrome：Chocolate n3 80g · A-0227·v1）。goal §6.2 改为生产级目录。集成 595 passed。证据见 `docs/progress/data-contract-closeout.md`。
+
+## 第 34 刀：CI 门禁（已交付，`feat/ci-gate-final`）
+
+**路径：** GitHub Actions 双 job——lint（ruff apps/packages/scripts+npm lint+build）与 test（pgvector/pgvector:pg16 service；`SUITE_TEST_DATABASE_URL` 必设，**refuse skip-green 显式失败**；`uv run pytest` 全量）；PR+push main 双触发；meta 测试钉 workflow 关键行防掏空；双文件同 commit（修复另一会话悬空）。证据见 `docs/progress/ci-gate-closeout.md`。
 
 ## 收官排期（audit-5）
