@@ -32,6 +32,8 @@ export interface AssetListItem {
   last_error: string | null
   current_published_version_no: number | null
   revising: boolean
+  /** 第 39 刀保鲜元数据：发布/重新验证时刷新；null=未验证（不降权、不显徽章）。 */
+  last_verified_at: string | null
 }
 
 // ---------- 知识缺口（routes/knowledge_gaps.py 契约） ----------
@@ -43,7 +45,7 @@ export interface GapProductRef {
   name: string
 }
 
-/** 缺口不是资产：无检索/发布路径，解决只随发布发生（resolved_by_asset_id 指向那版资产）。 */
+/** 缺口不是资产：无检索/发布路径，解决只随发布发生（resolved_by_asset_id 指向那份资产）。 */
 export interface KnowledgeGap {
   id: number
   question: string
@@ -52,6 +54,8 @@ export interface KnowledgeGap {
   resolved_by_asset_id: number | null
   created_at: string
   resolved_at: string | null
+  /** 第 39 刀热度：被问次数（归一化幂等命中既有 open 缺口时 +1）。 */
+  hit_count: number
 }
 
 /** 对话 QA 对（第 12 刀/ADR 0035）：qa_pairs 字段的数组值，每对 {q, a} 非空串。 */

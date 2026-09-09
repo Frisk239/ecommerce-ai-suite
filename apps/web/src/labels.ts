@@ -91,3 +91,16 @@ export function formatDate(iso: string | null | undefined): string {
   if (Number.isNaN(date.getTime())) return iso.slice(0, 10)
   return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
 }
+
+// 第 39 刀保鲜：过期阈值（天）。后端 env STALE_DAYS 可配（缺省 90），前端徽章
+// 仅提示口径，与检索降权共用 90 缺省；NULL=未验证不降权（保守裁决），不显徽章。
+export const STALE_DAYS = 90
+
+/** 资产是否「过期未验证」（last_verified_at 已置且距今超阈值）。null=未验证
+ * 不算过期（后端同样不降权），徽章只在会真实降权时出现。 */
+export function isStale(lastVerifiedAt: string | null | undefined, now = Date.now()): boolean {
+  if (!lastVerifiedAt) return false
+  const at = new Date(lastVerifiedAt).getTime()
+  if (Number.isNaN(at)) return false
+  return now - at > STALE_DAYS * 24 * 60 * 60 * 1000
+}

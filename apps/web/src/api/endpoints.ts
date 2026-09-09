@@ -102,6 +102,10 @@ export const api = {
     request<AssetDetail>(`/assets/${assetId}/revisions/discard`, { method: 'POST' }),
   discardAsset: (assetId: number) =>
     request<AssetDetail>(`/assets/${assetId}/discard`, { method: 'POST' }),
+  // 重新验证（第 39 刀保鲜）：仅已发布资产可调（后端 409 闸门）；刷新
+  // last_verified_at 并留痕 audit action=verify。返回更新后的资产详情。
+  verifyAsset: (assetId: number) =>
+    request<AssetDetail>(`/assets/${assetId}/verify`, { method: 'POST' }),
 
   // 血缘视图（第 20 刀/ADR 0026）：派生拼装只读，详情加载后独立请求
   getAssetLineage: (assetId: number) => request<AssetLineage>(`/assets/${assetId}/lineage`),
