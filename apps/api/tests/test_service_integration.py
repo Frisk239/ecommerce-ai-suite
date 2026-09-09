@@ -594,3 +594,79 @@ def test_source_kind_set_by_endpoint_semantics(api: ApiFixture) -> None:
     sources = {a["id"]: a["source_kind"] for a in client.get("/api/assets").json()}
     assert sources[up.json()["id"]] == "upload"
     assert sources[backflow.json()["id"]] == "session_backflow"
+
+
+# ---------- 缺口热度与解决验证闸（第 39 刀自进化仪表） ----------
+
+
+def test_gap_hit_count_increments_and_orders_list(api: ApiFixture) -> None:
+    """热度（第 39 刀 Must 1）：同问法再拒答不新建、hit_count=2；列表按
+    hit_count DESC 排序——两次被问的缺口排在一次被问的之前。"""
+    client, _ = api
+    _login(client)
+    hot_question = "羊绒围巾起球怎么处理"
+    cold_question = "真丝衬衫能水洗吗"
+
+    hot_first = _ask(client, client.post("/api/service/sessions").json()["id"], hot_question)
+    hot_gap_id = hot_first[-1][1]["gap_id"]
+    assert hot_first[-1][1]["kind"] == "refusal"
+    cold = _ask(client, client.post("/api/service/sessions").json()["id"], cold_question)
+    cold_gap_id = cold[-1][1]["gap_id"]
+    assert cold[-1][1]["kind"] == "refusal"
+
+    # 同问法（差一个尾问号，走归一化幂等键）再拒答：复用同缺口、不新建
+    hot_second = _ask(
+        client, client.post("/api/service/sessions").json()["id"], hot_question + "？"
+    )
+    assert hot_second[-1][1]["gap_id"] == hot_gap_id
+
+    rows = {g["id"]: g for g in client.get("/api/knowledge-gaps").json()}
+    assert rows[hot_gap_id]["hit_count"] == 2
+    assert rows[cold_gap_id]["hit_count"] == 1
+    # 热度排序：两次被问的排在一次被问的之前
+    ordered = [g["id"] for g in client.get("/api/knowledge-gaps").json()]
+    assert ordered.index(hot_gap_id) < ordered.index(cold_gap_id)
+
+
+def test_gap_fill_wrong_doc_publish_keeps_open_right_doc_resolves(api: ApiFixture) -> None:
+    """解决验证闸（第 39 刀 Must 3 / 0031 修订）：补错文档（内容答不了缺口
+    问句）发布 -> 缺口保持 open（检索零命中不过闸）；随后在同一资产上开修订
+    换上答得上的正文再发布 -> resolved。"""
+    client, _ = api
+    _login(client)
+    question = "翡翠手镯怎么保养"
+    refusal = _ask(client, client.post("/api/service/sessions").json()["id"], question)
+    gap_id = refusal[-1][1]["gap_id"]
+    assert refusal[-1][1]["kind"] == "refusal"
+
+    # 补错文档：内容与问句无词法交集（交付时效 ≠ 镯子保养）
+    wrong = _upload(
+        client,
+        "无关口径说明\n交付时效：江浙沪隔日达".encode(),
+        title="补口径 · 镯子保养（错）",
+        gap_id=gap_id,
+    )
+    assert wrong.status_code == 201
+    asset_id = wrong.json()["id"]
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+
+    row = next(g for g in client.get("/api/knowledge-gaps").json() if g["id"] == gap_id)
+    assert row["status"] == "open"  # 验证闸：内容答不上 -> 不标 resolved
+    assert row["resolved_by_asset_id"] == asset_id
+
+    # 开修订换上答得上的正文（缺口仍挂在 resolved_by_asset_id 上）-> 发布过闸
+    assert client.post(f"/api/assets/{asset_id}/revisions").status_code == 201
+    revised = client.put(
+        f"/api/assets/{asset_id}/versions/2/bytes",
+        files={"file": ("care.txt", "翡翠手镯保养说明\n保养：避免磕碰，定期用软布擦拭".encode(), "text/plain")},
+    )
+    assert revised.status_code == 200
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+
+    resolved = next(
+        g
+        for g in client.get("/api/knowledge-gaps", params={"status": "resolved"}).json()
+        if g["id"] == gap_id
+    )
+    assert resolved["status"] == "resolved"
+    assert resolved["resolved_at"] is not None

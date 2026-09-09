@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 38 刀连接层协议证据**（`feat/mcp-evidence`，closeout 见 `docs/progress/mcp-evidence-closeout.md`）——goal §6.2.5 达成：`mcp_smoke --evidence` 四断言结构化摘要（E2 未发布不进检索对分词鲁棒设计）+pytest 版进 CI；Owner 修复默认探针资产修订流转鲁棒性。第 26–37 刀+审计刀 6 已合并 main。
+上一刀：**第 39 刀自进化仪表**（`feat/evo-dashboard`，closeout 见 `docs/progress/evo-dashboard-closeout.md`）——goal §6.2.6 升格达成：缺口热度（hit_count 累加+排序，Intercom 最小版）+保鲜元数据（last_verified/重新验证/90 天降权，Guru 最小版）+**0031 修订验证闸**（发布事务内 retrieve 命中才 resolved——补错文档保持 open）。评测基线 65.0/75.0 逐位不变（null 不降权实证）。第 26–38 刀+审计刀 6 已合并 main。
 
-当前阶段：**面试级**（goal §6.2，八条 2/3/4/5/7 已达成）。下一刀：**第 39 刀自进化仪表**（缺口热度+保鲜元数据+0031 修订）→ 40 忠实度/反馈/两阶段写 → **审计刀 7**（第 40 刀后）。
+当前阶段：**面试级收官**（goal §6.2，八条 2/3/4/5/6/7 已达成）。下一刀：**第 40 刀忠实度、反馈与两阶段写**（忠实度闸/逐句引用/thumbs-down 分诊/两阶段写工具+新 ADR——收官刀）→ **审计刀 7**（第 40 刀后）。
 
 ## 怎么切
 
@@ -194,8 +194,8 @@
 
 **路径：** 评测尺两层——CI 回归集（golden.json 13 条零改动）+动态大集（96 条四分布，直调 retrieve/compose 零 LLM 依赖，双跑逐位一致）；首份实测报告进 `docs/research/rag-eval-report.md`：recall@1 63.7%、@3 72.5%、拒答组拒答率 100%、正例误拒 2.5%、**同义改写组比正例低 14pp——第 36 刀同义词接线的 before 基线**；synonyms.py（15 对）落库（第 36 刀接线检索侧）。内置浏览器实证线上引用与评测 expect 一致（A-0245）。集成 611 passed（593→611）。证据见 `docs/progress/rag-eval-ruler-closeout.md`。
 
-## 第 38 刀：连接层协议证据（已交付，`feat/mcp-evidence`）
+## 第 39 刀：自进化仪表（已交付，`feat/evo-dashboard`）
 
-**路径：** goal §6.2.5 答辩级证据——`mcp_smoke --evidence` 四断言（E0 register 未发布/E1 工具恰四无 publish 集合相等/E2 **未发布不进检索**[登记前后零差异+探针永不出现，分词鲁棒]/E3 活状态不暴露反向断言）结构化摘要逐行输出；pytest 版进 CI。Owner 修复默认探针资产 1→3（修订流转鲁棒）。集成 645 passed（642→645）。证据见 `docs/progress/mcp-evidence-closeout.md`。
+**路径：** 缺口热度（归一化命中 hit_count+1 不新建，列表热度降序+「被问 N 次」徽章）；保鲜（last_verified_at 发布即置+「重新验证」audit verify+90 天 stale score×0.5——null 不降权，评测基线逐位一致实证）；**0031 修订验证闸**：发布事务内 retrieve(normalized_question) 命中才 resolved——补错文档发布缺口保持 open（闭环自愈从被动再排队升为发布即验证）。迁移 0016。Owner API 全链验收（热度 2/verify 200/错文档 open 对文档 resolved）。集成 652 passed（645→652）。证据见 `docs/progress/evo-dashboard-closeout.md`。
 
-## 第 37 刀：客服真 loop
+## 第 38 刀：连接层协议证据

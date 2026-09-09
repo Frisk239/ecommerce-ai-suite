@@ -81,6 +81,11 @@ class Asset(Base):
     # 0042 废弃标记（治理动作后的隐藏标记，不是第四态）：非空=已废弃，列表
     # 默认过滤；仅「已接入且从未发布」的失败资产可置，行不删、字节已清
     discarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 第 39 刀保鲜元数据：最近一次验证快照时间。发布=验证快照（publish 事务内置
+    # now）；「重新验证」动作（verify 端点+audit）同样刷新。NULL=新灌未验证——
+    # 检索侧不降权（保守裁决：只有显式验证过后超 STALE_DAYS 天才降权，见
+    # services/retrieval 的过期乘数）。
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # use_alter：与 asset_versions.asset_id 构成循环外键，迁移里用 ALTER ADD FK
     current_published_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("asset_versions.id", use_alter=True, name="fk_assets_current_published_version")
@@ -374,3 +379,10 @@ class KnowledgeGap(Base):
     resolved_by_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # 第 39 刀热度：该缺口被问次数（首次拒答=1，归一化命中既有 open +1，
+    # services/knowledge_gaps.record_refusal_gap）。只增不减（resolved 不再累计）；
+    # 列表按 hit_count DESC 排序=最热的待补项排最前（迁移 0016，server_default 1
+    # 即存量行回填）。
+    hit_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )

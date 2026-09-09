@@ -576,6 +576,10 @@ def publish(
     version.published_at = datetime.now(UTC)
     asset.status = PUBLISHED
     asset.current_published_version_id = version.id
+    # 发布=验证快照（第 39 刀保鲜语义）：线上口径以本次字节为准，即最近一次
+    # 验证时点；之后可在治理台「重新验证」（verify 端点）刷新。超 STALE_DAYS
+    # 天未再验证的资产块在检索侧降权；NULL 恒不降权（保守裁决，retrieval.is_stale）。
+    asset.last_verified_at = version.published_at
     db.add_all(
         RetrievalChunk(asset_id=asset.id, version_no=version.version_no, seq=seq, chunk=chunk)
         for seq, chunk in enumerate(index_chunks)
@@ -595,6 +599,45 @@ def publish(
     db.commit()
     db.refresh(asset)
     db.refresh(version)
+    return to_asset_detail(db, asset)
+
+
+@router.post("/{asset_id}/verify", response_model=AssetDetail)
+def verify_asset(
+    asset_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> AssetDetail:
+    """重新验证（第 39 刀保鲜）：仅已发布资产可验证（否则 409）——刷新
+    last_verified_at=now + audit 一行（action=verify，命名先例 discard_*）。
+
+    Guru 验证语义的最小版：操作者核过线上口径仍成立，验证时点即保鲜起点；
+    检索侧对超 STALE_DAYS 天未再验证的资产块降权（retrieval.is_stale）。
+    只动保鲜元数据：不改状态机、不动版本字节，audit 留痕到当前已发布版本。
+    """
+    asset = _get_asset_or_404(db, asset_id)
+    if asset.current_published_version_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"只有已发布资产可以重新验证，当前状态: {asset.status}",
+        )
+    published = db.get(AssetVersion, asset.current_published_version_id)
+    if published is None:  # pragma: no cover - 指针完整性由发布事务保证
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前已发布版本缺失，无法重新验证",
+        )
+    asset.last_verified_at = datetime.now(UTC)
+    db.add(
+        AuditLog(
+            operator_id=operator.id,
+            asset_id=asset.id,
+            version_no=published.version_no,
+            action="verify",
+        )
+    )
+    db.commit()
+    db.refresh(asset)
     return to_asset_detail(db, asset)
 
 

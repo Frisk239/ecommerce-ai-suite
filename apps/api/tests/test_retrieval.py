@@ -4,15 +4,23 @@
 （停用词过滤、单字退化 unigram）、打分（命中/不命中/长度归一）。
 """
 
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
 from suite_api.services.retrieval import (
     MAX_CHUNKS,
+    STALE_DAYS_DEFAULT,
+    STALE_MULTIPLIER,
     chunk_dialogue,
     chunk_document,
     chunk_text,
     index_chunks_for_version,
+    is_stale,
     query_terms,
     retrieve,
     score_chunk,
+    stale_days,
 )
 
 # ---------- 切块：文档 ----------
@@ -229,3 +237,43 @@ def test_retrieve_candidate_query_orders_by_chunk_id() -> None:
     compiled = str(db.stmt.compile(compile_kwargs={"literal_binds": True}))
     normalized = " ".join(compiled.split())
     assert "ORDER BY retrieval_chunks.id" in normalized
+    # 第 39 刀保鲜：候选 SQL 必须随带 last_verified_at（stale 降权的判据列）
+    assert "last_verified_at" in normalized
+
+
+# ---------- 保鲜降权（第 39 刀）：is_stale 纯函数 + 候选 SQL 判据列 ----------
+
+
+def test_is_stale_none_is_never_stale() -> None:
+    """null 不降权（spec 内嵌裁决钉死）：未验证=按新鲜处理。理由：存量/演示库
+    资产 last_verified_at 全 NULL，NULL 降权=整库降权，评测基线数字必破——
+    只降「显式验证过后放旧」的。"""
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    assert is_stale(None, now=now, days=90) is False
+    # 阈值以内（89 天）也不 stale
+    assert is_stale(now - timedelta(days=89), now=now, days=90) is False
+
+
+def test_is_stale_after_threshold_days() -> None:
+    now = datetime(2026, 9, 9, 12, 0, tzinfo=UTC)
+    # 恰好 90 天：未超（>），91 天：超
+    assert is_stale(now - timedelta(days=90), now=now, days=90) is False
+    assert is_stale(now - timedelta(days=90, seconds=1), now=now, days=90) is True
+    assert is_stale(now - timedelta(days=365), now=now, days=90) is True
+
+
+def test_stale_days_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STALE_DAYS", "7")
+    assert stale_days() == 7
+    monkeypatch.delenv("STALE_DAYS")
+    assert stale_days() == STALE_DAYS_DEFAULT
+    monkeypatch.setenv("STALE_DAYS", "")
+    assert stale_days() == STALE_DAYS_DEFAULT  # 空串回落默认（同 .env 口径）
+
+
+def test_stale_multiplier_applied_as_post_factor() -> None:
+    """降权是乘数后处理：score_chunk 本体不受影响（打分口径可独立校准）。"""
+    terms = query_terms("保温杯")
+    base = score_chunk(terms, "保温杯")
+    assert base > 0
+    assert base * STALE_MULTIPLIER == pytest.approx(base / 2)

@@ -29,7 +29,7 @@ import { api } from '../api/endpoints'
 import { resolveFieldValue, toFieldView, type FieldView } from '../api/fields'
 import type { AssetVersion, Product, QaPair } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
-import { formatDateTime, formatAssetId, sourceKindLabel } from '../labels'
+import { formatDateTime, formatAssetId, isStale, sourceKindLabel } from '../labels'
 import { ErrorBanner, SuccessBanner } from '../components/Banner'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { LoadingHint } from '../components/Loading'
@@ -523,6 +523,8 @@ function auditActionLabel(action: string): string {
   if (action === 'publish') return '发布'
   if (action === 'confirm') return '确认字段'
   if (action === 'rollback') return '回滚'
+  // 第 39 刀保鲜动作：重新验证（Guru 验证语义最小版，刷新 last_verified_at）
+  if (action === 'verify') return '重新验证'
   // 0042 负向出口动作：留痕列不裸显英文码
   if (action === 'discard_revision') return '放弃修订'
   if (action === 'discard_asset') return '废弃'
@@ -589,6 +591,10 @@ export default function AssetDetailPage() {
   const [publishedNote, setPublishedNote] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
   const [retryError, setRetryError] = useState<unknown>(null)
+  // 重新验证（第 39 刀保鲜）：仅已发布资产（后端 409 闸门同口径）
+  const [verifying, setVerifying] = useState(false)
+  const [verifyError, setVerifyError] = useState<unknown>(null)
+  const [verifyNote, setVerifyNote] = useState<string | null>(null)
   const [openingRevision, setOpeningRevision] = useState(false)
   const [revisionError, setRevisionError] = useState<unknown>(null)
   const [rollbackTarget, setRollbackTarget] = useState<number | null>(null)
@@ -681,6 +687,25 @@ export default function AssetDetailPage() {
       setRetryError(err)
     } finally {
       setRetrying(false)
+    }
+  }
+
+  // 重新验证（第 39 刀保鲜）：刷新 last_verified_at + audit 留痕（后端闸门：
+  // 只有已发布资产可验证，未发布 409）
+  const verifyAsset = async () => {
+    if (detail === null || verifying) return
+    setVerifying(true)
+    setVerifyError(null)
+    try {
+      const updated = await api.verifyAsset(detail.id)
+      setVerifyNote(
+        `已重新验证：保鲜时间刷新为 ${formatDateTime(updated.last_verified_at)}。`,
+      )
+      reloadDetail()
+    } catch (err) {
+      setVerifyError(err)
+    } finally {
+      setVerifying(false)
     }
   }
 
@@ -917,6 +942,8 @@ export default function AssetDetailPage() {
         </div>
       ) : null}
       {retryError !== null ? <ErrorBanner error={retryError} /> : null}
+      {verifyNote !== null ? <SuccessBanner>{verifyNote}</SuccessBanner> : null}
+      {verifyError !== null ? <ErrorBanner error={verifyError} /> : null}
       {revisionError !== null ? <ErrorBanner error={revisionError} /> : null}
       {rollbackError !== null ? <ErrorBanner error={rollbackError} /> : null}
       {uploadError !== null ? <ErrorBanner error={uploadError} onRetry={pickUploadFile} /> : null}
@@ -940,6 +967,14 @@ export default function AssetDetailPage() {
               publishedVersionNo={currentPublishedNo}
             />
             <KindChip kind={detail.kind} />
+            {isStale(detail.last_verified_at) ? (
+              <span
+                className="badge badge-review"
+                title="距上次验证超过 90 天：该资产的检索证据已降权，点侧栏「重新验证」刷新保鲜时间"
+              >
+                未验证 &gt;90 天
+              </span>
+            ) : null}
             <span className="font-mono text-sm font-normal text-ink-3">{formatAssetId(detail.id)}</span>
           </span>
         }
@@ -1161,6 +1196,25 @@ export default function AssetDetailPage() {
                 <div className="text-xs leading-5 text-ink-3">
                   修订期间客服仍引用 v{currentPublishedNo ?? '—'}；修订发布后指针前移。同一资产同时只允许一个修订。
                 </div>
+                {/* 第 39 刀保鲜：重新验证（刷新 last_verified_at + audit 留痕）。
+                    NULL=新灌未验证按新鲜处理不降权，只有验证过后超阈值才降权。 */}
+                <div className="space-y-1.5 border-t border-line-1 pt-2.5">
+                  <button
+                    type="button"
+                    className="btn btn-secondary w-full"
+                    disabled={verifying}
+                    onClick={() => void verifyAsset()}
+                    title="核对线上口径仍成立：保鲜时间刷新为现在，检索降权重新计时"
+                  >
+                    <CheckCircle aria-hidden size={13} />
+                    {verifying ? '验证中…' : '重新验证'}
+                  </button>
+                  <div className="text-xs leading-5 text-ink-3">
+                    {detail.last_verified_at === null
+                      ? '尚未验证过（发布即验证快照）；超 90 天未再验证的资产检索会被降权。'
+                      : `最近验证：${formatDateTime(detail.last_verified_at)}；超 90 天未再验证会降权。`}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1208,6 +1262,18 @@ export default function AssetDetailPage() {
                   <dt className="w-20 shrink-0 pt-0.5 text-xs text-ink-3">版本数</dt>
                   <dd className="min-w-0 font-mono text-xs text-ink-2 tabular-nums">
                     {versions.length}
+                  </dd>
+                </div>
+                <div className="flex gap-3">
+                  <dt className="w-20 shrink-0 pt-0.5 text-xs text-ink-3">最近验证</dt>
+                  <dd className="min-w-0 text-xs text-ink-2">
+                    {detail.last_verified_at === null ? (
+                      <span title="未验证按新鲜处理，不降权">未验证</span>
+                    ) : (
+                      <span className={isStale(detail.last_verified_at) ? 'text-warn' : ''}>
+                        {formatDateTime(detail.last_verified_at)}
+                      </span>
+                    )}
                   </dd>
                 </div>
               </dl>

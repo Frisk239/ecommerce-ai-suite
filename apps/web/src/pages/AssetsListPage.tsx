@@ -11,7 +11,13 @@ import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { AssetStatus, KnowledgeGap } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
-import { formatDateTime, formatAssetId, formatGapId, sourceKindLabel } from '../labels'
+import {
+  formatDateTime,
+  formatAssetId,
+  formatGapId,
+  isStale,
+  sourceKindLabel,
+} from '../labels'
 import { ErrorBanner } from '../components/Banner'
 import ActionError from '../components/ActionError'
 import Empty from '../components/Empty'
@@ -62,7 +68,11 @@ export default function AssetsListPage() {
   const gapsQ = useApiData(gapsFetcher)
   const gaps = useMemo(() => {
     if (gapsQ.state.phase !== 'ok') return []
-    return [...gapsQ.state.data[0], ...gapsQ.state.data[1]].sort((a, b) => b.id - a.id)
+    // 第 39 刀：后端已按 hit_count DESC 返回，这里只做合并后的同热度稳定序
+    // （新者先）——热度列与「最热待补置顶」都由后端口径保证。
+    return [...gapsQ.state.data[0], ...gapsQ.state.data[1]].sort(
+      (a, b) => b.hit_count - a.hit_count || b.id - a.id,
+    )
   }, [gapsQ.state])
   const openGapCount = gapsQ.state.phase === 'ok' ? gapsQ.state.data[0].length : null
 
@@ -246,6 +256,7 @@ export default function AssetsListPage() {
                 <tr>
                   <th className="w-20">缺口 ID</th>
                   <th>顾客原问</th>
+                  <th className="w-24">热度</th>
                   <th className="w-36">挂商品</th>
                   <th className="w-20">状态</th>
                   <th className="w-44">提出时间</th>
@@ -257,6 +268,19 @@ export default function AssetsListPage() {
                   <tr key={gap.id}>
                     <td className="font-mono text-xs text-ink-3">{formatGapId(gap.id)}</td>
                     <td className="max-w-[28rem] text-[13px] text-ink">{gap.question}</td>
+                    <td>
+                      {/* 第 39 刀热度徽章：N>1 高亮（最常被问=最该先补） */}
+                      <span
+                        className={gap.hit_count > 1 ? 'badge badge-review' : 'text-caption'}
+                        title={
+                          gap.hit_count > 1
+                            ? `重复问法累计被问 ${gap.hit_count} 次`
+                            : '首次被问'
+                        }
+                      >
+                        被问 {gap.hit_count} 次
+                      </span>
+                    </td>
                     <td className="text-[13px]">
                       {gap.product !== null ? (
                         <span className="text-ink-2" title={`P-${gap.product.id}`}>
@@ -365,6 +389,14 @@ export default function AssetsListPage() {
                     >
                       {asset.title ?? '未命名资产'}
                     </Link>
+                    {isStale(asset.last_verified_at) ? (
+                      <span
+                        className="badge badge-review ml-2 align-middle"
+                        title="距上次验证超过 90 天：该资产的检索证据已降权，请到详情页「重新验证」"
+                      >
+                        未验证 &gt;90 天
+                      </span>
+                    ) : null}
                   </td>
                   <td>
                     <KindChip kind={asset.kind} />

@@ -11,6 +11,7 @@
 （展示与出口掩不受影响），resolved 语义不动（resolved 同文可并存照旧）。
 """
 
+import logging
 from datetime import datetime
 
 from fastapi import HTTPException, status
@@ -19,6 +20,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from suite_api.models import KnowledgeGap
+from suite_api.services.retrieval import retrieve
+
+logger = logging.getLogger(__name__)
 
 OPEN = "open"
 RESOLVED = "resolved"
@@ -66,6 +70,11 @@ def record_refusal_gap(db: Session, question: str) -> KnowledgeGap:
     会把同事务尚未提交的拒答消息一并丢掉。product_id 留空：拒答路径无法从
     自由文本可靠归属商品，不猜。flush 拿 id 供 SSE complete 的 gap_id
     （ADR 0030：运行时返回，不在消息表加列）。
+
+    第 39 刀热度：命中既有 open 缺口不再是无感复用——hit_count += 1（被问
+    次数，列表按热度排）。快慢两条路径都累加：快路径直接改属性（随事务
+    flush 成 UPDATE）；SAVEPOINT 兜底路径在 IntegrityError 重查命中后同样
+    +1（并发复用的那次拒答也是一次真实的被问）。
     """
     normalized = normalize_question(question)
     gap = db.scalar(
@@ -74,6 +83,7 @@ def record_refusal_gap(db: Session, question: str) -> KnowledgeGap:
         )
     )
     if gap is not None:
+        gap.hit_count += 1  # 重复问法累加热度（第 39 刀），随拒答消息同事务提交
         return gap
     gap = KnowledgeGap(question=question, normalized_question=normalized, status=OPEN)
     try:
@@ -91,6 +101,7 @@ def record_refusal_gap(db: Session, question: str) -> KnowledgeGap:
         )
         if gap is None:
             raise
+        gap.hit_count += 1  # 兜底命中同快路径口径：热度照加
     return gap
 
 
@@ -124,10 +135,19 @@ def load_attachable_gap(db: Session, gap_id: int) -> KnowledgeGap:
 def resolve_gaps_for_asset(
     db: Session, asset_id: int, *, resolved_at: datetime
 ) -> list[KnowledgeGap]:
-    """发布事务内解决缺口（0024/ADR 0030）：登记时经 knowledge_gap_id 关联到
-    本资产（resolved_by_asset_id 已在登记时指向本资产）且仍 open 的缺口，
-    置 resolved + resolved_at。解决动作随发布发生——发布失败整体回滚，缺口
-    保持 open。多缺口场景：当前登记只关联一个，按一个处理，不过度设计。
+    """发布事务内解决缺口（0024/ADR 0030；第 39 刀加检索验证闸）：登记时经
+    knowledge_gap_id 关联到本资产（resolved_by_asset_id 已在登记时指向本资产）
+    且仍 open 的缺口，**检索命中任一块才置** resolved + resolved_at；未命中
+    保持 open（不新增列——log warning 后下次发布再试）。
+
+    验证闸（0031 修订，spec 第 39 刀 Must 3）：「补文档」若内容答不了缺口
+    问句，resolved 是自欺——缺口继续 open 才能再挂更对的文档。闸的实现复用
+    retrieve(normalized_question)：发布事务内本资产新切块已 INSERT 未 commit，
+    同 Session 可见（autoflush 先落本事务的 retrieval_chunks），所以「命中
+    本资产新补的块」与「命中任意已发布块」都算过闸；检索零命中=内容与问句
+    无词法交集，宁可开着也不虚关闭。多缺口场景：当前登记只关联一个，按一个
+    处理，不过度设计。返回值=本次真正 resolved 的缺口（调用方忽略即可，
+    语义与「未过闸的继续 open」自洽：发布失败整体回滚，过闸状态随之撤销）。
     """
     gaps = list(
         db.scalars(
@@ -137,7 +157,19 @@ def resolve_gaps_for_asset(
             )
         )
     )
+    resolved: list[KnowledgeGap] = []
     for gap in gaps:
-        gap.status = RESOLVED
-        gap.resolved_at = resolved_at
-    return gaps
+        # 查重键同归一化口径（与拒答幂等同键）：存量行 normalized_question 恒
+        # 有值（0015 起 open 行必回填/新行必写），防御性回落原问。
+        question = gap.normalized_question or gap.question
+        if retrieve(db, question, top_k=1):
+            gap.status = RESOLVED
+            gap.resolved_at = resolved_at
+            resolved.append(gap)
+        else:
+            logger.warning(
+                "缺口 G-%04d 发布未过检索验证闸（retrieve 零命中），保持 open：question=%r",
+                gap.id,
+                question,
+            )
+    return resolved

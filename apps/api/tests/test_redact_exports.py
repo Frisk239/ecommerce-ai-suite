@@ -128,7 +128,9 @@ class _FakeResult:
 
 class _FakeDb:
     def __init__(self, rows: list) -> None:
-        self._rows = rows
+        # 第 39 刀保鲜：候选行随带 last_verified_at（retrieve 按 4 元组解包），
+        # 既有用例仍给 3 元组——此处统一补 None（未验证不降权），用例正文不动。
+        self._rows = [tuple(row) + (None,) for row in rows]
 
     def execute(self, stmt: Any) -> _FakeResult:  # noqa: ARG002 - 语句形状另有钉测
         return _FakeResult(self._rows)
