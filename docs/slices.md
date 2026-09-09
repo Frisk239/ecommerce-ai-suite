@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md` 里的七块能力（不做模型微调，ADR 0028）。推进方式是 **Slice Owner：一刀一条可演示路径**，关刀看证据再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 28 刀生命周期出口刀**（`feat/lifecycle-exits`，closeout 见 `docs/progress/lifecycle-exits-closeout.md`）——**优化计划第一刀**（docs/optimization-plan.md P1 族）：修订换字节（storage.delete 首次接线）+放弃修订+废弃失败资产（ADR 0042；三态不破，废弃=隐藏标记非第四态）。走查实证的三个死胡同全部打通。第 21–27 刀+审计刀 5 已合并 main。
+上一刀：**第 29 刀客服多轮记忆刀**（`feat/multi-turn`，closeout 见 `docs/progress/multi-turn-closeout.md`）——优化计划 P2#4、goal ①「必须有：多轮」兑现：会话最近 4 轮进生成 prompt（拒答/转人工/工具轮整轮跳过、过 redact）+代词问句检索词拼接（记忆不改变拒答判定——无证据仍拒答）。浏览器实证「那它的材质是什么」指代消解引用命中。第 21–28 刀+审计刀 5 已合并 main。
 
-当前阶段：优化计划执行中（docs/optimization-plan.md）。下一刀：**第 29 刀客服多轮记忆刀**（goal ①必须有：多轮）；第 30 刀治理体验小刀；审计刀 6 于第 30 刀后。
+当前阶段：优化计划执行中。下一刀：**第 30 刀治理体验小刀**（缺口归一化/补文档问句提示/标题文件名兜底/商品页库存列）；**其后审计刀 6**（计数线）。
 
 ## 怎么切
 
@@ -165,5 +165,9 @@
 ## 第 28 刀：生命周期出口刀（已交付，`feat/lifecycle-exits`）
 
 **路径：** 优化计划 P1 族三件——修订「上传新正文」换字节（新键写旧键删，机洗重跑 confirmed 保留）；「放弃修订」（删未发布版+解锁回滚/再修订，audit discard_revision）；「废弃」失败资产（仅从未发布的 ingested，discarded_at 标记+清字节，audit discard_asset；已发布 409）。迁移 0014；storage.delete 首次接线。集成 533 passed（基线 510 → 533）。证据见 `docs/progress/lifecycle-exits-closeout.md`。
+
+## 第 29 刀：客服多轮记忆刀（已交付，`feat/multi-turn`）
+
+**路径：** goal ①「必须有：多轮」兑现——同一会话问「钛钢保温杯的净含量」再问「那它的材质是什么」（纯代词）：代词触发检索词拼接（上问主题并入，bigram 口径不变）+最近 4 轮进生成 prompt（指代消解）→引用命中回答；拒答/转人工/工具轮不进记忆、history 过 redact、无证据多轮仍拒答（记忆不制造证据）。stream_chat 向后兼容零改动。证据见 `docs/progress/multi-turn-closeout.md`。
 
 ## 收官排期（audit-5）
