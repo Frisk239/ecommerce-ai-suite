@@ -216,9 +216,11 @@ def load_products(db_url: str, rows: list[dict[str, Any]]) -> tuple[int, int]:
     """
     from sqlalchemy import create_engine, select
 
+    from suite_api.db import to_sqlalchemy_url
     from suite_api.models import Product
 
-    engine = create_engine(db_url)
+    # 与 API 同款 psycopg3 驱动归一化（db.py；裸 postgresql:// 会找不存在的 psycopg2）
+    engine = create_engine(to_sqlalchemy_url(db_url))
     inserted = skipped = 0
     with engine.begin() as connection:
         for row in rows:
