@@ -341,19 +341,21 @@ class KnowledgeGap(Base):
     """ADR 0024/0030：知识缺口=无证据拒答留下的待补项，可挂商品。
 
     不是资产：不能检索、不能发布，也没有手动关闭端点——产生只随 refusal
-    （精确幂等：同 question 且 open 复用，services/knowledge_gaps），解决只随
-    发布（发布事务内置 resolved）。补文档仍是普通登记：登记时 assets.register
-    带 knowledge_gap_id 即把 resolved_by_asset_id 指向该资产（原型 fillsGapId
-    语义，缺口此时仍 open），发布事务内才置 resolved + resolved_at。
+    （第 30 刀起归一化幂等：同归一化问且 open 复用，services/knowledge_gaps.
+    normalize_question），解决只随发布（发布事务内置 resolved）。补文档仍是
+    普通登记：登记时 assets.register 带 knowledge_gap_id 即把 resolved_by_asset_id
+    指向该资产（原型 fillsGapId 语义，缺口此时仍 open），发布事务内才置
+    resolved + resolved_at。
     """
 
     __tablename__ = "knowledge_gaps"
     __table_args__ = (
         Index("ix_knowledge_gaps_status_created_at", "status", "created_at"),
-        # 0024/0030/0031 精确幂等工程收口：open 同行同问唯一；resolved 同文仍可并存
+        # 0024/0030/0031 幂等工程收口（第 30 刀起键=归一化问）：open 同归一化问
+        # 唯一；resolved 同文仍可并存。question 原问列只做展示，不进查重键。
         Index(
-            "uq_knowledge_gaps_open_question",
-            "question",
+            "uq_knowledge_gaps_open_normalized",
+            "normalized_question",
             unique=True,
             postgresql_where=text("status = 'open'"),
         ),
@@ -361,6 +363,9 @@ class KnowledgeGap(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     question: Mapped[str] = mapped_column(Text)  # 顾客原问（strip 后与 customer 消息同文）
+    # 归一化问（第 30 刀查重键）：新行恒有值；迁移前的存量 resolved 行保持
+    # NULL 不回填（resolved 不参与查重，历史行不动）。
+    normalized_question: Mapped[str | None] = mapped_column(Text)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     status: Mapped[str] = mapped_column(
         String(20), server_default=text("'open'")
