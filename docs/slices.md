@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 34 刀 CI 门禁**（`feat/ci-gate-final`，closeout 见 `docs/progress/ci-gate-closeout.md`）：双 job（ruff/npm 与 pgvector 全量测试，**skip-green 显式失败**）+meta 测试钉门禁；带 DB 全量从本地习惯变合并必绿（goal §6.2.2 工程信用前提）。第 33 刀数据契约+交接修复已合并（PR #41：两轴评审重跑 P1×2 实修/goal §6.1 原文恢复+§6.2 签核/审计裁决落地）。
+上一刀：**第 35 刀 RAG 评测尺**（`feat/rag-eval-ruler`，closeout 见 `docs/progress/rag-eval-ruler-closeout.md`）——goal §6.2.2 验收物落地：96 条四分布大集（演示库 52 已发布资产动态生成，固定种子）+首份实测报告 `docs/research/rag-eval-report.md`（**recall@1 63.7%/@3 72.5%/拒答率 100%/同义组 -14pp=36 刀 before 基线**）；synonyms.py 供 36 刀复用。第 28-34 刀已合并 main。
 
-当前阶段：**面试级**（goal §6.2；施工 `docs/roadmap.md`）。下一刀：**第 35 刀 RAG 评测尺**（golden 四分布+recall@k+拒答率报告）→ **审计刀 6（第 35 刀后，三路审 26–35）** → 36 同义词 → 37 客服真 loop。
+当前阶段：**计数线到——下一刀=审计刀 6**（三路子代理审第 26–35 刀：设计符合性/评测数字底座/数据契约与多来源）；其后 36 同义词接线（before 基线已立）→ 37 客服真 loop。
 
 ## 怎么切
 
@@ -189,5 +189,9 @@
 ## 第 34 刀：CI 门禁（已交付，`feat/ci-gate-final`）
 
 **路径：** GitHub Actions 双 job——lint（ruff apps/packages/scripts+npm lint+build）与 test（pgvector/pgvector:pg16 service；`SUITE_TEST_DATABASE_URL` 必设，**refuse skip-green 显式失败**；`uv run pytest` 全量）；PR+push main 双触发；meta 测试钉 workflow 关键行防掏空；双文件同 commit（修复另一会话悬空）。证据见 `docs/progress/ci-gate-closeout.md`。
+
+## 第 35 刀：RAG 评测尺（已交付，`feat/rag-eval-ruler`）
+
+**路径：** 评测尺两层——CI 回归集（golden.json 13 条零改动）+动态大集（96 条四分布，直调 retrieve/compose 零 LLM 依赖，双跑逐位一致）；首份实测报告进 `docs/research/rag-eval-report.md`：recall@1 63.7%、@3 72.5%、拒答组拒答率 100%、正例误拒 2.5%、**同义改写组比正例低 14pp——第 36 刀同义词接线的 before 基线**；synonyms.py（15 对）落检索侧。内置浏览器实证线上引用与评测 expect 一致（A-0245）。集成 611 passed（593→611）。证据见 `docs/progress/rag-eval-ruler-closeout.md`。
 
 ## 收官排期（audit-5）
