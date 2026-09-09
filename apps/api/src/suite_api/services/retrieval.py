@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, RetrievalChunk
 from suite_api.services.machine_wash import QA_FIELD, redact
+from suite_api.services.synonyms import apply_synonyms
 from suite_platform.storage import ObjectStorage
 
 # 切块数上限：单版本切块超限即截断（防长文档/长转写把索引写爆；截断即丢尾部证据，
@@ -224,6 +225,13 @@ def score_chunk(terms: frozenset[str], chunk: str) -> float:
 def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]:
     """检索当前已发布版本的切块，按分数降序返回 [{asset_id, version_no, chunk, score}]。
 
+    查询词取「原查询 ∪ 同义词归一后」的**并集**（第 36 刀接线后 after 复跑改并集：
+    替换式把原词 bigram 弄丢，正例组 -5pp、混淆组 -13.3pp——净负，按 goal §6.2.2
+    「无提升不留」纪律改 token expansion：ES synonym 工业惯例同款是扩展不是替换）。
+    并集在数学上只增查询词不删（score 分子=|交|只增不减），无表词查询零漂移；
+    表内词问句追加同组 bigram 撞回原文证据。多轮记忆的代词拼接检索词
+    （conversation_memory.retrieval_query）走同一入口，同受益。块侧不动。
+
     候选集 SQL：retrieval_chunks join asset_versions join assets，其中
     asset_versions.id == assets.current_published_version_id 且
     (chunk.asset_id, chunk.version_no) == (asset_versions.asset_id, version_no)。
@@ -231,7 +239,9 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
     保证而非事后过滤）；发布新版指针前移后，旧版 chunk 因 version_no 不再
     匹配指针版本而自动出榜（派生视图语义）。
     """
-    terms = query_terms(query)
+    # 查询侧同义词扩展（0023 词法口径内的确定性扩展，非向量）：原查询词与
+    # 归一后词取并集——只增不删，保证既有命中不丢（after 评测裁决的修正）。
+    terms = query_terms(query) | query_terms(apply_synonyms(query))
     if not terms:
         return []
     rows = db.execute(

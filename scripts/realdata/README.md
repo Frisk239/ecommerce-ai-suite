@@ -99,6 +99,17 @@ ABCD → kind=dialogue 资产（source_kind=session_backflow），转写=`顾客
 WANDS → clip_candidates 行（status=pending，timecode 自序号合成 40s/段自增，
 transcript = `顾客问 {query} —— {product_name}（标注：Exact）`）。
 
+## 幂等性（重跑风险）
+
+| 写路径 | 重跑行为 |
+|---|---|
+| Wikidata `--load` | 幂等，可重跑（name+category 已存在跳过） |
+| OFF `--load` | 幂等，可重跑（name+category 已存在跳过） |
+| WANDS `--load` | 幂等，可重跑（timecode+transcript 幂等键，全跳过） |
+| **reviews `--import`** | **重跑重复——import-csv 不做内容去重，同一 csv 重跑再建一批新资产** |
+| **OFF `--register`** | **重跑重复登记——同一行重跑再登记一条新资产** |
+| **ABCD `--register`** | **重跑重复登记——register_asset 直调无内容去重** |
+
 ## 测试
 
 `apps/api/tests/test_realdata_scripts.py`（29 例，离线）：转换纯函数 + `samples/`

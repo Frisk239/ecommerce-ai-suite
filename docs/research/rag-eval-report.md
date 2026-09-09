@@ -53,3 +53,29 @@ overall        96     63.7%     72.5%  100.0%    2.5%   60.0%
 uv run python scripts/eval/generate_golden.py --db postgresql://suite:suite@localhost:5433/suite
 uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite --golden scripts/eval/out/golden_large.json
 ```
+
+---
+
+## After（第 36 刀同义词接线，2026-09-09）
+
+接线演进：替换式归一（query=apply_synonyms(query)）after 复跑为**净负**——paraphrase @1 仅 +4pp 而 positive @1 -5pp、confusion @1 -13.3pp（替换丢原词 bigram）——按 goal §6.2.2「无提升不留」纪律当场改**并集扩展**（terms = 原查询 ∪ 归一后，token expansion，ES synonym 工业惯例同款；score 分子只增不减，数学上保证既有命中不丢）。
+
+### After 数字（并集扩展，同集同种子，Owner 复跑逐位一致）
+
+| 分布 | 条数 | recall@1（before→after） | recall@3（before→after） | 其他 |
+|---|---|---|---|---|
+| 正例 | 40 | 70.0 → **70.0**（零漂移 ✓） | 75.0 → 75.0 | 误拒 2.5% 不变 |
+| 同义改写 | 25 | 56.0 → **60.0**（+4pp） | 64.0 → **72.0**（+8pp） | — |
+| 跨商品混淆 | 15 | 60.0 → **60.0**（零漂移 ✓） | 80.0 → 80.0 | 混淆@1 60.0 不变 |
+| 应拒答 | 16 | 拒答率 **100%**（不变） | — | — |
+| 总体 | 96 | 63.7 → **65.0**（+1.3pp） | 72.5 → **75.0**（+2.5pp） | — |
+
+**结论：保留接线**——每个分布相对 before 非降（正例/混淆组实证零漂移），同义组显著提升。
+
+### 局限声明（审计刀 6 P1#5）
+
+paraphrase 组 25 条改写问由**同表 16 组轮转生成**——after 提升部分来自表内闭包自测（轮转出的词被同表归一回原词），不证明对表外同义词的泛化。表外探针：语料内「邮费」类同义词命中为 0/461 块（「退」4/461），当前语料规模下表外泛化**无有效探针**——结论限定为「表内同义词组有效」，表外泛化留语料扩大后再测（WANDS 候选登记前必须重跑 before/after）。
+
+### 替换式 vs 并集式过程数据（留档）
+
+替换式：overall @1 60.0/-3.7pp、positive @1 65.0/-5pp、confusion @1 46.7/-13.3pp——负收益证据驱动改为并集；并集式全分布非降。
