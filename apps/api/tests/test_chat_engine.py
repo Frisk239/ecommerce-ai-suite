@@ -50,4 +50,21 @@ def test_run_ask_commits_before_llm_stream(monkeypatch: pytest.MonkeyPatch) -> N
 
     asyncio.run(run_ask(db, session, "净含量"))
 
-    assert order == ["commit", "commit", "stream_chat", "commit"]
+    # 第 37 刀（ADR 0043）适配：新循环有两个 LLM 等待点，各自遵守「等待前
+    # 结束只读事务」纪律——①customer 问句 commit ②提议步 recent_turns 读后、
+    # complete_chat 前 commit（stream_chat 被本测试替身替换后 complete_chat
+    # 内部复用同一通道，替身串里记作 stream_chat）③检索+组装后、生成
+    # stream_chat 前 commit ④agent 消息落库 commit。纪律不变，形状+1 步。
+    # 第 37 刀（ADR 0043）适配：新循环有两个 LLM 等待点，各自遵守「等待前
+    # 结束只读事务」纪律——①customer 问句 commit ②提议步 recent_turns 读后、
+    # complete_tool_proposal（专用非流式通道，不复用 stream_chat 哨兵位）
+    # 前 commit；空 key 下提议步 LLMNotConfigured 降级走检索（替身未触及）
+    # ③检索+组装后、生成 stream_chat 前 commit ④agent 消息落库 commit。
+    # 纪律不变，形状多一次「提议前 commit」。
+    assert order == [
+        "commit",  # customer 问句落库
+        "commit",  # 提议步 LLM 等待前归还连接（空 key 降级，调用未发生）
+        "commit",  # 检索+组装后、生成等待前归还连接
+        "stream_chat",  # 生成步 LLM 调用（替身）
+        "commit",  # agent 消息落库
+    ]
