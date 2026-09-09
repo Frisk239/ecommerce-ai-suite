@@ -1,0 +1,65 @@
+# 第 34 刀：门禁。集成 job 必须带 Postgres 且 SUITE_TEST_DATABASE_URL 必设（禁止 skip-green）。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: uv run ruff check apps packages scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+        working-directory: apps/web
+      - run: npm run lint
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: suite
+          POSTGRES_PASSWORD: suite
+          POSTGRES_DB: suite_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U suite -d suite_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      SUITE_TEST_DATABASE_URL: postgresql://suite:suite@localhost:5432/suite_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: refuse skip-green
+        run: |
+          if [ -z "${SUITE_TEST_DATABASE_URL}" ]; then
+            echo "SUITE_TEST_DATABASE_URL must be set; skip-green is forbidden"
+            exit 1
+          fi
+      - run: uv run pytest
+        env:
+          SUITE_TEST_DATABASE_URL: postgresql://suite:suite@localhost:5432/suite_test
