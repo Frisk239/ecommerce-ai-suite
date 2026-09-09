@@ -78,7 +78,9 @@ async def main(argv: list[str]) -> int:
         print("缺少 MCP_BEARER_TOKEN（从 env 读，脚本不硬编码）", file=sys.stderr)
         return 2
     query = positional[0] if len(positional) > 0 else "保温杯"
-    asset_id = int(positional[1]) if len(positional) > 1 else 1
+    # 默认探针资产用 3（种子已发布规格文档）——资产 1 曾被修订流转，演示库
+    # 里当前可能停待人洗（get_asset 只读已发布，smoke 会因此误报失败）。
+    asset_id = int(positional[1]) if len(positional) > 1 else 3
     version = int(positional[2]) if len(positional) > 2 else 1
     headers = {"Authorization": f"Bearer {token}"}
 
