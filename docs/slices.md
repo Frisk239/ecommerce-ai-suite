@@ -4,7 +4,7 @@
 
 上一刀：**第 33 刀数据契约与生产级目录**（`feat/data-contract`，closeout 见 `docs/progress/data-contract-closeout.md`）——Open Food Facts dump 清洗灌入，规格走登记/发布写回；不手写种子。集成 595 passed。
 
-当前阶段：**面试级**（`docs/goal.md` §6.2；施工 `docs/roadmap.md`）。下一刀：**第 34 刀 CI 门禁**。其后 35 评测尺 → 36 同义词 → 37 客服真 loop。审计在第 36 刀后（每五产品刀）。
+当前阶段：**面试级**（`docs/goal.md` §6.2；施工 `docs/roadmap.md`）。下一刀：**第 34 刀 CI 门禁**。其后 35 评测尺 → **审计刀 6（第 35 刀后，三路审 26–35——Owner 裁决 2026-09-09 恢复审计债）** → 36 同义词 → 37 客服真 loop；审计刀 7 于第 40 刀后。
 
 ## 怎么切
 

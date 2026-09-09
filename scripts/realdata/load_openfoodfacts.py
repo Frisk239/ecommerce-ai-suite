@@ -84,6 +84,9 @@ def clean_dump_row(raw: dict[str, str]) -> dict[str, Any] | None:
         "quantity": quantity,
         "ingredients": ingredients,
         "countries": countries,
+        # 评审(33) 处置：食品类共享模板（category_schema）还要求保质期 required，
+        # 但 OFF dump 无保质期字段、ADR 0009 禁编造——这里是有意收窄为「只要求
+        # 净含量」，非绕过模板；保质期留给操作者按包装补（弃权口径）。
         "spec_schema": {"净含量": {"required": True}},
         "spec_values": {},
         "stock": 12,
