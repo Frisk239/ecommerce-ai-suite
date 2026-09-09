@@ -1,4 +1,4 @@
-"""scripts/realdata 纯函数单测（多来源真实数据刀 I）：离线，不吃外网不连库。
+"""scripts/realdata 纯函数单测（多来源真实数据刀 I+II）：离线，不吃外网不连库。
 
 覆盖：SPARQL 查询构造（六类 QID / UNION / 每类 LIMIT / 标签回退链）、SPARQL
 json→商品行（QID 兜底标签与缺标签过滤、name+category 去重、stock 固定种子、
@@ -6,6 +6,9 @@ limit 截断、列宽截断）、评论 csv 解析（表头定位与 BOM、空�
 读取（utf-8 与 gb18030 兜底）、(title, content) 转换（spec 形状）、抽样与分批
 （200 对齐 API 单批上限），以及关键交叉验证：生成的批字节能被既有
 parse_import_csv（上传通道批量形态）直接受理。
+刀 II 增：ABCD json→会话行（三切分展平、action 轮丢弃）→转写（顾客：/客服：
+与回流端点同构）→title（scene+首问截断）；WANDS TSV 解析→Exact join
+（缺行丢弃、重复去重）→切片候选行（transcript 形状、合成 timecode 自增）。
 """
 
 import csv
@@ -24,7 +27,9 @@ SAMPLES_DIR = REALDATA_DIR / "samples"
 sys.path.insert(0, str(REALDATA_DIR))
 
 import fetch_wikidata_products as fwp  # noqa: E402
+import load_abcd_dialogues as lad  # noqa: E402
 import load_reviews as lr  # noqa: E402
+import load_wands_clips as lwc  # noqa: E402
 
 
 def _load_sparql_sample() -> dict:
@@ -228,3 +233,174 @@ def test_batch_bytes_accepted_by_api_parser() -> None:
     full = [("标题", "内容")] * 200
     valid_full, skipped_full = parse_import_csv(lr.build_batch_bytes(full))
     assert len(valid_full) == 200 and skipped_full == []
+
+
+# ------------------------------------------------------- ABCD json → 会话行 → 转写
+
+
+def _load_abcd_sample() -> dict:
+    return json.loads((SAMPLES_DIR / "abcd_sample.json").read_text(encoding="utf-8"))
+
+
+def test_abcd_sample_fixture_parses() -> None:
+    """三切分 train→dev→test 展平共 4 会话；action 轮（系统动作）不入 turns。"""
+    sessions = lad.parse_abcd_sessions(_load_abcd_sample())
+    assert [s["convo_id"] for s in sessions] == [3592, 3593, 9001, 9999]
+    first = sessions[0]
+    assert first["flow"] == "product_defect" and first["subflow"] == "return_size"
+    # 8 轮原文去掉 1 轮 action = 7 话语轮
+    assert len(first["turns"]) == 7
+    assert all(author in ("customer", "agent") for author, _ in first["turns"])
+
+
+def test_abcd_transcript_matches_backflow_format() -> None:
+    """转写=「顾客：…/客服：…」按行——与会话回流端点同一消费格式（切块按行/轮）。"""
+    sessions = lad.parse_abcd_sessions(_load_abcd_sample())
+    transcript = lad.transcript_of(sessions[0])
+    lines = transcript.splitlines()
+    assert len(lines) == 7
+    assert lines[0] == "客服：Hi!"
+    assert lines[2] == "顾客：Hi! I need to return an item, can you help me with that?"
+    assert all(line.startswith(("顾客：", "客服：")) for line in lines)
+
+
+def test_abcd_title_scene_plus_first_question() -> None:
+    """title=`{flow}/{subflow} · {顾客首问截 30 字}`——客服问候不是主题，取首顾客轮。"""
+    sessions = lad.parse_abcd_sessions(_load_abcd_sample())
+    title = lad.title_of(sessions[0])
+    question = "Hi! I need to return an item, can you help me with that?"
+    assert title == f"product_defect/return_size · {question[: lad.TITLE_HEAD_CHARS]}"
+    assert len(title) <= lad.TITLE_MAX
+    # 无 subflow 只留 flow；无顾客轮回退首个话语轮；超长首问截 30 字
+    question = "Do you have this desk in walnut?"
+    assert lad.title_of(sessions[2]) == f"single_item_query · {question[: lad.TITLE_HEAD_CHARS]}"
+    # 空会话无 scene 无首问 → 兜底标题
+    assert lad.title_of(sessions[3]) == "ABCD 对话"
+
+
+def test_abcd_title_truncated_to_model_width() -> None:
+    session = {
+        "convo_id": 1,
+        "flow": "f" * 100,
+        "subflow": "s" * 100,
+        "turns": [("customer", "q" * 300)],
+    }
+    assert len(lad.title_of(session)) == lad.TITLE_MAX  # assets.title String(200)
+
+
+def test_abcd_sampling_deterministic_and_skips_empty() -> None:
+    """固定种子可复现；空 turns 会话（test 切分末位）不进抽样池；n 超量=全量。"""
+    sessions = lad.parse_abcd_sessions(_load_abcd_sample())
+    first = lad.sample_sessions(sessions, 2, seed=42)
+    second = lad.sample_sessions(sessions, 2, seed=42)
+    assert first == second
+    assert len(first) == 2
+    assert all(s["turns"] for s in first)
+    eligible = [s for s in sessions if s["turns"]]
+    assert lad.sample_sessions(sessions, 10_000) == eligible
+
+
+# ------------------------------------------------- WANDS TSV 解析 / Exact join / 候选行
+
+
+def _wands_texts() -> dict[str, str]:
+    return {
+        name: (SAMPLES_DIR / f"wands_{name}_sample.tsv").read_text(encoding="utf-8")
+        for name in ("query", "product", "label")
+    }
+
+
+def test_wands_tsv_fixture_parses() -> None:
+    """WANDS csv 实为 TSV：按 tab 列名定位成 dict 行；BOM 容忍；缺列行跳过。"""
+    texts = _wands_texts()
+    queries = lwc.parse_wands_tsv(texts["query"])
+    assert len(queries) == 4 and queries[0]["query"] == "salon chair"
+    products = lwc.parse_wands_tsv(texts["product"])
+    assert products[1]["product_name"] == "all-clad 7 qt. slow cooker"
+    assert len(lwc.parse_wands_tsv(texts["label"])) == 9
+    assert lwc.parse_wands_tsv("\ufeffquery_id\tquery\n1\trug\n") == [
+        {"query_id": "1", "query": "rug"}
+    ]
+    assert lwc.parse_wands_tsv("query_id\tquery\n1\n") == []  # 缺列行跳过
+
+
+def test_wands_join_exact_pairs_only() -> None:
+    """只留 Exact；缺 product/query 行丢弃；(query_id, product_id) 重复去重。"""
+    texts = _wands_texts()
+    pairs = lwc.join_exact_pairs(
+        lwc.parse_wands_tsv(texts["query"]),
+        lwc.parse_wands_tsv(texts["product"]),
+        lwc.parse_wands_tsv(texts["label"]),
+    )
+    # 9 标注行：Exact 6 行中 -1 缺商品(99999) -1 缺 query(4) -1 重复(2,0) = 3 对
+    assert [(p["query_id"], p["product_id"]) for p in pairs] == [
+        ("0", "25434"),
+        ("1", "12088"),
+        ("2", "0"),
+    ]
+    assert pairs[0]["query"] == "salon chair"
+    assert pairs[0]["product_name"] == "relaxzen massage chair"
+    assert pairs[0]["query_class"] == "Massage Chairs"
+    assert pairs[2]["product_class"] == "Beds"
+
+
+def test_wands_candidate_row_shape() -> None:
+    """transcript=`顾客问 {query} —— {product_name}（标注：Exact）`；timecode 合成自增。"""
+    texts = _wands_texts()
+    pairs = lwc.join_exact_pairs(
+        lwc.parse_wands_tsv(texts["query"]),
+        lwc.parse_wands_tsv(texts["product"]),
+        lwc.parse_wands_tsv(texts["label"]),
+    )
+    row = lwc.pair_to_candidate(pairs[0], 0)
+    assert row["transcript"] == "顾客问 salon chair —— relaxzen massage chair（标注：Exact）"
+    assert row["source_video_label"] == lwc.SOURCE_VIDEO_LABEL
+    assert (row["timecode_start"], row["timecode_end"]) == ("00:00:00", "00:00:39")
+    later = lwc.pair_to_candidate(pairs[1], 2)
+    assert (later["timecode_start"], later["timecode_end"]) == ("00:01:20", "00:01:59")
+
+
+def test_wands_candidate_rows_timecodes_increase() -> None:
+    """整批候选 timecode 严格递增、end>start、恒 8 字符（模型列宽 String(8)）。"""
+    texts = _wands_texts()
+    pairs = lwc.join_exact_pairs(
+        lwc.parse_wands_tsv(texts["query"]),
+        lwc.parse_wands_tsv(texts["product"]),
+        lwc.parse_wands_tsv(texts["label"]),
+    )
+    rows = lwc.candidate_rows(pairs * 5)  # 放大批量看进位
+    starts = [row["timecode_start"] for row in rows]
+    assert starts == sorted(set(starts))
+    assert all(row["timecode_end"] > row["timecode_start"] for row in rows)
+    assert all(len(row["timecode_start"]) == 8 for row in rows)
+    assert lwc.format_timecode(3600 + 120 + 3) == "01:02:03"
+
+
+def test_wands_sampling_deterministic() -> None:
+    pairs = [{"query_id": str(i), "query": f"q{i}", "product_id": str(i),
+              "query_class": "", "product_name": f"p{i}", "product_class": ""} for i in range(20)]
+    first = lwc.sample_pairs(pairs, 5, seed=42)
+    second = lwc.sample_pairs(pairs, 5, seed=42)
+    assert first == second and len(first) == 5
+    assert lwc.sample_pairs(pairs, 10_000) == pairs  # n 超总量=全量
+
+
+def test_wands_candidates_csv_roundtrip(tmp_path: Path) -> None:
+    """候选预览 CSV（utf-8-sig）可原样读回，列序与 clip_candidates 形状对齐。"""
+    texts = _wands_texts()
+    pairs = lwc.sample_pairs(
+        lwc.join_exact_pairs(
+            lwc.parse_wands_tsv(texts["query"]),
+            lwc.parse_wands_tsv(texts["product"]),
+            lwc.parse_wands_tsv(texts["label"]),
+        ),
+        2,
+        seed=7,
+    )
+    rows = lwc.candidate_rows(pairs)
+    out = tmp_path / "candidates.csv"
+    lwc.write_candidates_csv(rows, out)
+    with open(out, encoding="utf-8-sig", newline="") as handle:
+        read_back = list(csv.reader(handle))
+    assert read_back[0] == ["timecode_start", "timecode_end", "transcript", "source_video_label"]
+    assert read_back[1][2] == rows[0]["transcript"]

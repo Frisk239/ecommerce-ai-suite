@@ -1,0 +1,53 @@
+{
+  "train": [
+    {
+      "convo_id": 3592,
+      "scenario": {
+        "flow": "product_defect",
+        "subflow": "return_size"
+      },
+      "original": [
+        ["agent", "Hi!"],
+        ["agent", "How can I help you?"],
+        ["customer", "Hi! I need to return an item, can you help me with that?"],
+        ["action", "Account has been pulled up."],
+        ["customer", "I got the wrong size."],
+        ["agent", "ok, may I have your order ID please?"],
+        ["customer", "It's 3348917502."],
+        ["agent", "sure, a return label has been sent to your email."]
+      ]
+    },
+    {
+      "convo_id": 3593,
+      "scenario": {
+        "flow": "shipping_issue",
+        "subflow": "cancel_order"
+      },
+      "original": [
+        ["customer", "Hello, my package is late, can I cancel it?"],
+        ["action", "Order looked up."],
+        ["agent", "of course, the order has been cancelled and you will be refunded."]
+      ]
+    }
+  ],
+  "dev": [
+    {
+      "convo_id": 9001,
+      "scenario": {
+        "flow": "single_item_query",
+        "subflow": ""
+      },
+      "original": [
+        ["agent", "Hello! What can I do for you?"],
+        ["customer", "Do you have this desk in walnut?"]
+      ]
+    }
+  ],
+  "test": [
+    {
+      "convo_id": 9999,
+      "scenario": {},
+      "original": []
+    }
+  ]
+}

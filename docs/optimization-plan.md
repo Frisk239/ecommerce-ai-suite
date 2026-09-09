@@ -1,5 +1,7 @@
 # 产品优化计划（2026-09-09 两轮全链路走查产出）
 
+> **第 32 刀起的施工北极星是 `docs/roadmap.md`（接手重排：旧第二阶段每项都进主线或观察，改序；补 CI / loop / MCP）。** 下文第一阶段（28–30 刀）已落地。调研三份结论仍有效，新刀 Must/Out 以 roadmap 为准。
+
 来源：goal.md 对照 + Owner 两轮真实点击（第一轮十一个功能域全链路，第二轮补：缺口闭环最后一环/机洗失败/CSV 真跑/修订与失败资产出口/素材发布收尾）。结论：**零硬性功能性 bug**；缺口集中在三类——负向生命周期管理缺失、goal「必须有」清单里的未兑现项、治理体验口径。
 
 ## 一、goal 对照矩阵（七块 × 承诺 × 现状）
@@ -60,7 +62,9 @@ CI workflow、反代/HTTPS、备份、监控、顾客令牌 TTL、检索缓存�
 
 # 第二阶段：数据、自进化与 RAG 准确性（2026-09-09 三路调研产出）
 
-来源：`docs/research/real-data-sources.md`（公开电商数据）、`docs/research/self-evolution-patterns.md`（自进化业界模式）、`docs/research/rag-accuracy-engineering.md`（RAG 准确性工程）。本阶段回应四个面试级拷问：数据哪来的 / 飞轮怎么转得更高级 / 检索质量有实测吗 / 怎么保证不胡编。**全部为计划，未实现。**
+> **已接档。** 第 31 刀（数据 I）已按本表执行并交付。其余刀序、停建清单、成功标准见 `docs/roadmap.md`。本段保留为调研排期快照，避免和 slices 双源。
+
+来源：`docs/research/real-data-sources.md`（公开电商数据）、`docs/research/self-evolution-patterns.md`（自进化业界模式）、`docs/research/rag-accuracy-engineering.md`（RAG 准确性工程）。本阶段回应四个面试级拷问：数据哪来的 / 飞轮怎么转得更高级 / 检索质量有实测吗 / 怎么保证不胡编。除第 31 刀外，下表仍是调研原序，**不要按这张表开刀。**
 
 ## 排期（按 防戳穿价值×成本 排序；刀计数接第 30 刀，审计刀 6 先行）
 
