@@ -1,6 +1,7 @@
 """客服引擎单测：LLM 等待前结束只读事务（不占连接）。"""
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -68,3 +69,35 @@ def test_run_ask_commits_before_llm_stream(monkeypatch: pytest.MonkeyPatch) -> N
         "stream_chat",  # 生成步 LLM 调用（替身）
         "commit",  # agent 消息落库
     ]
+
+
+def test_customer_channel_hides_internal_fallback_reason() -> None:
+    """审计刀 12 P2：`fallback_reason` 是内部闸口径，只给操作者通道。
+
+    （顾客面只需要 `fallback` 布尔——徽章用；与 gap_id 同一白名单思路。）
+    """
+    from suite_api.services.chat_engine import AskOutcome, sse_event_stream
+
+    # SSE 生成器只读 agent_message.content / answer.kind / answer.citations——
+    # 用最小替身（SimpleNamespace；MagicMock 不能进 json.dumps）
+    outcome = AskOutcome(
+        agent_message=SimpleNamespace(
+            content="抱歉，已发布资产里没有能回答这个问题的证据。",
+            citations=[],
+            kind="refusal",
+            handoff=True,
+            ticket=None,
+            id=1,
+        ),
+        answer=SimpleNamespace(kind="refusal", handoff=True, citations=[]),
+        gap=None,
+        generated=False,
+        fallback=False,
+        fallback_reason="no_coverage",
+    )
+
+    operator_events = "".join(sse_event_stream(outcome, expose_gap_id=True))
+    customer_events = "".join(sse_event_stream(outcome, expose_gap_id=False))
+    assert "no_coverage" in operator_events
+    assert "no_coverage" not in customer_events
+    assert '"fallback": false' in customer_events  # 布尔仍在（前端徽章）

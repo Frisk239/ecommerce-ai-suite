@@ -192,9 +192,49 @@ class AskOutcome:
 # 「证据类主语 + 未覆盖类谓语」与「无法回答/提供」两种说法；模型真在回答时不会
 # 这么写（系统提示要求只依据证据作答）。
 _NO_COVERAGE_RE = re.compile(
-    r"(证据|资料|信息|数据)[^。；]{0,20}(未覆盖|未涉及|未包含|不包含|中没有|没有提及)"
-    r"|无法(回答|提供|确认|给出)[^。；]{0,10}(该|这个|此)?(问题|价格|信息|答案)"
+    # **主语必须是证据类名词**（证据/资料/文档/资产）——裸「信息/数据」会把
+    # 「配料信息中不包含任何防腐剂」这种**事实否定句**误判成覆盖声明（审计刀 12：
+    # 误判会把答对的整条收成拒答+落缺口，后果比漏检更重）
+    # 谓语面覆盖常见同义说法：未覆盖/未涉及/未包含/不包含/中没有/没有提及/
+    # **未提供/没有提供/未收录/尚未收录**（审计刀 12 实测「现有证据未提供…」漏检，
+    # 那条是老行为「未覆盖却挂引用」的回归）
+    r"(证据|资料|文档|资产)[^。；]{0,12}"
+    r"(未覆盖|未涉及|未包含|不包含|未提供|未收录|尚未收录|未说明|未提到|未给出|未列明"
+    r"|中(都)?没有|没有提及|没有提供|没有说明)"
+    # 第二支要求宾语**紧贴**动词（不许跨填充词）：「无法提供价格」命中，
+    # 「无法提供比这更详细的信息」不命中（那是正常措辞，不是覆盖声明）
+    r"|无法(回答|提供|确认|给出)(该|这个|此)?(问题|价格|答案|信息)"
 )
+
+# 句子切分（。；！？与换行）：**按句判覆盖声明**，不按整段判——审计刀 12 P0：
+# 模型对「怎么退货？」常输出「签收后 7 天内可申请退货。[1][2] 具体退货操作证据
+# 未覆盖。」——整段命中就全弃，把**已被证据支撑的那句**也丢了（内置建议问句随机
+# 变拒答）。改成：摘掉免责句后若还剩实质内容，就照常作答。
+_SENTENCE_SPLIT_RE = re.compile(r"[^。；！？\n]+[。；！？]?")
+
+
+_CITE_MARK_RE = re.compile(r"\[\d+\]")
+_SUBSTANTIVE_RE = re.compile(r"[0-9A-Za-z一-鿿]")
+
+
+def strip_coverage_disclaimers(text: str) -> tuple[str, bool]:
+    """按句摘掉覆盖声明句，返回 (剩余正文, 是否**只剩**免责句)。
+
+    - 逐句判 `_NO_COVERAGE_RE`；留下非免责句（保持原顺序、原标点）。
+    - 剩余正文**去掉引用标记后仍有实质字符** -> `(正文, False)`：照常作答。
+    - 否则（全被摘光，或只剩 `[1][2]` 这类引用标记）-> `("", True)`：按拒答收口。
+      （审计刀 12：只摘掉句子不看残留内容，会把「已发布证据未说明 X。[1][2]」这种
+      单句免责答成一段光秃秃的 `[1][2]`。）
+    """
+    kept: list[str] = []
+    for sentence in _SENTENCE_SPLIT_RE.findall(text):
+        if _NO_COVERAGE_RE.search(sentence):
+            continue
+        kept.append(sentence)
+    remaining = "".join(kept).strip()
+    if not _SUBSTANTIVE_RE.search(_CITE_MARK_RE.sub("", remaining)):
+        return "", True
+    return remaining, False
 
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
@@ -413,16 +453,21 @@ async def run_ask(
     # 缺失因为「检索有没有边际命中」产生两种系统状态（无命中：拒答+缺口；有弱命中：
     # 「已答」+引用）。收口：检出覆盖声明就按拒答处理（缺口照落、转人工照建、
     # citations 清零、文案仍用既有拒答模板——一个知识洞只有一种形态）。
-    no_coverage = (
-        answer.kind == "answer"
-        and generated is not None
-        and _NO_COVERAGE_RE.search(generated) is not None
-    )
-    if no_coverage:
-        answer = ComposedAnswer(
-            content=REFUSAL_CONTENT, citations=[], kind="refusal", handoff=True
-        )
-        generated = None  # 用拒答模板落库（内容不是模型那句自述）
+    no_coverage = False
+    if answer.kind == "answer" and generated is not None:
+        # **按句**判（审计刀 12 P0）：模型对「怎么退货？」常输出「签收后 7 天内可
+        # 申请退货。[1][2] 具体退货操作证据未覆盖。」——整段命中就全弃会把**已被
+        # 证据支撑的那句**也丢掉（内置建议问句随机变拒答）。改成：先摘免责句，
+        # 还有实质内容就照常作答；只剩免责句才按拒答收口。
+        remaining, all_disclaimers = strip_coverage_disclaimers(generated)
+        if all_disclaimers:
+            no_coverage = True
+            answer = ComposedAnswer(
+                content=REFUSAL_CONTENT, citations=[], kind="refusal", handoff=True
+            )
+            generated = None  # 用拒答模板落库（内容不是模型那句自述）
+        elif remaining != generated:
+            generated = remaining  # 免责句摘掉，正文与引用照旧
     fallback = answer.kind == "answer" and generated is None and not is_catalog
     content = generated if generated is not None else answer.content
 
@@ -449,6 +494,10 @@ async def run_ask(
     # 量结构不变。
     gap: KnowledgeGap | None = None
     ticket: HandoffTicket | None = None
+    if answer.kind == "answer":
+        # 审计刀 12 P1：**任何答上的出口都关同问 open 缺口**——此前只有目录分支调，
+        # 于是「库存已答」「RAG 已答」的问句仍挂着「待补」（点「去补文档」误人）。
+        resolve_gap_answered_by_catalog(db, question)
     if answer.kind == "refusal":
         # 带上来源会话（走查修复）：操作者能从缺口抽屉跳回这条原始对话
         gap = record_refusal_gap(db, question, session_id=session.id)
@@ -695,6 +744,8 @@ def _run_order_ask(db: Session, session: ServiceSession, order_no: str) -> AskOu
     if result.get("found"):
         kind, handoff = "answer", False
         content = render_order_answer(result)
+        # 订单工具路径只有单号（没有原问句入参）——不在这里收缺口：订单问句要么
+        # 查到（工具事实）要么转人工，落缺口的场景不存在（审计刀 12 记）。
     else:
         kind, handoff = "handoff", True
         content = render_handoff_content(order_no, result)
@@ -752,6 +803,7 @@ def _run_stock_ask(
     if found and (is_category or stock is not None):
         kind, handoff = "answer", False
         content = render_stock_answer(result)
+        resolve_gap_answered_by_catalog(db, question)  # 审计刀 12：答上即关同问缺口
     else:
         kind, handoff = "handoff", True
         content = render_stock_handoff_content(result)
@@ -850,9 +902,12 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     # 第 7 刀：true=厂商生成失败降级模板（前端「模板回退」徽章；运行时返回，
     # 同 gap_id 口径，消息表不加列）
     complete["fallback"] = outcome.fallback
-    if outcome.fallback_reason is not None:
+    if outcome.fallback_reason is not None and expose_gap_id:
         # 第 40 刀：忠实度闸触发原因（可观测可校准；普通厂商失败降级不带
-        # 该键——运行时返回口径同 fallback，消息表不加列）
+        # 该键——运行时返回口径同 fallback，消息表不加列）。
+        # **只给操作者通道**（审计刀 12 P2）：它是内部闸口径（coverage/no_coverage），
+        # 与 gap_id 同一白名单思路——顾客面只需要 fallback 布尔（徽章），不需要
+        # 知道我们内部哪道闸触发（口径不一致曾被审计记为回归面）。
         complete["fallback_reason"] = outcome.fallback_reason
     if outcome.ticket is not None:
         # 第 42 刀（ADR 0046 §4/裁决 8）：H 号是给顾客的回执——运行时可选键，

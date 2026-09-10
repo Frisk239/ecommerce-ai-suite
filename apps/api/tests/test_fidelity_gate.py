@@ -24,7 +24,7 @@ def _hit(asset_id: int, chunk: str) -> dict[str, Any]:
 def engine(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """run_ask 的替身环境：检索/组装可注入，stream_chat 调用被记账（触发即
     失败的哨兵形态见各用例参数）。"""
-    calls: dict[str, Any] = {"stream_called": 0, "prompt": None}
+    calls: dict[str, Any] = {"stream_called": 0, "prompt": None, "gap_called": 0}
     db = MagicMock()
     session = MagicMock()
     session.id = 1
@@ -137,10 +137,11 @@ def test_model_declares_no_coverage_becomes_refusal(
 
     monkeypatch.setattr("suite_api.services.chat_engine.llm.stream_chat", fake_no_coverage)
     # 缺口记录用替身：真函数 flush 后才有 id，MagicMock 会话给不出 id（拒答文案要格式化）
-    monkeypatch.setattr(
-        "suite_api.services.chat_engine.record_refusal_gap",
-        lambda *_a, **_k: type("G", (), {"id": 1})(),
-    )
+    def _fake_gap(*_a: Any, **_k: Any) -> Any:
+        engine["calls"]["gap_called"] += 1
+        return type("G", (), {"id": 1})()
+
+    monkeypatch.setattr("suite_api.services.chat_engine.record_refusal_gap", _fake_gap)
     # 两条命中（覆盖够，忠实度闸不触发）——正是审计刀 11 实测的那条路径
     hits = [_hit(3, "叉子：不锈钢"), _hit(9, "客服：整机一年保修。")]
     monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: hits)
@@ -156,8 +157,10 @@ def test_model_declares_no_coverage_becomes_refusal(
     assert outcome.answer.handoff is True  # 转人工
     assert outcome.fallback_reason == "no_coverage"  # 可观测的触发原因
     assert outcome.generated is False
-    # 缺口照落（同一知识洞只有一种形态）
-    assert engine["db"].add.called
+    # 缺口照落（同一知识洞只有一种形态）：断言**真调了** record_refusal_gap 且拿到行
+    # （审计刀 12：原来用 `db.add.called` 恒真——run_ask 开头就 add 顾客消息）
+    assert engine["calls"]["gap_called"] == 1
+    assert outcome.gap is not None
 
 
 def test_real_answer_is_not_mistaken_for_no_coverage(
@@ -185,3 +188,81 @@ def test_real_answer_is_not_mistaken_for_no_coverage(
 
     assert outcome.answer.kind == "answer"
     assert outcome.fallback_reason is None
+
+
+@pytest.mark.parametrize(
+    "answer_text",
+    [
+        "配料信息中不包含任何防腐剂。",  # 「信息」是商品信息，不是证据
+        "产品信息不包含电池，需另行购买。",
+        "我无法提供比这更详细的信息。",  # 动词与宾语之间不该跨填充词
+        "客服无法确认该订单信息，请提供订单号。",
+        "根据已发布证据，净含量为 500ml。[1]",
+    ],
+)
+def test_no_coverage_gate_does_not_fire_on_normal_answers(
+    engine: dict[str, Any], monkeypatch: pytest.MonkeyPatch, answer_text: str
+) -> None:
+    """审计刀 12 P0：闸的误判面比漏检更重（会把答对的整条收成拒答 + 落缺口 + 建工单）。
+
+    这五条都是正常作答/正常措辞，不许被当成「覆盖声明」。
+    """
+
+    def fake(_system: str, _user: str, history: list[dict[str, str]] | None = None):
+        del history
+
+        async def _gen() -> Any:
+            yield answer_text
+
+        return _gen()
+
+    monkeypatch.setattr("suite_api.services.chat_engine.llm.stream_chat", fake)
+    hits = [_hit(3, "配料：不含防腐剂"), _hit(9, "客服：材质说明。")]
+    monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: hits)
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.assets_meta",
+        lambda *_a, **_k: {3: {"kind": "document", "title": "配料"}, 9: {"kind": "dialogue", "title": "对话"}},
+    )
+
+    outcome = asyncio.run(run_ask(engine["db"], engine["session"], "配料里有什么？"))
+
+    assert outcome.answer.kind == "answer"
+    assert outcome.fallback_reason is None
+    assert engine["calls"]["gap_called"] == 0  # 不许落缺口
+
+
+# ---------- 审计刀 12 P0：部分可答不许被整条吞掉 ----------
+
+
+@pytest.mark.parametrize(
+    ("answer_text", "expect"),
+    [
+        # 部分答对 + 免责句 -> 保留答对那部分（摘掉免责句）
+        ("签收后7天内可申请退货。[1][2] 具体退货操作证据未覆盖。", "签收后7天内可申请退货。"),
+        ("已发布证据未提及运费。[1] 材质为钛钢。[2]", "材质为钛钢。[2]"),
+        # 全是免责句 -> 按拒答收口
+        ("现有证据未覆盖刻字收费信息。", ""),
+        ("证据未提供价格。", ""),
+        # 单句免责 + 引用标记：摘完只剩 [1][2] 也算「没答」（不许把光秃秃的引用标记答出去）
+        ("已发布证据未说明保温杯可保温几个小时。[1][2]", ""),
+        # 正常作答原样保留
+        ("根据已发布证据，净含量为 500ml。[1]", "根据已发布证据，净含量为 500ml。[1]"),
+    ],
+)
+def test_strip_coverage_disclaimers(answer_text: str, expect: str) -> None:
+    """审计刀 12 P0：按句判——只有整段都是覆盖声明才拒答。
+
+    实测（内置建议问句「怎么退货？」）：模型输出「签收后7天内可申请退货。[1][2]
+    具体退货操作证据未覆盖。」时，整段命中会把**已被证据支撑的那句**也丢掉，问句
+    随机变拒答（2/3 概率）+ 落缺口 + 建工单。
+    """
+    from suite_api.services.chat_engine import strip_coverage_disclaimers
+
+    remaining, all_disclaimers = strip_coverage_disclaimers(answer_text)
+    if expect == "":
+        assert all_disclaimers is True
+        assert remaining == ""
+    else:
+        assert all_disclaimers is False
+        assert expect in remaining
+        assert "未覆盖" not in remaining and "未提供" not in remaining

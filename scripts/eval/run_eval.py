@@ -199,6 +199,32 @@ def report_markdown(
 # ---------------------------------------------------------------- 主流程
 
 
+def _stale_expectations(db: Any, cases: list[dict[str, Any]]) -> list[str]:
+    """cite 期望里「版本号 ≠ 该资产当前已发布版本」的条目（第 60 刀教训的守卫）。
+
+    返回人话列表（空 = 全部新鲜）；调用方据此非零退出，避免把「期望过期」误读成
+    「检索退化」。
+    """
+    from suite_api.models import Asset, AssetVersion
+
+    stale: list[str] = []
+    for case in cases:
+        cite = case.get("expect", {}).get("cite")
+        if not cite:
+            continue
+        asset = db.get(Asset, cite["asset_id"])
+        if asset is None or asset.current_published_version_id is None:
+            stale.append(f"{case['id']}: 资产 {cite['asset_id']} 没有当前已发布版本")
+            continue
+        current = db.get(AssetVersion, asset.current_published_version_id)
+        if current is not None and current.version_no != cite["version_no"]:
+            stale.append(
+                f"{case['id']}: 期望 {cite['asset_id']}/v{cite['version_no']}，"
+                f"当前已发布 v{current.version_no}"
+            )
+    return stale
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="评测尺 runner（分层指标，可复现）")
     parser.add_argument("--db", default=DEFAULT_DB, help="演示库 Postgres URL")
@@ -218,6 +244,16 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = create_engine(to_sqlalchemy_url(args.db))
     with sessionmaker(bind=engine)() as db:
+        # 「过期期望」守卫（审计刀 12）：cite 期望的版本号必须等于该资产**当前已发布
+        # 版本**——发布类治理动作（换正文/开修订）会让期望悄悄过期，runner 只按
+        # (asset_id, version_no) 判定就会把「期望过期」记成「检索未命中」，把基线
+        # 漂移伪装成检索回归。不一致即非零退出并点名用例。
+        stale = _stale_expectations(db, cases)
+        if stale:
+            print("golden 存在过期版本期望（先更新 golden，再谈基线）:")
+            for item in stale:
+                print(f"  {item}")
+            return 2
         meta = {
             asset.id: {"kind": asset.kind, "title": asset.title}
             for asset in db.scalars(
