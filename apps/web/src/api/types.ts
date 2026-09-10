@@ -56,6 +56,8 @@ export interface KnowledgeGap {
   resolved_at: string | null
   /** 第 39 刀热度：被问次数（归一化幂等命中既有 open 缺口时 +1）。 */
   hit_count: number
+  /** 走查修复：来源会话（首次拒答所在会话）；历史行/无来源为 null。 */
+  session_id: number | null
 }
 
 /** 对话 QA 对（第 12 刀/ADR 0035）：qa_pairs 字段的数组值，每对 {q, a} 非空串。 */

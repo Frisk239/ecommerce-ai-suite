@@ -58,7 +58,9 @@ def normalize_question(question: str) -> str:
     return question.strip().translate(_FULLWIDTH_PUNCT).rstrip(_TRAILING_PUNCT)
 
 
-def record_refusal_gap(db: Session, question: str) -> KnowledgeGap:
+def record_refusal_gap(
+    db: Session, question: str, *, session_id: int | None = None
+) -> KnowledgeGap:
     """拒答落缺口（0024，第 30 刀归一化幂等）：归一化问相同且 open 时复用。
 
     在拒答消息同一事务内调用（复用与否与 agent 消息一起提交/回滚）；question
@@ -75,6 +77,9 @@ def record_refusal_gap(db: Session, question: str) -> KnowledgeGap:
     次数，列表按热度排）。快慢两条路径都累加：快路径直接改属性（随事务
     flush 成 UPDATE）；SAVEPOINT 兜底路径在 IntegrityError 重查命中后同样
     +1（并发复用的那次拒答也是一次真实的被问）。
+
+    ``session_id``（走查修复）：来源会话，**只在首次插入时写**——归一化命中
+    复用的那几路都不覆盖（溯源是可核对的历史，不是「最近一次被问」）。
     """
     normalized = normalize_question(question)
     gap = db.scalar(
@@ -85,7 +90,9 @@ def record_refusal_gap(db: Session, question: str) -> KnowledgeGap:
     if gap is not None:
         gap.hit_count += 1  # 重复问法累加热度（第 39 刀），随拒答消息同事务提交
         return gap
-    gap = KnowledgeGap(question=question, normalized_question=normalized, status=OPEN)
+    gap = KnowledgeGap(
+        question=question, normalized_question=normalized, status=OPEN, session_id=session_id
+    )
     try:
         with db.begin_nested():
             db.add(gap)

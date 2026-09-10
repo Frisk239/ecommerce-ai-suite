@@ -5,7 +5,7 @@
 // 不搬的：35ms 定时器模拟、mock 大脑、localStorage 补全——传输由真实 SSE 驱动。
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowUDownLeft, ArrowUp, ChatCircleDots, Prohibit, Stop } from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
 import type { ServiceSessionSummary } from '../api/types'
@@ -75,11 +75,19 @@ export default function ServicePage() {
 
   // 选择模型：null = 尚未选择（跟随最新一条有消息的会话，别落到空会话）；点了哪条就固定在哪条
   const [chosenId, setChosenId] = useState<number | null>(null)
+  // ?session=N 深链（缺口抽屉「来源会话」）：纯派生，不开 effect——显式点选优先于深链
+  const [searchParams] = useSearchParams()
+  const sessionParam = searchParams.get('session')
+  const linkedId = sessionParam !== null && /^\d+$/.test(sessionParam) ? Number(sessionParam) : null
+  const linkedSession =
+    linkedId !== null && list.state.phase === 'ok'
+      ? (list.state.data.find((s) => s.id === linkedId) ?? null)
+      : null
   const defaultSession =
     list.state.phase === 'ok'
       ? (list.state.data.find((s) => s.message_count > 0) ?? list.state.data[0] ?? null)
       : null
-  const selectedId = chosenId ?? defaultSession?.id ?? null
+  const selectedId = chosenId ?? linkedSession?.id ?? defaultSession?.id ?? null
 
   // 列表排序：0 消息会话沉底（组内按 id desc，稳定不跳位）
   const orderedSessions = useMemo(

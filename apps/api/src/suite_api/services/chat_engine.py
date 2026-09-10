@@ -349,7 +349,8 @@ async def run_ask(
     # 量结构不变。
     gap: KnowledgeGap | None = None
     if answer.kind == "refusal":
-        gap = record_refusal_gap(db, question)
+        # 带上来源会话（走查修复）：操作者能从缺口抽屉跳回这条原始对话
+        gap = record_refusal_gap(db, question, session_id=session.id)
         agent_message.content = build_refusal_handoff_content(
             question, gap.id if expose_gap_id and gap is not None else None
         )
