@@ -23,8 +23,14 @@ export type AssetSourceKind =
   | 'seed'
   /** 第 50 刀：评论数据集导入（200 条真实评论资产）。 */
   | 'review_import'
-  /** 第 50 刀：开放数据集（Wikidata 商品 / OpenFoodFacts 规格）。 */
+  /** 第 50 刀：开放数据集（通用类；第 55 刀起具体数据集各有其词）。 */
   | 'open_dataset'
+  /** 第 55 刀：Wikidata 商品。 */
+  | 'wikidata'
+  /** 第 55 刀：OpenFoodFacts 商品与规格。 */
+  | 'openfoodfacts'
+  /** 第 55 刀：WANDS 家具检索基准（承载商品）。 */
+  | 'wands'
 
 export interface AssetListItem {
   id: number

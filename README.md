@@ -195,10 +195,10 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 
 | 数据 | 量 | 落在哪 | 产品面显示 |
 | --- | --- | --- | --- |
-| Wikidata 商品（`scripts/realdata/fetch_wikidata_products.py`） | 91 | `products` | 商品卡「开放数据集」 |
-| OpenFoodFacts（`load_openfoodfacts.py`） | 20 商品 + 20 规格资产 | `products` / `assets` | 商品卡 + 资产来源「开放数据集」 |
+| Wikidata 商品（`scripts/realdata/fetch_wikidata_products.py`） | 91 | `products` | 商品卡「Wikidata」 |
+| OpenFoodFacts（`load_openfoodfacts.py`） | 20 商品 + 20 规格资产 | `products` / `assets` | 商品卡与资产来源「OpenFoodFacts」 |
 | 在线购物评论（`load_reviews.py`） | 200 资产 | `assets` | 资产来源「评论导入」 |
-| WANDS 家具检索基准（`load_wands_clips.py`） | 30 切片候选 | `clip_candidates` | 切片页源录像标签「WANDS · wayfair 家具检索基准」 |
+| WANDS 家具检索基准（`load_wands_clips.py`） | 30 切片候选 + 1 承载商品 | `clip_candidates` / `products` | 承载商品「WANDS 基准」+ 切片候选卡各自的源录像标签 |
 
 许可与出处见 `scripts/realdata/README.md`；**来源是只读字段**（既成事实，运营改不了——可改就成可造假的溯源）。
 

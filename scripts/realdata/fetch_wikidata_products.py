@@ -262,7 +262,7 @@ def load_products(db_url: str, rows: list[dict[str, Any]]) -> tuple[int, int]:
                     stock=row["stock"],
                     # 第 50 刀：来源随导入一起写（否则产品面的「开放数据集」只是
                     # 迁移回填的一次性快照，重置演示库/新环境就复现不出来）
-                    source_kind="open_dataset",
+                    source_kind="wikidata",
                 )
             )
             inserted += 1

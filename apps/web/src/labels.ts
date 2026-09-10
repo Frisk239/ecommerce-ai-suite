@@ -47,6 +47,10 @@ const SOURCE_KIND_LABELS: Record<string, string> = {
   seed: '种子',
   review_import: '评论导入',
   open_dataset: '开放数据集',
+  // 第 55 刀：四份真实数据集逐个可见（此前三者同叫「开放数据集」分不出哪一份）
+  wikidata: 'Wikidata',
+  openfoodfacts: 'OpenFoodFacts',
+  wands: 'WANDS 基准',
 }
 
 export function sourceKindLabel(kind: string): string {

@@ -212,7 +212,10 @@ def test_upgrade_0026_backfills_sources_and_demo_prices(backfill_db_url: str) ->
             "        ('document', 'pending_review', 'session_backflow', '图书评论 · 回流的别动')"
         )
 
-    command.upgrade(cfg, "head")
+    # **升到 0026 为止**（不是 head）：本用例钉的是 0026 的回填口径；第 55 刀的
+    # 0028 会把 open_dataset 再拆成 openfoodfacts/wikidata/wands（那由 0028 自己的
+    # 用例钉——升到 head 会把这条断言变成在验 0028）
+    command.upgrade(cfg, "0026")
 
     with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
@@ -246,3 +249,51 @@ def test_upgrade_0026_backfills_sources_and_demo_prices(backfill_db_url: str) ->
         # 种子价在降级后仍在（评审 P0 的钉子：按值匹配会误清它）
         cur.execute("SELECT price_cents FROM products WHERE name = '瓶装水'")
         assert cur.fetchone()[0] == 300
+
+
+# 第 55 刀（四份数据集逐个可见）：0028 把 0026 标的 open_dataset 按形态拆成
+# wikidata / openfoodfacts / wands；down 原样收回。
+def test_upgrade_0028_splits_open_dataset_by_shape(backfill_db_url: str) -> None:
+    cfg = _alembic_config(backfill_db_url)
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0026")  # 回到 0026：来源词还没有数据集细分
+
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO products (name, category, spec_schema, spec_values, source_kind)"
+            " VALUES ('旧Wikidata机', '笔记本电脑', '{}', '{}', 'open_dataset'),"
+            "        ('旧OFF食品', '食品', '{\"净含量\": {\"required\": true}}', '{}',"
+            "         'open_dataset'),"
+            "        ('WANDS 家具（演示）', '家具', '{}', '{}', 'open_dataset'),"
+            "        ('手建商品', '家具', '{}', '{}', NULL)"
+        )
+        cur.execute(
+            "INSERT INTO assets (kind, status, source_kind, title)"
+            " VALUES ('document', 'pending_review', 'open_dataset', '旧结构杯 规格（OFF）'),"
+            "        ('document', 'pending_review', 'upload', '旧结构普通文档')"
+        )
+
+    command.upgrade(cfg, "head")
+
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT name, source_kind FROM products WHERE name LIKE '旧%' OR name LIKE 'WANDS%'"
+            " OR name = '手建商品'"
+        )
+        kinds = {name: kind for name, kind in cur.fetchall()}
+        assert kinds["旧Wikidata机"] == "wikidata"
+        assert kinds["旧OFF食品"] == "openfoodfacts"
+        assert kinds["WANDS 家具（演示）"] == "wands"
+        assert kinds["手建商品"] is None  # 手建不动
+        cur.execute("SELECT source_kind FROM assets WHERE title LIKE '旧结构%' ORDER BY id")
+        kinds = [row[0] for row in cur.fetchall()]
+        assert kinds == ["openfoodfacts", "upload"]  # 只动 open_dataset 的那条
+
+    command.downgrade(cfg, "0027")
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM products WHERE source_kind IN ('wikidata','openfoodfacts','wands')"
+        )
+        assert cur.fetchone()[0] == 0
+        cur.execute("SELECT count(*) FROM products WHERE source_kind = 'open_dataset'")
+        assert cur.fetchone()[0] == 3
