@@ -4,7 +4,7 @@
 // 展示（新建=待写回预览，编辑=当前值只读，写回只走资产发布）；库存列保持只读。
 
 import { useCallback, useMemo, useState } from 'react'
-import { Package, PencilSimple, Plus, Warning, X } from '@phosphor-icons/react'
+import { CaretDown, CaretRight, Package, PencilSimple, Plus, Warning, X } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { Product } from '../api/types'
@@ -37,6 +37,20 @@ export function formatProductPrice(priceCents: number | null, currency: string):
   const text = (priceCents / 100).toFixed(2).replace(/\.?0+$/, '')
   return currency === 'CNY' ? `${text} 元` : `${text} ${currency}`
 }
+
+/** 有写回规格：spec_schema 与 spec_values 求交非空——防类目切换后残留旧键误判。 */
+function hasWrittenSpec(product: Product): boolean {
+  return Object.keys(product.spec_schema).some((k) => product.spec_values?.[k])
+}
+
+/** 首屏排序档：0=已定价，1=未定价但有写回规格，2=其余（折进可展开区）。 */
+function productRank(product: Product): number {
+  if (product.price_cents !== null) return 0
+  return hasWrittenSpec(product) ? 1 : 2
+}
+
+// 稳定空数组：加载/错误态复用同一引用，排序 useMemo 的依赖才不会每渲染都变。
+const EMPTY_PRODUCTS: Product[] = []
 
 /** 元输入→分：空=未定价；非法返回错误文案（不提交，服务端再闸一道）。 */
 function parseYuanToCents(raw: string): { cents: number | null } | { error: string } {
@@ -263,12 +277,97 @@ function ProductDrawer({
 export default function ProductsPage() {
   const fetcher = useCallback(() => api.listProducts(), [])
   const { state, reload } = useApiData(fetcher)
-  const products = state.phase === 'ok' ? state.data : []
+  const products = state.phase === 'ok' ? state.data : EMPTY_PRODUCTS
 
   const [drawer, setDrawer] = useState<{ open: boolean; product: Product | null }>({
     open: false,
     product: null,
   })
+  // 其余商品默认收起：首屏只留可卖物（已定价 / 有写回规格），百科货不抢视线。
+  const [restOpen, setRestOpen] = useState(false)
+
+  // 稳定排序：档位优先，同档按 id 升序兜底（否则每次渲染跳位）。
+  const ordered = useMemo(
+    () => [...products].sort((a, b) => productRank(a) - productRank(b) || a.id - b.id),
+    [products],
+  )
+  const featured = ordered.filter((p) => productRank(p) < 2)
+  const rest = ordered.filter((p) => productRank(p) === 2)
+
+  const renderCard = (product: Product) => (
+    <div key={product.id} className="panel panel-hover hover:-translate-y-0.5">
+      <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] bg-accent-soft text-accent-strong">
+          <Package aria-hidden size={17} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-semibold leading-6 text-ink">{product.name}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+            <span className="kind-chip">{product.category}</span>
+            <span className="font-mono text-xs text-ink-3">P-{product.id}</span>
+            {/* 库存列（第 30 刀）：操作者只读自查（客服工具同源 mock 值）；
+                NULL=未设置显示 —，不可编辑（不升格为中台对象）。 */}
+            <span
+              className={
+                product.stock === 0
+                  ? 'font-mono text-xs text-danger'
+                  : 'font-mono text-xs text-ink-2'
+              }
+              title="库存可 mock：只读自查，不可在这里编辑"
+            >
+              库存 {product.stock !== null ? product.stock : '—'}
+            </span>
+            {/* 单价（第 41 刀）：直写即时生效，抽屉里改；NULL=未定价。 */}
+            <span className="font-mono text-xs text-ink-2" title="单价：抽屉里直写即时生效，改价记留痕">
+              单价 {formatProductPrice(product.price_cents, product.currency)}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm shrink-0"
+          title="编辑商品（名称/类目/单价）"
+          onClick={() => setDrawer({ open: true, product })}
+        >
+          <PencilSimple aria-hidden size={13} />
+          编辑
+        </button>
+      </div>
+
+      <table className="table-gov">
+        <thead>
+          <tr>
+            <th className="w-24">规格字段</th>
+            <th>当前值</th>
+            <th className="w-32">写回来源</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(product.spec_schema).map(([field, rule]) => {
+            const entry = product.spec_values[field]
+            return (
+              <tr key={field}>
+                <td className="text-ink-2">
+                  {field}
+                  {rule.required === true ? <span className="ml-0.5 text-danger">*</span> : null}
+                </td>
+                <td className={entry ? 'font-medium text-ink' : 'text-ink-3'}>
+                  {entry ? entry.value : '—'}
+                </td>
+                <td>
+                  {entry ? (
+                    <CitationChip assetId={entry.source.asset_id} version={entry.source.version} />
+                  ) : (
+                    <span className="text-ink-3">—</span>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
 
   return (
     <div>
@@ -317,85 +416,27 @@ export default function ProductsPage() {
           />
         </div>
       ) : (
-        <div className="grid items-start gap-4 md:grid-cols-2">
-          {products.map((product) => (
-            <div key={product.id} className="panel panel-hover hover:-translate-y-0.5">
-              <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3.5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] bg-accent-soft text-accent-strong">
-                  <Package aria-hidden size={17} />
+        <div>
+          <div className="grid items-start gap-4 md:grid-cols-2">{featured.map(renderCard)}</div>
+          {rest.length > 0 ? (
+            <div className="mt-4">
+              <button
+                type="button"
+                className="panel panel-hover flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-left"
+                aria-expanded={restOpen}
+                onClick={() => setRestOpen((v) => !v)}
+              >
+                <span className="flex items-center text-caption">
+                  {restOpen ? <CaretDown aria-hidden size={13} /> : <CaretRight aria-hidden size={13} />}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[15px] font-semibold leading-6 text-ink">{product.name}</div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                    <span className="kind-chip">{product.category}</span>
-                    <span className="font-mono text-xs text-ink-3">P-{product.id}</span>
-                    {/* 库存列（第 30 刀）：操作者只读自查（客服工具同源 mock 值）；
-                        NULL=未设置显示 —，不可编辑（不升格为中台对象）。 */}
-                    <span
-                      className={
-                        product.stock === 0
-                          ? 'font-mono text-xs text-danger'
-                          : 'font-mono text-xs text-ink-2'
-                      }
-                      title="库存可 mock：只读自查，不可在这里编辑"
-                    >
-                      库存 {product.stock !== null ? product.stock : '—'}
-                    </span>
-                    {/* 单价（第 41 刀）：直写即时生效，抽屉里改；NULL=未定价。 */}
-                    <span className="font-mono text-xs text-ink-2" title="单价：抽屉里直写即时生效，改价记留痕">
-                      单价 {formatProductPrice(product.price_cents, product.currency)}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm shrink-0"
-                  title="编辑商品（名称/类目/单价）"
-                  onClick={() => setDrawer({ open: true, product })}
-                >
-                  <PencilSimple aria-hidden size={13} />
-                  编辑
-                </button>
-              </div>
-
-              <table className="table-gov">
-                <thead>
-                  <tr>
-                    <th className="w-24">规格字段</th>
-                    <th>当前值</th>
-                    <th className="w-32">写回来源</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(product.spec_schema).map(([field, rule]) => {
-                    const entry = product.spec_values[field]
-                    return (
-                      <tr key={field}>
-                        <td className="text-ink-2">
-                          {field}
-                          {rule.required === true ? <span className="ml-0.5 text-danger">*</span> : null}
-                        </td>
-                        <td className={entry ? 'font-medium text-ink' : 'text-ink-3'}>
-                          {entry ? entry.value : '—'}
-                        </td>
-                        <td>
-                          {entry ? (
-                            <CitationChip assetId={entry.source.asset_id} version={entry.source.version} />
-                          ) : (
-                            <span className="text-ink-3">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-
-              <div className="border-t border-line-1 px-4 py-2.5 text-xs leading-5 text-ink-3">
-                写回只在资产发布时发生；待人洗的抽取不会出现在这里。
-              </div>
+                <span className="text-[13px] font-medium text-ink">其余商品 {rest.length}</span>
+                <span className="text-xs text-ink-3">未定价且尚无写回规格，收在这里</span>
+              </button>
+              {restOpen ? (
+                <div className="mt-4 grid items-start gap-4 md:grid-cols-2">{rest.map(renderCard)}</div>
+              ) : null}
             </div>
-          ))}
+          ) : null}
         </div>
       )}
 

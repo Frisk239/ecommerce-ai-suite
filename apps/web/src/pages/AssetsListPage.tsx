@@ -2,14 +2,16 @@
 // + 登记入口（可从缺口预填）。
 // 口径：资产一次拉全量在客户端过滤（数据量小，各 tab 计数顺手同源，不另发请求）；
 // 知识缺口不是资产——单独走 /knowledge-gaps，open 与 resolved 各拉一次合并展示。
-// 当前 tab 同步进 ?status=（刷新保持；客服拒答芯片跳 ?status=知识缺口）。
+// 当前 tab 同步进 ?status=（刷新保持；客服拒答芯片跳 ?status=知识缺口）；默认落在「待人洗」，
+// 无参数时不再回落「全部」。「工作队列 / 全部」同步进 ?view=（默认工作队列，滤掉 CI 探针行）。
+// 两处 URL 更新都走函数式 updater：整体替换会互相抹掉 status/view。
 
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowsClockwise, CaretRight, Plus, Warning } from '@phosphor-icons/react'
+import { ArrowsClockwise, CaretRight, MagnifyingGlass, Plus, Warning, X } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
-import type { AssetStatus, KnowledgeGap } from '../api/types'
+import type { AssetListItem, AssetStatus, KnowledgeGap } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import {
   formatDateTime,
@@ -18,6 +20,14 @@ import {
   isStale,
   sourceKindLabel,
 } from '../labels'
+import {
+  filterWorkAssets,
+  isIngested,
+  isPendingWash,
+  isPublished,
+  parseAssetView,
+  type AssetView,
+} from '../workQueue'
 import { ErrorBanner } from '../components/Banner'
 import ActionError from '../components/ActionError'
 import Empty from '../components/Empty'
@@ -76,10 +86,26 @@ export default function AssetsListPage() {
   }, [gapsQ.state])
   const openGapCount = gapsQ.state.phase === 'ok' ? gapsQ.state.data[0].length : null
 
-  // tab 由 ?status= 驱动（无参数/非法值回落「全部」），切换即写回 URL
+  // tab 由 ?status= 驱动（无参数/非法值回落「待人洗」——默认工作视角不是全量库）。
+  // 「全部」写显式 status=全部：清空 URL 会回落待人洗，点击像没反应。
   const statusParam = searchParams.get('status')
-  const activeTab: ListTab = isListTab(statusParam) ? statusParam : '全部'
-  const setTab = (tab: ListTab) => setSearchParams(tab === '全部' ? {} : { status: tab })
+  const activeTab: ListTab = isListTab(statusParam) ? statusParam : '待人洗'
+  const view = parseAssetView(searchParams.get('view'))
+  const setTab = (tab: ListTab) =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('status', tab)
+      return next
+    })
+  const setView = (target: AssetView) =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('view', target)
+      return next
+    })
+
+  // 搜索只做客户端过滤（数据量小），不进 URL：切 tab / view 保留输入，刷新即清。
+  const [query, setQuery] = useState('')
 
   // 登记抽屉：普通入口与「去补文档」共用，gap 存在时预填（key 切换保证预填干净落地）
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -96,25 +122,45 @@ export default function AssetsListPage() {
   const [retryingId, setRetryingId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
+  // 工作队列先收窄一次，计数、列表、摘要卡都在 scoped 上分叉——同一谓词单一来源
+  // （workQueue.filterWorkAssets），禁止各处复制。总览页计数同源。
+  const scoped = useMemo<AssetListItem[]>(
+    () => (view === 'work' ? filterWorkAssets(assets) : [...assets]),
+    [assets, view],
+  )
+
   const counts = useMemo(() => {
     return {
-      ingested: assets.filter((a) => a.status === 'ingested').length,
-      pending_review: assets.filter(
-        (a) => a.status === 'pending_review' && a.current_published_version_no === null,
-      ).length,
-      published: assets.filter((a) => a.current_published_version_no !== null).length,
+      ingested: scoped.filter(isIngested).length,
+      pending_review: scoped.filter(isPendingWash).length,
+      published: scoped.filter(isPublished).length,
     }
-  }, [assets])
+  }, [scoped])
 
-  // 「全部」= 不筛状态；已发布=指针非空（含修订中）；待人洗=纯新待办（无指针）
+  // 过滤顺序 view（scoped 已生效）→ status → 搜索。
+  // 「全部」= 不筛状态；已发布=指针非空（含修订中）；待人洗=纯新待办（无指针）——
+  // 三态口径与总览页同源（workQueue.isPendingWash/isPublished）。
+  // 有查询词时跳过状态 tab：搜索的语义是「找这条资产」，在当前视图内全状态搜——
+  // 否则在默认「待人洗」下搜已发布资产得 0 行，像这条资产不存在。
   const filtered = useMemo(() => {
-    if (activeTab === '全部' || activeTab === '知识缺口') return assets
-    if (activeTab === '已发布') return assets.filter((a) => a.current_published_version_no !== null)
-    if (activeTab === '待人洗') {
-      return assets.filter((a) => a.status === 'pending_review' && a.current_published_version_no === null)
-    }
-    return assets.filter((a) => a.status === TAB_TO_STATUS[activeTab])
-  }, [assets, activeTab])
+    const q = query.trim().toLowerCase()
+    let rows: typeof scoped
+    if (q !== '' || activeTab === '全部' || activeTab === '知识缺口') rows = scoped
+    else if (activeTab === '已发布') rows = scoped.filter(isPublished)
+    else if (activeTab === '待人洗') rows = scoped.filter(isPendingWash)
+    else rows = scoped.filter((a) => a.status === TAB_TO_STATUS[activeTab])
+
+    if (q === '') return rows
+    // NULL 标题用展示兜底「未命名资产」，ID 同时支持裸数字与 A-0000 形态。
+    return rows.filter((a) => {
+      const title = (a.title ?? '未命名资产').toLowerCase()
+      return (
+        title.includes(q) ||
+        String(a.id).includes(q) ||
+        formatAssetId(a.id).toLowerCase().includes(q)
+      )
+    })
+  }, [scoped, activeTab, query])
 
   const fillGap = (gap: KnowledgeGap) => {
     if (gap.product !== null) {
@@ -168,26 +214,55 @@ export default function AssetsListPage() {
           </button>
         }
       >
-        <div className="seg" role="tablist" aria-label="资产状态筛选">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              className={`seg-btn ${activeTab === tab ? 'seg-btn-active' : ''}`}
-              onClick={() => setTab(tab)}
-            >
-              {tab}
-              <span className={activeTab === tab ? 'text-ink-3' : ''}>
-                {tab === '全部'
-                  ? assets.length
-                  : tab === '知识缺口'
-                    ? (openGapCount ?? '—')
-                    : counts[TAB_TO_STATUS[tab]]}
-              </span>
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="seg" role="tablist" aria-label="资产状态筛选">
+            {TABS.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                className={`seg-btn ${activeTab === tab ? 'seg-btn-active' : ''}`}
+                onClick={() => setTab(tab)}
+              >
+                {tab}
+                <span className={activeTab === tab ? 'text-ink-3' : ''}>
+                  {tab === '全部'
+                    ? scoped.length
+                    : tab === '知识缺口'
+                      ? (openGapCount ?? '—')
+                      : counts[TAB_TO_STATUS[tab]]}
+                </span>
+              </button>
+            ))}
+          </div>
+          {activeTab === '知识缺口' ? null : (
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-[11px] text-caption">范围</span>
+              <div className="seg" role="tablist" aria-label="工作队列范围">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'work'}
+                  className={`seg-btn ${view === 'work' ? 'seg-btn-active' : ''}`}
+                  onClick={() => setView('work')}
+                  title="排除 CI 冒烟 / 证据探针（连接层登记的机器行）"
+                >
+                  工作队列
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'all'}
+                  className={`seg-btn ${view === 'all' ? 'seg-btn-active' : ''}`}
+                  onClick={() => setView('all')}
+                  title="含 CI 冒烟 / 证据探针的全部登记"
+                >
+                  全部登记
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </PageHeader>
 
@@ -223,6 +298,40 @@ export default function AssetsListPage() {
             <div className="stat-value">{openGapCount ?? '—'}</div>
             <div className="stat-hint">拒答排队 · 发布后关闭</div>
           </button>
+        </div>
+      ) : null}
+
+      {state.phase === 'ok' && activeTab !== '知识缺口' ? (
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="relative w-full max-w-xs">
+            <MagnifyingGlass
+              aria-hidden
+              size={13}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-caption"
+            />
+            <input
+              className="input w-full pl-8 pr-8"
+              aria-label="搜索资产"
+              placeholder="搜索标题 / ID（如 保温杯、A-0029）…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query !== '' ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm absolute right-1 top-1/2 -translate-y-1/2"
+                aria-label="清空搜索"
+                onClick={() => setQuery('')}
+              >
+                <X aria-hidden size={12} />
+              </button>
+            ) : null}
+          </div>
+          {query.trim() !== '' ? (
+            <span className="text-xs tabular-nums text-ink-3">
+              {filtered.length} 条匹配 · 搜索覆盖全部状态
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -344,19 +453,29 @@ export default function AssetsListPage() {
           </div>
         </>
       ) : filtered.length === 0 ? (
-        <div className="rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface/60">
-          <Empty
-            icon={<Plus aria-hidden size={24} />}
-            title={activeTab === '全部' ? '还没有资产' : `没有${activeTab}的资产`}
-            hint={EMPTY_HINTS[activeTab]}
-            action={
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => openDrawer(null)}>
-                <Plus aria-hidden size={13} weight="bold" />
-                登记资产
-              </button>
-            }
-          />
-        </div>
+        query.trim() !== '' ? (
+          <div className="rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface/60">
+            <Empty
+              icon={<MagnifyingGlass aria-hidden size={24} />}
+              title="没有匹配的资产"
+              hint="按标题（不区分大小写）或资产 ID 搜索：A-0029 / 29 都可命中；清空输入恢复当前筛选。"
+            />
+          </div>
+        ) : (
+          <div className="rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface/60">
+            <Empty
+              icon={<Plus aria-hidden size={24} />}
+              title={activeTab === '全部' ? '还没有资产' : `没有${activeTab}的资产`}
+              hint={EMPTY_HINTS[activeTab]}
+              action={
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => openDrawer(null)}>
+                  <Plus aria-hidden size={13} weight="bold" />
+                  登记资产
+                </button>
+              }
+            />
+          </div>
+        )
       ) : (
         <div className="panel overflow-x-auto">
           <table className="table-gov">

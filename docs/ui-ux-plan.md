@@ -4,7 +4,7 @@
 
 2026-09-10 外部复核（两路只读子代理逐条核验代码 + Owner 实测端点/只读查库）：以 file:line 与运行证据为准，正文已订正 9 处事实（Bitext→ABCD、`getVersionText` 可用性、发送钮与冻结线冲突、缺口商品预选、考核列、工作队列信号等），并补 §九。
 
-落地进度：**UX-B 引用只读证据视图已交付**（2026-09-10，`docs/progress/ux-b-evidence-view-closeout.md`；纯前端、后端零改动；含一处对 §四 UX-B Must.4 字面的裁决性偏离——anchor 指向「当前已发布版」也进只读，否则最常见引用点仍看不到正文）。下一包 = UX-A（工作台可扫读，含数据卫生前置）。
+落地进度：**UX-B 引用只读证据视图已交付**（2026-09-10，`docs/progress/ux-b-evidence-view-closeout.md`；纯前端、后端零改动；含一处对 §四 UX-B Must.4 字面的裁决性偏离——anchor 指向「当前已发布版」也进只读，否则最常见引用点仍看不到正文）。**UX-A1 工作台可扫读已交付**（`docs/progress/ux-a-workbench-closeout.md`；纯前端——工作队列默认视角（谓词=`mcp_registered` 且标题命中 smoke/probe）、列表跨状态搜索、商品按已定价优先排序、空会话「未开始」降噪；演示库未删，根因 `mcp_smoke.py` 留待 Owner 裁决）。下一刀 = UX-A2 目录回答模板（后端 + 评测纪律）。
 
 施工权威仍是 `docs/roadmap-product-hardening.md`（下一刀=第 42 刀转人工）。本文件是**平行工作流**：只改控制台观感与既有路径的交互，不改领域对象、不抢 42–44 刀号。Owner 可在 hardening 刀之间插入方案包，或在第 44 刀后成批做。
 
