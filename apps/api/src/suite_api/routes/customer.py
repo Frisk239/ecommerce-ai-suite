@@ -11,11 +11,11 @@
   delta* -> complete），**complete 不带 gap_id**（spec 工程裁决：顾客不暴露
   内部缺口 id，事件载荷白名单裁剪——拒答照常落缺口，操作者在治理台可见）。
 - ``POST /api/customer/sessions/{id}/messages/{mid}/feedback``（第 40 刀，
-  ADR 0044 §四）：顾客 thumbs-down「没有帮助」——闸序与鉴权同发问；body
-  白名单只有 helpful（v1 拒绝 true，thumbs-up 是 Out）；仅 kind=answer 且
-  citations 非空的消息可反馈（拒答/转人工无按钮也不收反馈），幂等=已反馈
-  409；分诊在代码：逐 citation 资产 last_verified_at=NULL（撤销验证，复审
-  由治理台未验证面自然承接）。
+  ADR 0044 §四；第 48 刀放开正反馈）：顾客 thumbs——闸序与鉴权同发问；body
+  只有 helpful 一个字段（缺字段 422）；仅 kind=answer 且 citations 非空的
+  消息可反馈（拒答/转人工无按钮也不收反馈），幂等=已反馈 409；
+  ``helpful=false`` 走分诊（逐 citation 资产 last_verified_at=NULL，撤销验证，
+  复审由治理台未验证面自然承接），``helpful=true`` 只记档不分诊。
 - ``POST /api/customer/sessions/{id}/handoff-tickets/{tid}``（第 42 刀，
   ADR 0046 §4）：转人工工单留联系方式——闸序同上；name/note 必填、email/
   phone 可选轻校验；工单须属于本会话（统一 404）；顾客回显自己的输入不掩。
@@ -28,6 +28,7 @@
 发布；拉历史属本刀 Out）。限流三道闸见 services/rate_limit（ADR 0033）。
 """
 
+import logging
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -49,13 +50,15 @@ from suite_api.models import (
     ServiceSession,
     SessionRating,
 )
-from suite_api.observability import record_chat_request
+from suite_api.observability import record_chat_request, record_csat_rating
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.handoff_tickets import submit_contact, ticket_no
 from suite_api.services.rate_limit import CustomerRateLimits
 from suite_api.services.triage import triage_asset_ids
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
+
+logger = logging.getLogger(__name__)
 
 # 联系方式轻校验（第 42 刀，ADR 0046 §4）：邮箱须有 @ 与域名点，电话只收
 # 数字/常见分隔符——不做严格 RFC 校验（联系方式是回访线索不是身份凭证），
@@ -441,6 +444,8 @@ def rate_session(
             status_code=status.HTTP_409_CONFLICT, detail="该会话已评过分"
         ) from exc
     db.refresh(rating)
+    record_csat_rating(rating.score)
+    logger.info("会话评分: session=%s score=%s", session_id, rating.score)
     return RatingOut(
         session_id=rating.session_id,
         score=rating.score,

@@ -314,7 +314,10 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
   const [ratingComment, setRatingComment] = useState('')
   const [ratingSending, setRatingSending] = useState(false)
   const [rated, setRated] = useState<number | null>(null)
-  const hasAnswer = messages.some((m) => m.role === 'agent' && m.kind === 'answer' && !m.streaming)
+  // 闸门=「有过一次 AI 回答（任何 kind）」，不是「答出来过」：只被拒答/转人工的
+  // 会话恰恰是最想吐槽的那批人，若把他们排除，CSAT 就成了「只统计满意的人」
+  // （审计刀 9 P0）。空会话仍然不打分（没有说话就没有服务可评）。
+  const hasReply = messages.some((m) => m.role === 'agent' && !m.streaming)
 
   const submitRating = async (score: number) => {
     if (session === null || ratingSending) return
@@ -492,7 +495,7 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
             </div>
 
             {/* 会话评分条（第 48 刀，CSAT）：有过回答才出现；评过变一行致谢 */}
-            {hasAnswer && (
+            {hasReply && (
               <div className="border-t border-line-2 bg-canvas px-3 py-2">
                 {rated !== null ? (
                   <div className="text-[11px] text-caption" role="status">

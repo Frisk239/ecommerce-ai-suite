@@ -288,3 +288,38 @@ def test_every_app_instance_records_red_metrics() -> None:
         client.get("/api/auth/me")
         body = client.get("/metrics", headers={"Authorization": "Bearer tok"}).text
         assert 'handler="/api/auth/me"' in body  # 两个 app 各自的 registry 都有样本
+
+
+# ---------- 审计刀 9：切片/CSAT 也进观测面 ----------
+
+
+def test_clip_cut_and_csat_metrics_registered() -> None:
+    """46/48 的产品动作要有自有指标（此前只有 HTTP RED 能看出「有人调过端点」）。"""
+    client = _client(metrics_token="tok")
+    body = client.get("/metrics", headers={"Authorization": "Bearer tok"}).text
+    for name in ("clip_cuts_total", "csat_ratings_total"):
+        assert f"# TYPE {name}" in body, name
+
+
+def test_clip_cut_and_csat_counters_increment() -> None:
+    from suite_api.observability import record_clip_cut, record_csat_rating
+
+    labels = {"result": "failed"}
+    before = _sample("clip_cuts_total", labels)
+    record_clip_cut(result="failed")
+    assert _sample("clip_cuts_total", labels) == before + 1
+
+    csat_labels = {"score": "3"}
+    csat_before = _sample("csat_ratings_total", csat_labels)
+    record_csat_rating(3)
+    assert _sample("csat_ratings_total", csat_labels) == csat_before + 1
+
+
+def test_upload_recording_is_sync_route() -> None:
+    """上传源录像必须是**同步**路由（FastAPI 丢线程池）：路由若是 async，200MB 的
+    SHA256 与整块落盘会跑在事件循环上，掐住同一循环里的顾客 SSE 流（审计刀 9 P1）。"""
+    import inspect
+
+    from suite_api.routes import clips as clips_routes
+
+    assert not inspect.iscoroutinefunction(clips_routes.upload_recording)

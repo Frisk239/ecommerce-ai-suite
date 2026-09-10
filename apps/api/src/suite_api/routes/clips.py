@@ -17,6 +17,7 @@ POST pick 的批量原子性、404/409 判定在 services/clips.pick_candidates�
 「已登记」。
 """
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -40,6 +41,8 @@ from suite_api.services.clips import pick_candidates, register_recording
 from suite_platform.storage import ObjectStorage
 
 router = APIRouter(prefix="/api/clips", tags=["clips"])
+
+logger = logging.getLogger(__name__)
 
 # 源录像上传上限 200MB（原始录像可远大于 2MB 文档上限）；仅按扩展名收 .mp4
 MAX_RECORDING_BYTES = 200 * 1024 * 1024
@@ -122,7 +125,7 @@ def list_candidates(
 
 
 @router.post("/recordings", response_model=ClipRecordingOut, status_code=status.HTTP_201_CREATED)
-async def upload_recording(
+def upload_recording(
     file: Annotated[UploadFile, File()],
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
@@ -142,7 +145,11 @@ async def upload_recording(
         )
     # 有界读取（上限 +1 字节）：先读满 200MB 再判超限等于把上限白设——大文件
     # 会先吃满内存/临时盘才被 413。多读 1 字节即可判定「超了」。
-    data = await file.read(MAX_RECORDING_BYTES + 1)
+    #
+    # **同步 def + file.file.read**（与 PUT …/bytes 同形，审计刀 9 P1）：路由若是
+    # async，200MB 的 SHA256 与整块落盘会**跑在事件循环上**，把同一循环里的顾客
+    # SSE 流掐住；同步路由由 FastAPI 丢进线程池，阻塞的只是那个工作线程。
+    data = file.file.read(MAX_RECORDING_BYTES + 1)
     if len(data) > MAX_RECORDING_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="源录像超过 200MB 上限"
@@ -151,6 +158,9 @@ async def upload_recording(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能作为源录像")
     recording = register_recording(
         db, storage, label=(filename or "未命名录像")[:200], content_bytes=data
+    )
+    logger.info(
+        "源录像已登记: id=%s label=%s size=%s", recording.id, recording.label, recording.size_bytes
     )
     return ClipRecordingOut(
         id=recording.id,

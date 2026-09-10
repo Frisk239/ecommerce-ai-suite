@@ -52,7 +52,11 @@ def _candidate(candidate_id: int = 1, status: str = PENDING, **overrides: Any) -
 
 class _FakeClipDb:
     """只喂 pick_candidates→register_asset 用到的最小会话面：
-    get(ClipCandidate/Product)/add/flush（给 Asset 编主键）/commit 记账。"""
+    get(ClipCandidate/Product)/add/flush（给 Asset 编主键）/commit 记账。
+
+    CAS 占位（审计刀 9）走 `services.clips._claim_candidate` 缝：这些纯单测用
+    monkeypatch 把缝钉成「总能抢到」，不必在假会话上模拟 SQLAlchemy 的 Update 语句
+    （并发语义由真库集成用例兜）。"""
 
     def __init__(self, candidates: list[ClipCandidate], product: Product | None = None) -> None:
         self.candidates = {c.id: c for c in candidates}
@@ -128,10 +132,16 @@ def test_video_field_set_is_empty_even_with_product() -> None:
     assert machine_wash_field_names("video", None) == []
 
 
+def _claim_always_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CAS 缝：纯单测不模拟并发，钉成「总能抢到」（=1 影响行数）。"""
+    monkeypatch.setattr("suite_api.services.clips._claim_candidate", lambda _db, _cid: 1)
+
+
 # ---------- 正路径：批量登记收口 ----------
 
 
-def test_pick_candidates_registers_video_assets() -> None:
+def test_pick_candidates_registers_video_assets(monkeypatch: pytest.MonkeyPatch) -> None:
+    _claim_always_wins(monkeypatch)
     c1 = _candidate(1)
     c2 = _candidate(
         2, timecode_start="00:14:05", timecode_end="00:14:38", transcript="整箱24瓶带走。"
@@ -158,7 +168,8 @@ def test_pick_candidates_registers_video_assets() -> None:
     assert assets[1].title == "整箱24瓶带走。"
 
 
-def test_pick_title_truncates_transcript_to_60_chars() -> None:
+def test_pick_title_truncates_transcript_to_60_chars(monkeypatch: pytest.MonkeyPatch) -> None:
+    _claim_always_wins(monkeypatch)
     long_transcript = "杯" * 100
     candidate = _candidate(1, transcript=long_transcript)
     db = _FakeClipDb([candidate], product=_product())
@@ -166,7 +177,8 @@ def test_pick_title_truncates_transcript_to_60_chars() -> None:
     assert assets[0].title == long_transcript[:60] == "杯" * 60
 
 
-def test_pick_dedupes_repeated_ids() -> None:
+def test_pick_dedupes_repeated_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    _claim_always_wins(monkeypatch)
     candidate = _candidate(1)
     db = _FakeClipDb([candidate], product=_product())
     storage = _MemoryStorage()

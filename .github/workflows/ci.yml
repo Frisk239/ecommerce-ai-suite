@@ -54,10 +54,18 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --frozen
+      - name: install ffmpeg
+        # 第 46 刀起「真切 mp4」是契约的一部分（test_real_clips_integration → 无 ffmpeg
+        # 会整例 skip）；显式装上，别赌 runner 自带（审计刀 9）。
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: refuse skip-green
         run: |
           if [ -z "${SUITE_TEST_DATABASE_URL}" ]; then
             echo "SUITE_TEST_DATABASE_URL must be set; skip-green is forbidden"
+            exit 1
+          fi
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            echo "ffmpeg must be on PATH; real-clip tests must not silently skip"
             exit 1
           fi
       - run: uv run pytest

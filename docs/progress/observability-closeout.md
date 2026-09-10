@@ -6,7 +6,7 @@
 
 | 件 | 交付 |
 | --- | --- |
-| 结构化日志 | `observability.configure_logging`：structlog JSON → stdout，经 `ProcessorFormatter` 接管 stdlib——**既有 12 处 `logging.getLogger(...)` 调用一行未改**即变 JSON 行；`LOG_LEVEL` 调级别（默认 INFO）。uvicorn 自带 handler 清掉并放开传播（否则同进程一半 JSON 一半裸文本） |
+| 结构化日志 | `observability.configure_logging`：structlog JSON → stdout，经 `ProcessorFormatter` 接管 stdlib——**既有 9 个模块 logger 的 `logging.getLogger(...)` 调用一行未改**即变 JSON 行；`LOG_LEVEL` 调级别（默认 INFO）。uvicorn 自带 handler 清掉并放开传播（否则同进程一半 JSON 一半裸文本） |
 | 关联 id | `CorrelationIdMiddleware`：**纯 ASGI**（不用 `BaseHTTPMiddleware`——它给流式响应再包一层 anyio 流，SSE 长连接在它下面是已知破坏面，而顾客主路径就是 SSE）。接受 `X-Request-Id`（8–64 位、`[A-Za-z0-9._-]`，不合规丢弃重生成）→ contextvar → 每条 JSON 日志的 `correlation_id` 字段 + 响应头回显 |
 | HTTP RED | instrumentator 默认指标；`excluded_handlers=["/metrics","/health"]`（自抓自我放大 + 探针噪声）；`should_exclude_streaming_duration=True`——SSE 端点只计到响应首字节，否则一条长流把 HTTP 延迟分布顶穿 |
 | 三个自定义 | `chat_requests_total{channel,kind,generated}`（`generated=false` 即模板/工具/目录回答，**顺带把「闸回退率」从记债变成可观测值**）、`ttft_seconds{model}`（口径=请求进入中间件 → 厂商首个增量，含检索/提议/工具步；只记生成路径）、`llm_tokens_total{direction,model}`（厂商 usage；缺失即不记，**不用字数估算冒充 token**） |
@@ -26,9 +26,9 @@
 4. **关联 id**：`curl -H "X-Request-Id: e2e-trace-00001" /health` → 响应头原样回显；`X-Request-Id: nope` → 换成 32 位 hex。容器日志里**同一条请求链共用一个 id**：`httpx → opencode 网关` 两次、`uvicorn.access` 那行都是 `4dcf51f8…`——一行一问能拼回一条链，这正是本刀要的东西。
 5. **启动日志**：`docker compose logs api` 首屏全是 JSON，**含 alembic 的迁移行**（`Context impl PostgresqlImpl.` 等）——证明 `fileConfigure` 顶掉配置的那条路被堵住（它也把 alembic 自己的 INFO 挡住了，现在照常可见）。
 6. **可选抓取（真跑通）**：`printf '%s' "$METRICS_TOKEN" > ops/metrics_token` + `--profile metrics up` → Prometheus 目标 `suite-api` **health=up**，`/api/v1/query?query=chat_requests_total` 返回 `{channel="customer",generated="true",kind="answer"} 1`——抓取链路（令牌 → 端点 → 指标）三段都真通。**订正**：Prometheus **不展开**配置文件里的 `${VAR}`（容器 env 有值、配置文件原样保留 → 抓取 401），故令牌从环境变量改成挂文件（README 已改，intake 裁决 10 已订正）。
-7. **门禁**：集成 **816 → 840 passed / 0 failed / 0 skipped**（新增 24 例：19 单测 + 5 集成）；ruff 全过；前端未改（build/lint 回归确认 7/0）；新依赖已落 `uv.lock`。
+7. **门禁**：集成 **816 → 856 passed / 0 failed / 0 skipped**（新增 18 单测 + 7 集成 + 评审补钉）；ruff 全过；前端未改（build/lint 回归确认 7/0）；新依赖已落 `uv.lock`。
 
-后端钉测：`test_observability.py` 19 例——id 收口六形态（合规/过短/过长/带空格/带换行/空）、中间件回显与生成、请求退出后 contextvar 复位、stdlib 调用变 JSON（字段齐）、级别过滤、usage 形状三态（dict/对象/None/缺一半）、两个计数器的增量、**标签集合断言**（`chat_requests_total` 恰三个标签等，多一个 id 类标签即基数风险）、闸三态（未配置/错 token/非 Bearer 方案）、端点含 RED+三个自定义、`/health` 与 `/metrics` 不入 HTTP 指标。`test_observability_integration.py` 5 例——默认栈关闭、拒答计数 `kind=refusal,generated=false`、**生成路径 TTFT+1 且计数 `generated=true`**、SSE 响应头回显、**拒答不记 TTFT**（不把检索耗时当首字延迟）。
+后端钉测：`test_observability.py` 18 例——id 收口六形态（合规/过短/过长/带空格/带换行/空）、中间件回显与生成、请求退出后 contextvar 复位、stdlib 调用变 JSON（字段齐）、级别过滤、usage 形状三态（dict/对象/None/缺一半）、两个计数器的增量、**标签集合断言**（`chat_requests_total` 恰三个标签等，多一个 id 类标签即基数风险）、闸三态（未配置/错 token/非 Bearer 方案）、端点含 RED+三个自定义、`/health` 与 `/metrics` 不入 HTTP 指标。`test_observability_integration.py` 7 例——默认栈关闭、拒答计数 `kind=refusal,generated=false`、**生成路径 TTFT+1 且计数 `generated=true`**、SSE 响应头回显、**拒答不记 TTFT**（不把检索耗时当首字延迟）。
 
 ## 评审处置（两轴独立只读子代理：规格符合性 / 工程健壮性）
 

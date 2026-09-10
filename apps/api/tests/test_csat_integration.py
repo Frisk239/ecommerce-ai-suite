@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY
 from sse_helpers import parse_sse_events
 
 from suite_api.models import ServiceSession, SessionRating
@@ -424,3 +425,14 @@ def test_reject_reason_at_max_length_is_accepted(api: ApiFixture) -> None:
     resp = client.post(f"/api/material/tasks/{task_id}/reject", json={"reason": "糊" * 200})
     assert resp.status_code == 200
     assert resp.json()["last_error"] == "人工打回：" + "糊" * 200
+
+
+def test_rating_records_csat_metric(api: ApiFixture) -> None:
+    """审计刀 9：评分要进指标（47 刀的观测面此前对 48 刀的新面完全瞎）。"""
+    client, _ = api
+    token = "csat-metric"
+    session_id = _customer_session(client, token)
+    before = REGISTRY.get_sample_value("csat_ratings_total", {"score": "5"}) or 0.0
+    assert _rate(client, session_id, token, 5, "很好").status_code == 200
+    after = REGISTRY.get_sample_value("csat_ratings_total", {"score": "5"}) or 0.0
+    assert after == before + 1

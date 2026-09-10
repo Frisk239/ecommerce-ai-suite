@@ -261,7 +261,7 @@ def test_pick_without_recording_keeps_timecode_text(api: ApiFixture) -> None:
     assert picked.status_code == 200
     detail = client.get(f"/api/assets/{picked.json()[0]['id']}").json()
     version = detail["versions"][0]
-    assert set(version["extracted_fields"]) == {"transcript"}  # 旧路径不预置字段
+    assert set(version["extracted_fields"]) == {"transcript"}  # 两条路径都预置 transcript 字段（第 46 刀收口：正文口径统一走字段）
     raw = (storage_root / version["object_key"]).read_bytes()
     assert raw.decode() == f"[00:30:00-00:30:12] {transcript}"
 
@@ -343,3 +343,54 @@ def test_seed_candidates_available(api: ApiFixture) -> None:
     rows = client.get("/api/clips/candidates").json()
     assert len(rows) >= len(SEED_CLIPS)
     assert all("recording" in row for row in rows)  # 列表出口带源录像字段
+
+
+def test_revision_keeps_legacy_text_suffix(api: ApiFixture) -> None:
+    """审计刀 9 P1：旧路径（无源录像）切片是 `.txt` 键装时间码文本——**开修订**
+    也必须沿用源版本的扩展名，否则会写出「.mp4 键装文本字节」，正是第 46 刀在
+    PUT …/bytes 上堵掉的同一类不一致（当时漏了 open_revision 这个姊妹端点）。"""
+    client, _ = api
+    _login(client)
+    candidate_id = _insert_candidate(
+        start="00:30:00", end="00:30:10", transcript="旧路径修订测试：无源录像"
+    )
+    picked = client.post("/api/clips/candidates/pick", json={"ids": [candidate_id]})
+    assert picked.status_code == 200
+    asset_id = picked.json()[0]["id"]
+    first_key = client.get(f"/api/assets/{asset_id}").json()["versions"][0]["object_key"]
+    assert first_key.endswith(".txt")
+
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+    revised = client.post(f"/api/assets/{asset_id}/revisions", json={})
+    assert revised.status_code == 201, revised.text
+    versions = client.get(f"/api/assets/{asset_id}").json()["versions"]
+    new_version = max(versions, key=lambda v: v["version_no"])
+    assert new_version["version_no"] == 2
+    assert new_version["object_key"].endswith(".txt")  # 不是 .mp4
+    # 字节仍是时间码文本（键与字节一致）
+    text = client.get(f"/api/assets/{asset_id}/versions/2/text")
+    assert text.status_code == 200
+    assert text.text.startswith("[00:30:00-00:30:10]")
+
+
+def test_claim_release_puts_candidate_back_to_pending(api: ApiFixture) -> None:
+    """CAS 占位的放回语义（审计刀 9 P1）：真切失败时若不放回，候选会卡在
+    registered 而「可重拣」就是假的——失败用例断言了终态，这条直接钉放回。"""
+    from sqlalchemy import select
+
+    from suite_api.models import ClipCandidate
+    from suite_api.services.clips import REGISTERED, _release_claim
+
+    client, _ = api
+    candidate_id = _insert_candidate(start="00:31:00", end="00:31:10", transcript="CAS 放回")
+    factory = client.app.state.session_factory
+    with factory() as db:
+        # 模拟 CAS 已把它占成 registered（锚先指一个不存在的 id 也无所谓，放回会清）
+        candidate = db.scalar(select(ClipCandidate).where(ClipCandidate.id == candidate_id))
+        candidate.status = REGISTERED
+        candidate.registered_asset_id = 1
+        db.commit()
+        _release_claim(db, candidate_id)
+        db.refresh(candidate)
+        assert candidate.status == "pending"
+        assert candidate.registered_asset_id is None

@@ -126,6 +126,21 @@ llm_tokens_total = Counter(
 
 _USAGE_DIRECTIONS = ("input", "output")
 
+# 切片拣选（审计刀 9）：result 三值有界——ok=真切出 mp4、failed=ffmpeg/时间码失败、
+# legacy=无源录像走时间码文本旧路径。切段是外部子进程，失败率必须看得见。
+clip_cuts_total = Counter(
+    "clip_cuts_total",
+    "切片拣选结果（ok=真切 mp4 / failed=切段失败 / legacy=无源录像走旧文本路径）。",
+    ["result"],
+)
+
+# CSAT（审计刀 9）：按分档计数——会话评分落在哪一档，直接与仪表分布同源。
+csat_ratings_total = Counter(
+    "csat_ratings_total",
+    "顾客会话评分次数（按 1–5 分档）。",
+    ["score"],
+)
+
 
 def record_chat_request(outcome: Any, *, channel: str) -> None:
     """发问结束记一次（channel ∈ customer/operator；kind 取 ComposedAnswer.kind）。
@@ -185,6 +200,16 @@ def observe_first_token(model: str) -> None:
 # ---------- 结构化日志 ----------
 
 
+def record_clip_cut(*, result: str) -> None:
+    """拣选结果记一次（result ∈ ok/failed/legacy，调用方给有界值）。"""
+    clip_cuts_total.labels(result=result).inc()
+
+
+def record_csat_rating(score: int) -> None:
+    """会话评分记一次（1–5；越界分不该出现，调用点在应用层 422 之后）。"""
+    csat_ratings_total.labels(score=str(score)).inc()
+
+
 def build_metrics_registry() -> CollectorRegistry:
     """每个 app 一份 metrics registry（RED 与三个自定义都在里面）。
 
@@ -197,7 +222,7 @@ def build_metrics_registry() -> CollectorRegistry:
     里（llm/engine）照常计数。
     """
     registry = CollectorRegistry()
-    for collector in (chat_requests_total, ttft_seconds, llm_tokens_total):
+    for collector in (chat_requests_total, ttft_seconds, llm_tokens_total, clip_cuts_total, csat_ratings_total):
         registry.register(collector)
     return registry
 
