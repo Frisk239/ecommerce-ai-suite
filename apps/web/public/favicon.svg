@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="电商 AI 套件">
+  <rect width="32" height="32" rx="6" fill="#0F1115" />
+  <path d="M7 11.5h18l-2.2 10.2a2 2 0 0 1-2 1.6H11.2a2 2 0 0 1-2-1.6Z" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" />
+  <path d="M12 11.5V10a4 4 0 0 1 8 0v1.5" fill="none" stroke="#4176E6" stroke-width="2" stroke-linecap="round" />
+</svg>

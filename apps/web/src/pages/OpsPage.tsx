@@ -120,13 +120,16 @@ export default function OpsPage() {
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
 
-  // 默认盯最新一条（列表倒序）；「重置轨迹」清空后回到待编排态，新建 run 再回填
+  // 默认盯最新一条（列表倒序）；「清空画布」后回到待编排态，新建/选中 run 再回填。
+  // cleared 必须显式记：只把 activeId 置 null 会回落 latest，按钮点了像没反应
+  // （走查实录 A3）。
+  const [cleared, setCleared] = useState(false)
   const active = useMemo(
     () => (activeId === null ? null : (runs.find((r) => r.id === activeId) ?? null)),
     [activeId, runs],
   )
   const latest = runs[0] ?? null
-  const shown = active ?? latest
+  const shown = cleared ? null : (active ?? latest)
   const hasFailed = shown !== null && shown.steps.some((s) => s.status === 'failed')
   const allDone = shown !== null && shown.steps.every((s) => s.status === 'done')
   const delivered = shown !== null && shown.delivered_at !== null
@@ -138,6 +141,7 @@ export default function OpsPage() {
     try {
       const run = await fn()
       setActiveId(run.id)
+      setCleared(false)
       reload()
     } catch (err) {
       setError(detailText(err))
@@ -165,13 +169,15 @@ export default function OpsPage() {
               <button
                 type="button"
                 className="btn btn-ghost"
+                title="只清空本页画布；服务端记录保留，重新开始编排会新建一条"
                 onClick={() => {
+                  setCleared(true)
                   setActiveId(null)
                   setError(null)
                 }}
               >
                 <ArrowsClockwise aria-hidden size={14} />
-                重置轨迹
+                清空画布
               </button>
             ) : null}
             {shown !== null && hasFailed ? (
@@ -235,8 +241,12 @@ export default function OpsPage() {
         <div className="rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface/60">
           <Empty
             icon={<Robot aria-hidden size={24} />}
-            title="还没有编排任务"
-            hint="上面选商品、点「开始编排」：三步轨迹（读商品→生成文案→组装）同步执行，回来即稳定态。生成步依赖厂商模型底座——底座不可用时该步失败，可重试。"
+            title={cleared ? '画布已清空' : '还没有编排任务'}
+            hint={
+              cleared
+                ? '画布已清空。服务端记录仍在（刷新会重新显示最近一条）——上面选商品点「开始编排」即新建一条。'
+                : '上面选商品、点「开始编排」：三步轨迹（读商品→生成文案→组装）同步执行，回来即稳定态。生成步依赖厂商模型底座——底座不可用时该步失败，可重试。'
+            }
           />
         </div>
       ) : (

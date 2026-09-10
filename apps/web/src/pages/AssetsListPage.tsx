@@ -93,6 +93,14 @@ export default function AssetsListPage() {
     )
   }, [gapsQ.state])
   const openGapCount = gapsQ.state.phase === 'ok' ? gapsQ.state.data[0].length : null
+  const resolvedGapCount = gapsQ.state.phase === 'ok' ? gapsQ.state.data[1].length : null
+  // 缺口分段（走查实录 A4）：此前 tab 徽标只算 open、表格却把已解决也混着列，
+  // 徽标 7 对表格 9 行。分段后列表与计数同口径，tab 徽标 = 默认「待补」段。
+  const [gapView, setGapView] = useState<'open' | 'resolved'>('open')
+  const visibleGaps = useMemo(
+    () => gaps.filter((g) => (gapView === 'open' ? g.status === 'open' : g.status !== 'open')),
+    [gaps, gapView],
+  )
 
   // tab 由 ?status= 驱动（无参数/非法值回落「待人洗」——默认工作视角不是全量库）。
   // 「全部」写显式 status=全部：清空 URL 会回落待人洗，点击像没反应。
@@ -335,6 +343,36 @@ export default function AssetsListPage() {
           </div>
         ) : (
           <div className="panel overflow-x-auto">
+            <div className="flex items-center gap-2 border-b border-line-1 px-4 py-2.5">
+              <div className="seg" role="tablist" aria-label="缺口状态筛选">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={gapView === 'open'}
+                  className={`seg-btn ${gapView === 'open' ? 'seg-btn-active' : ''}`}
+                  onClick={() => setGapView('open')}
+                  title="拒答后排队、还没补口径的缺口"
+                >
+                  待补
+                  <span className={gapView === 'open' ? 'text-ink-3' : ''}>
+                    {openGapCount ?? '—'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={gapView === 'resolved'}
+                  className={`seg-btn ${gapView === 'resolved' ? 'seg-btn-active' : ''}`}
+                  onClick={() => setGapView('resolved')}
+                  title="补了口径并发布后自动关闭的缺口（留档可回溯）"
+                >
+                  已解决
+                  <span className={gapView === 'resolved' ? 'text-ink-3' : ''}>
+                    {resolvedGapCount ?? '—'}
+                  </span>
+                </button>
+              </div>
+            </div>
             <table className="table-gov">
               <thead>
                 <tr>
@@ -348,7 +386,16 @@ export default function AssetsListPage() {
                 </tr>
               </thead>
               <tbody>
-                {gaps.map((gap) => (
+                {visibleGaps.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-[13px] text-ink-3">
+                      {gapView === 'open'
+                        ? '没有待补缺口——切到「已解决」看历史。'
+                        : '还没有已解决的缺口：补文档并发布后自动关闭，关闭记录留在这里。'}
+                    </td>
+                  </tr>
+                ) : (
+                  visibleGaps.map((gap) => (
                   <tr key={gap.id}>
                     <td className="font-mono text-xs text-ink-3">{formatGapId(gap.id)}</td>
                     <td className="max-w-[28rem] text-[13px] text-ink">{gap.question}</td>
@@ -407,7 +454,8 @@ export default function AssetsListPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>

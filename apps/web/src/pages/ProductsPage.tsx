@@ -9,8 +9,10 @@ import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { Product } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 import ActionError from '../components/ActionError'
 import CitationChip from '../components/CitationChip'
+import ConfirmDialog from '../components/ConfirmDialog'
 import Empty from '../components/Empty'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
@@ -80,6 +82,40 @@ function ProductDrawer({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // 关闭门禁：名称/类目/单价/币种任一改动即视为未保存，遮罩/Esc/X/取消一律先确认
+  // ——此前点遮罩会静默丢掉刚填的价（走查实录 A2）。
+  const [discardOpen, setDiscardOpen] = useState(false)
+  const dirty = useMemo(() => {
+    if (product === null) {
+      // 新建：类目改动也算（选了类目又关掉，等于白选）；币种默认 CNY
+      return (
+        name.trim() !== '' ||
+        priceYuan.trim() !== '' ||
+        currency !== 'CNY' ||
+        category !== '食品'
+      )
+    }
+    // 编辑：价格按「分」比，129 与 129.00 不算改动（字符串比会误报）
+    const parsed = parseYuanToCents(priceYuan)
+    const cents = 'error' in parsed ? null : parsed.cents
+    return (
+      name !== product.name ||
+      category !== product.category ||
+      cents !== product.price_cents ||
+      currency !== product.currency
+    )
+  }, [product, name, category, priceYuan, currency])
+  const requestClose = useCallback(() => {
+    if (submitting) return
+    if (dirty) {
+      setDiscardOpen(true)
+      return
+    }
+    onClose()
+  }, [submitting, dirty, onClose])
+  // Esc 与遮罩同一门禁；确认框开着时由确认框自己处理 Esc（避免一次 Esc 关两层）
+  useEscapeClose(true, requestClose, !discardOpen)
+
   // 规格模板逐项：编辑=服务端下发的该商品模板；新建=已知类目常量预览
   // （未知类目无预览，提交后以服务端派生为准）。
   const templateFields = useMemo(() => {
@@ -136,13 +172,13 @@ function ProductDrawer({
 
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={editing ? '编辑商品' : '上架商品'}>
-      <div className="modal-backdrop absolute inset-0" onClick={submitting ? undefined : onClose} aria-hidden />
+      <div className="modal-backdrop absolute inset-0" onClick={submitting ? undefined : requestClose} aria-hidden />
       <aside className="drawer-panel absolute inset-y-0 right-0 flex w-full max-w-md flex-col">
         <div className="flex items-center gap-2 border-b border-line-2 px-4 py-3">
           <div className="flex-1 text-[14px] font-semibold text-ink">
             {editing ? `编辑商品 P-${product?.id}` : '上架商品'}
           </div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} disabled={submitting} aria-label="关闭商品抽屉">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={requestClose} disabled={submitting} aria-label="关闭商品抽屉">
             <X aria-hidden size={14} />
           </button>
         </div>
@@ -262,7 +298,7 @@ function ProductDrawer({
           {error ? <ActionError message={error} /> : null}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-line-2 px-4 py-3">
-          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
+          <button type="button" className="btn btn-secondary" onClick={requestClose} disabled={submitting}>
             取消
           </button>
           <button type="button" className="btn btn-primary" onClick={() => void submit()} disabled={submitting}>
@@ -270,6 +306,21 @@ function ProductDrawer({
           </button>
         </div>
       </aside>
+      <ConfirmDialog
+        open={discardOpen}
+        title="放弃未保存的改动？"
+        body={
+          <div>
+            名称 / 类目 / 单价 / 币种里已有改动还没保存。放弃后这些改动丢失，商品保持原值。
+          </div>
+        }
+        confirmLabel="放弃改动"
+        onCancel={() => setDiscardOpen(false)}
+        onConfirm={() => {
+          setDiscardOpen(false)
+          onClose()
+        }}
+      />
     </div>
   )
 }

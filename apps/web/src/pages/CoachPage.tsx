@@ -19,6 +19,7 @@ import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { CoachQuestion, CoachRecord } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 import { formatDateTime } from '../labels'
 import { ErrorBanner } from '../components/Banner'
 import ActionError from '../components/ActionError'
@@ -99,6 +100,9 @@ function AnswerDrawer({
   const [showStandard, setShowStandard] = useState(false)
   const [result, setResult] = useState<CoachRecord | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // 提交中不可中断：Esc 与遮罩同一门禁（走查实录 A1：此前 Esc 无响应）
+  useEscapeClose(true, onClose, !busy)
 
   const submit = async () => {
     if (busy) return
