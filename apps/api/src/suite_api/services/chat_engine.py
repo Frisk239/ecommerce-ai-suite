@@ -65,7 +65,12 @@ from suite_api.services.agent_tools import (
     parse_tool_proposal,
     propose_prompt,
 )
-from suite_api.services.answer import ComposedAnswer, build_refusal_handoff_content, compose_answer
+from suite_api.services.answer import (
+    REFUSAL_CONTENT,
+    ComposedAnswer,
+    build_refusal_handoff_content,
+    compose_answer,
+)
 from suite_api.services.catalog_tools import try_catalog_answer, try_price_answer
 from suite_api.services.conversation_memory import PRONOUN_RE, recent_turns, retrieval_query
 from suite_api.services.handoff_tickets import (
@@ -181,6 +186,15 @@ class AskOutcome:
     # 第 42 刀（ADR 0046）：本会话工单（handoff/拒答路径非 None；answer/工具
     # 查得路径恒 None）。SSE complete 据此带工单号回执（运行时可选键）。
     ticket: HandoffTicket | None = None
+
+
+# 覆盖声明（第 58 刀）：模型自己说「证据没覆盖/没有相关信息」——**保守**只认
+# 「证据类主语 + 未覆盖类谓语」与「无法回答/提供」两种说法；模型真在回答时不会
+# 这么写（系统提示要求只依据证据作答）。
+_NO_COVERAGE_RE = re.compile(
+    r"(证据|资料|信息|数据)[^。；]{0,20}(未覆盖|未涉及|未包含|不包含|中没有|没有提及)"
+    r"|无法(回答|提供|确认|给出)[^。；]{0,10}(该|这个|此)?(问题|价格|信息|答案)"
+)
 
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
@@ -394,6 +408,21 @@ async def run_ask(
         except llm.LLMError as exc:
             # 错误细节只进服务端日志（llm.stream_chat 已保证消息不含密钥/端点）
             logger.warning("厂商生成失败，降级证据组装模板: %s", type(exc).__name__)
+    # 第 58 刀（审计刀 11 C-P1-1）：「弱命中 -> 模型自述证据未覆盖」也是一种**答不了**。
+    # 此前它被记成 kind=answer（还挂着引用），既不落缺口也不转人工——同一处知识
+    # 缺失因为「检索有没有边际命中」产生两种系统状态（无命中：拒答+缺口；有弱命中：
+    # 「已答」+引用）。收口：检出覆盖声明就按拒答处理（缺口照落、转人工照建、
+    # citations 清零、文案仍用既有拒答模板——一个知识洞只有一种形态）。
+    no_coverage = (
+        answer.kind == "answer"
+        and generated is not None
+        and _NO_COVERAGE_RE.search(generated) is not None
+    )
+    if no_coverage:
+        answer = ComposedAnswer(
+            content=REFUSAL_CONTENT, citations=[], kind="refusal", handoff=True
+        )
+        generated = None  # 用拒答模板落库（内容不是模型那句自述）
     fallback = answer.kind == "answer" and generated is None and not is_catalog
     content = generated if generated is not None else answer.content
 
@@ -443,7 +472,9 @@ async def run_ask(
         # 第 41 刀：回落命中的检索发生在工具式模板之前（触发条件即 retrieve
         # 已执行），不补检索状态行——retrieved_after_tool 只属于提议步混意图。
         retrieved_after_tool=tool_record is not None and not is_catalog,
-        fallback_reason="coverage" if gate_fallback else None,
+        fallback_reason=(
+            "coverage" if gate_fallback else ("no_coverage" if no_coverage else None)
+        ),
         ticket=ticket,
     )
 
