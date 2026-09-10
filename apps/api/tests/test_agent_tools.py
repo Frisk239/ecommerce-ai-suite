@@ -140,6 +140,21 @@ def test_parse_plain_text_means_no_tool_needed() -> None:
     assert decision == ToolDecision()
 
 
+def test_parse_handoff_sentinel_not_treated_as_unregistered_tool() -> None:
+    """第 42 刀（ADR 0046 §2）：handoff 是 sentinel，在查 registry 之前识别。
+
+    若按普通工具名查注册表会落「未注册工具」被拒（文案变 REJECTED_CONTENT），
+    语义全错——本测钉死识别顺序；handoff 不进 TOOL_REGISTRY（全集断言另测）。
+    """
+    decision = parse_tool_proposal("TOOL: handoff {}")
+    assert decision.handoff is True
+    assert decision.reject_reason is None
+    assert decision.proposal is None
+    # 大小写不敏感（同 TOOL_MARKER_RE 宽进口径）
+    assert parse_tool_proposal("tool: HANDOFF {}").handoff is True
+    assert "handoff" not in TOOL_REGISTRY
+
+
 def test_parse_empty_output_means_no_tool_needed() -> None:
     assert parse_tool_proposal("") == ToolDecision()
 

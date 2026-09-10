@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.models import Product
 from suite_api.services.category_schema import SCHEMA_BY_CATEGORY
+from suite_api.services.handoff_tickets import HUMAN_REQUEST_RE
 from suite_api.services.stock_tools import match_product
 
 # 工具式模板的轨迹名（SSE tool 事件与消息 tool 列同形状 {name, arg, result}，
@@ -49,8 +50,10 @@ _BARE_MUCH_RE = re.compile("多少")
 # 政策词闸（交接审查实修：退货运费/优惠规则/发票税费这类政策问即使带价格词
 # 也不是报价问——无证据库下答售价=答非所问，照旧拒答留缺口走治理去补）。
 _POLICY_RE = re.compile("退货|退换|退了|退款|运费|邮费|物流|快递|优惠|折扣|发票|收据|税费|保价|赔偿")
-# 显式要真人不抢（留第 42 刀）：转人工仍走既有拒答+转人工。
-_HUMAN_RE = re.compile("转人工|真人|人工客服|找人工")
+# 显式要真人/投诉/举报不抢。第 42 刀起 run_ask 已把同词表快路径前置在所有
+# 工具之前，故本闸在引擎路径内**永不触发**（超集关系）；保留它是为
+# catalog_intent 被单独调用时仍保持「显式要人不回落目录」的纯函数契约。
+_HUMAN_RE = HUMAN_REQUEST_RE
 
 # 规格词闸：类目模板字段键（单源：与 category_schema 同源，类目加字段自动
 # 生效——注意只要字段键，类目名本身不是规格词）+ 常见规格/单位词兜底。

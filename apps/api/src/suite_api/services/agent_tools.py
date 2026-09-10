@@ -8,12 +8,15 @@
 - ``propose_prompt(question, history)``：提议步双 prompt——system 含三工具
   描述与 ``TOOL: 工具名 {"参数": "值"}`` 单行输出约定（格式化约定而非
   function calling API：厂商网关零特殊依赖，ADR 0043 动机段）与「无需工具
-  则直接回答」指引；顾客问句过 redact（0038 纪律：进厂商 prompt 必掩）。
+  则直接回答」指引；第 42 刀加 handoff sentinel 选项（顾客明确要人/投诉/
+  举报时 ``TOOL: handoff {}``，不属于注册表）；顾客问句过 redact（0038
+  纪律：进厂商 prompt 必掩）。
 - ``parse_tool_proposal(llm_text)`` -> ``ToolDecision``：正则抓提议标记，
   三态——合法（``proposal`` 非 None）、被拒（``reject_reason`` 非 None：
   坏 JSON/未注册/参数不合法/格式坏）、纯文本（两者皆 None=模型认为无需
-  工具，调用方走检索步）。被拒时带 ``raw_name/raw_args`` 轨迹字段供消息
-  落库回放。
+  工具，调用方走检索步）；第 42 刀多一态 ``handoff``（sentinel 在查
+  registry 之前识别，见函数注释）。被拒时带 ``raw_name/raw_args`` 轨迹字段
+  供消息落库回放。
 - ``check_return_eligibility``（第 40 刀，ADR 0044 §一）：第三个可提议工具，
   阶段一资格查询（只读：窗期判定在代码 + eligible 时签发 HMAC 确认令牌）；
   **create_return 不进注册表**——写工具不在模型可提议集，创建只能由操作者
@@ -51,9 +54,10 @@ PROPOSE_SYSTEM_PROMPT = (
     "- get_order_status：查询订单状态与物流轨迹。参数 order_no 必填，"
     "格式为 SO-数字（如 SO-1001）。一次只能查一个订单。\n"
     "- get_stock：查询商品是否有货。参数 product_name 可选（商品名）。\n"
+    "顾客明确要求人工客服、投诉或举报时，转人工：只输出一行 TOOL: handoff {}\n"
     '需要调用工具时，只输出一行：TOOL: 工具名 {"参数名": "参数值"}\n'
     "无需工具（政策、售后、闲聊等）时，直接输出给顾客的回答文本，不要输出 TOOL。\n"
-    "除上述三个工具外不要提议任何操作；不能列出订单清单、不能导出、不能修改数据。"
+    "除上述三个工具与 handoff 外不要提议任何操作；不能列出订单清单、不能导出、不能修改数据。"
 )
 
 
@@ -82,12 +86,17 @@ class ToolProposal:
 @dataclass(frozen=True)
 class ToolDecision:
     """提议步裁决三态：合法（proposal 非 None）/ 被拒（reject_reason 非
-    None，raw_* 供轨迹落库）/ 纯文本（两者皆 None=无需工具走检索步）。"""
+    None，raw_* 供轨迹落库）/ 纯文本（两者皆 None=无需工具走检索步）。
+
+    第 42 刀（ADR 0046 §2）加 ``handoff``：模型按提示输出 ``TOOL: handoff {}``
+    时置真——handoff 是 sentinel 不是注册表工具（0043「三个只读工具」契约
+    不破）。三态之上多一个转人工态，消费方先判 handoff 再判其余。"""
 
     proposal: ToolProposal | None = None
     reject_reason: str | None = None
     raw_name: str | None = None
     raw_args: str | None = None
+    handoff: bool = False
 
 
 @dataclass(frozen=True)
@@ -139,6 +148,11 @@ def parse_tool_proposal(llm_text: str) -> ToolDecision:
             )
         return ToolDecision()  # 纯文本：模型认为无需工具
     raw_name, raw_args = match.group(1), match.group(2)
+    # 第 42 刀（ADR 0046 §2）：handoff 是 sentinel 不是注册表工具——必须在查
+    # registry 之前识别，否则会落「未注册工具」被拒（文案变 REJECTED_CONTENT，
+    # 语义全错）。注册表保持「三个只读工具」精确集合契约（不把 handoff 注册进去）。
+    if raw_name.lower() == "handoff":
+        return ToolDecision(handoff=True)
     spec = TOOL_REGISTRY.get(raw_name)
     if spec is None:
         return ToolDecision(

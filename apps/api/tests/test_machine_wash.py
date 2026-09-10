@@ -19,6 +19,7 @@ from suite_api.services.machine_wash import (
     extract_qa_draft,
     extract_shelf_life,
     parse_qa_output,
+    redact_contact,
     run_machine_wash,
     validate_qa_pairs,
 )
@@ -296,3 +297,50 @@ def test_validate_qa_pairs_shape_and_errors() -> None:
     for bad in ("不是数组", 42, None, [{"q": "缺答"}, {"q": "", "a": "答"}, "字符串项", [1]]):
         with pytest.raises(ValueError):
             validate_qa_pairs(bad)
+
+
+# ---------- redact_contact：工单联系方式出口掩（第 42 刀，ADR 0046 §6） ----------
+
+
+@pytest.mark.parametrize(
+    ("raw", "masked"),
+    [
+        ("13800138000", "1********00"),  # 连续手机号（同 redact 口径）
+        ("138-0013-8000", "1********00"),  # 带 - 分隔（redact 漏，本函数覆盖）
+        ("010-12345678", "0********78"),  # 座机带区号分隔
+        ("021 6234 5678", "0********78"),  # 空格分组座机
+        ("+86 138 0013 8000", "+8**********00"),  # 国际号：+ 前缀保留，数字段掩
+    ],
+)
+def test_redact_contact_masks_number_forms(raw: str, masked: str) -> None:
+    assert redact_contact(raw) == masked
+
+
+@pytest.mark.parametrize(
+    ("raw", "masked"),
+    [
+        ("ab@x.co", "****@x.co"),  # 短 local + 短 TLD（redact 的 ≥3 local 漏）
+        ("a@b.cn", "****@b.cn"),
+        ("lisi@example.com", "****@example.com"),
+    ],
+)
+def test_redact_contact_masks_email_forms(raw: str, masked: str) -> None:
+    assert redact_contact(raw) == masked
+
+
+def test_redact_contact_masks_note_with_mixed_pii() -> None:
+    """自由文本留言里的手机号与邮箱都掩，且原文不残留。"""
+    note = "我的手机13800138000，邮箱 ab@x.co，随时联系"
+    masked = redact_contact(note)
+    assert masked is not None
+    assert "13800138000" not in masked
+    assert "ab@x.co" not in masked
+    assert "1********00" in masked
+    assert "****@x.co" in masked
+
+
+def test_redact_contact_keeps_short_numbers_and_none() -> None:
+    """不足 7 位的数字串不动（订单号片段/年份等），None 原样返回。"""
+    assert redact_contact("共 12 件") == "共 12 件"
+    assert redact_contact("2026") == "2026"
+    assert redact_contact(None) is None

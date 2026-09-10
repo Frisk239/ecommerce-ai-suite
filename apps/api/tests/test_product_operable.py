@@ -395,19 +395,35 @@ def test_catalog_unpriced_then_price_patch_same_question_answers(api: ApiFixture
     assert hit.answer.citations == []
 
 
-def test_catalog_skips_spec_question_purity_and_human(api: ApiFixture) -> None:
-    """零回归闸：规格问/不纯列举/显式真人一律走既有拒答（retrieve 空时）。"""
+def test_catalog_skips_spec_question_and_impure_listing(api: ApiFixture) -> None:
+    """零回归闸：规格问/不纯列举一律走既有拒答（retrieve 空时，非 catalog）。"""
     client, _ = api
     _login(client)
     for question in (
         "帆布包42的作者是谁",  # 规格词闸（须走既有拒答，非 catalog）
         "会员日有什么优惠？",  # 不纯列举
-        "卖什么？转人工",  # 显式真人
     ):
         outcome, _ = _run_question(client, question)
         assert outcome.answer.kind == "refusal", question
         assert outcome.tool is None, question
         assert outcome.gap is not None, question
+
+
+def test_explicit_human_request_becomes_handoff_not_gap(api: ApiFixture) -> None:
+    """第 42 刀（ADR 0046）：显式「转人工」是转人工、不是知识题。
+
+    第 41 刀零回归闸里「卖什么？转人工」期望 refusal+gap；本刀后词表快路径
+    在目录回落之前接住——kind=handoff、回执带工单号 H-xxxx、**不产生缺口**。
+    """
+    client, _ = api
+    _login(client)
+    outcome, _ = _run_question(client, "卖什么？转人工")
+    assert outcome.answer.kind == "handoff"
+    assert outcome.answer.handoff is True
+    assert outcome.tool is not None and outcome.tool["name"] == "handoff"
+    assert outcome.gap is None
+    assert outcome.ticket is not None
+    assert f"H-{outcome.ticket.id:04d}" in outcome.answer.content
 
 
 def test_catalog_listing_content_mentions_total_count(api: ApiFixture) -> None:

@@ -15,11 +15,15 @@
   citations 非空的消息可反馈（拒答/转人工无按钮也不收反馈），幂等=已反馈
   409；分诊在代码：逐 citation 资产 last_verified_at=NULL（撤销验证，复审
   由治理台未验证面自然承接）。
+- ``POST /api/customer/sessions/{id}/handoff-tickets/{tid}``（第 42 刀，
+  ADR 0046 §4）：转人工工单留联系方式——闸序同上；name/note 必填、email/
+  phone 可选轻校验；工单须属于本会话（统一 404）；顾客回显自己的输入不掩。
 
 顾客没有 GET/列表/回流端点（0021：回流登记仍是操作者动作，顾客接口不能
 发布；拉历史属本刀 Out）。限流三道闸见 services/rate_limit（ADR 0033）。
 """
 
+import re
 import secrets
 from datetime import UTC, datetime
 from hmac import compare_digest
@@ -31,11 +35,18 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_db
-from suite_api.models import Asset, ServiceMessage, ServiceSession
+from suite_api.models import Asset, HandoffTicket, ServiceMessage, ServiceSession
 from suite_api.services.chat_engine import run_ask, sse_event_stream
+from suite_api.services.handoff_tickets import submit_contact, ticket_no
 from suite_api.services.rate_limit import CustomerRateLimits
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
+
+# 联系方式轻校验（第 42 刀，ADR 0046 §4）：邮箱须有 @ 与域名点，电话只收
+# 数字/常见分隔符——不做严格 RFC 校验（联系方式是回访线索不是身份凭证），
+# 但要挡住明显乱填；号码未被 redact 规则覆盖的（带分隔符）也允许落库。
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PHONE_RE = re.compile(r"^[0-9+\-() ]{5,20}$")
 
 
 def triage_asset_ids(citations: list[dict[str, Any]]) -> list[int]:
@@ -268,3 +279,94 @@ def leave_feedback(
         feedback=dict(message.feedback),
         triaged_asset_ids=triaged,
     )
+
+
+# ---------- 转人工联系方式（第 42 刀，ADR 0046 §4） ----------
+
+
+class HandoffContactBody(BaseModel):
+    """联系方式表单：name+note 必填、email/phone 可选、整表可跳过（不填也能拿到
+    工单——强制留联系方式伤转化；联系方式只是让工单可回访）。"""
+
+    name: str
+    note: str
+    email: str | None = None
+    phone: str | None = None
+
+
+class HandoffContactAck(BaseModel):
+    """顾客提交联系方式的回执（ADR 0046 §4）：只回工单号与提交时间。
+
+    顾客面回显自己的输入不掩，也不需要操作者的掩码出口模型——本模型独立，
+    不跨 route 复用 HandoffTicketOut（顾客 ack ≠ 操作者视图）。
+    """
+
+    ticket_no: str
+    contact_at: datetime
+
+
+@router.post("/sessions/{session_id}/handoff-tickets/{ticket_id}")
+def submit_handoff_contact(
+    session_id: int,
+    ticket_id: int,
+    body: HandoffContactBody,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)] = None,
+    limits: Annotated[CustomerRateLimits, Depends(get_rate_limits)] = None,
+) -> HandoffContactAck:
+    """顾客提交本会话工单的联系方式（ADR 0046 §4）。
+
+    闸序与发问/反馈一致：IP 闸（先于鉴权省 DB）-> 401（会话不存在与令牌无效
+    统一文案）-> 会话闸 -> 409（非 active：会话终结后联系方式面一并收口）-> 404
+    （工单不存在或不属于本会话——统一 404，不泄露其他会话工单存在性）-> 422
+    （name/note 非空、email/phone 轻校验）-> 落库。返回工单号+提交时间的小回执
+    （顾客面不需要操作者视图；原文只落库，操作者面出口掩）。
+    """
+    retry_after = limits.check_ask_ip(client_ip(request))
+    if retry_after is not None:
+        raise _rate_limited(retry_after)
+
+    session = db.get(ServiceSession, session_id)
+    token = _bearer_token(request)
+    if (
+        session is None
+        or token is None
+        or session.customer_token is None
+        or not compare_digest(session.customer_token.encode(), token.encode())
+    ):
+        raise _unauthorized()
+
+    retry_after = limits.check_ask_session(str(session_id))
+    if retry_after is not None:
+        raise _rate_limited(retry_after)
+
+    if session.status != ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"只有进行中的会话可以提交联系方式，当前状态: {session.status}",
+        )
+
+    ticket = db.get(HandoffTicket, ticket_id)
+    if ticket is None or ticket.session_id != session_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工单不存在")
+
+    name = body.name.strip()
+    note = body.note.strip()
+    if not name or not note:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="姓名与留言不能为空"
+        )
+    email = (body.email or "").strip() or None
+    phone = (body.phone or "").strip() or None
+    if email is not None and _EMAIL_RE.fullmatch(email) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="邮箱格式不正确"
+        )
+    if phone is not None and _PHONE_RE.fullmatch(phone) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="电话格式不正确"
+        )
+
+    submit_contact(db, ticket, name=name, note=note, email=email, phone=phone)
+    # 联系人原文只落库；顾客 ack 只回工单号+提交时间（不借操作者掩码模型）
+    return HandoffContactAck(ticket_no=ticket_no(ticket), contact_at=ticket.contact_at)

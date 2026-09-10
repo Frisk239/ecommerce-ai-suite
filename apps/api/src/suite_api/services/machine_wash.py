@@ -176,6 +176,39 @@ def redact(text: str) -> str:
     return _PHONE_RE.sub(_mask_phone, text)
 
 
+# ---------- 联系方式出口掩（第 42 刀，ADR 0046 §6） ----------
+
+# 联系方式形态比正文宽：短 local / 短 TLD 也算邮箱（redact 的 ≥3 local 漏掉
+# ab@x.co）；电话含空格/-/. 分隔的座机/国际号（redact 只认 11 位连续手机号）。
+# 本组只服务「工单联系方式出口掩」——不改既有 redact（全局爆炸半径）。
+# 注意：本函数会把日期等 ≥7 位带分隔数字串一并掩掉——note 是自由文本，宁可
+# 多掩不可漏掩（0038「出口必掩」优先于展示保真）。
+_CONTACT_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# 至少两个数字、允许中间夹空格/制表/`-`/`.`；总位数不足 7 的原样保留
+_CONTACT_NUMBER_RE = re.compile(r"\d[\d \t\-.]*\d")
+
+
+def _mask_contact_number(match: re.Match[str]) -> str:
+    digits = re.sub(r"\D", "", match.group())
+    if len(digits) < 7:
+        return match.group()
+    return f"{digits[0]}{'*' * (len(digits) - 3)}{digits[-2:]}"
+
+
+def redact_contact(value: str | None) -> str | None:
+    """联系方式字段出口掩（ADR 0046 §6，先邮箱后号码避免互相破坏）。
+
+    邮箱 ``[\w.+-]+@[\w-]+(\.[\w-]+)+`` -> ``****@域名``（短 local / 短 TLD
+    也覆盖）；数字串含空格/``-``/``.`` 分隔且总位数 ≥7 的电话/座机/国际号 ->
+    只留首位与末两位（``138-0013-8000`` -> ``1********00``）。None 原样返回。
+    只给操作者面用；顾客回显自己的输入不掩。
+    """
+    if value is None:
+        return None
+    masked = _CONTACT_EMAIL_RE.sub(lambda m: f"****@{m.group().split('@', 1)[1]}", value)
+    return _CONTACT_NUMBER_RE.sub(_mask_contact_number, masked)
+
+
 def extract_document_fields(text: str, field_names: Iterable[str]) -> dict[str, dict]:
     """对字段集合逐个抽取：``{value, source:"machine"}`` 或 ``{abstained: true}``。
 

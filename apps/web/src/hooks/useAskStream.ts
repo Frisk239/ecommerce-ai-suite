@@ -111,6 +111,9 @@ export function useAskStream(options: AskStreamOptions): AskStream {
               gapId: payload.gap_id ?? null,
               fallback: payload.fallback ?? false,
               tool: payload.tool ?? m.tool,
+              // 第 42 刀（ADR 0046）：handoff/拒答路径工单回执（运行时可选键）
+              ticketId: payload.ticket_id ?? null,
+              ticketContactAt: payload.ticket_contact_at ?? null,
             }))
           },
         },
