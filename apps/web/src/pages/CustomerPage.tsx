@@ -12,13 +12,14 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUp, ChatCircleDots, Prohibit, Stop, ThumbsDown, X } from '@phosphor-icons/react'
-import { detailText } from '../api/client'
+import { ApiError, detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { HandoffTicketCreate } from '../api/types'
 import MessageBubble, { type UiMessage } from '../components/MessageBubble'
 import { ErrorBanner } from '../components/Banner'
 import Empty from '../components/Empty'
 import { useAskStream } from '../hooks/useAskStream'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 
 const SUGGESTIONS = [
   '保温杯的净含量是多少？',
@@ -130,6 +131,9 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
   const [session, setSession] = useState<CustomerSession | null>(null)
   const [input, setInput] = useState('')
   const [error, setError] = useState<unknown>(null)
+  // 令牌过期/失效（第 45a 刀 TTL；审计刀 8 P1）：服务端对过期与无效同 401 同文案，
+  // 前台必须给一条出路——否则顾客只会反复撞「会话不存在或令牌无效」，输入框还开着。
+  const [expired, setExpired] = useState(false)
   const [creating, setCreating] = useState(false)
 
   // 第 40 刀（ADR 0044 §四）：「没有帮助」反馈——已反馈的消息 id 集合（本地
@@ -156,7 +160,10 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
       if (session === null) return Promise.resolve()
       return api.askCustomer(session.id, session.token, question, handlers, signal)
     },
-    onError: setError,
+    onError: (err) => {
+      setError(err)
+      if (err instanceof ApiError && err.status === 401) setExpired(true)
+    },
     pruneEmptyOnFailure: true,
   })
 
@@ -170,14 +177,9 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
   }, [messages.length, totalChars])
 
   // 停止：Esc 与发送钮原位替换（与操作者预览同一状态机，UX-NOTES §二点八）
-  useEffect(() => {
-    if (!streaming) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') stop()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [streaming, stop])
+  // 流式中 Esc 停止（审计刀 8：与抽屉/弹层同用 useEscapeClose 单一出处——
+  // 原先两页各抄一份同样的 window 监听）
+  useEscapeClose(streaming, stop)
 
   // 嵌入判定（第 45b 刀）：**被框住就算嵌入**，不只看 /widget 路由——否则第三方
   // 直接 iframe /customer 就绕过了来源白名单。宿主来源取自 document.referrer；
@@ -214,6 +216,15 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
     } finally {
       setCreating(false)
     }
+  }
+
+  // 令牌过期后的出路：清掉过期态并重新签发（顾客自己能走完，不用去翻右上角）
+  const restartAfterExpiry = async () => {
+    setExpired(false)
+    setError(null)
+    resetMessages()
+    setSession(null)
+    await startSession()
   }
 
   // 嵌入形态的「收起」：把关闭意图 postMessage 回宿主（targetOrigin 用宿主来源，
@@ -275,7 +286,7 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
     )
   }
 
-  const canAsk = session !== null && !streaming
+  const canAsk = session !== null && !streaming && !expired
 
   // 转人工工单联系方式提交（第 42 刀，ADR 0046 §4）：成功即把该工单标为已记录
   // （同会话多条 handoff 消息共享同一工单，故按工单 id 记）；失败上抛给表单内联呈现。
@@ -350,7 +361,22 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
         ) : null}
       </header>
 
-      {error !== null && <ErrorBanner error={error} />}
+      {expired ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2.5 rounded-[8px] border border-[rgba(154,91,6,0.25)] bg-[rgba(154,91,6,0.05)] px-3.5 py-2.5 text-[13px] leading-5 text-warn">
+          <span className="min-w-0 flex-1">
+            这段会话的访问令牌已过期（有效期 24 小时），需要重新开始一段咨询。
+          </span>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm shrink-0"
+            onClick={() => void restartAfterExpiry()}
+            disabled={creating}
+          >
+            {creating ? '创建中…' : '重新开始'}
+          </button>
+        </div>
+      ) : null}
+      {error !== null && !expired ? <ErrorBanner error={error} /> : null}
 
       <section
         className="panel flex min-h-0 flex-1 flex-col overflow-hidden"

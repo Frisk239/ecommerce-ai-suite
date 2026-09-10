@@ -487,3 +487,32 @@ def test_feedback_rejects_wrong_shapes(gate_env: TestClient) -> None:
         ).status_code
         == 422
     )
+
+
+def test_customer_channel_never_sees_write_credential(gate_env: TestClient) -> None:
+    """审计刀 8 P1：两阶段写的 `confirmation_token` 只在操作者面出现。
+
+    它写进工具条 result（确认端点据此执行 create_return）。此前 SSE 两通道同形状
+    地把工具条原样下发，顾客浏览器里能看到这份**写动作凭证**——ADR 0044 的边界是
+    「顾客与模型都不掌握创建权」。本用例同时钉住两侧：操作者面必须有、顾客面必须无。
+    """
+    client = gate_env
+    sid = client.post("/api/service/sessions").json()["id"]
+    tool_event = next(d for e, d in _ask(client, sid, "SO-2001 我想退货") if e == "tool")
+    assert "token=" in tool_event["result"]  # 操作者面：确认要用，必须有
+
+    client.cookies.clear()
+    created = client.post("/api/customer/sessions").json()
+    with client.stream(
+        "POST",
+        f"/api/customer/sessions/{created['session_id']}/messages",
+        json={"content": "SO-2001 我想退货"},
+        headers={"Authorization": f"Bearer {created['token']}"},
+    ) as resp:
+        raw = "".join(resp.iter_text())
+    events = parse_sse_events(raw)
+    customer_tool = next(d for e, d in events if e == "tool")
+    assert "token=" not in customer_tool["result"]
+    assert "token=" not in str(events[-1][1].get("tool"))
+    # 工具条本身仍在（只是没有凭证）——顾客仍能看到「已发生的动作」
+    assert customer_tool["name"] == "check_return_eligibility"

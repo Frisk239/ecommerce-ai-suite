@@ -123,6 +123,8 @@ def check_return_eligibility(db: Session, order_no: str) -> dict[str, Any]:
     , confirmation_token]}``；查无 ``{found: False}``；DB 异常 ``{error: True}``
     （吞异常尽力回滚，与订单工具同口径——转人工由引擎 handoff 分支表达）。"""
     try:
+        # 只读路径**不加行锁**（审计刀 8：串行化只需要在 confirm 那处；给只读的
+        # 资格查询上锁会白占行锁、徒增阻塞）
         order = db.scalar(select(Order).where(Order.order_no == order_no))
     except SQLAlchemyError:
         logger.exception("退货资格查询订单失败: order_no=%s", order_no)
@@ -191,7 +193,9 @@ def confirm_return(db: Session, order_no: str, token: str) -> dict[str, Any]:
     if not verify_token(token, order_no, True):
         return {"ok": False, "reason": "invalid_token"}
     try:
-        order = db.scalar(select(Order).where(Order.order_no == order_no))
+        # 行锁串行化（审计刀 8 P2）：事件是 JSONB 整段覆写，无锁时两个并发确认
+        # 会「后写覆盖先写」（今天两写相同故无害，将来别的并发事件写入就会丢）
+        order = db.scalar(select(Order).where(Order.order_no == order_no).with_for_update())
     except SQLAlchemyError:
         logger.exception("退货确认查询订单失败: order_no=%s", order_no)
         try:

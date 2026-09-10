@@ -20,6 +20,7 @@ import { api } from '../api/endpoints'
 import type { ServiceSessionSummary } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { useAskStream } from '../hooks/useAskStream'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 import {
   SERVICE_SESSION_STATUS_LABEL,
   ASSET_STATUS_LABEL,
@@ -201,14 +202,9 @@ export default function ServicePage() {
   )
 
   // Esc 停止（textarea 流式期间被禁用，事件不再冒泡，挂 window 级）
-  useEffect(() => {
-    if (!streaming) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') stop()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [streaming, stop])
+  // 流式中 Esc 停止（审计刀 8：与抽屉/弹层同用 useEscapeClose 单一出处——
+  // 原先两页各抄一份同样的 window 监听）
+  useEscapeClose(streaming, stop)
 
   const newSession = async () => {
     if (creating || streaming) return

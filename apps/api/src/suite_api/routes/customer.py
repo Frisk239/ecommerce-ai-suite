@@ -28,7 +28,7 @@ import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -40,6 +40,7 @@ from suite_api.models import Asset, HandoffTicket, ServiceMessage, ServiceSessio
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.handoff_tickets import submit_contact, ticket_no
 from suite_api.services.rate_limit import CustomerRateLimits
+from suite_api.services.triage import triage_asset_ids
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
 
@@ -49,23 +50,6 @@ router = APIRouter(prefix="/api/customer", tags=["customer"])
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _PHONE_RE = re.compile(r"^[0-9+\-() ]{5,20}$")
 
-
-def triage_asset_ids(citations: list[dict[str, Any]]) -> list[int]:
-    """负反馈分诊的资产集合（纯函数便于单测）：逐 citation 收集 asset_id
-    去重升序——分诊语义见 leave_feedback（ADR 0044 §四）。
-
-    防御式解析（第 43 刀加固，读路径复用后不允许坏行 500）：只收 dict 且
-    ``asset_id`` 为 int 的条目——键缺失、``asset_id: null``、字符串 id 都跳过
-    （``int(None)`` 会抛 TypeError；bool 是 int 子类，防御性排除，同 lineage 口径）。
-    """
-    asset_ids: set[int] = set()
-    for citation in citations:
-        if not isinstance(citation, dict):
-            continue
-        asset_id = citation.get("asset_id")
-        if isinstance(asset_id, int) and not isinstance(asset_id, bool):
-            asset_ids.add(asset_id)
-    return sorted(asset_ids)
 
 ACTIVE = "active"
 
@@ -145,11 +129,12 @@ def _widget_gate(request: Request) -> str | None:
     残留风险（如实记录，README 局限段同述）：该头由我们的前端填写，宿主若自己伪造
     仍可能过——要彻底堵死需在边缘/反代层拦文档请求（本仓是 dev 栈，没有这层）。
     """
-    origin = (request.headers.get(_WIDGET_ORIGIN_HEADER) or "").strip().rstrip("/")
+    origin = (request.headers.get(_WIDGET_ORIGIN_HEADER) or "").strip().rstrip("/").lower()
     if origin == "":
         return None
+    # 小写归一：浏览器报的 origin 主机名恒为小写，白名单手写成大写不该误拒（审计刀 8 P3）
     allowed = {
-        item.strip().rstrip("/")
+        item.strip().rstrip("/").lower()
         for item in request.app.state.settings.widget_allowed_origins.split(",")
         if item.strip()
     }

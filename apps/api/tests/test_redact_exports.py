@@ -544,3 +544,17 @@ def test_mcp_export_and_search_masked(mcp_env: Any) -> None:
     assert MASKED_PHONE in out["get"]["content"]
     # 对象键/版本指针不动（字节不动纪律）：响应仍带真实 object_key
     assert out["get"]["object_key"]
+
+
+def test_first_question_masks_separated_phone_and_short_domain_email() -> None:
+    """审计刀 8 P1：`_first_question` 的产物是**对话资产 title**（随 MCP/导出外流），
+    必须用覆盖面更广的 `redact_contact`——`redact` 漏 `138-0013-8000` 这类带分隔
+    号码与 `ab@x.co` 这类短域邮箱（第 42 刀的 P1 已实证）。
+    """
+    from suite_api.routes.service import _first_question
+
+    assert "138-0013-8000" not in _first_question("我的电话是 138-0013-8000，麻烦回电")
+    assert "ab@x.co" not in _first_question("邮箱 ab@x.co 可以联系我")
+    # 常规形态仍掩（redact 的既有能力不回退）
+    assert "13800138000" not in _first_question("手机 13800138000")
+    assert "zhang@example.com" not in _first_question("邮箱 zhang@example.com")

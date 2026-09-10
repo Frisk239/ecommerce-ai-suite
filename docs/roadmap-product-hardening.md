@@ -58,7 +58,7 @@
 ### 第 45 刀：顾客令牌 TTL + 嵌入 widget
 
 - `customer_token` 加 expires（迁移 + 签发即 24h + 过期 401 与无效同文案——安全面补齐，审计刀 2 以来在案）。
-- **单文件 embed.js**（调研：Crisp loader 实测 7.6KB 量级；iframe 面板最强隔离 + launcher Shadow DOM 是 Intercom 双保险；reference/web-widget 的 esbuild iife 单文件 + Custom Element + 第一方 localStorage 访客 id + origin allowlist 全套可抄）：~2KB loader（动态 createElement iframe 指向独立 `/widget` 轻构建——iframe 内复用 /customer 逻辑或裁剪版）；宿主一行 `<script src=".../embed.js" data-origin>`；postMessage open/close；**origin allowlist 是唯一闸**（服务端配置，非白名单 403——抄 web-widget 纪律）；访客身份第一方 localStorage uuid（抄 anythingllm-embed 模式）。README 写 CSP 放行清单。
+- **单文件 embed.js**（调研：Crisp loader 实测 7.6KB 量级；iframe 面板最强隔离 + launcher Shadow DOM 是 Intercom 双保险；reference/web-widget 的 esbuild iife 单文件 + Custom Element + 第一方 localStorage 访客 id + origin allowlist 全套可抄）：单文件 loader（原生 JS，实测约 5.7KB 未压缩；审计刀 8 订正「~2KB」的估计值）——动态 createElement iframe 指向 `/widget`——iframe 内复用 /customer 逻辑或裁剪版）；宿主一行 `<script src=".../embed.js" data-origin>`；postMessage open/close；**origin allowlist 是唯一闸**（服务端配置，非白名单 403——抄 web-widget 纪律）；访客身份第一方 localStorage uuid（抄 anythingllm-embed 模式）。README 写 CSP 放行清单。
 
 ### 第 46 刀：直播切片真链路（最小）
 
