@@ -67,8 +67,9 @@ class Product(Base):
     # 第 41 刀单价（分）：NULL=未定价；currency 缺省 CNY（迁移 0018 存量回填）。
     price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default=text("'CNY'"))
-    # 第 50 刀来源（迁移 0026）：商品是从哪来的（open_dataset=Wikidata/OFF 导入、
-    # seed=种子、NULL=运营在上架抽屉里手建）。**只读展示**——来源是既成事实，
+    # 第 50 刀来源（迁移 0026；第 55 刀拆细）：商品是从哪来的（wikidata /
+    # openfoodfacts / wands = 三份开放数据集、review_import = 评论导入、
+    # open_dataset = 通用类（预留）、seed=种子、NULL=运营在上架抽屉里手建）。**只读展示**——来源是既成事实，
     # 不是运营可改的属性（可改就成可造假的溯源），POST/PATCH 不收该字段。
     source_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
 

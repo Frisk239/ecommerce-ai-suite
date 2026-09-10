@@ -12,7 +12,7 @@
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -46,6 +46,28 @@ _FULLWIDTH_PUNCT = str.maketrans(
 )
 # 问句尾标点（全角在前、半角在后；rstrip 按集合去，循环到非集合字符为止）
 _TRAILING_PUNCT = "？?！!。，、；;.,"
+
+
+def resolve_gap_answered_by_catalog(db: Session, question: str) -> bool:
+    """目录回落答上了 -> 同问的 open 缺口收掉（第 56 刀，审计刀 11 P0-1）。
+
+    为什么：缺口是「知识待补」的待办。可**商品目录/价格**这类问句现在由目录回落
+    （工具式模板，读实时行价）直接答——它不再需要补一份文档，缺口挂着会让治理台的
+    「待补」写着客服当下已经能答的问题（点「去补文档」还会把人引去补一份不需要的
+    文档）。只关**同问**（normalized_question 相同）且 open 的行；`resolved_by_asset_id`
+    保持 NULL（它不是靠文档补上的，如实留白）。返回是否关掉了。
+    """
+    gap = db.scalar(
+        select(KnowledgeGap).where(
+            KnowledgeGap.normalized_question == normalize_question(question),
+            KnowledgeGap.status == "open",
+        )
+    )
+    if gap is None:
+        return False
+    gap.status = "resolved"
+    gap.resolved_at = datetime.now(UTC)
+    return True
 
 
 def normalize_question(question: str) -> str:

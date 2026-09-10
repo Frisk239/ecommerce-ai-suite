@@ -23,7 +23,7 @@ export type AssetSourceKind =
   | 'seed'
   /** 第 50 刀：评论数据集导入（200 条真实评论资产）。 */
   | 'review_import'
-  /** 第 50 刀：开放数据集（通用类；第 55 刀起具体数据集各有其词）。 */
+  /** 通用「开放数据集」（第 50 刀；第 55 刀起具体数据集各有其词，库里不再用它）。 */
   | 'open_dataset'
   /** 第 55 刀：Wikidata 商品。 */
   | 'wikidata'
@@ -313,6 +313,8 @@ export interface ServiceSessionDetail extends ServiceSession {
   /** 第 42 刀（ADR 0046）：本会话工单（一会话一单，无则 null）。操作者面
    * 电话/邮箱已出口掩（name 不掩），详情头部据此渲染「结单」动作。 */
   ticket: HandoffTicket | null
+  /** 第 54 刀：嵌入宿主的来源站点（与列表同源；独立访问/操作者预览为 null）。 */
+  host_origin: string | null
 }
 
 // ---------- 转人工工单（第 42 刀，ADR 0046） ----------

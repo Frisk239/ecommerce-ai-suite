@@ -74,7 +74,10 @@ from suite_api.services.handoff_tickets import (
     ticket_no,
     wants_human,
 )
-from suite_api.services.knowledge_gaps import record_refusal_gap
+from suite_api.services.knowledge_gaps import (
+    record_refusal_gap,
+    resolve_gap_answered_by_catalog,
+)
 from suite_api.services.machine_wash import redact
 from suite_api.services.order_tools import (
     find_order_no,
@@ -344,6 +347,10 @@ async def run_ask(
         answer = ComposedAnswer(content=catalog.content, citations=[], kind="answer", handoff=False)
         if tool_record is None:
             tool_record = catalog.tool
+        # 第 56 刀（审计刀 11 P0-1）：目录能答 = 这条不是「知识待补」——同问的
+        # open 缺口一并收掉（否则治理台「待补」写着客服当下已经能答的问题，
+        # 点「去补文档」还把人引去补一份不需要的文档）。同事务，随本问一起落库。
+        resolve_gap_answered_by_catalog(db, question)
     else:
         is_catalog = False
         answer = compose_answer(hits, assets_meta(db, hits))

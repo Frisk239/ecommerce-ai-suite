@@ -273,9 +273,14 @@ def test_upgrade_0028_splits_open_dataset_by_shape(backfill_db_url: str) -> None
             "        ('document', 'pending_review', 'upload', '旧结构普通文档')"
         )
 
-    command.upgrade(cfg, "head")
+    # **升到 0028 为止**（审计刀 11：本用例第三次踩「升到 head 验别人口径」——
+    # 0029 若再动 source_kind 就会把这条断言打红）
+    command.upgrade(cfg, "0028")
 
     with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        # 拆细后不该有残留（未匹配形态的行会静默留在 open_dataset——这条把它钉住）
+        cur.execute("SELECT count(*) FROM products WHERE source_kind = 'open_dataset'")
+        assert cur.fetchone()[0] == 0, "拆细后仍有 open_dataset 残留（形态判据漏了行）"
         cur.execute(
             "SELECT name, source_kind FROM products WHERE name LIKE '旧%' OR name LIKE 'WANDS%'"
             " OR name = '手建商品'"

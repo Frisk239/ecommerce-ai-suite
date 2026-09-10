@@ -189,7 +189,7 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 - **`/metrics` 默认是关的**：不设 `METRICS_TOKEN` 一律 401；要现场演示抓取，先 `printf '%s' "$METRICS_TOKEN" > ops/metrics_token` 再 `--profile metrics up`。
 - **ffmpeg 必须在**：compose 的 api 镜像已装、CI 显式安装；本机裸跑需自带（缺失时拣选报 422「ffmpeg 无法执行」，不是静默降级）。
 
-## 数据来源与演示价（第 50 刀）
+## 数据来源与演示价（第 50 / 55 刀）
 
 演示库里有**四份真实数据集**，它们在产品面上的来源是可见的（资产来源列 / 商品来源 chip）：
 

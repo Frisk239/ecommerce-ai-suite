@@ -327,6 +327,9 @@ def get_session(
         created_at=session.created_at,
         closed_at=session.closed_at,
         registered_asset_id=session.registered_asset_id,
+        # 第 54 刀：宿主站点在详情同样要给（审计刀 11 P0：此前详情恒回 None，
+        # 与「列表与详情同源」的声称不符——外部消费者会拿到「没有宿主」的错值）
+        host_origin=session.host_origin,
         messages=[_to_message_out(m) for m in _session_messages(db, session.id)],
         ticket=to_handoff_ticket_out(ticket, mask=True) if ticket is not None else None,
     )

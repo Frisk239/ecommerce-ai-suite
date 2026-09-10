@@ -127,6 +127,8 @@ def _unauthorized() -> HTTPException:
 _WIDGET_ORIGIN_HEADER = "X-Widget-Origin"
 _WIDGET_VISITOR_HEADER = "X-Visitor-Id"
 _VISITOR_ID_MAX = 64
+# 宿主来源列长（models.ServiceSession.host_origin String(255)）
+_HOST_ORIGIN_MAX = 255
 
 
 def _widget_gate(request: Request) -> str | None:
@@ -164,7 +166,9 @@ def _widget_gate(request: Request) -> str | None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"来源 {origin} 未获授权嵌入本站客服",
         )
-    return origin
+    # 入库前截断到列长（host_origin String(255)）：与 _visitor_id 同口径——白名单
+    # 被写成超长串时不该 500，截断即可（审计刀 11 P2）
+    return origin[:_HOST_ORIGIN_MAX]
 
 
 def _visitor_id(request: Request) -> str | None:

@@ -187,6 +187,10 @@ def test_host_origin_persisted_and_visible_to_operator(api: ApiFixture) -> None:
     _login(client)
     row = next(r for r in client.get("/api/service/sessions").json() if r["id"] == session_id)
     assert row["host_origin"] == _ALLOWED.rstrip("/").lower()
+    # 审计刀 11 P0：**详情也要同源**（此前 SessionDetail 没传该字段 -> 恒回 None，
+    # 与「列表与详情同源」的声称不符）
+    detail = client.get(f"/api/service/sessions/{session_id}").json()
+    assert detail["host_origin"] == _ALLOWED.rstrip("/").lower()
 
 
 def test_host_origin_is_normalized(api: ApiFixture) -> None:
