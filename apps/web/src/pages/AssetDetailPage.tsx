@@ -531,6 +531,9 @@ function auditActionLabel(action: string): string {
   // 第 26 刀：连接层导出留痕（22 刀起在写）不再裸显英文码；留痕列已带操作者，
   // 标签点明「导出 · MCP」与血缘导出块同口径
   if (action === 'export') return '导出 · MCP'
+  // 第 41 刀改价留痕（action='price_change'）是产品档，不进资产留痕视图；
+  // 这里兜底中文化，实际按 assetId 过滤时天然排除。
+  if (action === 'price_change') return '改价'
   return action
 }
 
@@ -1358,7 +1361,7 @@ export default function AssetDetailPage() {
                   className="flex items-center gap-2.5 border-b border-line-1 px-4 py-2 text-xs last:border-b-0"
                 >
                   <span className="font-medium text-ink-2">{auditActionLabel(row.action)}</span>
-                  <span className="font-mono text-ink-3">v{row.version_no}</span>
+                  <span className="font-mono text-ink-3">v{row.version_no ?? '—'}</span>
                   <span className="text-ink-3">操作者 #{row.operator_id}</span>
                   <span className="flex-1" />
                   <span className="text-ink-3 tabular-nums">{formatDateTime(row.created_at)}</span>

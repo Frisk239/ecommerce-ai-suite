@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**产品差距分析调研刀**（PR #51，`docs/research/product-gap-analysis.md`）：三路走查（用户旅程/竞品对标/内部盘点）——最痛三件事（商品空壳/转人工死路/操作者聋）+12 面分级+两路方案调研；**第三阶段 roadmap 已立项**（`docs/roadmap-product-hardening.md`，41–48 刀三梯队）。面试级收官（36–40+审计 6/7）已合并 main。
+上一刀：**第 41 刀商品可运营+目录可答**（`feat/product-operable-41`，closeout 见 `docs/progress/product-operable-closeout.md`）——roadmap v3 第一刀（ADR 0045）：价格字段/POST-PATCH/上架编辑 UI/目录回落（retrieve 空命中→列举报价，三道闸+政策词+口语词 Owner 交接实修）；交接收口（另一执行者主体可救，Owner 修三处+全流程）。目录问「你们卖什么的」可答（115 件带价）。第 26–40 刀+审计刀 6/7 已合并 main。
 
-当前阶段：**第三阶段产品硬ening（施工权威 `docs/roadmap-product-hardening.md`，2026-09-10 立项）**。下一刀：**第 41 刀商品可运营+目录可答**（POST/PATCH+价格字段+上架 UI——差距分析最痛#1）→ 42 转人工真闭环 → 43 仪表+通知 → 44 退货状态迁移；审计刀 8 于第 45 刀后。
+当前阶段：**第三阶段产品硬ening**（施工权威 `docs/roadmap-product-hardening.md`）。下一刀：**第 42 刀转人工真闭环**（意图双路径+工单回执+联系方式+操作者置顶）→ 43 仪表通知 → 44 退货状态迁移；审计刀 8 于第 45 刀后。
 
 ## 怎么切
 
@@ -214,10 +214,8 @@
 
 **路径：** ADR 0044 四段——两阶段写（check_return_eligibility 注册表可提议+15 天窗在代码+HMAC token；create_return **不在模型注册表**只能操作者确认端点触发：验签+资格重查+幂等→orders.events 追加确认事件）；忠实度闸（coverage<0.4 且命中≤1→模板回退不调模型，评测逐位一致）；逐句引用 prompt 约束；反馈分诊（顾客「没有帮助」→幂等→citations 资产置未验证→复审队列）。Owner API 全链：资格 token→确认→进度含事件→幂等 409。集成 687 passed（652→687）。**goal §6.2 收官对账表见 closeout**。证据见 `docs/progress/fidelity-feedback-closeout.md`。
 
-## 审计刀 7（已交付，`feat/audit-7`）
+## 第 41 刀：商品可运营+目录可答（已交付，`feat/product-operable-41`）——roadmap v3 第一刀
 
-三路子代理（设计符合性/评测数字底座/Agent 契约）审第 36–40 刀：**P0 零**；P1×3（slices 36–38 节合并丢失/goal 未完成行口径矛盾/退货词表吞政策问句）均已实修；P2×6 记债（ADR 修订未回写原文件/闸回退率无观测列/token 顾客面可见/unverify 无审计/HMAC 缺省密钥/stale 降权零实跑）。评测数字三方复跑逐位吻合、八条终态对账无虚报。证据见 `docs/progress/audit-7-closeout.md`。
+**路径：** ADR 0045——products.price_cents+currency（写回不碰价，价格只在产品档直写+审计）；POST/PATCH+上架编辑抽屉+ProductSelect 搜索三处下拉；**目录回落**：retrieve 空命中→纯列举（前 20 件带价）/商品匹配报价（citations 恒空=工具口径）/miss 照旧拒答留缺口（去补=上新改价同问可答）；三道闸（真人/政策词/规格词）零回归。交接收口：另一执行者主体（门禁全绿+ADR 对齐）+Owner 实修三处（政策词闸/口语词表+字符类 bug/评测工件落盘）。目录问「你们卖什么的？」→「本店在售商品共 115 件…」；「退货运费多少钱」→RAG 政策正确回答。集成 738 passed（688→738）；评测 65.0/75.0 零漂移。证据见 `docs/progress/product-operable-closeout.md`。
 
-## 收官排期（审计刀 7 后）
-
-观察项按需裁决，不预排：目录加厚（Wikidata 91 空 schema，production-grade-catalog 方案）、faithfulness judge 补跑（网关稳定后）、rerank/hybrid（评测数据触发）、token 顾客面裁剪与 unverify 审计（P2 债）、部署项（HTTPS/备份/监控）。
+## 审计刀 7（已交付

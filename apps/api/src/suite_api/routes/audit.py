@@ -17,9 +17,12 @@ router = APIRouter(prefix="/api/audit", tags=["audit"])
 class AuditOut(BaseModel):
     id: int
     operator_id: int
-    asset_id: int
-    version_no: int
-    action: str  # "publish" | "confirm" | "rollback"
+    # 资产留痕行非空；第 41 刀改价产品档（action='price_change'）这两列为 NULL。
+    asset_id: int | None
+    version_no: int | None
+    action: str  # "publish" | "confirm" | "rollback" | ... | "price_change"
+    # 改价留痕指向的商品（资产留痕行为 NULL）；按 asset_id 过滤时天然排除。
+    product_id: int | None
     created_at: datetime
 
 
@@ -40,6 +43,7 @@ def list_audit(
             asset_id=row.asset_id,
             version_no=row.version_no,
             action=row.action,
+            product_id=row.product_id,
             created_at=row.created_at,
         )
         for row in db.scalars(query)

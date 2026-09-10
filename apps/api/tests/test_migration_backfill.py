@@ -84,6 +84,47 @@ def test_upgrade_0003_backfills_legacy_assets_source_kind(backfill_db_url: str) 
         assert row[0] == "upload"
 
 
+# 第 41 刀（价格列+产品档）：0018 在旧结构 products 行上加列——price_cents
+# 保持 NULL（未定价，演示价由 seed 回填）、currency 存量回填 'CNY'；
+# audit_log 加 product_id 列、asset_id/version_no 放开 NOT NULL（改价产品档）。
+def test_upgrade_0018_adds_price_and_product_audit(backfill_db_url: str) -> None:
+    cfg = _alembic_config(backfill_db_url)
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0017")  # 回到 0017：products 尚无价格列
+
+    # 旧结构裸 SQL 插一行存量商品（无价格列可填——列不存在）
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO products (name, category, spec_schema, spec_values)"
+            " VALUES ('旧结构存量商品', '食品', '{}', '{}')"
+        )
+
+    command.upgrade(cfg, "head")  # 0018：加列并回填存量行
+
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("SELECT price_cents, currency FROM products WHERE name = '旧结构存量商品'")
+        row = cur.fetchone()
+        assert row is not None
+        assert row[0] is None  # 存量行保持 NULL=未定价（演示价走 seed 回填）
+        assert row[1] == "CNY"  # server_default 加 NOT NULL 列即回填旧行
+        # 产品档可写：asset 侧两列 NULL + product_id 指向商品
+        cur.execute("SELECT id FROM products WHERE name = '旧结构存量商品'")
+        product_id = cur.fetchone()[0]
+        cur.execute("INSERT INTO operators (username, password_hash) VALUES ('op41', 'x')")
+        cur.execute("SELECT id FROM operators WHERE username = 'op41'")
+        operator_id = cur.fetchone()[0]
+        cur.execute(
+            "INSERT INTO audit_log (operator_id, asset_id, version_no, action, product_id)"
+            " VALUES (%s, NULL, NULL, 'price_change', %s)",
+            (operator_id, product_id),
+        )
+        cur.execute(
+            "SELECT action, product_id, asset_id FROM audit_log WHERE action = 'price_change'"
+        )
+        audit_row = cur.fetchone()
+        assert audit_row == ("price_change", product_id, None)
+
+
 # 第 30 刀（归一化幂等）：0015 回填口径。旧结构（0014）下 question 精确唯一
 # 允许「…兑换？」与「…兑换」两条 open 并存（走查 G-0001/G-0003 实证形态）；
 # upgrade 后：open 行回填 normalized_question（SQL 与应用层 normalize_question
@@ -113,13 +154,9 @@ def test_upgrade_0015_backfills_normalized_and_dedupes_open_gaps(backfill_db_url
             "INSERT INTO knowledge_gaps (question, status) VALUES (%s, 'open')",
             ("以旧换新（补贴）怎么领？",),
         )
-        cur.execute(
-            "SELECT id FROM knowledge_gaps WHERE question = '会员积分怎么兑换？'"
-        )
+        cur.execute("SELECT id FROM knowledge_gaps WHERE question = '会员积分怎么兑换？'")
         kept_open_id = cur.fetchone()[0]
-        cur.execute(
-            "SELECT id, question FROM knowledge_gaps WHERE status = 'resolved'"
-        )
+        cur.execute("SELECT id, question FROM knowledge_gaps WHERE status = 'resolved'")
         resolved_id, resolved_question = cur.fetchone()
 
     command.upgrade(cfg, "head")  # 0015：加列 + open 回填 + 删重 + 索引重建
@@ -142,9 +179,7 @@ def test_upgrade_0015_backfills_normalized_and_dedupes_open_gaps(backfill_db_url
         assert resolved_row[1] == resolved_question == "旧版积分规则什么时候生效。"
         assert resolved_row[2] is None
         # 索引口径：0006 的 question 部分唯一已删，0015 的 normalized 部分唯一在位
-        cur.execute(
-            "SELECT indexname FROM pg_indexes WHERE tablename = 'knowledge_gaps'"
-        )
+        cur.execute("SELECT indexname FROM pg_indexes WHERE tablename = 'knowledge_gaps'")
         index_names = {r[0] for r in cur.fetchall()}
         assert "uq_knowledge_gaps_open_question" not in index_names
         assert "uq_knowledge_gaps_open_normalized" in index_names

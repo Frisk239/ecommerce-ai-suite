@@ -63,5 +63,20 @@
     "id": "edge-order-priority-over-stock-keyword",
     "question": "SO-1003 里的瓶装水没货了，现在补货了吗？",
     "expect": { "tool": "order", "tool_summary_contains": "已签收 · 3 个物流事件" }
+  },
+  {
+    "id": "catalog-listing",
+    "question": "你们店里卖什么？",
+    "expect": { "tool": "catalog", "tool_summary_contains": "在售" }
+  },
+  {
+    "id": "catalog-quote-new-product",
+    "question": "帆布包什么价格？",
+    "expect": { "tool": "catalog", "tool_summary_contains": "帆布包" }
+  },
+  {
+    "id": "catalog-miss-refuse",
+    "question": "小龙虾价格？",
+    "expect": { "refuse": true }
   }
 ]

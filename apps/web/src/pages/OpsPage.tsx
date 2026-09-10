@@ -20,6 +20,7 @@ import ActionError from '../components/ActionError'
 import Empty from '../components/Empty'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
+import ProductSelect from '../components/ProductSelect'
 
 const EMPTY_RUNS: OpsRun[] = []
 const EMPTY_PRODUCTS: never[] = []
@@ -194,20 +195,17 @@ export default function OpsPage() {
       <div className="panel mb-4 flex flex-wrap items-center gap-2.5 px-4 py-3">
         <Robot aria-hidden size={17} className="text-accent-strong" />
         <span className="text-sm font-medium text-ink">编排</span>
-        <select
-          className="input w-48"
-          aria-label="选择要编排的商品"
-          value={productId}
-          onChange={(e) => setProductId(e.target.value)}
-          disabled={busy !== null}
-        >
-          <option value="">选择商品…</option>
-          {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} · {p.category}
-            </option>
-          ))}
-        </select>
+        <div className="w-48">
+          <ProductSelect
+            products={products}
+            value={productId}
+            onChange={setProductId}
+            disabled={busy !== null}
+            ariaLabel="选择要编排的商品"
+            emptyLabel="选择商品…"
+            loading={productsQ.state.phase === 'loading'}
+          />
+        </div>
         <button
           type="button"
           className="btn btn-primary"

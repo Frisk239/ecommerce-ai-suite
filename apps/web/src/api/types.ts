@@ -107,14 +107,39 @@ export interface Product {
   spec_values: Record<string, SpecValueEntry>
   /** 库存可 mock（0037）：操作者只读自查（第 30 刀），NULL=未设置。 */
   stock: number | null
+  /** 单价（分，第 41 刀）：NULL=未定价；商品列直写即时生效。 */
+  price_cents: number | null
+  /** 币种（第 41 刀）：3 字母，缺省 CNY，v1 单币种不结算。 */
+  currency: string
+}
+
+/** 上新载荷（POST /products）：spec_schema 省略即按类目模板派生。 */
+export interface ProductCreate {
+  name: string
+  category: string
+  price_cents?: number | null
+  currency?: string
+  spec_schema?: Record<string, SpecRule>
+}
+
+/** 改档载荷（PATCH /products/{id}）：全可选；price_cents 显式 null=改回未定价。 */
+export interface ProductUpdate {
+  name?: string
+  category?: string
+  price_cents?: number | null
+  currency?: string
+  spec_schema?: Record<string, SpecRule>
 }
 
 export interface AuditEntry {
   id: number
   operator_id: number
-  asset_id: number
-  version_no: number
+  /** 资产留痕行非空；第 41 刀改价产品档（action='price_change'）为 null。 */
+  asset_id: number | null
+  version_no: number | null
   action: string
+  /** 改价留痕指向的商品（资产留痕行为 null）。 */
+  product_id: number | null
   created_at: string
 }
 
