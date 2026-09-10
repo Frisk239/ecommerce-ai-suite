@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # 会话 cookie 签名密钥：生产必换；默认值仅供本地开发
     session_secret: str = "dev-insecure-session-secret"
     session_ttl_seconds: int = 7 * 24 * 3600
+    # 顾客会话令牌 TTL（第 45 刀）：与上面操作者 cookie 的 7 天分开——顾客令牌是
+    # 「无需注册的一次性访问凭证」，24 小时够走完一次咨询，同时把泄露面收窄。
+    customer_token_ttl_seconds: int = 24 * 3600
 
     # OpenAI 兼容 Chat Completions（ADR 0028/0033）。密钥只从 .env 读，不入库。
     # 未配 key 时不建客户端、不发请求。接通生成是独立刀。
