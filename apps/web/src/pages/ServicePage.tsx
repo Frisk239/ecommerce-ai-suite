@@ -36,8 +36,23 @@ const SUGGESTIONS = [
   '钛钢保温杯有货吗？',
 ]
 
-function SessionStatusBadge({ status }: { status: ServiceSessionSummary['status'] }) {
+// 稳定空数组：加载/错误态复用同一引用，排序 useMemo 的依赖才不会每渲染都变。
+const EMPTY_SESSIONS: ServiceSessionSummary[] = []
+
+function SessionStatusBadge({
+  status,
+  messageCount,
+}: {
+  status: ServiceSessionSummary['status']
+  /** 已知消息数（列表用 message_count，详情头部用已加载 messages 数）：
+   *  0 且 active = 还没开口，不是「进行中」。undefined 时不判空会话。 */
+  messageCount?: number
+}) {
   if (status === 'active') {
+    // 空会话是噪音不是进展：中性灰「未开始」，不用进行中的蓝。
+    if (messageCount === 0) {
+      return <span className="badge badge-ingested">未开始</span>
+    }
     return (
       <span className="inline-flex h-[18px] items-center rounded-[4px] bg-[rgba(65,118,230,0.08)] px-1.5 text-[11px] font-medium leading-none text-accent-strong">
         {SERVICE_SESSION_STATUS_LABEL.active}
@@ -56,12 +71,26 @@ export default function ServicePage() {
   // 左栏：历史会话列表（倒序）
   const listFetcher = useCallback(() => api.listServiceSessions(), [])
   const list = useApiData(listFetcher)
-  const sessions = list.state.phase === 'ok' ? list.state.data : []
+  const sessions = list.state.phase === 'ok' ? list.state.data : EMPTY_SESSIONS
 
-  // 选择模型：null = 尚未选择（跟随最近一条会话）；点了哪条就固定在哪条
+  // 选择模型：null = 尚未选择（跟随最新一条有消息的会话，别落到空会话）；点了哪条就固定在哪条
   const [chosenId, setChosenId] = useState<number | null>(null)
-  const selectedId =
-    chosenId ?? (list.state.phase === 'ok' && list.state.data.length > 0 ? list.state.data[0].id : null)
+  const defaultSession =
+    list.state.phase === 'ok'
+      ? (list.state.data.find((s) => s.message_count > 0) ?? list.state.data[0] ?? null)
+      : null
+  const selectedId = chosenId ?? defaultSession?.id ?? null
+
+  // 列表排序：0 消息会话沉底（组内按 id desc，稳定不跳位）
+  const orderedSessions = useMemo(
+    () =>
+      [...sessions].sort((a, b) => {
+        const az = a.message_count === 0 ? 1 : 0
+        const bz = b.message_count === 0 ? 1 : 0
+        return az - bz || b.id - a.id
+      }),
+    [sessions],
+  )
   const detailFetcher = useCallback(
     () => (selectedId === null ? Promise.resolve(null) : api.getServiceSession(selectedId)),
     [selectedId],
@@ -297,7 +326,7 @@ export default function ServicePage() {
             </div>
           ) : (
             <ul className="max-h-[calc(100dvh-320px)] overflow-y-auto">
-              {sessions.map((s) => {
+              {orderedSessions.map((s) => {
                 const selected = s.id === selectedId
                 return (
                   <li key={s.id} className="border-b border-line-1 last:border-b-0">
@@ -312,7 +341,7 @@ export default function ServicePage() {
                     >
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono text-[11px] tabular-nums text-ink-3">#{s.id}</span>
-                        <SessionStatusBadge status={s.status} />
+                        <SessionStatusBadge status={s.status} messageCount={s.message_count} />
                         {s.origin === 'customer' && (
                           <span className="kind-chip" title="来自顾客通道 /customer 的会话（ADR 0021）">
                             顾客
@@ -387,7 +416,8 @@ export default function ServicePage() {
             {/* 会话头部 */}
             <div className="flex flex-wrap items-center gap-2 border-b border-line-2 px-4 py-2.5 text-xs text-ink-3">
               <span className="font-mono text-ink">会话 #{session.id}</span>
-              <SessionStatusBadge status={session.status} />
+              {/* 详情契约无 message_count：用已加载消息数分叉，空会话与列表同为「未开始」 */}
+              <SessionStatusBadge status={session.status} messageCount={messages.length} />
               <span>· 开始于 {formatDateTime(session.created_at)}</span>
               {session.status === 'registered' && session.registered_asset_id !== null && (
                 <span>

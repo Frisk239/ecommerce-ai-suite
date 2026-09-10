@@ -20,6 +20,7 @@ import {
 import type { Icon } from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
 import type { AssetListItem } from '../api/types'
+import { filterWorkAssets, isIngested, isPendingWash, isPublished } from '../workQueue'
 import { useApiData } from '../hooks/useApiData'
 import { ErrorBanner } from '../components/Banner'
 import { SkeletonRows } from '../components/Loading'
@@ -110,16 +111,16 @@ export default function OverviewPage() {
   const openGaps = state.phase === 'ok' ? state.data[1].length : null
   const sessions = state.phase === 'ok' ? state.data[2].length : null
 
-  // 与治理台列表 tab 同口径（AssetsListPage counts 同源逻辑，不另发请求）
+  // 与治理台列表同口径：先按工作队列谓词（workQueue 单一来源）收窄，再分状态计数
+  // ——列表默认 view=work，总览必须同一套数字（§二点十 冻结原则）。
+  const workAssets = useMemo(() => filterWorkAssets(assets), [assets])
   const counts = useMemo(
     () => ({
-      pending_review: assets.filter(
-        (a) => a.status === 'pending_review' && a.current_published_version_no === null,
-      ).length,
-      ingested: assets.filter((a) => a.status === 'ingested').length,
-      published: assets.filter((a) => a.current_published_version_no !== null).length,
+      pending_review: workAssets.filter(isPendingWash).length,
+      ingested: workAssets.filter(isIngested).length,
+      published: workAssets.filter(isPublished).length,
     }),
-    [assets],
+    [workAssets],
   )
 
   const stats: {
