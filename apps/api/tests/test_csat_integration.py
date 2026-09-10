@@ -335,7 +335,7 @@ def test_csat_aggregates_and_masks_comments(api: ApiFixture) -> None:
     csat = _overview(client)["csat"]
     assert csat["ratings_last_7d"] == base_total + 2
     # 留言出口必掩（库内是原文，见 test_rating_stores_original_comment...）
-    masked = "".join(csat["recent_comments"])
+    masked = "".join(entry["comment"] for entry in csat["recent_comments"])
     assert "13800138000" not in masked
     assert "1********00" in masked
 
@@ -349,7 +349,10 @@ def test_recent_comments_are_capped_and_truncated(api: ApiFixture) -> None:
 
     csat = _overview(client)["csat"]
     assert len(csat["recent_comments"]) == 3  # 只给最近 3 条
-    assert all(len(text) <= 60 for text in csat["recent_comments"])  # 单条截断 60 字
+    assert all(len(entry["comment"]) <= 60 for entry in csat["recent_comments"])  # 单条截断
+    # 第 53 刀：每条留言带来源会话与分数（可点回那次会话）
+    assert all(isinstance(entry["session_id"], int) and entry["score"] in (1, 2, 3, 4, 5)
+               for entry in csat["recent_comments"])
 
 
 def test_session_list_exposes_rating_badge(api: ApiFixture) -> None:

@@ -214,11 +214,28 @@ function CsatPanel({ csat }: { csat: StatsCsat }) {
           </div>
           {csat.recent_comments.length > 0 && (
             <div className="border-t border-line-1 px-4 py-2.5">
-              <div className="text-[11px] text-caption">最新留言（已掩码）</div>
+              <div className="text-[11px] text-caption">
+                最新留言（已掩码）· 点会话号回看那次对话
+              </div>
               <ul className="mt-1 space-y-0.5">
-                {csat.recent_comments.map((text, index) => (
-                  <li key={`${index}-${text.slice(0, 8)}`} className="text-[12.5px] text-ink-2">
-                    「{text}」
+                {csat.recent_comments.map((entry) => (
+                  <li
+                    key={`${entry.session_id}-${entry.comment.slice(0, 8)}`}
+                    className="flex items-baseline gap-2 text-[12.5px] text-ink-2"
+                  >
+                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-caption">
+                      {entry.score} 星
+                    </span>
+                    <span className="min-w-0 flex-1 truncate" title={entry.comment}>
+                      「{entry.comment}」
+                    </span>
+                    <Link
+                      to={`/service?session=${entry.session_id}`}
+                      className="shrink-0 font-mono text-[11px] text-accent transition-colors duration-150 hover:text-accent-strong hover:underline"
+                      title="回看这次会话（客服页按会话 id 深链）"
+                    >
+                      #{entry.session_id}
+                    </Link>
                   </li>
                 ))}
               </ul>

@@ -16,9 +16,13 @@ _NOW = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
 
 
 def _rows(*specs: tuple[int, str | None], offset_minutes: int = 0) -> list[tuple]:
-    """按「越靠前越新」造行（与端点里的 created_at DESC 排序一致）。"""
+    """按「越靠前越新」造行（与端点里的 created_at DESC 排序一致）。
+
+    行元组 = (session_id, score, comment, created_at)：第 53 刀起带 session_id
+    （低分留言要能点回会话）。
+    """
     return [
-        (score, comment, _NOW - timedelta(minutes=offset_minutes + index))
+        (100 + index, score, comment, _NOW - timedelta(minutes=offset_minutes + index))
         for index, (score, comment) in enumerate(specs)
     ]
 
@@ -65,7 +69,7 @@ def test_build_csat_masks_before_truncating() -> None:
     """
     comment = "前" * 55 + "13800138000"
     csat = _build_csat(_rows((2, comment)))
-    text = csat.recent_comments[0]
+    text = csat.recent_comments[0].comment
     assert len(text) <= CSAT_COMMENT_MAX_CHARS
     assert "138" not in text  # 先截后掩会在这里留下 13800 残片 -> 红
     assert "*" in text  # 掩码真的先发生了（截断砍在掩码上）
@@ -74,7 +78,7 @@ def test_build_csat_masks_before_truncating() -> None:
 def test_build_csat_masks_inside_the_limit() -> None:
     """号码在截断线内：整段掩码完整出现（常规路径）。"""
     csat = _build_csat(_rows((2, "帮我回电 13800138000")))
-    text = csat.recent_comments[0]
+    text = csat.recent_comments[0].comment
     assert "13800138000" not in text
     assert "1********00" in text
 
@@ -83,5 +87,14 @@ def test_build_csat_comment_limit_and_blank_skipping() -> None:
     csat = _build_csat(
         _rows((5, "第一条"), (4, "   "), (3, "第三条"), (2, "第四条"), (1, "第五条"))
     )
-    assert csat.recent_comments == ["第一条", "第三条", "第四条"]  # 空白跳过、取前三
+    assert [c.comment for c in csat.recent_comments] == ["第一条", "第三条", "第四条"]
     assert len(csat.recent_comments) == CSAT_COMMENT_LIMIT
+
+
+def test_build_csat_comments_carry_session_id_and_score() -> None:
+    """第 53 刀：留言带 session_id/score——低分留言要能点回那次会话（此前只有文本）。"""
+    csat = _build_csat(_rows((2, "物流太慢")))
+    entry = csat.recent_comments[0]
+    assert entry.session_id == 100  # 造数助手给的第一条
+    assert entry.score == 2
+    assert entry.comment == "物流太慢"

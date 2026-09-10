@@ -374,11 +374,18 @@ export interface StatsFeedbackAsset {
  * answer 且 citations 为空），不是 RAG 准确率；分子为 0 时为 null（不除零）。 */
 /** CSAT 段（第 48 刀）：近 7 日窗；average 无样本时 null（不返回 0 冒充均分）；
  * distribution 恒含 1–5 五档（前端不用补键）；recent_comments 已掩码 + 截断。 */
+/** 一条带评分的顾客留言（第 53 刀）：留言已掩码 + 截断，并可点回来源会话。 */
+export interface StatsCsatComment {
+  session_id: number
+  score: number
+  comment: string
+}
+
 export interface StatsCsat {
   ratings_last_7d: number
   average_last_7d: number | null
   distribution: Record<string, number>
-  recent_comments: string[]
+  recent_comments: StatsCsatComment[]
 }
 
 export interface StatsOverview {
