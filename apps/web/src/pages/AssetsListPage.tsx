@@ -8,7 +8,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowsClockwise, CaretRight, MagnifyingGlass, Plus, Warning, X } from '@phosphor-icons/react'
+import { ArrowsClockwise, CaretRight, Funnel, MagnifyingGlass, Plus, Warning, X } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { AssetListItem, AssetStatus, KnowledgeGap } from '../api/types'
@@ -50,6 +50,12 @@ const TAB_TO_STATUS: Record<Exclude<ListTab, '全部' | '知识缺口'>, AssetSt
 /** 「当前 tab 下的行」单一来源（第 51 刀评审 P2：filtered 与来源计数各抄一份谓词
  * 会漂）。三态口径与总览页同源（workQueue.isPendingWash/isPublished）；
  * 「全部」「知识缺口」= 不筛状态。 */
+/** 是否是已知来源词：labels 的映射里没有的，`sourceKindLabel` 原样返回自己
+ * （第 50 刀词表是权威集合的镜像；未知值不进筛选态）。 */
+function isKnownSourceKind(value: string): boolean {
+  return sourceKindLabel(value) !== value
+}
+
 function rowsInTab(rows: readonly AssetListItem[], tab: ListTab): AssetListItem[] {
   if (tab === '全部' || tab === '知识缺口') return [...rows]
   if (tab === '已发布') return rows.filter(isPublished)
@@ -134,7 +140,12 @@ export default function AssetsListPage() {
   // 第 51 刀：来源筛选（?source=，空=全部）。工作队列首屏被导入货淹掉（评论 200
   // 条），运营要能一键只看自己传的或只看某一来源——筛选不改数据、不动默认。
   const sourceParam = searchParams.get('source')
-  const activeSource = sourceParam !== null && sourceParam !== '' ? sourceParam : null
+  // 只认已知来源词（未知/拼错的值当作未筛选——否则会出现一个叫「typo」的 chip
+  // 和一个说不清为什么空的屏幕；后端对未知值是 422，前端也不该把它当有效筛选）
+  const activeSource =
+    sourceParam !== null && sourceParam !== '' && isKnownSourceKind(sourceParam)
+      ? sourceParam
+      : null
   const setSource = (source: string | null) =>
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev)
@@ -343,7 +354,14 @@ export default function AssetsListPage() {
           >
             全部
           </button>
-          {[...sourceCounts.entries()]
+          {[
+            ...sourceCounts.entries(),
+            // 选中的来源若在本 tab 为 0 条，也要渲染出来（否则没有任何 chip 高亮，
+            // 空屏看不出「谁在生效」——审计刀 10 P2）
+            ...(activeSource !== null && !sourceCounts.has(activeSource)
+              ? ([[activeSource, 0]] as [string, number][])
+              : []),
+          ]
             .sort((a, b) => b[1] - a[1])
             .map(([kind, count]) => (
               <button
@@ -558,6 +576,21 @@ export default function AssetsListPage() {
               icon={<MagnifyingGlass aria-hidden size={24} />}
               title="没有匹配的资产"
               hint="按标题（不区分大小写）或资产 ID 搜索：A-0029 / 29 都可命中；清空输入恢复当前筛选。"
+            />
+          </div>
+        ) : activeSource !== null ? (
+          // 来源筛选挡空且搜索框为空：说清是**筛选**所致（否则「没有已接入的资产」
+          // 会与「其实有、只是被来源过滤掉」直接矛盾——审计刀 10 P1）
+          <div className="rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface/60">
+            <Empty
+              icon={<Funnel aria-hidden size={24} />}
+              title={`当前筛选下没有「${sourceKindLabel(activeSource)}」来源的资产`}
+              hint={`${activeTab}页签里有资产，只是没有这个来源的。点来源行的「全部」清除筛选（不影响数据）。`}
+              action={
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSource(null)}>
+                  清除来源筛选
+                </button>
+              }
             />
           </div>
         ) : (

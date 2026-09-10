@@ -593,3 +593,37 @@ def test_price_question_uses_row_price_even_when_retrieval_hits(api: ApiFixture)
     assert outcome.answer.kind == "answer"
     assert "129" in outcome.answer.content
     assert outcome.fallback is False  # 模板即正式产出，不是降级
+
+
+def test_empty_hit_quote_path_also_respects_purity_gate() -> None:
+    """审计刀 10 P0：纯度闸必须装在**共用的**报价路径上。
+
+    此前闸只在 `try_price_answer`（有命中那条），空命中那条旧路径照旧抢答——
+    实测「家具送货安装怎么收费？」（无命中）被答成「售价 899元」。这条钉死
+    两条路径共用同一套判定。
+    """
+    from suite_api.services.catalog_tools import try_catalog_answer
+
+    products = [_mem_product(3, "WANDS 家具（演示）", 89900)]
+    db = _fake_db_with(products)
+    # 空命中 + 报价意图 + 命中商品名 + 服务问句 -> 不回落（交回 RAG）
+    assert try_catalog_answer(db, "家具送货安装怎么收费？", []) is None
+    # 对照：纯问价照旧回落
+    answer = try_catalog_answer(db, "WANDS 家具（演示）多少钱？", [])
+    assert answer is not None and "899" in answer.content
+
+
+def test_price_residual_handles_partial_product_names() -> None:
+    """审计刀 10 P1：部分名问价（「保温杯多少钱」对商品「钛钢保温杯」）要能报价。
+
+    `match_product` 按 LCS≥2 命中，纯度闸就得用同一口径剔除命中片段；要求「全名
+    子串」会把口语问价静默挡回 RAG（同一句问话答不答取决于检索有没有命中）。
+    """
+    from suite_api.services.catalog_tools import price_residual, try_price_answer
+
+    assert price_residual("保温杯多少钱？", "钛钢保温杯") == ""
+    assert price_residual("保温杯怎么刻字？", "钛钢保温杯") != ""
+
+    db = _fake_db_with([_mem_product(2, "钛钢保温杯", 12900)])
+    answer = try_price_answer(db, "保温杯多少钱？")
+    assert answer is not None and "129" in answer.content
