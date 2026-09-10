@@ -253,7 +253,9 @@ class Order(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     order_no: Mapped[str] = mapped_column(String(32))  # SO-1001（唯一见上）
-    status: Mapped[str] = mapped_column(String(20))  # 已发货 | 运输中 | 已签收 …
+    # 合法值集是单一来源：services/order_tools.ORDER_STATUSES（第 44 刀把「退货中」
+    # 纳入状态机——确认退货时迁移；此处不写死枚举，避免与那份漂移）
+    status: Mapped[str] = mapped_column(String(20))
     items: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, server_default=text("'[]'::jsonb"), nullable=False
     )

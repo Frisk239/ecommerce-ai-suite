@@ -347,6 +347,8 @@ _CONFIRM_RETURN_ERRORS: dict[str, tuple[int, str]] = {
     "not_found": (409, "订单不存在"),
     "window_changed": (409, "订单已不在退货窗内，无法确认"),
     "duplicate": (409, "该退货申请已确认过"),
+    # 第 44 刀状态闸：状态机不回退（已是退货中或已退款不再受理）
+    "status_not_returnable": (409, "订单当前状态不可发起退货（已是退货中或已退款）"),
 }
 
 
@@ -362,9 +364,10 @@ def confirm_return(
     create_return 不在模型注册表——写工具只能经本端点由人确认（ADR 0044：
     资格在代码、确认在人）。校验链：操作者登录 -> 确认卡消息必须属于本会话
     且是 check_return_eligibility 的工具轨迹（404）-> 服务层验签+资格重查
-    未变+幂等（400/409）-> orders.events 追加确认事件 -> 同事务落一条
-    create_return 工具轨迹 agent 消息（回放完整：两步工具动作都在会话里，
-    客服页刷新即见「已确认」）。返回更新后的事件时间轴。顾客通道无此面
+    未变+状态闸+幂等（400/409）-> orders.events 追加确认事件 + **状态迁移为
+    退货中**（第 44 刀：退货是状态机成员）-> 同事务落一条 create_return 工具
+    轨迹 agent 消息（回放完整：两步工具动作都在会话里，客服页刷新即见
+    「已确认」）。返回更新后的事件时间轴。顾客通道无此面
     （get_current_operator 401；两阶段确认是操作者动作）。
     """
     del operator

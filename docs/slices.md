@@ -2,9 +2,9 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 43 刀操作者仪表 + 通知**（`feat/ops-dashboard`，closeout 见 `docs/progress/ops-dashboard-closeout.md`）——roadmap v3 第三刀（最痛#3 操作者聋，无新表无迁移）：`GET /api/stats/overview` 一次喂三处（近 7 日序列/标量 + 三角标 + 被踩 top 3）；总览插 7 日趋势条与反馈汇总行（深链定位但不自动写库）；侧栏角标随导航刷、不轮询。第 42 刀转人工真闭环（ADR 0046 + 迁移 0020）、第 41 刀商品可运营+目录可答（ADR 0045）、第 26–40 刀+审计刀 6/7 均已合并 main。
+上一刀：**第 44 刀退货确认迁移订单状态**（`feat/return-status`，closeout 见 `docs/progress/return-status-closeout.md`）——roadmap v3 第四刀（纸糊#3，无新表无迁移）：立 `ORDER_STATUSES` 合法值集（+「退货中」）为单一来源；`confirm_return` 在同一事务把 `orders.status` 真迁移到「退货中」；加**状态闸**（已退货中/已退款 → 409，且拒绝即不写）；顺手把「确认退货」补成 ConfirmDialog 确认。钉测：确认前已发货 → 确认后退货中 → 进度问句答退货中。第 43 刀操作者仪表、第 42 刀转人工真闭环（ADR 0046 + 迁移 0020）、第 41 刀商品可运营+目录可答（ADR 0045）、第 26–40 刀+审计刀 6/7 均已合并 main。
 
-当前阶段：**第三阶段产品硬ening**（施工权威 `docs/roadmap-product-hardening.md`）。下一刀：**第 44 刀退货状态迁移**（`confirm_return` 落 `orders.status` 合法值集与事件，钉「已发货 → 退货中 → 进度问句答退货中」）→ 第 45 刀（令牌 TTL + embed.js）→ **审计刀 8**（第 45 刀后）。
+当前阶段：**第三阶段产品硬ening**（施工权威 `docs/roadmap-product-hardening.md`）。下一刀：**第 45 刀令牌 TTL + embed.js**（顾客会话令牌加 TTL、顾客通道做成可嵌入单文件小组件 + origin 白名单）→ 之后 **审计刀 8**（第 45 刀后，按路线图节奏）。
 
 ## 怎么切
 
@@ -230,3 +230,7 @@
 ## 第 43 刀：操作者仪表 + 通知（已交付，`feat/ops-dashboard`）——roadmap v3 第三刀
 
 **路径：** 新 `GET /api/stats/overview`（`routes/stats.py`，无新表无迁移）：一次请求喂三处——近 7 日逐日序列（含今天 7 个 UTC 自然日、零填充升序）、7 日标量（拒答与转人工**分列**；缺口新开按 `created_at`、解决按 `resolved_at`；引用覆盖率分母=`kind=answer` 且同时下发分子分母）、三个角标（open 缺口 / 待抽检 / 未处理工单，**0 隐藏**）、被踩资产 top 3。总览页在摘要条之后插一条 **7 日趋势条**（21 根手写 CSS 柱，无图表库）与一条**反馈汇总行**（「去重新验证」深链到 `/platform/assets/{id}?verify=1` → 滚动+高亮、**不自动写库**）；侧栏角标随导航刷一次、无轮询。**UX-E 去卡的形态约束未被违反**（全仓 `.stat-card` 仍为 0）。集成 780→786 passed；ruff 全过；前端 build 绿、lint 7/0。浏览器验收：端点数值与库内独立盘点逐项吻合、角标不闪、同路由只发一次取数。证据见 `docs/progress/ops-dashboard-closeout.md`。
+
+## 第 44 刀：退货确认迁移订单状态（已交付，`feat/return-status`）——roadmap v3 第四刀
+
+**路径：** 纸糊#3——确认退货后 `orders.status` 纹丝不动，追问一句「退货进度怎么样」就答回「已发货」而穿帮。本刀：①`services/order_tools.py` 立订单状态合法值集 `ORDER_STATUSES`（已发货/运输中/已签收/**退货中**/**已退款**）与 `RETURNABLE_STATUSES`（前三个），作为单一来源（`models.py` 注释指向它）；②`return_tools.confirm_return` 在同一事务里既追加事件、又把状态**真迁移到「退货中」**；③**状态闸**：只有前三个可发起退货，已是退货中/已退款 → 409，且**闸在任何写入之前 return**（拒绝即不写）；④判定顺序 `duplicate` 先于 `status_not_returnable`（重复确认文案不变）；⑤顺手把「确认退货」从一击即写补成 **ConfirmDialog 确认**（与发布/结单同形）。**无新表无迁移**。钉测：确认前「已发货」→ 确认后库内「退货中」+ 进度问句答「当前状态：退货中」+ 二次确认 409；「已退款」单被 409 挡下且状态与事件都没动；状态集自检（种子值 ⊆ 合法集）。集成 786→788 passed；ruff 全过；前端 build 绿、lint 7/0；浏览器全链（SO-1002 运输中→退货中；取消不写库）。证据见 `docs/progress/return-status-closeout.md`。

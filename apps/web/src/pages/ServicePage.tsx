@@ -143,6 +143,11 @@ export default function ServicePage() {
   // 在途确认 id；确认成功后刷新会话即见服务端落的 create_return 工具轨迹。
   const [returnConfirmed, setReturnConfirmed] = useState<number[]>([])
   const [returnConfirming, setReturnConfirming] = useState<number | null>(null)
+  // 确认退货是两阶段写的第二段（不可逆：执行后订单状态迁移到退货中、无「反确认」），
+  // 与发布/结单同形——先确认再执行，不做一击即写（第 44 刀顺手补齐的口径一致性）
+  const [returnPending, setReturnPending] = useState<{ messageId: number; token: string } | null>(
+    null,
+  )
 
   // 第 42 刀（ADR 0046 §5）：工单结单确认框与在途态；结单成功后刷新会话列表
   // （pending_ticket_count 与置顶随之更新）与详情（工单状态转 resolved）。
@@ -324,8 +329,8 @@ export default function ServicePage() {
         type="button"
         className="btn btn-primary btn-sm"
         disabled={returnConfirming !== null}
-        onClick={() => void confirmReturn(m.id as number, match[1])}
-        title="两阶段写第二段：确认后执行退货并写入订单事件"
+        onClick={() => setReturnPending({ messageId: m.id as number, token: match[1] })}
+        title="两阶段写第二段：确认后执行退货、写入订单事件并把订单状态改为退货中"
       >
         {returnConfirming === m.id ? '确认中…' : '确认退货'}
       </button>
@@ -695,6 +700,30 @@ export default function ServicePage() {
           <div className="space-y-1.5">
             <p>确认顾客问题已有人回复处理？结单后该工单不再计入待处理。</p>
             <p>工单与知识缺口相互独立：结单不会关闭、也不会新建任何知识缺口。</p>
+          </div>
+        }
+      />
+      {/* 第 44 刀：确认退货（两阶段写第二段）——不可逆，与发布/结单同形先确认 */}
+      <ConfirmDialog
+        open={returnPending !== null}
+        title="确认退货"
+        confirmLabel="确认退货"
+        busy={returnConfirming !== null}
+        onCancel={() => setReturnPending(null)}
+        onConfirm={() => {
+          const pending = returnPending
+          if (pending === null) return
+          void (async () => {
+            // 等写动作落地再关框：busy 期间框留着（与发布/结单同形），
+            // 失败时框也留着由 actionError 表达，不给「关了但没成功」的错觉
+            await confirmReturn(pending.messageId, pending.token)
+            setReturnPending(null)
+          })()
+        }}
+        body={
+          <div className="space-y-1.5">
+            <p>确认后执行退货：订单追加退货事件，状态迁移为「退货中」。</p>
+            <p>该动作不可撤销（没有「反确认」）；重复确认会被服务端拒绝（409）。</p>
           </div>
         }
       />

@@ -82,14 +82,30 @@ def _publish(client: TestClient, content: bytes, title: str) -> int:
     return asset_id
 
 
-def _insert_order(url: str, order_no: str, days_ago: int) -> None:
+def _insert_order(url: str, order_no: str, days_ago: int, status: str = "已发货") -> None:
     with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
             "INSERT INTO orders (order_no, status, items, events, placed_at)"
-            " VALUES (%s, '已发货', '[]', '[]', now() - make_interval(days => %s))"
+            " VALUES (%s, %s, '[]', '[]', now() - make_interval(days => %s))"
             " ON CONFLICT (order_no) DO NOTHING",
-            (order_no, days_ago),
+            (order_no, status, days_ago),
         )
+
+
+def _order_status(url: str, order_no: str) -> str | None:
+    """直读订单状态（第 44 刀：状态迁移必须落库，不能只看消息渲染）。"""
+    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("SELECT status FROM orders WHERE order_no = %s", (order_no,))
+        row = cur.fetchone()
+    return None if row is None else str(row[0])
+
+
+def _order_event_count(url: str, order_no: str) -> int:
+    """事件条数（第 44 刀：拒绝路径必须「状态与事件都不动」，只断言状态不够）。"""
+    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("SELECT jsonb_array_length(events) FROM orders WHERE order_no = %s", (order_no,))
+        row = cur.fetchone()
+    return 0 if row is None else int(row[0])
 
 
 def _agent_messages(client: TestClient, session_id: int) -> list[dict[str, Any]]:
@@ -124,6 +140,10 @@ def gate_env(api: ApiFixture) -> TestClient:
 def test_two_phase_return_full_chain(gate_env: TestClient) -> None:
     client = gate_env
     sid = client.post("/api/service/sessions").json()["id"]
+    url = os.environ[_URL_ENV]
+
+    # 第 44 刀：确认前状态是「已发货」（种子口径），退货还没发生
+    assert _order_status(url, "SO-2001") == "已发货"
 
     # 阶段一：单号+退货意图 -> 资格查询（快路径，零 LLM）
     events = _ask(client, sid, "SO-2001 我想退货")
@@ -170,13 +190,63 @@ def test_two_phase_return_full_chain(gate_env: TestClient) -> None:
     progress = _ask(client, sid, "SO-2001 退货进度")
     streamed = "".join(d["text"] for e, d in progress if e == "delta")
     assert "退货申请已确认" in streamed
+    # 第 44 刀（钉测）：确认后状态真迁移到「退货中」——阶段一/进度问句都读同一字段，
+    # 若不迁移，这里会答回「已发货」而当场穿帮（纸糊#3）
+    assert _order_status(url, "SO-2001") == "退货中"
+    assert "当前状态：退货中" in streamed
 
-    # 幂等：同一确认卡二次确认 -> 409
+    # 幂等：同一确认卡二次确认 -> 409，且文案仍是「已确认过」（钉死判定顺序：
+    # duplicate 先于 status_not_returnable——此时状态已是退货中，若顺序反了会
+    # 答成「状态不可发起退货」，契约就悄悄变了）
     again = client.post(
         f"/api/service/sessions/{sid}/confirm-return",
         json={"message_id": message_id, "confirmation_token": token},
     )
     assert again.status_code == 409
+    assert "已确认过" in again.json()["detail"]
+
+
+def test_confirm_refuses_non_returnable_status(gate_env: TestClient) -> None:
+    """第 44 刀状态闸：阶段一只看时间窗，所以一张「已退款」的单子在窗内仍能拿到
+    确认令牌——状态闸必须把它挡成 409，而不是把状态改写回「退货中」（状态机不回退）。"""
+    client = gate_env
+    url = os.environ[_URL_ENV]
+    _insert_order(url, "SO-2003", days_ago=3, status="已退款")
+    sid = client.post("/api/service/sessions").json()["id"]
+
+    events = _ask(client, sid, "SO-2003 我想退货")
+    tool_event = next(d for e, d in events if e == "tool")
+    match = _TOKEN_RE.search(tool_event["result"])
+    assert match is not None  # 窗内 -> 阶段一照旧给令牌（它不看状态）
+    token = match.group(1)
+
+    message_id = next(
+        m["id"]
+        for m in _agent_messages(client, sid)
+        if m["tool"] and m["tool"]["name"] == "check_return_eligibility"
+    )
+    denied = client.post(
+        f"/api/service/sessions/{sid}/confirm-return",
+        json={"message_id": message_id, "confirmation_token": token},
+    )
+    assert denied.status_code == 409
+    assert "状态不可发起退货" in denied.json()["detail"]
+    # 拒绝即不写：状态与事件时间轴都必须原样（闸在 append 与赋值之前 return）
+    assert _order_status(url, "SO-2003") == "已退款"
+    assert _order_event_count(url, "SO-2003") == 0
+
+
+def test_order_status_sets_are_consistent() -> None:
+    """第 44 刀状态集自检（纯函数，无 DB）：种子用到的状态必须都在合法集内；可退
+    前置态是合法集的子集——防「合法值集」与「实际写入值」两边各写一份漂移。"""
+    from suite_api.services.order_tools import ORDER_STATUSES, RETURNABLE_STATUSES
+    from suite_api.services.seed import SEED_ORDERS
+
+    seed_statuses = {str(order["status"]) for order in SEED_ORDERS}
+    assert seed_statuses <= ORDER_STATUSES
+    assert RETURNABLE_STATUSES <= ORDER_STATUSES
+    assert "退货中" in ORDER_STATUSES  # 第 44 刀新纳入的状态机成员
+    assert "退货中" not in RETURNABLE_STATUSES  # 不可重复退货
 
 
 def test_confirm_rejects_tampered_and_expired_tokens(gate_env: TestClient) -> None:

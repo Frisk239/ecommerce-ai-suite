@@ -29,6 +29,34 @@ ORDER_NO_PATTERN = re.compile(r"SO-\d+", re.IGNORECASE)
 _NOT_FOUND_CONTENT_TPL = "订单 {order_no} 未找到，已转人工，请人工核实单号。"
 _ERROR_CONTENT = "订单查询失败，已转人工。"
 
+# ---------- 订单状态合法值集（第 44 刀）----------
+# 订单是工具数据源、不是中台对象（0002），但「状态」是它唯一的对外语义：确认退货
+# 若不迁移状态，追问一句「退货进度怎么样」就穿帮（纸糊#3）。退货因此是状态机的
+# 正式成员（调研：commerce-agents 官方 OrderStatus 含 return_initiated/refunded）。
+ORDER_STATUS_SHIPPED = "已发货"
+ORDER_STATUS_IN_TRANSIT = "运输中"
+ORDER_STATUS_SIGNED = "已签收"
+ORDER_STATUS_RETURNING = "退货中"
+ORDER_STATUS_REFUNDED = "已退款"
+
+# 合法全集：任何新写入的状态都必须落在这里（DB CHECK 未加——订单不是中台对象，
+# 演示规模下代码收口 + 钉测足够，见第 44 刀 closeout 的记债）。
+ORDER_STATUSES: frozenset[str] = frozenset(
+    {
+        ORDER_STATUS_SHIPPED,
+        ORDER_STATUS_IN_TRANSIT,
+        ORDER_STATUS_SIGNED,
+        ORDER_STATUS_RETURNING,
+        ORDER_STATUS_REFUNDED,
+    }
+)
+
+# 可发起退货的前置态：退货中/已退款不许再来一次——状态机不回退，否则一张已退款的
+# 单子还能被「确认退货」改回退货中（阶段一只看时间窗，这条闸是它缺的另一半）。
+RETURNABLE_STATUSES: frozenset[str] = frozenset(
+    {ORDER_STATUS_SHIPPED, ORDER_STATUS_IN_TRANSIT, ORDER_STATUS_SIGNED}
+)
+
 
 def find_order_no(text: str) -> str | None:
     """提取首个订单号并归一大写（seed/查询口径同为 ``SO-\\d+`` 大写）。"""

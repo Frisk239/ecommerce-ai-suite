@@ -34,6 +34,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from suite_api.models import Order
+from suite_api.services.order_tools import ORDER_STATUS_RETURNING, RETURNABLE_STATUSES
 
 logger = logging.getLogger(__name__)
 
@@ -173,13 +174,20 @@ def render_eligibility_answer(result: dict[str, Any]) -> str:
 
 
 def confirm_return(db: Session, order_no: str, token: str) -> dict[str, Any]:
-    """阶段二（写，人确认闸）：验签 + 订单重查资格未变 -> orders.events 追加
-    确认事件（list append，不改表结构）。
+    """阶段二（写，人确认闸）：验签 + 订单重查资格未变 -> orders.events 追加确认
+    事件 + **状态迁移到「退货中」**（第 44 刀，同一事务）。
 
     返回 ``{ok: True, order_no, events}``；失败 ``{ok: False, reason}``——
     reason ∈ invalid_token（验签/过期/篡改）/ not_found（订单消失）/
-    window_changed（重查已出窗）/ duplicate（已确认过，幂等）。commit 归调用
-    方（确认端点把事件追加与 create_return 轨迹消息并进同一事务）。"""
+    window_changed（重查已出窗）/ status_not_returnable（当前状态不可发起退货：
+    已是退货中或已退款）/ duplicate（已确认过，幂等）。commit 归调用方（确认端点
+    把事件追加、状态迁移与 create_return 轨迹消息并进同一事务）。
+
+    判定顺序：duplicate **先于** status_not_returnable——重复确认时「已确认过」
+    比「状态不可退」更精确（既有契约文案不变）。第 44 刀之前只追加事件、状态纹丝
+    不动，追问「退货进度怎么样」会答回「已发货」而当场穿帮（纸糊#3）；阶段一又
+    只看时间窗，故「已退款」的单子此前也能被确认成已退货——状态闸补的就是这半边
+    （状态机不回退）。"""
     if not verify_token(token, order_no, True):
         return {"ok": False, "reason": "invalid_token"}
     try:
@@ -198,7 +206,11 @@ def confirm_return(db: Session, order_no: str, token: str) -> dict[str, Any]:
     events = list(order.events)
     if any(event.get("text") == CONFIRM_EVENT_TEXT for event in events):
         return {"ok": False, "reason": "duplicate"}
+    if order.status not in RETURNABLE_STATUSES:
+        return {"ok": False, "reason": "status_not_returnable"}
     events.append({"at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M"), "text": CONFIRM_EVENT_TEXT})
     # JSONB 整体重新赋值（而非原地 append）保证变更被追踪并 flush
     order.events = events
+    # 状态迁移（第 44 刀）：退货是状态机成员，确认即迁移到退货中
+    order.status = ORDER_STATUS_RETURNING
     return {"ok": True, "order_no": order.order_no, "events": list(order.events)}
