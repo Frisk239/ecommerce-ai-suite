@@ -21,6 +21,10 @@ export type AssetSourceKind =
   | 'material_generated'
   | 'mcp_registered'
   | 'seed'
+  /** 第 50 刀：评论数据集导入（200 条真实评论资产）。 */
+  | 'review_import'
+  /** 第 50 刀：开放数据集（Wikidata 商品 / OpenFoodFacts 规格）。 */
+  | 'open_dataset'
 
 export interface AssetListItem {
   id: number
@@ -113,6 +117,9 @@ export interface Product {
   price_cents: number | null
   /** 币种（第 41 刀）：3 字母，缺省 CNY，v1 单币种不结算。 */
   currency: string
+  /** 来源（第 50 刀，**只读**）：open_dataset=开放数据集导入（Wikidata/OFF）/
+   * seed=种子 / null=运营手建。表单不收该字段——来源是既成事实，不可改。 */
+  source_kind: string | null
 }
 
 /** 上新载荷（POST /products）：spec_schema 省略即按类目模板派生。 */

@@ -66,7 +66,7 @@ from suite_api.services.agent_tools import (
     propose_prompt,
 )
 from suite_api.services.answer import ComposedAnswer, build_refusal_handoff_content, compose_answer
-from suite_api.services.catalog_tools import try_catalog_answer
+from suite_api.services.catalog_tools import try_catalog_answer, try_price_answer
 from suite_api.services.conversation_memory import PRONOUN_RE, recent_turns, retrieval_query
 from suite_api.services.handoff_tickets import (
     ensure_session_ticket,
@@ -333,6 +333,11 @@ async def run_ask(
     # 返回 None，沿既有拒答+缺口（去补=上新/改价）。忠实度闸与厂商生成跳过
     # 回落命中（模板即正式产出，非降级，fallback=False）。
     catalog = try_catalog_answer(db, question, hits)
+    if catalog is None:
+        # 第 50 刀（ADR 0045 修订）：报价意图不看检索命中——价格是商品行的事实，
+        # 而演示库几乎任何问句都有命中，导致「X 多少钱」永远走 RAG 答「证据未
+        # 覆盖价格」（行价白补齐了）。只对报价生效：列举仍要空命中闸。
+        catalog = try_price_answer(db, question)
     if catalog is not None:
         is_catalog = True
         answer = ComposedAnswer(content=catalog.content, citations=[], kind="answer", handoff=False)

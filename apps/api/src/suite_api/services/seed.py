@@ -33,6 +33,24 @@ logger = logging.getLogger(__name__)
 
 OPERATOR_USERNAME = "operator"
 
+# 类目基准演示价（第 50 刀，单位：分）：**mock 演示数据、非真实售价**——与第 41
+# 刀两个种子商品同口径（出处=本文件 DEMO 基准；stock 亦为 mock）。用于给真实
+# 数据集导入的商品回填一个可展示的价（此前 115 件只有 3 件有价，「多少钱」与
+# 目录列举几乎无货可列）。**只回填 NULL，不覆盖手改价**。
+# 迁移 0026 用同一组数字（快照，注释指向本表；两者不一致时以本表为准，迁移是
+# 一次性回填）。
+CATEGORY_DEMO_PRICES: dict[str, int] = {
+    "食品": 300,  # 3 元（与种子瓶装水一致）
+    "器皿": 12900,  # 129 元（与种子钛钢保温杯一致）
+    "图书": 5900,  # 59 元
+    "笔记本电脑": 499900,  # 4999 元
+    "智能手机": 299900,  # 2999 元
+    "平板电脑": 199900,  # 1999 元
+    "电视机": 349900,  # 3499 元
+    "洗衣机": 219900,  # 2199 元
+    "家具": 89900,  # 899 元
+}
+
 SEED_PRODUCTS: list[dict] = [
     {
         "name": "瓶装水",
@@ -158,7 +176,10 @@ def seed_startup_data(engine: Engine, operator_password: str) -> None:
         for spec in SEED_PRODUCTS:
             existing = db.scalar(select(Product).where(Product.name == spec["name"]))
             if existing is None:
-                db.add(Product(**spec))
+                # 第 50 刀：种子商品带来源（新建库与迁移 0026 回填过的老库形态一致
+                # ——否则新库的种子商品 source_kind 是 NULL、老库是 'seed'，同一份
+                # 数据两种形态，正是本刀要消灭的那种不一致）
+                db.add(Product(**spec, source_kind="seed"))
                 logger.info("种子商品已创建: %s", spec["name"])
             else:
                 if existing.stock is None:
@@ -172,6 +193,10 @@ def seed_startup_data(engine: Engine, operator_password: str) -> None:
                     # （含手改价）不覆盖
                     existing.price_cents = spec["price_cents"]
                     logger.info("种子商品演示价已回填: %s=%s", spec["name"], spec["price_cents"])
+                if existing.source_kind is None:
+                    # 0026 之前的存量库：回填来源（仅 NULL——不覆盖）
+                    existing.source_kind = "seed"
+                    logger.info("种子商品来源已回填: %s", spec["name"])
                 if not existing.spec_schema:
                     existing.spec_schema = (
                         schema_for_category(existing.category) or spec["spec_schema"]

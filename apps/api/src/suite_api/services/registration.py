@@ -32,7 +32,12 @@ INGESTED = "ingested"
 PENDING_REVIEW = "pending_review"
 PUBLISHED = "published"
 
-# 来源六枚举（0025/ADR 0030）：登记端点语义定值，调用方不可自由填报
+# 来源八枚举（0025/ADR 0030）：登记端点语义定值，调用方不可自由填报。
+# 第 50 刀增两值——真实数据集导入不再被压成「上传」（来源只活在脚本常量里的
+# 那些数据，产品面上看不出「这不是我们自己传的」）：
+#   review_import = 评论数据集导入（在线购物评论 200 条）
+#   open_dataset  = 开放数据集（Wikidata 商品 / OpenFoodFacts 规格）
+# 无 DB CHECK（应用层枚举），加值零 DDL；回填走迁移 0026。
 SOURCE_KINDS = (
     "upload",
     "session_backflow",
@@ -40,6 +45,8 @@ SOURCE_KINDS = (
     "material_generated",
     "mcp_registered",
     "seed",
+    "review_import",
+    "open_dataset",
 )
 
 
