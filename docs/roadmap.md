@@ -1,3 +1,5 @@
+> **2026-09-10 起本文件降级为上一阶段（面试级）存档**——36–40 五刀已全部交付，终态对账见 `docs/progress/fidelity-feedback-closeout.md`。当前施工权威：**`docs/roadmap-product-hardening.md`（第三阶段：产品硬ening）**。
+
 # 面试级优化 Roadmap
 
 日期：2026-09-09。来源：goal 7/7 收官后的全面审计（六路：Agent 运行时 / 中台契约 / 演示诚实度 / 工程成色 / 简历 Grill / 2026 Agent 标尺），Owner 确认四条主线都要做——**数据、评测、真 RAG、客服真 loop**。
