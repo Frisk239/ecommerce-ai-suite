@@ -34,6 +34,7 @@ import Empty from '../components/Empty'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
 import { GapStatusBadge, KindChip, StatusBadge } from '../components/StateBadge'
+import ConfirmDialog from '../components/ConfirmDialog'
 import RegisterAssetDrawer from './RegisterAssetDrawer'
 
 // tab 值即 ?status= 的取值（与拒答芯片的跳转链接 /platform/assets?status=知识缺口 对齐）
@@ -178,6 +179,24 @@ export default function AssetsListPage() {
     })
   }, [scoped, activeTab, query])
 
+  // 「去补文档」（审计刀 8 P1：方案 UX-C.3 明令禁止静默开修订）：
+  // 该商品已有已发布规格文档时，先问清「在这份上开修订」还是「另起一份新文档」——
+  // 此前直接 openRevision，操作者连自己点了什么都不知道（双击还会 409）。
+  const [revisionChoice, setRevisionChoice] = useState<{ gap: KnowledgeGap; specId: number } | null>(
+    null,
+  )
+
+  const openRevisionForGap = async (gap: KnowledgeGap, specId: number) => {
+    setRevisionChoice(null)
+    setActionError(null)
+    try {
+      const updated = await api.openRevision(specId, gap.id)
+      navigate(`/platform/assets/${updated.id}`)
+    } catch (err) {
+      setActionError(`开修订失败：${detailText(err)}`)
+    }
+  }
+
   const fillGap = (gap: KnowledgeGap) => {
     if (gap.product !== null) {
       const spec = assets.find(
@@ -187,15 +206,7 @@ export default function AssetsListPage() {
           a.current_published_version_no !== null,
       )
       if (spec !== undefined) {
-        void (async () => {
-          setActionError(null)
-          try {
-            const updated = await api.openRevision(spec.id, gap.id)
-            navigate(`/platform/assets/${updated.id}`)
-          } catch (err) {
-            setActionError(`开修订失败：${detailText(err)}`)
-          }
-        })()
+        setRevisionChoice({ gap, specId: spec.id })
         return
       }
     }
@@ -600,6 +611,33 @@ export default function AssetsListPage() {
         </div>
       )}
 
+      {/* 补口径的两条路（审计刀 8 P1）：不再静默开修订，先把后果说清 */}
+      <ConfirmDialog
+        open={revisionChoice !== null}
+        title="这个缺口怎么补？"
+        confirmLabel="在既有文档上开修订"
+        cancelLabel="另起一份新文档"
+        busy={false}
+        onCancel={() => {
+          const choice = revisionChoice
+          setRevisionChoice(null)
+          if (choice !== null) openDrawer(choice.gap)
+        }}
+        onConfirm={() => {
+          const choice = revisionChoice
+          if (choice !== null) void openRevisionForGap(choice.gap, choice.specId)
+        }}
+        body={
+          <div className="space-y-1.5">
+            <p>
+              该商品已有已发布规格文档{' '}
+              <span className="font-mono">{formatAssetId(revisionChoice?.specId ?? 0)}</span>
+              ，可直接在它上面开修订并补上这条口径。
+            </p>
+            <p>若这份口径属于另一类内容，也可以另起一份新文档登记。</p>
+          </div>
+        }
+      />
       <RegisterAssetDrawer
         key={drawerGap !== null ? `gap-${drawerGap.id}` : 'normal'}
         open={drawerOpen}

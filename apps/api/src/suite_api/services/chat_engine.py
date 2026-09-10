@@ -47,6 +47,7 @@
 
 import json
 import logging
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
@@ -127,6 +128,26 @@ REJECTED_CONTENT = "工具提议被拒绝，已转人工。"
 HANDOFF_THINKING_TEXT = "正在转接人工…"
 # 服务端回答分片粒度（~10-20 字/片；打字节奏由前端呈现层控制，服务端不模拟延迟）
 _DELTA_CHARS = 12
+
+# 写动作凭证（两阶段写的 confirmation_token，ADR 0044）：它只该出现在**操作者面**
+# （确认端点要用），**绝不下发顾客**——「顾客与模型都不掌握创建权」是那套设计的前提。
+# 审计刀 8 P1：此前工具条 result 把 "待确认 token=<hex>" 原样随 SSE 两通道下发，
+# 顾客浏览器里能看到这份写凭证（端点仍有操作者鉴权，故不可直接利用，但边界已破）。
+_WRITE_CREDENTIAL_RE = re.compile(r"\s*·?\s*待确认\s*token=[0-9a-f]+")
+
+
+def customer_safe_tool(tool: dict[str, Any] | None) -> dict[str, Any] | None:
+    """顾客通道下发的工具轨迹：剥掉写动作凭证，其余形状不变（None 原样）。
+
+    通道判据沿用 `expose_gap_id`（它本就是「顾客白名单」开关，见 run_ask/gap_id
+    先例）；库里持久化的 tool 列不动——操作者重开会话仍能拿到令牌去确认。
+    """
+    if tool is None:
+        return None
+    result = tool.get("result")
+    if not isinstance(result, str) or "token=" not in result:
+        return tool
+    return {**tool, "result": _WRITE_CREDENTIAL_RE.sub("", result).strip()}
 
 
 @dataclass(frozen=True)
@@ -750,7 +771,8 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
                 "handoff": HANDOFF_THINKING_TEXT,
             }.get(str(outcome.tool.get("name")), ORDER_THINKING_TEXT)
         yield sse_event("thinking", {"text": thinking_text})
-        yield sse_event("tool", outcome.tool)
+        # 顾客通道剥写动作凭证（审计刀 8 P1）；操作者通道原样（确认端点要用）
+        yield sse_event("tool", outcome.tool if expose_gap_id else customer_safe_tool(outcome.tool))
         if outcome.retrieved_after_tool:
             # 0043 混意图：工具步之后检索步照常发生——补检索状态行（诚实）
             yield sse_event("thinking", {"text": THINKING_TEXT})
@@ -766,8 +788,8 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
         "kind": outcome.answer.kind,
         "handoff": outcome.answer.handoff,
         # 0036：None 或 {name, arg, result}——非订单路径多一个 null 键，
-        # 既有消费方按键取值不受影响；两通道同形状（不走 gap_id 式裁剪）
-        "tool": outcome.tool,
+        # 既有消费方按键取值不受影响；通道差异只在写凭证（见 customer_safe_tool）
+        "tool": outcome.tool if expose_gap_id else customer_safe_tool(outcome.tool),
     }
     if expose_gap_id:
         # 拒答=缺口 id（前端芯片跳治理台缺口 tab）；answer 恒为 null

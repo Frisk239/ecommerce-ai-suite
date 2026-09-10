@@ -35,7 +35,7 @@ from suite_api.models import (
     ServiceMessage,
     ServiceSession,
 )
-from suite_api.routes.customer import triage_asset_ids
+from suite_api.services.triage import triage_asset_ids
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 

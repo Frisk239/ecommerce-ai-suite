@@ -12,7 +12,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 from sse_helpers import parse_sse_events
 
-from suite_api.routes.customer import triage_asset_ids
+from suite_api.services.triage import triage_asset_ids
 
 ApiFixture = tuple[TestClient, Path]
 

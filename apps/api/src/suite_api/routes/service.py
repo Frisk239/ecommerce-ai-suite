@@ -42,7 +42,7 @@ from suite_api.services.handoff_tickets import (
     resolve_ticket,
     ticket_no,
 )
-from suite_api.services.machine_wash import redact, redact_contact
+from suite_api.services.machine_wash import redact_contact
 from suite_api.services.registration import register_asset
 from suite_platform.storage import ObjectStorage
 
@@ -196,12 +196,16 @@ def _first_question(content: str) -> str:
 
     0038 修订（第 21 刀评审处置件 2：title 出口全线）：对话资产 title=顾客
     首问截断，随 to_asset_out / MCP get_asset·export·search / 降级回答标题 /
-    治理台详情页全线流转——在推导源头收口过 redact（先掩后截，若先截后掩，
+    治理台详情页全线流转——在推导源头收口掩码（先掩后截，若先截后掩，
     跨 60 字边界的手机号会被拦腰咬断逃过正则留裸号前缀），一次收口全链路
-    干净。素材任务 title 来自生成文案不走此函数，不动。redact 等长收缩
+    干净。素材任务 title 来自生成文案不走此函数，不动。掩码等长收缩
     （掩码不新增字符），不改变既有摘要长度口径。
+
+    审计刀 8 P1：改用 `redact_contact`——第 42 刀已证明 `redact` 漏
+    `138-0013-8000`（带分隔）与 `ab@x.co`（短域）这类形态，而本函数的产物是
+    **对话资产 title**，会经 MCP/导出外流；沿 0038「出口必掩」与 0046 判例收口。
     """
-    masked = redact(content)
+    masked = redact_contact(content)
     return masked[:_SUMMARY_CHARS] + ("…" if len(masked) > _SUMMARY_CHARS else "")
 
 

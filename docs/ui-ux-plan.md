@@ -6,7 +6,7 @@
 
 落地进度：**UX-B 引用只读证据视图已交付**（2026-09-10，`docs/progress/ux-b-evidence-view-closeout.md`；纯前端、后端零改动；含一处对 §四 UX-B Must.4 字面的裁决性偏离——anchor 指向「当前已发布版」也进只读，否则最常见引用点仍看不到正文）。**UX-A1 工作台可扫读已交付**（`docs/progress/ux-a-workbench-closeout.md`；纯前端——工作队列默认视角（谓词=`mcp_registered` 且标题命中 smoke/probe）、列表跨状态搜索、商品按已定价优先排序、空会话「未开始」降噪；演示库未删，根因 `mcp_smoke.py` 留待 Owner 裁决）。**UX-A2 目录列举模板已交付**（`docs/progress/ux-a-catalog-listing-closeout.md`；后端——只列已定价前 8 件，未定价请直接问商品名；工具 `result` 与三道闸不动，评测零漂移留证）。**UX-E1 CSS 去光泽已交付**（`docs/progress/ux-e-flat-closeout.md`；实色化+无 hover 位移+顶高光全删+发送钮保形改色；发现：工作队列首屏仍是 183 条原始灌入货，「数据倾倒」观感未根治，待 Owner 裁决）。**UX-E2 去卡与文案压句已交付**（`docs/progress/ux-e-decouple-closeout.md`；总览摘要条+步进器单行不折、资产页去三张重复卡、9 个页头各一句、投放改次钮、商品页无空规格表、panel 阴影收单层）——**UX-E 全部 Must 达成，43 刀仪表前置就绪**。**UX-D 顾客停答已交付**（`docs/progress/ux-d-customer-stop-closeout.md`；发送钮原位变停止+Esc+卸载断订阅，排在 42 刀前清冲突点）。剩余：UX-C/F/G（缺口上下文/薄页/窄屏）、以及「工作队列灌入货」可能单开一刀。
 
-施工权威仍是 `docs/roadmap-product-hardening.md`（下一刀=第 42 刀转人工）。本文件是**平行工作流**：只改控制台观感与既有路径的交互，不改领域对象、不抢 42–44 刀号。Owner 可在 hardening 刀之间插入方案包，或在第 44 刀后成批做。
+施工权威仍是 `docs/roadmap-product-hardening.md`（第 41–45 刀均已交付；下一刀=审计刀 8，此后 46–48）。本文件是**平行工作流**：只改控制台观感与既有路径的交互，不改领域对象、不抢 42–44 刀号。Owner 可在 hardening 刀之间插入方案包，或在第 44 刀后成批做。
 
 视觉冻结口径仍是 `prototype/UX-NOTES.md` §二点七 **v3**（白画布、近黑主钮、蓝只做语义、墨线分层、密度来自排版）。工程 `apps/web/src/index.css` 的装饰性渐变并非 v3 之后滑回 v2——`git log -S linear-gradient` 显示它随 v3 重写（4727e5d）一起落地，当年 closeout 记为接受项（见 §八末）；但画布渐变 `#f8f9fa→#eff1f4` 与 v3「内容区 #FFFFFF」不符。本方案把画布/面板扳回 v3 扁平，不新开一版皮肤（属翻案，理由见 §八末）。
 

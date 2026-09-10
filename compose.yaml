@@ -37,7 +37,7 @@ services:
       # 可嵌入小组件的宿主白名单（第 45b 刀）：逗号分隔 origin，空=未启用嵌入。
       # 这里放演示宿主页（apps/web/public/embed-demo.html，与 web 同源）以便本地
       # 端到端验证；生产改成商家站点 origin。
-      WIDGET_ALLOWED_ORIGINS: ${WIDGET_ALLOWED_ORIGINS:-http://localhost:5173}
+      WIDGET_ALLOWED_ORIGINS: ${WIDGET_ALLOWED_ORIGINS:-http://localhost:5173}  # 演示默认放行本地宿主页；生产改成商家 origin，留空=未启用
     ports:
       - "8000:8000"
     volumes:
