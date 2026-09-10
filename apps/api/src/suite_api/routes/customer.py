@@ -123,6 +123,59 @@ def _unauthorized() -> HTTPException:
     )
 
 
+# ---------- 嵌入小组件的来源闸与访客 id（第 45b 刀）----------
+_WIDGET_ORIGIN_HEADER = "X-Widget-Origin"
+_WIDGET_VISITOR_HEADER = "X-Visitor-Id"
+_VISITOR_ID_MAX = 64
+
+
+def _widget_gate(request: Request) -> str | None:
+    """嵌入来源闸：`WIDGET_ALLOWED_ORIGINS` 是嵌入的唯一闸，不在里面一律 403。
+
+    只在请求**带了** `X-Widget-Origin` 时生效——那表示请求来自被嵌进宿主的页面
+    （我们的 widget 页读 `document.referrer` 得出宿主来源后带上）；不带该头的是
+    独立访问（`/customer` 直开），行为完全不变。白名单为空 = 未启用嵌入，同样 403。
+
+    **为什么 `/customer` 被别的站 iframe 时也拦得住**：前端在**任何被框住的上下文**
+    （`window.self !== window.top`，不只是 `/widget` 路由）都会带上这个头，因此
+    第三方 iframe 我们的 `/customer` 一样会被这里 403；而宿主若用 no-referrer 剥掉
+    来源，前端**不再静默退回独立访问**，而是直接拒绝建会话（fail-closed，见
+    CustomerPage 的 framed 判定）。
+
+    残留风险（如实记录，README 局限段同述）：该头由我们的前端填写，宿主若自己伪造
+    仍可能过——要彻底堵死需在边缘/反代层拦文档请求（本仓是 dev 栈，没有这层）。
+    """
+    origin = (request.headers.get(_WIDGET_ORIGIN_HEADER) or "").strip().rstrip("/")
+    if origin == "":
+        return None
+    allowed = {
+        item.strip().rstrip("/")
+        for item in request.app.state.settings.widget_allowed_origins.split(",")
+        if item.strip()
+    }
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="本站未启用嵌入客服（服务端未配置允许的来源）",
+        )
+    if origin not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"来源 {origin} 未获授权嵌入本站客服",
+        )
+    return origin
+
+
+def _visitor_id(request: Request) -> str | None:
+    """访客 id：宿主页第一方 uuid 的不透明传递，只做长度截断与空串归一。
+
+    它是商家自己生成的标识（不承载我们的语义），故不做格式校验、不落任何用户
+    输入原文；超长截断而不是报错（别让一个坏 id 把建会话挡死）。
+    """
+    raw = (request.headers.get(_WIDGET_VISITOR_HEADER) or "").strip()
+    return raw[:_VISITOR_ID_MAX] if raw != "" else None
+
+
 def _authorize_customer_session(db: Session, session_id: int, request: Request) -> ServiceSession:
     """顾客会话鉴权单一出处（第 45 刀）：存在 + Bearer 恒定时间比对 + **未过期**。
 
@@ -171,7 +224,11 @@ def create_session(
     `customer_token_ttl_seconds`，默认 24h）——过期后与无效同 401 同文案。不做
     刷新/续期/吊销（本刀 Out）；会话终结（操作者回流登记置 registered）后令牌
     随之失去发问资格。
+
+    嵌入来源闸（第 45b 刀）：**先于限流**——它只是一次 settings 读取（不碰库），
+    未授权来源连配额都不该吃；独立访问（无该头）照旧走限流。
     """
+    widget_origin = _widget_gate(request)
     retry_after = limits.check_create(client_ip(request))
     if retry_after is not None:
         raise _rate_limited(retry_after)
@@ -181,6 +238,9 @@ def create_session(
         status=ACTIVE,
         customer_token=token,
         customer_token_expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
+        # 访客 id 只在**嵌入请求**上收：独立访问自带这个头也不落（它不是商家的
+        # 访客，落库就是脏数据——review P2）
+        visitor_id=_visitor_id(request) if widget_origin is not None else None,
     )
     db.add(session)
     db.commit()

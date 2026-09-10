@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     # 「无需注册的一次性访问凭证」，24 小时够走完一次咨询，同时把泄露面收窄。
     customer_token_ttl_seconds: int = 24 * 3600
 
+    # 可嵌入小组件白名单（第 45b 刀）：逗号分隔的宿主 origin（如
+    # "https://shop.example.com,http://localhost:5173"）。**空 = 未启用嵌入**：
+    # 带 X-Widget-Origin 的请求一律 403。非白名单同样 403——这是嵌入的唯一闸
+    # （routes/customer 在建会话端点校验）。
+    widget_allowed_origins: str = ""
+
     # OpenAI 兼容 Chat Completions（ADR 0028/0033）。密钥只从 .env 读，不入库。
     # 未配 key 时不建客户端、不发请求。接通生成是独立刀。
     llm_api_key: str = ""

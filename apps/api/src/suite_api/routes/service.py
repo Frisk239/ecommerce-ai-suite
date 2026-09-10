@@ -74,6 +74,8 @@ class SessionSummary(SessionOut):
     # 第 42 刀（ADR 0046 §5）：待处理工单数（status=pending；批量统计非 N+1）。
     # 客服页据此置顶 + 徽章 + 「待处理工单」分段筛选。
     pending_ticket_count: int
+    # 第 45b 刀：嵌入小组件的宿主访客 id（第一方 uuid）；独立访问为 None
+    visitor_id: str | None = None
 
 
 class HandoffTicketOut(BaseModel):
@@ -276,6 +278,7 @@ def list_sessions(
             message_count=counts.get(s.id, 0),
             origin=_origin(s),
             pending_ticket_count=pending_tickets.get(s.id, 0),
+            visitor_id=s.visitor_id,
         )
         for s in sessions
     ]

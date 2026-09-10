@@ -51,6 +51,9 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           {/* 顾客通道（ADR 0021）：不登录、不走 RequireOperator/AppShell */}
           <Route path="/customer" element={<CustomerPage />} />
+          {/* 第 45b 刀：可嵌入小组件的 iframe 落点——与 /customer 同一份客服逻辑，
+              只收窄布局（embed）。宿主白名单由服务端判（WIDGET_ALLOWED_ORIGINS）。 */}
+          <Route path="/widget" element={<CustomerPage embed />} />
           <Route element={<RequireOperator />}>
             <Route path="/" element={<OverviewPage />} />
             <Route path="/platform/assets" element={<AssetsListPage />} />
