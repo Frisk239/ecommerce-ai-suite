@@ -177,6 +177,29 @@ def render_quote(product: Product) -> str:
     )
 
 
+def render_category_quote(category: str, priced: list[Product], total: int) -> str:
+    """类目报价模板（第 52 刀）：按类目问价给「件数 + 价格区间（或统一价）」。
+
+    为什么要有它：列举（「你们卖什么」）刚说「共 115 件，均已定价」，紧接着问
+    「笔记本电脑多少钱？」却拒答——`match_product` 只认**商品名**，类目名不是商品名
+    （审计刀 10 P1，9 个类目全中招）。类目价是**聚合事实**，由商品行现算、不编造：
+    区间取该类目已定价行的最小/最大值；都同价就说「均为」。
+    """
+    prices = [p.price_cents for p in priced if p.price_cents is not None]
+    low, high = min(prices), max(prices)
+    currency = priced[0].currency
+    if low == high:
+        shown = f"均为 {format_price(low, currency)}"
+    else:
+        shown = f"价格 {format_price(low, currency)}–{format_price(high, currency)}"
+    unpriced = total - len(prices)
+    tail = f"（另有 {unpriced} 件未定价）" if unpriced > 0 else ""
+    return (
+        f"{category}共 {total} 件，其中已定价 {len(prices)} 件，{shown}{tail}；"
+        f"问具体型号给你准确价。"
+    )
+
+
 @dataclass(frozen=True)
 class CatalogAnswer:
     """回落命中：模板正文 + 工具式轨迹（{name, arg, result}，SSE/消息同形）。"""
@@ -277,16 +300,52 @@ def _quote_answer(question: str, products: list[Product]) -> CatalogAnswer | Non
     三道闸都在这里（**共用**，审计刀 10 P0：此前闸只装在 `try_price_answer`，
     空命中那条路径照旧抢答服务问句——「家具送货安装怎么收费？」在无命中库上被答
     成「售价 899元」）：
-    1. 命中商品名（LCS ≥2）；2. 该商品有价；3. **纯度**——扣掉命中片段与问价
-    虚词后必须什么都不剩（问句主体就是「商品名 + 问价」）。
+    1. 命中商品名（LCS ≥2）或命中**类目名**（第 52 刀：列举说「均已定价」却答不出
+       类目价，等于自相矛盾）；2. 该商品有价 / 该类目有已定价商品；3. **纯度**——
+       扣掉命中片段与问价虚词后必须什么都不剩（问句主体就是「名字 + 问价」）。
     """
     product = match_product(question, products)
-    if product is None or product.price_cents is None:
-        return None
-    if price_residual(question, product.name) != "":
-        return None
-    price_text = format_price(product.price_cents, product.currency)
-    return CatalogAnswer(
-        content=render_quote(product),
-        tool={"name": TOOL_NAME, "arg": product.name, "result": f"{product.name} · {price_text}"},
-    )
+    if product is not None and product.price_cents is not None:
+        if price_residual(question, product.name) == "":
+            price_text = format_price(product.price_cents, product.currency)
+            return CatalogAnswer(
+                content=render_quote(product),
+                tool={
+                    "name": TOOL_NAME,
+                    "arg": product.name,
+                    "result": f"{product.name} · {price_text}",
+                },
+            )
+        # 命中的商品名不是问句主体：可能是「笔记本电脑多少钱」这类**按类目**问价
+        # （商品名恰含「笔记本」三字，LCS 命中但它问的是类目）——交给类目路径再判
+        # 一次纯度；两条都不成立才算实质问句（服务/规格），交回 RAG。
+    return _category_quote(question, products)
+
+
+def _category_quote(question: str, products: list[Product]) -> CatalogAnswer | None:
+    """按类目问价（第 52 刀）：类目名在问句里，且问句主体就是「类目 + 问价」。
+
+    纯度闸同款（`price_residual`：扣掉类目名与问价虚词后必须为空），否则
+    「笔记本电脑刻字怎么收费」这类服务问会被答成类目价。类目无已定价商品 -> None
+    （沿既有拒答 + 缺口口径：去补 = 改价/上新）。
+    """
+    categories = sorted({p.category for p in products}, key=len, reverse=True)
+    for category in categories:
+        if category not in question or price_residual(question, category) != "":
+            continue
+        members = [p for p in products if p.category == category]
+        priced = [p for p in members if p.price_cents is not None]
+        if not priced:
+            return None
+        prices = [p.price_cents for p in priced if p.price_cents is not None]
+        return CatalogAnswer(
+            content=render_category_quote(category, priced, len(members)),
+            tool={
+                "name": TOOL_NAME,
+                "arg": category,
+                "result": (
+                    f"{category} {len(members)} 件 · {min(prices) // 100}–{max(prices) // 100} 元"
+                ),
+            },
+        )
+    return None

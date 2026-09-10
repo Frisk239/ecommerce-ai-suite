@@ -627,3 +627,77 @@ def test_price_residual_handles_partial_product_names() -> None:
     db = _fake_db_with([_mem_product(2, "钛钢保温杯", 12900)])
     answer = try_price_answer(db, "保温杯多少钱？")
     assert answer is not None and "129" in answer.content
+
+
+# ---------- 第 52 刀：按类目问价 ----------
+
+
+def _catalog_db(products: list[Any]) -> Any:
+    from unittest.mock import MagicMock
+
+    db = MagicMock()
+    db.scalars.return_value = products
+    return db
+
+
+def test_category_price_quote_reports_range_and_count() -> None:
+    """列举刚说「均已定价」，按类目问价却拒答 = 自相矛盾（审计刀 10 P1）。
+
+    类目价是聚合事实：件数 + 已定价数 + 区间（都同价说「均为」）。
+    """
+    from suite_api.services.catalog_tools import try_price_answer
+
+    products = [
+        _mem_product(1, "笔记本 A", 499900),
+        _mem_product(2, "笔记本 B", 399900),
+        _mem_product(3, "笔记本 C", None),  # 未定价：计入总数不计入区间
+    ]
+    for product in products:
+        product.category = "笔记本电脑"
+    answer = try_price_answer(_catalog_db(products), "笔记本电脑多少钱？")
+    assert answer is not None
+    assert "共 3 件" in answer.content
+    assert "已定价 2 件" in answer.content
+    assert "3999" in answer.content and "4999" in answer.content
+    assert "另有 1 件未定价" in answer.content
+    assert answer.tool["arg"] == "笔记本电脑"
+
+
+def test_category_price_quote_single_price_says_uniform() -> None:
+    from suite_api.services.catalog_tools import try_price_answer
+
+    product = _mem_product(1, "瓶装水", 300)
+    product.category = "食品"
+    answer = try_price_answer(_catalog_db([product]), "食品多少钱？")
+    assert answer is not None
+    assert "均为 3元" in answer.content
+
+
+def test_category_price_quote_respects_purity_gate() -> None:
+    """类目问价同样要过纯度闸：服务/规格问不许被答成类目价。"""
+    from suite_api.services.catalog_tools import try_price_answer
+
+    product = _mem_product(1, "笔记本 A", 499900)
+    product.category = "笔记本电脑"
+    db = _catalog_db([product])
+    assert try_price_answer(db, "笔记本电脑刻字怎么收费？") is None
+    assert try_price_answer(db, "笔记本电脑怎么保养？") is None
+
+
+def test_category_price_quote_misses_when_category_unpriced_or_unknown() -> None:
+    from suite_api.services.catalog_tools import try_price_answer
+
+    product = _mem_product(1, "笔记本 A", None)
+    product.category = "笔记本电脑"
+    assert try_price_answer(_catalog_db([product]), "笔记本电脑多少钱？") is None
+    assert try_price_answer(_catalog_db([product]), "无人机多少钱？") is None
+
+
+def test_category_question_uses_category_quote_end_to_end(api: ApiFixture) -> None:
+    """端到端（真引擎）：种子里有「食品」类目（瓶装水 3 元）-> 按类目问价答类目价。"""
+    client, _ = api
+    _login(client)
+    outcome, _ = _run_question(client, "食品多少钱？")
+    assert outcome.tool is not None and outcome.tool["name"] == "catalog"
+    assert outcome.answer.citations == []
+    assert "食品" in outcome.answer.content and "3元" in outcome.answer.content
