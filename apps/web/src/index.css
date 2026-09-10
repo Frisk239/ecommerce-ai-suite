@@ -1,16 +1,17 @@
 @import "tailwindcss";
 
 /*
- * 视觉 token（质感第二轮，UX-NOTES §二.7 v3 继承 + 去廉价感）：
- * - 画布：纵向微渐变 #F8F9FA → #EFF1F4（fixed，不抢戏，只给面板当底）
- * - 海拔 = 边线 + 顶高光 +  slate 系多层阴影（三档：xs/sm/md，阴影 tint 到墨色不纯黑）
- * - 主按钮近黑渐变 + 内高光 + 投影，hover 上浮 1px，active 下压；品牌蓝 #4176E6 仍只做语义
+ * 视觉 token（v3 扁平语言，UX-NOTES §二点七）：
+ * - 画布：实色 #F5F6F7（--color-canvas），与白面板留一层级差，不设装饰渐变
+ * - 面板/卡片：实色白底 + 1px rgba 墨线；hover 只做同色相/描边叠加，不位移
+ * - 主按钮近黑实色 #0F1115，hover 同色相叠加 #43454A，active scale(0.98)；品牌蓝 #4176E6 只做语义
  * - 墨阶四级 #0F1115 / #61666B / #81858C / #ADB2B8；边框 rgba 黑墨线四档
- * - 表格 ~30px 行、12.5px 字、tabular-nums；表头微渐变 + 疏排小标
- * - 徽章 11px / 4px 圆角 + 1px 语义边框 + 色点 + 顶高光
+ * - 表格 ~30px 行、12.5px 字、tabular-nums；表头实色灰底 + 疏排小标
+ * - 徽章 11px / 4px 圆角 + 1px 语义边框 + 色点（实色底，无纵向渐变）
  * - 动效纪律（MOTION 2）：150~220ms、ease-out 进入 / expo 缓动，大道至简；
  *   动效必须有意义（反馈状态变化），装饰性无限循环一律不加；
- *   prefers-reduced-motion 下全部退化为静态
+ *   全站无 hover 位移（同色相叠加代替）；prefers-reduced-motion 下动画/过渡关闭，
+ *   :active 瞬时缩放保留（状态反馈，非装饰动效）
  * - 圆角纪律：4 芯片徽章 / 6 按钮输入 / 8 面板 / 14 气泡 / 12 输入卡
  * - 字体栈 PingFang SC / Microsoft YaHei / Noto Sans CJK；等宽栈尾接 PingFang SC
  * - Tailwind v4：禁 @apply，组件类一律裸 CSS 写在 @layer components
@@ -59,8 +60,6 @@
   }
   body {
     background-color: var(--color-canvas);
-    background-image: linear-gradient(180deg, #f8f9fa 0%, #eff1f4 100%);
-    background-attachment: fixed;
     color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: 14px;
@@ -97,26 +96,23 @@
     animation: page-enter 220ms ease-out;
   }
 
-  /* ---------- 面板：白底微渐变 + 墨线 + 顶高光 + 双层 slate 阴影 ---------- */
+  /* ---------- 面板：实色白底 + 墨线 + 阴影（无渐变、hover 不位移） ---------- */
   .panel {
-    background: linear-gradient(180deg, #ffffff 0%, #fdfefe 100%);
+    background: #ffffff;
     border: 1px solid var(--color-line-2);
     border-radius: 8px;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.05),
       0 4px 12px rgba(16, 24, 40, 0.05);
   }
   .panel-hover {
     transition:
       border-color 150ms var(--ease-dsh),
-      box-shadow 200ms var(--ease-dsh),
-      transform 200ms var(--ease-emph);
+      box-shadow 200ms var(--ease-dsh);
   }
   .panel-hover:hover {
     border-color: var(--color-line-3);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.06),
       0 8px 20px rgba(16, 24, 40, 0.08);
   }
@@ -133,12 +129,10 @@
     color: var(--color-ink);
   }
 
-  /* ---------- 品牌 mark（近黑渐变 + 内高光 + 投影） ---------- */
+  /* ---------- 品牌 mark（近黑实色 + 投影；与主按钮同语言，无渐变/内高光） ---------- */
   .brand-mark {
-    background: linear-gradient(180deg, #2b2f36 0%, #0f1115 100%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.14),
-      0 1px 2px rgba(16, 24, 40, 0.25);
+    background: #0f1115;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.25);
   }
 
   /* ---------- 侧栏导航（选中 = 白底 elevated 卡 + 蓝色左标） ---------- */
@@ -177,7 +171,6 @@
     background: #ffffff;
     border-color: var(--color-line-2);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.07);
     color: var(--color-ink);
     font-weight: 500;
@@ -210,17 +203,15 @@
     border: 1px solid var(--color-line-2);
     border-radius: 8px;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.05);
   }
 
-  /* ---------- 统计卡（队列摘要，可点下钻；入场 stagger + hover 上浮） ---------- */
+  /* ---------- 统计卡（队列摘要，可点下钻；入场 stagger，hover 只描边不位移） ---------- */
   .stat-card {
-    background: linear-gradient(180deg, #ffffff 0%, #fdfefe 100%);
+    background: #ffffff;
     border: 1px solid var(--color-line-2);
     border-radius: 8px;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.05),
       0 4px 12px rgba(16, 24, 40, 0.05);
     padding: 12px 14px;
@@ -242,10 +233,8 @@
   .stat-card:hover {
     border-color: var(--color-line-3);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.06),
       0 8px 20px rgba(16, 24, 40, 0.09);
-    transform: translateY(-2px);
   }
   .stat-card:active {
     transform: translateY(0) scale(0.99);
@@ -253,7 +242,6 @@
   .stat-card-active {
     border-color: var(--color-accent-border);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 0 0 3px rgba(65, 118, 230, 0.12);
   }
   .stat-label {
@@ -277,7 +265,7 @@
     color: var(--color-caption);
   }
 
-  /* ---------- 按钮（主按钮渐变 + 内高光；hover 上浮、active 下压） ---------- */
+  /* ---------- 按钮（主按钮近黑实色；hover 同色相叠加、active 缩放） ---------- */
   .btn {
     display: inline-flex;
     align-items: center;
@@ -308,26 +296,21 @@
     transform: translateY(0) scale(0.98);
   }
   .btn-primary {
-    background: linear-gradient(180deg, #2b2f36 0%, #0f1115 100%);
+    background: #0f1115;
     color: #ffffff;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.14),
-      0 1px 2px rgba(16, 24, 40, 0.25);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.25);
   }
   .btn-primary:not(:disabled):hover {
-    background: linear-gradient(180deg, #43454a 0%, #2b2f36 100%);
+    background: #43454a;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.14),
       0 1px 2px rgba(16, 24, 40, 0.25),
       0 4px 10px rgba(16, 24, 40, 0.18);
-    transform: translateY(-1px);
   }
   .btn-secondary {
-    background: linear-gradient(180deg, #ffffff 0%, #f8fafb 100%);
+    background: #ffffff;
     color: var(--color-ink);
     border-color: var(--color-line-3);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.05);
   }
   .btn-secondary:not(:disabled):hover {
@@ -346,7 +329,7 @@
     height: 26px;
     padding: 0 10px;
     font-size: 12px;
-    border-radius: 5px;
+    border-radius: 6px;
   }
 
   /* ---------- 表单（内阴影 + focus 光环过渡） ---------- */
@@ -411,7 +394,6 @@
     font-weight: 500;
     line-height: 1;
     white-space: nowrap;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
   }
   .badge-published::before,
   .badge-review::before,
@@ -426,7 +408,7 @@
   }
   .badge-published {
     color: var(--color-ok);
-    background: linear-gradient(180deg, #ecfdf3 0%, #e0f7e9 100%);
+    background: #e0f7e9;
     border-color: rgba(46, 158, 104, 0.3);
   }
   .badge-published::before {
@@ -435,7 +417,7 @@
   }
   .badge-review {
     color: var(--color-warn);
-    background: linear-gradient(180deg, #fef8ec 0%, #fdf0d5 100%);
+    background: #fdf0d5;
     border-color: rgba(217, 119, 6, 0.32);
   }
   .badge-review::before {
@@ -444,7 +426,7 @@
   }
   .badge-ingested {
     color: #5b6779;
-    background: linear-gradient(180deg, #f2f4f6 0%, #e8ebee 100%);
+    background: #e8ebee;
     border-color: var(--color-line-3);
   }
   .badge-ingested::before {
@@ -452,7 +434,7 @@
   }
   .badge-failed {
     color: var(--color-danger);
-    background: linear-gradient(180deg, #fef4f2 0%, #fde8e6 100%);
+    background: #fde8e6;
     border-color: rgba(217, 45, 32, 0.3);
   }
   .badge-failed::before {
@@ -468,8 +450,7 @@
     padding: 0 6px;
     border-radius: 4px;
     border: 1px solid var(--color-line-2);
-    background: linear-gradient(180deg, #fbfcfd 0%, #f1f4f6 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    background: #f1f4f6;
     font-size: 11px;
     line-height: 1;
     color: var(--color-ink-2);
@@ -531,15 +512,14 @@
     transform: scale(0.97);
   }
   .seg-btn-active {
-    background: linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%);
+    background: #ffffff;
     color: #0f1115;
     font-weight: 500;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.12);
   }
 
-  /* ---------- 高密度表格（表头微渐变 + 疏排小标） ---------- */
+  /* ---------- 高密度表格（表头实色灰底 + 疏排小标） ---------- */
   .table-gov {
     width: 100%;
     border-collapse: collapse;
@@ -554,7 +534,7 @@
     font-weight: 500;
     letter-spacing: 0.03em;
     color: var(--color-ink-3);
-    background: linear-gradient(180deg, #fbfcfd 0%, #f1f4f6 100%);
+    background: #f1f4f6;
     border-bottom: 1px solid var(--color-line-2);
   }
   .table-gov td {
@@ -587,7 +567,7 @@
     opacity: 1;
   }
 
-  /* ---------- 引用芯片（hover 上浮 + 描边） ----------
+  /* ---------- 引用芯片（hover 同色相叠加 + 描边，不位移） ----------
      基类共用尺寸/等宽（单一事实源），两变体只差颜色与交互：
      .cite-chip=青底可点链接；.cite-chip-readonly=顾客侧中性不可点。 */
   .cite-chip,
@@ -598,7 +578,6 @@
     height: 20px;
     padding: 0 7px;
     border-radius: 4px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
     font-family: var(--font-mono);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
@@ -610,14 +589,12 @@
     transition:
       background-color 150ms var(--ease-dsh),
       border-color 150ms var(--ease-dsh),
-      box-shadow 200ms var(--ease-dsh),
-      transform 150ms var(--ease-emph);
+      box-shadow 200ms var(--ease-dsh);
   }
   .cite-chip:hover {
     background: #ffffff;
     border-color: var(--color-accent-border);
     box-shadow: 0 1px 2px rgba(16, 24, 40, 0.12);
-    transform: translateY(-1px);
   }
   /* 顾客侧只读变体（UX-B）：中性灰底灰字、cursor 默认、无 hover 反馈——
      顾客页引用芯片不可点，视觉上不能像链接。 */
@@ -640,8 +617,7 @@
     padding: 0 7px;
     border-radius: 4px;
     border: 1px solid var(--color-line-2);
-    background: linear-gradient(180deg, #f2f4f6 0%, #e8ebee 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    background: #e8ebee;
     font-family: var(--font-mono);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
@@ -685,7 +661,6 @@
     border: 1px solid var(--color-line-2);
     border-radius: 10px;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 12px 40px rgba(16, 24, 40, 0.2);
     animation: pop-in 220ms var(--ease-emph);
   }
@@ -699,7 +674,6 @@
   /* ---------- 客服对话区 ---------- */
   .chat-scroll {
     background: var(--color-surface);
-    background-image: linear-gradient(180deg, #f4f6f8 0%, #f9fafb 100%);
   }
   .bubble-customer {
     max-width: 80%;
@@ -710,10 +684,9 @@
     color: var(--color-ink);
     white-space: pre-wrap;
     word-break: break-word;
-    background: linear-gradient(180deg, #eef4fe 0%, #e0eafd 100%);
+    background: var(--color-accent-soft);
     border: 1px solid rgba(65, 118, 230, 0.16);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.7),
       0 1px 2px rgba(16, 24, 40, 0.05);
   }
   .bubble-agent {
@@ -725,10 +698,9 @@
     color: var(--color-ink);
     white-space: pre-wrap;
     word-break: break-word;
-    background: linear-gradient(180deg, #ffffff 0%, #fcfdfd 100%);
+    background: #ffffff;
     border: 1px solid var(--color-line-2);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.06);
   }
 
@@ -773,7 +745,6 @@
     border: 1px solid var(--color-line-2);
     background: #ffffff;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.05);
     transition:
       border-color 150ms var(--ease-dsh),
@@ -814,10 +785,8 @@
     justify-content: center;
     flex: none;
     user-select: none;
-    background: linear-gradient(180deg, #4d84ec 0%, #4176e6 100%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 1px 2px rgba(53, 98, 201, 0.4);
+    background: #0f1115;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.25);
     color: #ffffff;
     cursor: pointer;
     transition:
@@ -826,12 +795,10 @@
       transform 150ms var(--ease-emph);
   }
   .send-btn:hover:not(:disabled) {
-    background: linear-gradient(180deg, #3d6fd6 0%, var(--color-accent-strong) 100%);
+    background: #43454a;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 1px 2px rgba(53, 98, 201, 0.4),
-      0 4px 10px rgba(53, 98, 201, 0.3);
-    transform: translateY(-1px);
+      0 1px 2px rgba(16, 24, 40, 0.25),
+      0 4px 10px rgba(16, 24, 40, 0.18);
   }
   .send-btn:active:not(:disabled) {
     transform: translateY(0) scale(0.94);
@@ -844,11 +811,10 @@
   }
   /* 停止钮语义：白底墨线（流式中断是控制动作，不用品牌蓝） */
   .send-btn.send-stop {
-    background: linear-gradient(180deg, #ffffff 0%, #f8fafb 100%);
+    background: #ffffff;
     color: var(--color-ink);
     border: 1px solid var(--color-line-3);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
       0 1px 2px rgba(16, 24, 40, 0.06);
   }
   .send-btn.send-stop:hover {
@@ -933,12 +899,6 @@
   .skeleton {
     animation: none;
     background: rgba(16, 24, 40, 0.07);
-  }
-  .stat-card:hover,
-  .btn-primary:not(:disabled):hover,
-  .cite-chip:hover,
-  .send-btn:hover:not(:disabled) {
-    transform: none;
   }
   .typing-dots span,
   .stream-caret {
