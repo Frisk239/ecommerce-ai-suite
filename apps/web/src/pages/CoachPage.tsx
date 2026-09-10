@@ -178,7 +178,7 @@ function AnswerDrawer({
             </button>
             {showStandard ? (
               <p className="mt-1.5 rounded-[6px] border border-line-2 bg-canvas px-3 py-2 text-[13px] leading-5 text-ink-2">
-                {question.standard_answer ?? '（转写兜底题没有标准答案，评分只看题面与 rubric 另两维）'}
+                {question.standard_answer ?? '（转写兜底题无标准答案）'}
               </p>
             ) : null}
           </div>
@@ -425,8 +425,8 @@ export default function CoachPage() {
   return (
     <div>
       <PageHeader
-        title="业务能力 · 销售考核"
-        desc="用真实顾客场景做模拟考核：题库从「已发布」对话动态推导（confirmed QA 对逐题，弃权/空则转写首问兜底），未发布的对话不进题库。单轮作答后由厂商模型按三维 rubric（口径准确 40 / 证据贴合 30 / 服务语气 30）打分——打分无降级，底座不可用时该次记「未评分」，可重新评分。考核记录不是中台对象，只在本页回放。"
+        title="销售考核"
+        desc="从已发布对话抽场景，按口径/证据/语气三维打分。"
       />
 
       <div className="mb-6">

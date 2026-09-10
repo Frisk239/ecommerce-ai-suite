@@ -90,7 +90,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
           </span>
           <span className="min-w-0 leading-tight">
             <span className="block truncate text-[13px] font-medium text-ink">演示店铺</span>
-            <span className="block text-[11px] text-caption">种子数据 · 可整包替换</span>
+            <span className="block text-[11px] text-caption">演示数据</span>
           </span>
         </div>
       </div>

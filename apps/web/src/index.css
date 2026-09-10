@@ -96,14 +96,12 @@
     animation: page-enter 220ms ease-out;
   }
 
-  /* ---------- 面板：实色白底 + 墨线 + 阴影（无渐变、hover 不位移） ---------- */
+  /* ---------- 面板：实色白底 + 墨线 + 近线级阴影（海拔=1px 墨线，无扩散层） ---------- */
   .panel {
     background: #ffffff;
     border: 1px solid var(--color-line-2);
     border-radius: 8px;
-    box-shadow:
-      0 1px 2px rgba(16, 24, 40, 0.05),
-      0 4px 12px rgba(16, 24, 40, 0.05);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
   }
   .panel-hover {
     transition:
@@ -112,9 +110,7 @@
   }
   .panel-hover:hover {
     border-color: var(--color-line-3);
-    box-shadow:
-      0 1px 2px rgba(16, 24, 40, 0.06),
-      0 8px 20px rgba(16, 24, 40, 0.08);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
   }
   .panel-title {
     display: flex;
@@ -204,65 +200,6 @@
     border-radius: 8px;
     box-shadow:
       0 1px 2px rgba(16, 24, 40, 0.05);
-  }
-
-  /* ---------- 统计卡（队列摘要，可点下钻；入场 stagger，hover 只描边不位移） ---------- */
-  .stat-card {
-    background: #ffffff;
-    border: 1px solid var(--color-line-2);
-    border-radius: 8px;
-    box-shadow:
-      0 1px 2px rgba(16, 24, 40, 0.05),
-      0 4px 12px rgba(16, 24, 40, 0.05);
-    padding: 12px 14px;
-    text-align: left;
-    width: 100%;
-    cursor: pointer;
-    animation: rise-in 450ms var(--ease-emph) backwards;
-    transition:
-      border-color 150ms var(--ease-dsh),
-      box-shadow 200ms var(--ease-dsh),
-      transform 200ms var(--ease-emph);
-  }
-  .stat-card:nth-child(2) {
-    animation-delay: 60ms;
-  }
-  .stat-card:nth-child(3) {
-    animation-delay: 120ms;
-  }
-  .stat-card:hover {
-    border-color: var(--color-line-3);
-    box-shadow:
-      0 1px 2px rgba(16, 24, 40, 0.06),
-      0 8px 20px rgba(16, 24, 40, 0.09);
-  }
-  .stat-card:active {
-    transform: translateY(0) scale(0.99);
-  }
-  .stat-card-active {
-    border-color: var(--color-accent-border);
-    box-shadow:
-      0 0 0 3px rgba(65, 118, 230, 0.12);
-  }
-  .stat-label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--color-ink-3);
-  }
-  .stat-value {
-    margin-top: 2px;
-    font-size: 26px;
-    line-height: 32px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    color: var(--color-ink);
-    font-variant-numeric: tabular-nums;
-  }
-  .stat-hint {
-    margin-top: 2px;
-    font-size: 11px;
-    line-height: 16px;
-    color: var(--color-caption);
   }
 
   /* ---------- 按钮（主按钮近黑实色；hover 同色相叠加、active 缩放） ---------- */
@@ -834,12 +771,6 @@
     transform: translateY(6px);
   }
 }
-@keyframes rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
 @keyframes skeleton-shimmer {
   0% {
     background-position: 200% 0;
@@ -891,7 +822,6 @@
 /* 动效降级：静态优先，颜色过渡保留 */
 @media (prefers-reduced-motion: reduce) {
   .page-enter,
-  .stat-card,
   .modal-card,
   .drawer-panel {
     animation: none;

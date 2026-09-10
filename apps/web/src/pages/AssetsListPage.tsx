@@ -46,6 +46,14 @@ const TAB_TO_STATUS: Record<Exclude<ListTab, '全部' | '知识缺口'>, AssetSt
   已发布: 'published',
 }
 
+// 删掉 tab 下方的摘要卡后，把原来卡上的口径说明留在 tab 悬停上：
+// 数字只在分段出现一次，语义（纯新待办 / 线上口径 / 缺口非资产）不丢。
+const TAB_TITLES: Partial<Record<ListTab, string>> = {
+  待人洗: '纯新待办：修订中的待办跟线上资产走，不计入这里',
+  已发布: '线上在服务：含修订中的资产，客服与连接层只读这一口径',
+  知识缺口: '拒答后排队：人补文档并发布后关闭，不是资产',
+}
+
 function isListTab(value: string | null): value is ListTab {
   return value !== null && (TABS as readonly string[]).includes(value)
 }
@@ -206,7 +214,7 @@ export default function AssetsListPage() {
 
       <PageHeader
         title="中台 · 资产"
-        desc="被治理后可检索、可引用、可导出的内容。三态：已接入（机洗未完成或失败）→ 待人洗（等人确认或补填）→ 已发布（可被引用与写回）。知识缺口不是资产：拒答后在这里排队，人补文档再发布。"
+        desc="被治理后可检索、可引用、可导出的内容；知识缺口也在这里排队补文档。"
         actions={
           <button type="button" className="btn btn-primary" onClick={() => openDrawer(null)}>
             <Plus aria-hidden size={14} weight="bold" />
@@ -224,6 +232,8 @@ export default function AssetsListPage() {
                 aria-selected={activeTab === tab}
                 className={`seg-btn ${activeTab === tab ? 'seg-btn-active' : ''}`}
                 onClick={() => setTab(tab)}
+                title={TAB_TITLES[tab]}
+                aria-label={TAB_TITLES[tab] !== undefined ? `${tab}（${TAB_TITLES[tab]}）` : tab}
               >
                 {tab}
                 <span className={activeTab === tab ? 'text-ink-3' : ''}>
@@ -265,41 +275,6 @@ export default function AssetsListPage() {
           )}
         </div>
       </PageHeader>
-
-      {state.phase === 'ok' ? (
-        <div className="mb-4 grid gap-3 sm:grid-cols-3" aria-label="治理队列摘要">
-          <button
-            type="button"
-            className={`stat-card ${activeTab === '待人洗' ? 'stat-card-active' : ''}`}
-            onClick={() => setTab('待人洗')}
-            title="纯新待办：修订中的待办跟着它的线上资产走，不在这里计数"
-          >
-            <div className="stat-label">待人洗 · 待办</div>
-            <div className="stat-value">{counts.pending_review}</div>
-            <div className="stat-hint">纯新待办 · 修订跟线上走</div>
-          </button>
-          <button
-            type="button"
-            className={`stat-card ${activeTab === '已发布' ? 'stat-card-active' : ''}`}
-            onClick={() => setTab('已发布')}
-            title="线上在服务：含修订中的资产，客服与连接层只读这一口径"
-          >
-            <div className="stat-label">已发布 · 线上口径</div>
-            <div className="stat-value">{counts.published}</div>
-            <div className="stat-hint">检索与引用只读这一口径</div>
-          </button>
-          <button
-            type="button"
-            className={`stat-card ${activeTab === '知识缺口' ? 'stat-card-active' : ''}`}
-            onClick={() => setTab('知识缺口')}
-            title="拒答后排队：人补文档并发布后关闭，不是资产"
-          >
-            <div className="stat-label">知识缺口 · 待补</div>
-            <div className="stat-value">{openGapCount ?? '—'}</div>
-            <div className="stat-hint">拒答排队 · 发布后关闭</div>
-          </button>
-        </div>
-      ) : null}
 
       {state.phase === 'ok' && activeTab !== '知识缺口' ? (
         <div className="mb-3 flex flex-wrap items-center gap-3">

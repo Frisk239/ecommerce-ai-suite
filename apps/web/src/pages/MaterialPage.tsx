@@ -274,8 +274,8 @@ export default function MaterialPage() {
   return (
     <div>
       <PageHeader
-        title="业务能力 · 素材中心"
-        desc="内容闭环第一段：选商品生成卖点文案，规则质检 + 操作者抽检双重过线才登记为素材资产（失败不进中台）。登记后走治理台人洗发布，成为可检索、可引用的证据。「切片汇入」页签列出直播切片拣选登记出的视频资产（0015：视图不是二次登记）。"
+        title="素材中心"
+        desc="选商品生成卖点文案，抽检通过才登记为素材资产。"
         actions={
           tab === '任务列表' ? (
             <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>

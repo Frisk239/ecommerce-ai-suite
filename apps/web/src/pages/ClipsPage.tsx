@@ -69,8 +69,8 @@ export default function ClipsPage() {
       {actionError ? <ActionError message={actionError} variant="prominent" className="mb-4" /> : null}
 
       <PageHeader
-        title="业务能力 · 直播切片"
-        desc="候选不是资产，拣选才登记：勾选候选后一次登记 N 条，独立写入对象存储，成为种类=视频、来源=切片拣选的中台资产（已接入→待人洗）。源录像不进中台，登记也不造任务；发布仍在治理台。"
+        title="直播切片"
+        desc="勾选候选才登记为中台视频资产；发布仍在治理台。"
         actions={
           <>
             <span className="text-xs tabular-nums text-caption">
