@@ -585,6 +585,17 @@
     cursor: default;
   }
 
+  /* 来源筛选 chip 的选中态（第 51 刀）：把 .kind-chip 当按钮用时需要可辨的
+     选中态——实色描边 + 墨色文字，不用品牌蓝（蓝只留语义处）。 */
+  .kind-chip-active {
+    border-color: var(--color-ink-2);
+    color: var(--color-ink);
+    background: var(--color-fill);
+  }
+  button.kind-chip {
+    cursor: pointer;
+  }
+
   /* 评分星（第 48 刀 CSAT）：实色、无位移、无渐变——UX-E 形态约束同款；
      hover 只改色（品牌蓝仅在语义处：这里是「选中」语义，允许用 accent）。 */
   .star-btn {

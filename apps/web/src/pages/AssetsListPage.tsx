@@ -47,6 +47,16 @@ const TAB_TO_STATUS: Record<Exclude<ListTab, '全部' | '知识缺口'>, AssetSt
   已发布: 'published',
 }
 
+/** 「当前 tab 下的行」单一来源（第 51 刀评审 P2：filtered 与来源计数各抄一份谓词
+ * 会漂）。三态口径与总览页同源（workQueue.isPendingWash/isPublished）；
+ * 「全部」「知识缺口」= 不筛状态。 */
+function rowsInTab(rows: readonly AssetListItem[], tab: ListTab): AssetListItem[] {
+  if (tab === '全部' || tab === '知识缺口') return [...rows]
+  if (tab === '已发布') return rows.filter(isPublished)
+  if (tab === '待人洗') return rows.filter(isPendingWash)
+  return rows.filter((a) => a.status === TAB_TO_STATUS[tab])
+}
+
 // 删掉 tab 下方的摘要卡后，把原来卡上的口径说明留在 tab 悬停上：
 // 数字只在分段出现一次，语义（纯新待办 / 线上口径 / 缺口非资产）不丢。
 const TAB_TITLES: Partial<Record<ListTab, string>> = {
@@ -121,6 +131,18 @@ export default function AssetsListPage() {
       return next
     })
 
+  // 第 51 刀：来源筛选（?source=，空=全部）。工作队列首屏被导入货淹掉（评论 200
+  // 条），运营要能一键只看自己传的或只看某一来源——筛选不改数据、不动默认。
+  const sourceParam = searchParams.get('source')
+  const activeSource = sourceParam !== null && sourceParam !== '' ? sourceParam : null
+  const setSource = (source: string | null) =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (source === null) next.delete('source')
+      else next.set('source', source)
+      return next
+    })
+
   // 搜索只做客户端过滤（数据量小），不进 URL：切 tab / view 保留输入，刷新即清。
   const [query, setQuery] = useState('')
 
@@ -163,9 +185,9 @@ export default function AssetsListPage() {
     const q = query.trim().toLowerCase()
     let rows: typeof scoped
     if (q !== '' || activeTab === '全部' || activeTab === '知识缺口') rows = scoped
-    else if (activeTab === '已发布') rows = scoped.filter(isPublished)
-    else if (activeTab === '待人洗') rows = scoped.filter(isPendingWash)
-    else rows = scoped.filter((a) => a.status === TAB_TO_STATUS[activeTab])
+    else rows = rowsInTab(scoped, activeTab)
+
+    if (activeSource !== null) rows = rows.filter((a) => a.source_kind === activeSource)
 
     if (q === '') return rows
     // NULL 标题用展示兜底「未命名资产」，ID 同时支持裸数字与 A-0000 形态。
@@ -177,7 +199,18 @@ export default function AssetsListPage() {
         formatAssetId(a.id).toLowerCase().includes(q)
       )
     })
-  }, [scoped, activeTab, query])
+  }, [scoped, activeTab, query, activeSource])
+
+  // 来源筛选 chips 的取数：按「当前 tab + 范围」下的实际行统计（**不含搜索词**——
+  // chip 是这一屏有什么的导航，不随输入跳动）。只显示有行的来源。
+  const sourceCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    if (activeTab === '知识缺口') return counts
+    for (const asset of rowsInTab(scoped, activeTab)) {
+      counts.set(asset.source_kind, (counts.get(asset.source_kind) ?? 0) + 1)
+    }
+    return counts
+  }, [scoped, activeTab])
 
   // 「去补文档」（审计刀 8 P1：方案 UX-C.3 明令禁止静默开修订）：
   // 该商品已有已发布规格文档时，先问清「在这份上开修订」还是「另起一份新文档」——
@@ -294,6 +327,38 @@ export default function AssetsListPage() {
           )}
         </div>
       </PageHeader>
+
+      {/* 来源筛选（第 51 刀）：工作队列首屏被导入货淹掉（评论 200 条），
+          运营要能一键只看自己传的、或只看某一来源。只列**当前这屏真有的**来源。 */}
+      {state.phase === 'ok' &&
+      activeTab !== '知识缺口' &&
+      (sourceCounts.size > 1 || activeSource !== null) ? (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="来源筛选">
+          <span className="text-[11px] text-caption">来源</span>
+          <button
+            type="button"
+            className={`kind-chip ${activeSource === null ? 'kind-chip-active' : ''}`}
+            aria-pressed={activeSource === null}
+            onClick={() => setSource(null)}
+          >
+            全部
+          </button>
+          {[...sourceCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([kind, count]) => (
+              <button
+                key={kind}
+                type="button"
+                className={`kind-chip ${activeSource === kind ? 'kind-chip-active' : ''}`}
+                aria-pressed={activeSource === kind}
+                onClick={() => setSource(activeSource === kind ? null : kind)}
+                title={`只看「${sourceKindLabel(kind)}」来源（${count} 条）`}
+              >
+                {sourceKindLabel(kind)} {count}
+              </button>
+            ))}
+        </div>
+      ) : null}
 
       {state.phase === 'ok' && activeTab !== '知识缺口' ? (
         <div className="mb-3 flex flex-wrap items-center gap-3">

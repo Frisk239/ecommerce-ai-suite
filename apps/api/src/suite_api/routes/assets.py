@@ -67,6 +67,7 @@ from suite_api.services.registration import (
     INGESTED,
     PENDING_REVIEW,
     PUBLISHED,
+    SOURCE_KINDS,
     machine_wash_field_names,
     make_object_key,
     register_asset,
@@ -963,6 +964,12 @@ def list_assets(
     # 第 19 刀/ADR 0040 最小侵入加种类过滤（与 status 并存）：销售考核题库推导
     # 只取已发布对话；不限枚举值，未知 kind 自然得空列表
     kind: Annotated[str | None, Query()] = None,
+    # 第 51 刀：来源过滤——工作队列首屏被导入货淹掉（评论导入 200 条里 180 条
+    # 进待洗队列），运营要有办法只看自己传的/只看某一来源。取值受 SOURCE_KINDS
+    # 约束（未知 422，别让拼错的来源静默返回空列表）。
+    # 注：控制台内当前是**客户端过滤**（一次拉全量、数据量小）；这个参数是服务端
+    # 能力（API 消费者/将来分页时用），接口式用例钉着它。
+    source_kind: Annotated[str | None, Query()] = None,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> list[AssetOut]:
@@ -972,11 +979,18 @@ def list_assets(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"status 只能是 {'/'.join(sorted(_VALID_STATUSES))}",
         )
+    if source_kind is not None and source_kind not in SOURCE_KINDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"source_kind 只能是 {'/'.join(sorted(SOURCE_KINDS))}",
+        )
     # 0042：discarded 是治理动作后的隐藏标记——列表（含各状态页签）默认
     # 不可见；详情/血缘按 id 直达不受影响，检索本就只有已发布
     query = select(Asset).where(Asset.discarded_at.is_(None)).order_by(Asset.id.desc())
     if kind is not None:
         query = query.where(Asset.kind == kind)
+    if source_kind is not None:
+        query = query.where(Asset.source_kind == source_kind)
     if status_filter == PUBLISHED:
         # 已发布口径=指针非空（含修订中：线上仍在服务）
         query = query.where(Asset.current_published_version_id.is_not(None))
