@@ -242,6 +242,19 @@ def _swap_version_bytes(
     return new_key
 
 
+def _key_suffix(object_key: str) -> str | None:
+    """对象键的扩展名（不含点）；没有则 None（调用方落回按 kind 兜底）。
+
+    修订/复制字节时用来把**源对象的扩展名**带过去（ADR 0047 §4：键必须与字节
+    一致）。basename 里没有点、或点后为空，都当没有扩展名。
+    """
+    name = object_key.rsplit("/", 1)[-1]
+    if "." not in name:
+        return None
+    suffix = name.rsplit(".", 1)[-1]
+    return suffix or None
+
+
 def _delete_version_bytes(storage: ObjectStorage, versions: Sequence[AssetVersion]) -> None:
     """删一组版本的对象字节（放弃修订/废弃资产共用；delete 幂等，键不存在
     不报错）。已发布版本的键永不进本函数（两个调用方都只喂未发布版）。"""
@@ -686,7 +699,10 @@ def open_revision(
             status_code=status.HTTP_409_CONFLICT,
             detail="当前已发布版本对象缺失，无法开修订",
         ) from exc
-    object_key = make_object_key(asset.kind, content_bytes)
+    # 修订沿用**源版本对象的扩展名**（第 46 刀 ADR 0047 §4：键必须与字节一致）：
+    # 无源录像的旧切片字节是时间码文本、键是 .txt，按 kind 兜底会写出
+    # 「.mp4 键装文本字节」——正是本刀在 PUT …/bytes 上堵掉的同一类不一致。
+    object_key = make_object_key(asset.kind, content_bytes, suffix=_key_suffix(published.object_key))
     storage.put_bytes(object_key, content_bytes)
 
     max_no = db.scalar(
@@ -779,9 +795,12 @@ def replace_version_bytes(
     """修订/待人洗版换字节（0042）：上传新正文替换该版内容——新对象键写入、
     旧修订键字节删除（孤儿清理，storage.delete 首个接线方）、重跑机洗。
 
-    闸门：版本须存在且未发布且非当前指针（线上字节永不动，409）。extracted
-    按新字节重算（字段集与登记同口径按 kind+product 分派）、confirmed 保留
-    （继承/人洗确认值不逼重存）。上传校验对齐登记（类型/2MB/空文件）。
+    闸门：版本须存在且未发布且非当前指针（线上字节永不动，409）；**video 资产
+    直接 409**（第 46 刀：正文由 transcript 字段承载、字节是切片，换字节会写出
+    「.mp4 键装文本」并清空预置字段——见下面 816 行那段）。extracted 按新字节
+    重算（字段集与登记同口径按 kind+product 分派）、confirmed 保留（继承/人洗
+    确认值不逼重存）。上传校验对齐登记（类型/2MB/空文件），**类型闸在 video 闸
+    之前**：给视频资产传 mp4 会先吃 415，传文本才 409。
 
     同步 def（同 CSV/重试先例）：dialogue 重跑机洗含 LLM（asyncio.run，≤20s），
     必须跑在线程池线程而非事件循环；字节换序在 commit 后、机洗窗口外（P1#2

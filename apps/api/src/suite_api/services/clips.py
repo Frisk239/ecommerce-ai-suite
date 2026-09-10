@@ -23,6 +23,7 @@ registered 且资产已落库、该候选仍 pending 可重拣（第 46 刀裁�
 """
 
 import hashlib
+import logging
 import subprocess
 import tempfile
 from pathlib import Path
@@ -33,10 +34,13 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, ClipCandidate, ClipRecording
+from suite_api.observability import record_clip_cut
 from suite_api.services.registration import register_asset
 from suite_platform.storage import ObjectStorage
 
 # 候选两态（0039）：与 asset 三态、任务五态无关，不共用词表
+logger = logging.getLogger(__name__)
+
 PENDING = "pending"
 REGISTERED = "registered"
 
@@ -157,6 +161,32 @@ def register_recording(
     return recording
 
 
+def _claim_candidate(db: Session, candidate_id: int) -> int:
+    """CAS 占位：pending -> registered，返回影响行数（0=已被别的请求拣走）。
+
+    条件 UPDATE 是并发闸本体（审计刀 9 P1）：预检只保证「当时是 pending」，
+    两个并发拣选都能过预检；把状态先抢到手，影响行数为 0 的一方 409。占位后
+    立刻 commit（不持锁等 ffmpeg）。
+    """
+    claimed = db.execute(
+        update(ClipCandidate)
+        .where(ClipCandidate.id == candidate_id, ClipCandidate.status == PENDING)
+        .values(status=REGISTERED)
+    ).rowcount
+    db.commit()
+    return claimed
+
+
+def _release_claim(db: Session, candidate_id: int) -> None:
+    """把 CAS 占位放回 pending（真切失败/源录像缺失时用）：候选必须可重拣。"""
+    db.execute(
+        update(ClipCandidate)
+        .where(ClipCandidate.id == candidate_id, ClipCandidate.status == REGISTERED)
+        .values(status=PENDING, registered_asset_id=None)
+    )
+    db.commit()
+
+
 def pick_candidates(db: Session, storage: ObjectStorage, ids: list[int]) -> list[Asset]:
     """批量拣选登记：pending 候选 → kind=video / source=clip_pick 资产。
 
@@ -199,9 +229,21 @@ def pick_candidates(db: Session, storage: ObjectStorage, ids: list[int]) -> list
         # 校验读开的事务等它 = idle-in-transaction 占池连接（P1#2 纪律，与
         # registration.py 的「机洗前 commit」同口径）
         db.commit()
+        # 状态 CAS 占位（审计刀 9 P1）：预检只保证「当时是 pending」，两个并发
+        # 拣选（双击/重试）都能过预检，各自真切、各自登记 —— 库里会出现两份视频
+        # 资产而候选只锚一份，另一份成孤儿证据。用条件 UPDATE 把状态先抢到手：
+        # 影响行数 0 即已被别人拣走 -> 409（与预检同文案）。占位在 ffmpeg **之前**，
+        # 且立刻 commit（不持锁等子进程）；真切失败时下面把它回滚回 pending。
+        claimed = _claim_candidate(db, candidate.id)
+        if claimed == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"切片候选 {candidate.id} 已登记为资产，不可重复拣选",
+            )
         if candidate.recording_id is not None:
             recording = recordings.get(candidate.recording_id)
             if recording is None:  # pragma: no cover - FK 保证存在，防御性同口径
+                _release_claim(db, candidate.id)
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"切片候选 {candidate.id} 的源录像不存在，无法切出片段",
@@ -212,14 +254,20 @@ def pick_candidates(db: Session, storage: ObjectStorage, ids: list[int]) -> list
                 )
             except ClipCutError as exc:
                 # 裁决 7：切失败不置 registered、不落半个资产，候选保持 pending 可重拣
+                # （CAS 已把它写成 registered，这里必须放回去——否则「可重拣」是假的）
+                _release_claim(db, candidate.id)
+                record_clip_cut(result="failed")
+                logger.warning("切片失败: candidate=%s reason=%s", candidate.id, exc)
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"候选 {candidate.id} 切片失败: {exc}",
                 ) from exc
             key_suffix = "mp4"
+            record_clip_cut(result="ok")
         else:
             content_bytes = transcript_bytes(candidate)
             key_suffix = "txt"  # 旧路径字节是文本：键不能跟着 kind 说 mp4（评审 P1-1）
+            record_clip_cut(result="legacy")
         # 转写**两条路径都预置为字段**（裁决 5 + 评审 P1-2 的收口）：video 正文
         # 只从字段进索引、永不读字节（真路径字节是 mp4；旧路径字节是时间码文本，
         # 但正文口径统一走字段后就不必再读它）——旧路径的检索能力因此不回归。
