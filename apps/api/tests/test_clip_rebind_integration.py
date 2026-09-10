@@ -82,6 +82,21 @@ def test_upload_receipt_carries_real_bound_count(api: ApiFixture) -> None:
     pending = _candidate_ids(client)
     assert pending, "种子候选应有 pending"
 
+    # 本文件共享一个库：先把 pending 解绑，造出「尚无源录像」的起点（否则前面
+    # 用例绑过之后，这里的 bound_count 会随执行顺序变化——审计刀 10 记的脆点）
+    factory = client.app.state.session_factory
+    with factory() as db:
+        from sqlalchemy import update
+
+        from suite_api.models import ClipCandidate
+
+        db.execute(
+            update(ClipCandidate)
+            .where(ClipCandidate.status == "pending")
+            .values(recording_id=None)
+        )
+        db.commit()
+
     first = _upload(client, "receipt-a.mp4")
     # 第一次上传：尚无源录像的 pending 全被顺手绑上
     assert first["bound_count"] == len(pending)
@@ -176,14 +191,17 @@ def test_bind_registered_candidate_is_409_and_writes_nothing(api: ApiFixture) ->
         ).first()
         registered_row.status = "registered"
         registered_row.registered_asset_id = None
+        # 先绑一份**存在的**录像（不要写越界 id——审计刀 10 记的脏状态），
+        # 用来证明 409 时一行都没写
+        recorded = [
+            row["id"]
+            for row in client.get("/api/clips/recordings").json()
+            if row["id"] != target["id"]
+        ]
+        registered_row.recording_id = recorded[0] if recorded else None
         db.commit()
         registered_id = registered_row.id
         registered_recording_id = registered_row.recording_id
-        # 给它先绑一份别的录像，用来证明 409 时一行都没写
-        if registered_recording_id is None:
-            registered_row.recording_id = target["id"] - 1 if target["id"] > 1 else None
-            db.commit()
-            registered_recording_id = registered_row.recording_id
     pending_id = [
         row["id"] for row in client.get("/api/clips/candidates").json() if row["status"] == "pending"
     ][0]

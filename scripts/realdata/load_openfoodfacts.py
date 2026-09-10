@@ -197,6 +197,9 @@ def load_products(db_url: str, rows: list[dict[str, Any]]) -> tuple[int, int]:
                     spec_schema=row["spec_schema"],
                     spec_values={},
                     stock=row["stock"],
+                    # 第 50 刀：来源随导入一起写（不靠迁移回填——否则重置演示库/
+                    # 新环境复现不出产品面的「开放数据集」）
+                    source_kind="open_dataset",
                 )
             )
             inserted += 1

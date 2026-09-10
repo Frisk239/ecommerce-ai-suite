@@ -375,8 +375,11 @@ export default function ClipsPage() {
                       已登记 {formatAssetId(assetId)}
                     </Link>
                   ) : (
-                    <span className="text-xs text-caption">
-                      {c.recording !== null ? '有源录像·可真切' : '待拣选'}
+                    <span
+                      className="max-w-[55%] truncate text-xs text-caption"
+                      title={`源录像：${c.source_video_label}${c.recording !== null ? `（已上传：${c.recording.label}）` : '（尚未上传录像，拣选走时间码文本）'}`}
+                    >
+                      {c.source_video_label}
                     </span>
                   )}
                 </div>

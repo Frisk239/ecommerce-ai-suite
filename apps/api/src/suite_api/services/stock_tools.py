@@ -62,6 +62,31 @@ def _lcs_len(a: str, b: str) -> int:
     return best
 
 
+def lcs_fragment(a: str, b: str) -> str:
+    """两串的最长公共子串（按字符，DP + 起点回填；短文本够用）。
+
+    与 `_lcs_len` 同源口径：`match_product` 用它判命中，报价纯度闸用它**剔除命中
+    片段**（部分名问价「保温杯多少钱」对商品「钛钢保温杯」时，被剔除的是「保温杯」
+    而不是要求全名子串——否则闸会把合理问价挡回 RAG，评审 P1）。
+    """
+    if not a or not b:
+        return ""
+    best_len = 0
+    best_end = 0
+    prev = [0] * (len(b) + 1)
+    for i, ca in enumerate(a, 1):
+        cur = [0] * (len(b) + 1)
+        for j, cb in enumerate(b, 1):
+            if ca == cb:
+                value = prev[j - 1] + 1
+                cur[j] = value
+                if value > best_len:
+                    best_len = value
+                    best_end = i
+        prev = cur
+    return a[best_end - best_len : best_end]
+
+
 def match_product(question: str, products: list[Product]) -> Product | None:
     """纯函数商品匹配：LCS ≥2 字命中；多命中取最长 LCS，平手取 id 小。"""
     winner: Product | None = None

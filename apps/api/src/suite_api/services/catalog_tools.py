@@ -1,9 +1,10 @@
 """目录回落（第 41 刀，ADR 0045）：retrieve 无命中时的商品列举/报价。
 
-- 触发（调用方在 retrieve 返回 [] 后调 ``try_catalog_answer``，有命中永不
-  进本模块）：目录意图才回落——列举（卖什么/有什么/目录/在售…）或报价
-  （多少钱/价格/售价/…/多少）。命中（retrieve 非空）+ 有价走正常 RAG，
-  与本模块无关。
+- 触发（第 50 刀起两条入口）：``try_catalog_answer`` 在 **retrieve 返回 []**
+  时回落（列举与报价都走它）；``try_price_answer`` 补「**有命中也要报价**」那
+  条路——价格是商品行的事实，演示库带商品名的问句常有命中，只看空命中会把补齐
+  的行价永远埋在 RAG 里。两条路径**共用同一套判定**（命中商品名 + 有价 + 纯度），
+  不会一条严一条松（审计刀 10 P0 的收口）。
 - 证据语义：工具式模板（不调 LLM、citations 恒空、kind=answer）——商品行
   是工具数据源（与 stock/orders 同口径：商品不是中台对象，0002），不是
   引用（不碰 0007 引用锚）。
@@ -29,7 +30,7 @@ from sqlalchemy.orm import Session
 from suite_api.models import Product
 from suite_api.services.category_schema import SCHEMA_BY_CATEGORY
 from suite_api.services.handoff_tickets import HUMAN_REQUEST_RE
-from suite_api.services.stock_tools import match_product
+from suite_api.services.stock_tools import _MATCH_MIN_LCS, lcs_fragment, match_product
 
 # 工具式模板的轨迹名（SSE tool 事件与消息 tool 列同形状 {name, arg, result}，
 # 与 get_order_status/get_stock 同为「已发生的只读动作留档」，不是证据引用）。
@@ -217,20 +218,30 @@ def try_catalog_answer(
 # 用词本身。**扣掉商品名、价格词、这些虚词后必须什么都不剩**，报价才成立。
 _PRICE_RE = re.compile(
     "多少钱|价格|售价|定价|报价|收费|贵不贵|便宜|花多少|多少|"
-    "请问|问一下|你们|咱们|的|是|要|买|这个|这款|这件|那|款|"
+    # 「什么」是纯疑问词（「帆布包什么价格？」是标准问价形态，评测集里就有这例；
+    # 漏了它会把合法问价静默挡回 RAG）
+    "什么|咋|请问|问一下|你们|咱们|的|是|要|买|这个|这款|这件|那|款|"
     r"[的吗呢啊嘛呀吧呗哦噢]|、|，|？|\?|！|!|。| |　"
 )
 
 
 def price_residual(question: str, product_name: str) -> str:
-    """扣掉商品名与问价虚词后剩余的「实质成分」（纯函数，便于单测）。
+    """扣掉**命中的商品名片段**与问价虚词后剩余的「实质成分」（纯函数）。
 
     报价回落只在**问句主体就是「商品名 + 问价」**时生效：像「保温杯刻字怎么收费」
     「钛钢保温杯怎么保养，收费吗」这类问句虽然含价格词（`收费`）且能匹配到商品名，
-    问的却是**服务/规格**（该走文档），报价模板答「售价 129元」是答非所问
-    （评审实拍）。剩余非空即视为实质问句 -> 不回落。
+    问的却是**服务/规格**（该走文档），报价模板答「售价 129元」是答非所问；
+    剩余非空即视为实质问句 -> 不回落。
+
+    剔除对象是**命中的公共子串**（`lcs_fragment`），不是要求全名子串：商品
+    「钛钢保温杯」被问成「保温杯多少钱」是口语常态，`match_product` 按 LCS≥2 命中，
+    纯度闸用同一口径剔除，否则部分名问价会被静默挡回 RAG（审计刀 10 P1）。
     """
-    rest = question.replace(product_name, "") if product_name else question
+    rest = question
+    if product_name:
+        fragment = lcs_fragment(question, product_name)
+        if len(fragment) >= _MATCH_MIN_LCS:
+            rest = question.replace(fragment, "")
     return _PRICE_RE.sub("", rest).strip()
 
 
@@ -243,11 +254,13 @@ def try_price_answer(db: Session, question: str) -> CatalogAnswer | None:
     出价（第 50 刀验收实测）。价格是**商品行的事实**（0002 商品不是中台对象），
     行就是权威来源，文档里的价是快照、可能过期。
 
-    口径（三道闸，缺一不可）：
-    1. **报价意图**（`catalog_intent == "price"`：政策词/规格词/要真人已被挡掉）；
-    2. **命中商品名**且该商品**有价**；
-    3. **问句主体就是「商品名 + 问价」**——`price_residual` 扣掉商品名与问价虚词
-       后为空（否则「保温杯刻字怎么收费」会被答成售价，评审 P1）。
+    口径：报价意图（`catalog_intent == "price"`）+ 命中商品名 + 有价 + **纯度**
+    （三道判定都在共用的 `_quote_answer` 里——审计刀 10 P0：闸只装在这里时，
+    空命中那条旧路径照旧抢答服务问句）。
+
+    与老路径的分工：`try_catalog_answer` 只在**空命中**时报价；本函数在**有命中**
+    时也报价（第 50 刀修订：价格是商品行的事实，演示库带商品名的问句常有命中，
+    老口径下补齐的价永远问不出来）。两条路径共用同一套判定，故不会一条严一条松。
 
     **列举不受影响**：仍走 `try_catalog_answer` 的空命中闸（否则「你们卖什么」会
     抢掉有目录类证据的回答）。
@@ -255,16 +268,22 @@ def try_price_answer(db: Session, question: str) -> CatalogAnswer | None:
     if catalog_intent(question) != "price":
         return None
     products = list(db.scalars(select(Product).order_by(Product.id)))
-    product = match_product(question, products)
-    if product is None or price_residual(question, product.name) != "":
-        return None
-    return _quote_answer(question, [product])
+    return _quote_answer(question, products)
 
 
 def _quote_answer(question: str, products: list[Product]) -> CatalogAnswer | None:
-    """报价模板（两条路径共用：空命中回落 / 报价判定）：无匹配或无价返回 None。"""
+    """报价模板（两条路径共用：空命中回落 / 报价判定）。
+
+    三道闸都在这里（**共用**，审计刀 10 P0：此前闸只装在 `try_price_answer`，
+    空命中那条路径照旧抢答服务问句——「家具送货安装怎么收费？」在无命中库上被答
+    成「售价 899元」）：
+    1. 命中商品名（LCS ≥2）；2. 该商品有价；3. **纯度**——扣掉命中片段与问价
+    虚词后必须什么都不剩（问句主体就是「商品名 + 问价」）。
+    """
     product = match_product(question, products)
     if product is None or product.price_cents is None:
+        return None
+    if price_residual(question, product.name) != "":
         return None
     price_text = format_price(product.price_cents, product.currency)
     return CatalogAnswer(

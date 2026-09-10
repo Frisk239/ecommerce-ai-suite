@@ -329,9 +329,10 @@ async def run_ask(
     hits = retrieve(db, query_text)
     # 第 41 刀（ADR 0045）：目录回落挂在 compose 空命中拒答分支之前——仅
     # retrieve==[] 且目录意图时列举/报价（工具式模板：不调 LLM、citations 恒
-    # 空、kind=answer；商品行是工具数据源不是引用）。miss（无匹配/无价/空店）
-    # 返回 None，沿既有拒答+缺口（去补=上新/改价）。忠实度闸与厂商生成跳过
-    # 回落命中（模板即正式产出，非降级，fallback=False）。
+    # 空、kind=answer；商品行是工具数据源不是引用）。第 50 刀修订：**报价**
+    # 不再要求空命中（见下一段的 try_price_answer）。miss（无匹配/无价/空店/
+    # 纯度不足）返回 None，沿既有拒答+缺口（去补=上新/改价）。忠实度闸与厂商
+    # 生成跳过回落命中（模板即正式产出，非降级，fallback=False）。
     catalog = try_catalog_answer(db, question, hits)
     if catalog is None:
         # 第 50 刀（ADR 0045 修订）：报价意图不看检索命中——价格是商品行的事实，
