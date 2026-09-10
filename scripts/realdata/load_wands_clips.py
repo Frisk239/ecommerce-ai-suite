@@ -246,7 +246,7 @@ def load_clip_candidates(
                     spec_values={},
                     stock=0,
                     # 第 50 刀：承载商品也标来源（WANDS 是开放数据集）
-                    source_kind="open_dataset",
+                    source_kind="wands",
                 )
                 .returning(Product.id)
             ).scalar_one()
