@@ -44,3 +44,24 @@ export function isPublished(asset: AssetListItem): boolean {
 export function isIngested(asset: AssetListItem): boolean {
   return asset.status === 'ingested'
 }
+
+
+// ---------- 导入来源（第 59 刀）----------
+// 数据集的批量导入（评论 200 / 开放数据集商品与规格）在待人洗队列里占绝大多数，
+// 首屏被它们铺满（审计刀 8 起记债、审计刀 9/10/11 三次复核仍是 180+/194）。
+// 口径：**数据集导入 ≠ 人工登记**——把导入行折叠到队尾，人工/系统产生的行先铺开。
+// 判据用来源词（单一来源），不按标题猜。
+
+/** 数据集导入来源（折叠组）：这三份开放数据集 + 评论语料 + 通用开放数据集。 */
+const IMPORTED_SOURCE_KINDS: ReadonlySet<string> = new Set([
+  'review_import',
+  'open_dataset',
+  'wikidata',
+  'openfoodfacts',
+  'wands',
+])
+
+/** 是否是「导入货」（工作队列里折叠到队尾的那批）。 */
+export function isImportedSource(asset: AssetListItem): boolean {
+  return IMPORTED_SOURCE_KINDS.has(asset.source_kind)
+}

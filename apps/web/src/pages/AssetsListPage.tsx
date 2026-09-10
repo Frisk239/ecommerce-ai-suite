@@ -8,7 +8,16 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowsClockwise, CaretRight, Funnel, MagnifyingGlass, Plus, Warning, X } from '@phosphor-icons/react'
+import {
+  ArrowsClockwise,
+  CaretDown,
+  CaretRight,
+  Funnel,
+  MagnifyingGlass,
+  Plus,
+  Warning,
+  X,
+} from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { AssetListItem, AssetStatus, KnowledgeGap } from '../api/types'
@@ -22,6 +31,7 @@ import {
 } from '../labels'
 import {
   filterWorkAssets,
+  isImportedSource,
   isIngested,
   isPendingWash,
   isPublished,
@@ -222,6 +232,13 @@ export default function AssetsListPage() {
     }
     return counts
   }, [scoped, activeTab])
+
+  // 第 59 刀：待人洗队列里导入货占绝大多数（180/194），首屏被铺满。把**数据集导入**
+  // 行折叠到表尾（默认收起，带计数），人工/系统产生的行先铺开——不删数据、不改默认
+  // 视角、总数与原有次序不变（导入组内保持 filtered 的相对次序）。
+  const importedRows = useMemo(() => filtered.filter(isImportedSource), [filtered])
+  const primaryRows = useMemo(() => filtered.filter((a) => !isImportedSource(a)), [filtered])
+  const [importsOpen, setImportsOpen] = useState(false)
 
   // 「去补文档」（审计刀 8 P1：方案 UX-C.3 明令禁止静默开修订）：
   // 该商品已有已发布规格文档时，先问清「在这份上开修订」还是「另起一份新文档」——
@@ -625,7 +642,7 @@ export default function AssetsListPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((asset) => (
+              {primaryRows.map((asset) => (
                 <tr
                   key={asset.id}
                   className="row-click"
@@ -704,6 +721,80 @@ export default function AssetsListPage() {
                   </td>
                 </tr>
               ))}
+              {importedRows.length > 0 ? (
+                <>
+                  <tr className="bg-canvas">
+                    <td colSpan={8} className="px-3 py-1.5">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        aria-expanded={importsOpen}
+                        onClick={() => setImportsOpen((prev) => !prev)}
+                        title="数据集批量导入（评论语料 / 开放数据集商品与规格）——不是人工登记的待办，默认收起"
+                      >
+                        {importsOpen ? (
+                          <CaretDown aria-hidden size={13} />
+                        ) : (
+                          <CaretRight aria-hidden size={13} />
+                        )}
+                        <span className="text-[13px] font-medium text-ink">
+                          数据集导入 {importedRows.length} 条
+                        </span>
+                        <span className="text-xs text-ink-3">
+                          （评论语料 / 开放数据集，非人工登记；点开查看）
+                        </span>
+                      </button>
+                    </td>
+                  </tr>
+                  {importsOpen
+                    ? importedRows.map((asset) => (
+                        <tr
+                          key={asset.id}
+                          className="row-click"
+                          onClick={() => navigate(`/platform/assets/${asset.id}`)}
+                        >
+                          <td className="font-mono text-xs text-ink-3">{formatAssetId(asset.id)}</td>
+                          <td className="max-w-[22rem]">
+                            <Link
+                              to={`/platform/assets/${asset.id}`}
+                              className="font-medium text-ink transition-colors duration-150 hover:text-accent-strong"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {asset.title ?? '未命名资产'}
+                            </Link>
+                          </td>
+                          <td>
+                            <KindChip kind={asset.kind} />
+                          </td>
+                          <td className="text-xs text-ink-3" title={asset.source_kind}>
+                            {sourceKindLabel(asset.source_kind)}
+                          </td>
+                          <td>
+                            <StatusBadge
+                              status={asset.status}
+                              failed={asset.status === 'ingested' && asset.last_error !== null}
+                              revising={asset.revising}
+                              publishedVersionNo={asset.current_published_version_no}
+                            />
+                          </td>
+                          <td className="text-ink-2">
+                            {asset.product ? (
+                              `${asset.product.name}`
+                            ) : (
+                              <span className="text-ink-3">未挂商品</span>
+                            )}
+                          </td>
+                          <td className="font-mono text-xs text-ink-2">
+                            {asset.current_published_version_no !== null
+                              ? `v${asset.current_published_version_no}`
+                              : '—'}
+                          </td>
+                          <td className="text-xs text-ink-3">—</td>
+                        </tr>
+                      ))
+                    : null}
+                </>
+              ) : null}
             </tbody>
           </table>
         </div>
