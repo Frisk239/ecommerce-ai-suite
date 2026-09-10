@@ -24,6 +24,7 @@ from suite_api.models import MaterialTask, Operator, Product
 from suite_api.services.asset_view import load_product_names
 from suite_api.services.material import (
     QUEUED,
+    REJECT_REASON_MAX,
     approve_task,
     reject_task,
     retry_task,
@@ -135,17 +136,35 @@ def approve(
     return _to_out(task, _product_name(db, task.product_id))
 
 
+class RejectBody(BaseModel):
+    """打回请求体（第 48 刀）：reason 可选——不传 / null / 空白 = 无理由。"""
+
+    reason: str | None = None
+
+
 @router.post("/tasks/{task_id}/reject", response_model=MaterialTaskOut)
 def reject(
     task_id: int,
+    body: RejectBody | None = None,
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> MaterialTaskOut:
-    """抽检打回：任务 failed（原因=人工打回），不登记任何字节（0029）；可重试。
-    commit 在服务层 reject_task（debt-2 层次收口），路由不再补。"""
+    """抽检打回：任务 failed，不登记任何字节（0029）；可重试。
+
+    第 48 刀：收可选打回理由（≤200 字）写进 last_error 的详情段（``人工打回：…``）；
+    超长 422、不传等价无理由。body 允许缺省（老前端不带 body 仍能打回——兼容
+    优先于强制填理由）。commit 在服务层 reject_task（debt-2 层次收口）。
+    """
     del operator
+    reason = (body.reason if body is not None else None) or ""
+    reason = reason.strip()
+    if len(reason) > REJECT_REASON_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"打回理由不能超过 {REJECT_REASON_MAX} 字",
+        )
     task = _task_or_404(db, task_id)
-    reject_task(db, task)
+    reject_task(db, task, reason=reason)
     return _to_out(task, _product_name(db, task.product_id))
 
 

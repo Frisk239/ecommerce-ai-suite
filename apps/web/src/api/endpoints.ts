@@ -33,6 +33,7 @@ import type {
   ServiceSession,
   ServiceSessionDetail,
   ServiceSessionSummary,
+  SessionRating,
   StatsOverview,
   ToolCallRecord,
 } from './types'
@@ -150,8 +151,13 @@ export const api = {
   getMaterialTask: (taskId: number) => request<MaterialTask>(`/material/tasks/${taskId}`),
   approveMaterialTask: (taskId: number) =>
     request<MaterialTask>(`/material/tasks/${taskId}/approve`, { method: 'POST' }),
-  rejectMaterialTask: (taskId: number) =>
-    request<MaterialTask>(`/material/tasks/${taskId}/reject`, { method: 'POST' }),
+  // 第 48 刀：打回可带理由（≤200 字）——写进 last_error 的详情段，运营看得见
+  // 「为什么被打回」；reason 传 null 与不传等价（无理由）。
+  rejectMaterialTask: (taskId: number, reason: string | null = null) =>
+    request<MaterialTask>(`/material/tasks/${taskId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
   retryMaterialTask: (taskId: number) =>
     request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 30_000),
 
@@ -254,12 +260,21 @@ export const api = {
       { Authorization: `Bearer ${token}` },
     ),
 
-  // 顾客「没有帮助」（第 40 刀，ADR 0044 §四）：负反馈触发分诊——逐 citation
-  // 资产撤销验证；同消息二次反馈 409（幂等）。401/409 文案由后端 detail 呈现。
-  leaveFeedback: (sessionId: number, token: string, messageId: number) =>
+  // 顾客对单条回答的 thumbs（第 40 刀 + 第 48 刀）：helpful=false 触发分诊——
+  // 逐 citation 资产撤销验证；helpful=true 只记不诊（点赞不进复审队列）。
+  // 同消息二次反馈 409（幂等）。401/409 文案由后端 detail 呈现。
+  leaveFeedback: (sessionId: number, token: string, messageId: number, helpful: boolean) =>
     request<FeedbackResult>(`/customer/sessions/${sessionId}/messages/${messageId}/feedback`, {
       method: 'POST',
-      body: JSON.stringify({ helpful: false }),
+      body: JSON.stringify({ helpful }),
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  // 会话评分（第 48 刀，CSAT）：一次评 1–5 星 + 可选留言；一会话一评（重复 409）。
+  rateSession: (sessionId: number, token: string, score: number, comment: string | null) =>
+    request<SessionRating>(`/customer/sessions/${sessionId}/rating`, {
+      method: 'POST',
+      body: JSON.stringify({ score, comment }),
       headers: { Authorization: `Bearer ${token}` },
     }),
 

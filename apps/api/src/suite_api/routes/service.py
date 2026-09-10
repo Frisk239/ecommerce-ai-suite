@@ -34,7 +34,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import HandoffTicket, Operator, ServiceMessage, ServiceSession
+from suite_api.models import (
+    HandoffTicket,
+    Operator,
+    ServiceMessage,
+    ServiceSession,
+    SessionRating,
+)
 from suite_api.observability import record_chat_request
 from suite_api.services import return_tools
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
@@ -77,6 +83,8 @@ class SessionSummary(SessionOut):
     pending_ticket_count: int
     # 第 45b 刀：嵌入小组件的宿主访客 id（第一方 uuid）；独立访问为 None
     visitor_id: str | None = None
+    # 第 48 刀：本会话的顾客评分（1–5，未评为 None）——客服页据此显示星级徽章
+    rating: int | None = None
 
 
 class HandoffTicketOut(BaseModel):
@@ -272,6 +280,14 @@ def list_sessions(
             .group_by(HandoffTicket.session_id)
         ).all()
     )
+    # 第 48 刀：第三个 group-by 批量取会话评分（不 N+1）；未评会话不在字典里
+    ratings = dict(
+        db.execute(
+            select(SessionRating.session_id, SessionRating.score).where(
+                SessionRating.session_id.in_(session_ids)
+            )
+        ).all()
+    )
     return [
         SessionSummary(
             id=s.id,
@@ -284,6 +300,7 @@ def list_sessions(
             origin=_origin(s),
             pending_ticket_count=pending_tickets.get(s.id, 0),
             visitor_id=s.visitor_id,
+            rating=ratings.get(s.id),
         )
         for s in sessions
     ]

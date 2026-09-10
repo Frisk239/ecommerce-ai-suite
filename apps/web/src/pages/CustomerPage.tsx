@@ -11,7 +11,7 @@
 // 「新会话」随时可重签令牌。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, ChatCircleDots, Prohibit, Stop, ThumbsDown, X } from '@phosphor-icons/react'
+import { ArrowUp, ChatCircleDots, Prohibit, Star, Stop, ThumbsDown, ThumbsUp, X } from '@phosphor-icons/react'
 import { ApiError, detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { HandoffTicketCreate } from '../api/types'
@@ -138,7 +138,7 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
 
   // 第 40 刀（ADR 0044 §四）：「没有帮助」反馈——已反馈的消息 id 集合（本地
   // 表达；幂等服务端钉死：同消息二次反馈 409）。换会话即清空。
-  const [feedbackSent, setFeedbackSent] = useState<number[]>([])
+  const [feedbackSent, setFeedbackSent] = useState<{ id: number; helpful: boolean }[]>([])
 
   // 第 42 刀（ADR 0046）：工单联系方式已提交/已跳过的工单 id（本地表达；
   // 一会话一单，按工单而非消息计——同会话多条 handoff 消息指向同一工单）。
@@ -210,6 +210,11 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
       setFeedbackSent([])
       setContactSentTickets([])
       setSkippedTickets([])
+      // 评分态一并归位（第 48 刀）：它是页面级 state，不重置会让新会话继承上一
+      // 会话的「已评分」——评分条永不出现（CSAT 静默丢样本），文案还把旧分安到新会话上
+      setRated(null)
+      setRatingComment('')
+      setRatingSending(false)
       taRef.current?.focus()
     } catch (err) {
       setError(err)
@@ -251,12 +256,12 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
   // 「没有帮助」（第 40 刀，ADR 0044 §四）：仅 kind=answer 且 citations 非空的
   // 消息出现（拒答/转人工不收反馈）；点击调反馈端点，服务端分诊=逐 citation
   // 资产撤销验证（治理台复审队列承接）。
-  const sendFeedback = async (messageId: number) => {
+  const sendFeedback = async (messageId: number, helpful: boolean) => {
     if (session === null) return
     setError(null)
     try {
-      await api.leaveFeedback(session.id, session.token, messageId)
-      setFeedbackSent((prev) => [...prev, messageId])
+      await api.leaveFeedback(session.id, session.token, messageId, helpful)
+      setFeedbackSent((prev) => [...prev, { id: messageId, helpful }])
     } catch (err) {
       setError(err)
     }
@@ -266,24 +271,64 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
     if (session === null || m.streaming) return undefined
     if (m.role !== 'agent' || m.kind !== 'answer' || m.id === null) return undefined
     if (m.citations === null || m.citations.length === 0) return undefined
-    if (feedbackSent.includes(m.id)) {
+    const sent = feedbackSent.find((f) => f.id === m.id)
+    if (sent !== undefined) {
       return (
-        <span className="text-[11px] text-caption" title="反馈已记档：引用资料已进入复审">
-          已反馈 · 感谢
+        <span
+          className="text-[11px] text-caption"
+          title={sent.helpful ? '反馈已记档' : '反馈已记档：引用资料已进入复审'}
+        >
+          {sent.helpful ? '已反馈 · 感谢' : '已反馈 · 已转入复审'}
         </span>
       )
     }
+    const messageId = m.id
     return (
-      <button
-        type="button"
-        className="btn btn-secondary btn-sm"
-        onClick={() => void sendFeedback(m.id as number)}
-        title="没有帮助：引用的资料可能有错或过期，触发人工复审"
-      >
-        <ThumbsDown aria-hidden size={12} />
-        没有帮助
-      </button>
+      <span className="inline-flex gap-1.5">
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => void sendFeedback(messageId, true)}
+          title="有帮助：这条回答解决了问题"
+        >
+          <ThumbsUp aria-hidden size={12} />
+          有帮助
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => void sendFeedback(messageId, false)}
+          title="没有帮助：引用的资料可能有错或过期，触发人工复审"
+        >
+          <ThumbsDown aria-hidden size={12} />
+          没有帮助
+        </button>
+      </span>
     )
+  }
+
+  // 会话评分（第 48 刀，CSAT）：页脚一行 1–5 星 + 可选留言，**评过即收**（不弹窗、
+  // 不打断了对话；本仓顾客通道没有「结束会话」事件，故不做「结束时弹出」）。
+  // 只在有过至少一条 agent 回答后出现——空会话打 1 分是噪声。
+  const [hoverScore, setHoverScore] = useState<number | null>(null)
+  const [ratingComment, setRatingComment] = useState('')
+  const [ratingSending, setRatingSending] = useState(false)
+  const [rated, setRated] = useState<number | null>(null)
+  const hasAnswer = messages.some((m) => m.role === 'agent' && m.kind === 'answer' && !m.streaming)
+
+  const submitRating = async (score: number) => {
+    if (session === null || ratingSending) return
+    setError(null)
+    setRatingSending(true)
+    try {
+      await api.rateSession(session.id, session.token, score, ratingComment.trim() || null)
+      setRated(score)
+      setRatingComment('')
+    } catch (err) {
+      setError(err)
+    } finally {
+      setRatingSending(false)
+    }
   }
 
   const canAsk = session !== null && !streaming && !expired
@@ -445,6 +490,53 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
               ))}
               <div ref={endRef} />
             </div>
+
+            {/* 会话评分条（第 48 刀，CSAT）：有过回答才出现；评过变一行致谢 */}
+            {hasAnswer && (
+              <div className="border-t border-line-2 bg-canvas px-3 py-2">
+                {rated !== null ? (
+                  <div className="text-[11px] text-caption" role="status">
+                    谢谢反馈：你给这次服务打了 {rated} 星。
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] text-caption">这次服务怎么样？</span>
+                    <span className="inline-flex items-center gap-0.5" role="radiogroup" aria-label="服务评分">
+                      {[1, 2, 3, 4, 5].map((score) => (
+                        <button
+                          key={score}
+                          type="button"
+                          role="radio"
+                          aria-checked={false}
+                          aria-label={`${score} 星`}
+                          className="star-btn"
+                          disabled={ratingSending}
+                          onMouseEnter={() => setHoverScore(score)}
+                          onMouseLeave={() => setHoverScore(null)}
+                          onClick={() => void submitRating(score)}
+                          title={`${score} 星`}
+                        >
+                          <Star
+                            aria-hidden
+                            size={16}
+                            weight={(hoverScore ?? 0) >= score ? 'fill' : 'regular'}
+                          />
+                        </button>
+                      ))}
+                    </span>
+                    <input
+                      className="input h-7 min-w-40 flex-1 text-[12px]"
+                      placeholder="想补充点什么？（可选）"
+                      value={ratingComment}
+                      maxLength={500}
+                      disabled={ratingSending}
+                      onChange={(e) => setRatingComment(e.target.value)}
+                    />
+                    <span className="text-[11px] text-caption">点星星即提交</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* composer：流式期间锁输入 */}
             <div className="rounded-b-[8px] border-t border-line-2 bg-white p-3">

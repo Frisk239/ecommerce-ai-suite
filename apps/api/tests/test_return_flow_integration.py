@@ -12,7 +12,7 @@
   覆盖够高的单命中照旧生成（空 key 降级，无 fallback_reason 键）。
 - 反馈分诊（ADR 0044 §四）：answer+citations 收「没有帮助」-> 逐 citation
   资产 last_verified_at=None -> 幂等 409；拒答消息 409；跨会话 404；
-  无令牌 401；helpful=true 422。
+  无令牌 401；缺 helpful 字段 422（helpful=true 自第 48 刀起合法：记档但不分诊）。
 """
 
 import os
@@ -460,7 +460,7 @@ def test_feedback_rejects_wrong_shapes(gate_env: TestClient) -> None:
         == 404
     )
 
-    # 跨会话 message_id -> 404；无令牌 -> 401；helpful=true -> 422
+    # 跨会话 message_id -> 404；无令牌 -> 401
     other = client.post("/api/customer/sessions").json()
     assert (
         client.post(
@@ -477,12 +477,22 @@ def test_feedback_rejects_wrong_shapes(gate_env: TestClient) -> None:
         ).status_code
         == 401
     )
+    # 第 48 刀：helpful=true 不再是 422「本版本只接受没有帮助」——正反馈合法，
+    # 但**不分诊**（triaged_asset_ids 空）。形状校验仍在：缺 helpful 字段 -> 422。
     events = _customer_ask(client, sid, token, "筷长是多少？")
     answer_id = events[-1][1]["message_id"]
+    thumbs_up = client.post(
+        f"/api/customer/sessions/{sid}/messages/{answer_id}/feedback",
+        json={"helpful": True},
+        headers=headers,
+    )
+    assert thumbs_up.status_code == 200
+    assert thumbs_up.json()["feedback"]["helpful"] is True
+    assert thumbs_up.json()["triaged_asset_ids"] == []
     assert (
         client.post(
             f"/api/customer/sessions/{sid}/messages/{answer_id}/feedback",
-            json={"helpful": True},
+            json={},
             headers=headers,
         ).status_code
         == 422

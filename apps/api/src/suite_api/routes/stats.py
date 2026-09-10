@@ -16,6 +16,7 @@
 ``feedback @> '{"helpful": false}'``（NULL 安全、键缺失安全，禁止直接下标）。
 """
 
+import math
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
@@ -34,7 +35,9 @@ from suite_api.models import (
     Operator,
     ServiceMessage,
     ServiceSession,
+    SessionRating,
 )
+from suite_api.services.machine_wash import redact_contact
 from suite_api.services.triage import triage_asset_ids
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
@@ -43,6 +46,11 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 WINDOW_DAYS = 7
 # 反馈汇总取 top 3（Owner 裁决 8：它是行摘要，不是磁贴网格）
 FEEDBACK_ASSET_LIMIT = 3
+# CSAT（第 48 刀）：最近留言条数与单条截断（它是行摘要，不是评论区）
+CSAT_COMMENT_LIMIT = 3
+CSAT_COMMENT_MAX_CHARS = 60
+# 分值档位（与 routes/customer.RATING_SCORES 同集合；分布恒给全部档位，含 0）
+RATING_SCORES = (1, 2, 3, 4, 5)
 # 被踩谓词（裁决：NULL 安全 + 键可能缺失）——纯 dict 字面量，由 JSONB 包含运算
 # 下推；feedback 为 NULL / 键缺失 / helpful=true 都不命中
 _THUMBS_DOWN = {"helpful": False}
@@ -77,6 +85,21 @@ class StatsFeedbackAsset(BaseModel):
     count: int
 
 
+class StatsCsat(BaseModel):
+    """第 48 刀：CSAT（会话级 1–5 星，近 7 日窗与其余口径一致）。
+
+    average 无样本时 None（不除零、不谎报）；distribution 是 1–5 各档计数
+    （均分**必须**配分布看——4.3 可能是 5+5+3，也可能是 5+5+5+2）。
+    recent_comments 是最近 3 条留言，**已掩码 + 截断 60 字**（0038：库内原文、
+    出口必掩——仪表是出口）。
+    """
+
+    ratings_last_7d: int
+    average_last_7d: float | None
+    distribution: dict[str, int]  # {"1": n, … "5": n}，键是字符串（JSON 口径）
+    recent_comments: list[str]
+
+
 class StatsOverview(BaseModel):
     window_days: int
     daily: list[StatsDaily]  # 恰好 window_days 条，日期升序、零填充
@@ -92,6 +115,7 @@ class StatsOverview(BaseModel):
     citation_rate_last_7d: float | None
     badges: StatsBadges
     feedback_assets: list[StatsFeedbackAsset]
+    csat: StatsCsat
 
 
 # ---------- 窗口与归桶辅助 ----------
@@ -121,6 +145,44 @@ def _utc_day(moment: datetime) -> date:
 
 def _empty_daily(day: date) -> StatsDaily:
     return StatsDaily(date=day.isoformat(), sessions=0, refusals=0, thumbs_down=0)
+
+
+def _build_csat(rows: list[tuple[int, str | None, datetime]]) -> StatsCsat:
+    """近 7 日评分行 -> CSAT 段（纯函数，便于单测）。
+
+    行序按 created_at 降序（SQL 已排）——最近留言取前 N 条即可，不重排。
+
+    **越界分三处口径统一地当它不存在**（条数 / 均值 / 分布）：应用层写不出
+    越界分（422 挡在门外），只有手改库才可能有；若让均值把它算进去，会出现
+    `ratings_last_7d != sum(distribution)` 且均值被拉偏。
+
+    均值保留 1 位小数且**四舍五入**（4.25 -> 4.3，不是 Python ``round`` 的银行家
+    舍入 4.2）；无样本 None（不返回 0 冒充）。
+
+    留言：库内原文 -> ``redact_contact`` -> 截断 60 字（**先掩后截**：先截会把
+    手机号切断成掩不住的残片）。
+    """
+    valid = [(score, comment) for score, comment, _created_at in rows if score in RATING_SCORES]
+    distribution = {str(score): 0 for score in RATING_SCORES}
+    for score, _comment in valid:
+        distribution[str(score)] += 1
+    total = len(valid)
+    average = (
+        math.floor(sum(score for score, _c in valid) / total * 10 + 0.5) / 10
+        if total
+        else None
+    )
+    comments = [
+        redact_contact(comment).strip()[:CSAT_COMMENT_MAX_CHARS]
+        for _score, comment in valid
+        if comment and comment.strip()
+    ][:CSAT_COMMENT_LIMIT]
+    return StatsCsat(
+        ratings_last_7d=total,
+        average_last_7d=average,
+        distribution=distribution,
+        recent_comments=comments,
+    )
 
 
 # ---------- 端点 ----------
@@ -242,6 +304,18 @@ def stats_overview(
         for asset_id, count in top
     ]
 
+    # CSAT（第 48 刀）：近 7 日评分一趟拉回（score/comment/created_at），分布、
+    # 均值、最近留言都在这里算；留言出口必掩（0038）
+    csat = _build_csat(
+        list(
+            db.execute(
+                select(SessionRating.score, SessionRating.comment, SessionRating.created_at)
+                .where(SessionRating.created_at >= since)
+                .order_by(SessionRating.created_at.desc(), SessionRating.id.desc())
+            ).all()
+        )
+    )
+
     return StatsOverview(
         window_days=WINDOW_DAYS,
         daily=[by_day[day] for day in days],
@@ -261,4 +335,5 @@ def stats_overview(
             open_gaps=open_gaps, pending_qc=pending_qc, open_tickets=open_tickets
         ),
         feedback_assets=feedback_assets,
+        csat=csat,
     )

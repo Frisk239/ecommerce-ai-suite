@@ -20,6 +20,10 @@
   ADR 0046 §4）：转人工工单留联系方式——闸序同上；name/note 必填、email/
   phone 可选轻校验；工单须属于本会话（统一 404）；顾客回显自己的输入不掩。
 
+- ``POST /api/customer/sessions/{id}/rating``（第 48 刀）：会话级 1–5 星 CSAT——
+  闸序同上；score 越界 422、非 active 409、一会话一评（已评 409）；comment
+  可选（≤500 字）。低分不触发任何写动作（CSAT 是主观分，不是证据语义）。
+
 顾客没有 GET/列表/回流端点（0021：回流登记仍是操作者动作，顾客接口不能
 发布；拉历史属本刀 Out）。限流三道闸见 services/rate_limit（ADR 0033）。
 """
@@ -33,10 +37,18 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_db
-from suite_api.models import Asset, HandoffTicket, ServiceMessage, ServiceSession
+from suite_api.models import (
+    Asset,
+    HandoffTicket,
+    ServiceMessage,
+    ServiceSession,
+    SessionRating,
+)
 from suite_api.observability import record_chat_request
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.handoff_tickets import submit_contact, ticket_no
@@ -307,15 +319,19 @@ def leave_feedback(
     db: Annotated[Session, Depends(get_db)] = None,
     limits: Annotated[CustomerRateLimits, Depends(get_rate_limits)] = None,
 ) -> FeedbackOut:
-    """顾客 thumbs-down「没有帮助」（ADR 0044 §四）。
+    """顾客 thumbs「这条回答有没有帮助」（ADR 0044 §四；第 48 刀放开正反馈）。
 
     闸序与鉴权同发问：IP 闸（先于鉴权省 DB）-> 401（会话不存在与令牌无效
     统一文案）-> 409（非 active：会话终结后反馈面一并收口）。仅 kind=answer
     且 citations 非空的消息可反馈（拒答/转人工无按钮也不收——404/409）；幂等
-    =已反馈 409；body 白名单只有 helpful，v1 拒绝 true（thumbs-up 是 Out）。
-    分诊（在代码）：逐 citation 资产 last_verified_at=None——「发布=验证快照」
-    被负反馈推翻，复审由治理台未验证/stale 面自然承接；commit 后返回分诊
-    资产列表（分诊即答案）。"""
+    =已反馈 409。
+
+    - ``helpful=false``（第 40 刀）：**分诊**——逐 citation 资产
+      ``last_verified_at=None``（「发布=验证快照」被负反馈推翻），复审由治理台
+      未验证/stale 面自然承接；commit 后返回分诊资产列表（分诊即答案）。
+    - ``helpful=true``（第 48 刀）：**只记不诊**——正反馈的语义是「这条有用」，
+      不是「证据要复审」；反向若也撤销验证，等于顾客点赞就进复审队列。
+    """
     retry_after = limits.check_ask_ip(client_ip(request))
     if retry_after is not None:
         raise _rate_limited(retry_after)
@@ -326,34 +342,110 @@ def leave_feedback(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"只有进行中的会话可以反馈，当前状态: {session.status}",
         )
-    if body.helpful is not False:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="本版本只接受「没有帮助」反馈",
-        )
 
     message = db.get(ServiceMessage, message_id)
     if message is None or message.session_id != session_id or message.role != "agent":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在")
     if message.kind != "answer" or not message.citations:
-        # 拒答/转人工/无引用的消息没有「没有帮助」入口（ADR 0044：citations
-        # 空则分诊无从谈起）
+        # 拒答/转人工/无引用的消息没有反馈入口（ADR 0044：citations 空则分诊
+        # 无从谈起；正反馈同理——没有证据可言的回答点「有用」也不构成信号）
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该消息不接受反馈")
     if message.feedback is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该消息已反馈过")
 
-    triaged = triage_asset_ids(message.citations)
+    triaged = triage_asset_ids(message.citations) if body.helpful is False else []
     for asset_id in triaged:
         asset = db.get(Asset, asset_id)
         if asset is not None:
             asset.last_verified_at = None
-    message.feedback = {"helpful": False, "at": datetime.now(UTC).isoformat()}
+    message.feedback = {"helpful": body.helpful, "at": datetime.now(UTC).isoformat()}
     db.commit()
     db.refresh(message)
     return FeedbackOut(
         message_id=message.id,
         feedback=dict(message.feedback),
         triaged_asset_ids=triaged,
+    )
+
+
+# ---------- 会话评分（第 48 刀：CSAT） ----------
+
+# 分值合法值集（单一来源）：服务层校验用，也是仪表分布的桶
+RATING_SCORES = (1, 2, 3, 4, 5)
+_RATING_COMMENT_MAX = 500
+
+
+class RatingBody(BaseModel):
+    score: int
+    comment: str | None = None
+
+
+class RatingOut(BaseModel):
+    session_id: int
+    score: int
+    comment: str | None
+    created_at: datetime
+
+
+@router.post("/sessions/{session_id}/rating", response_model=RatingOut)
+def rate_session(
+    session_id: int,
+    body: RatingBody,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)] = None,
+    limits: Annotated[CustomerRateLimits, Depends(get_rate_limits)] = None,
+) -> RatingOut:
+    """顾客给这次会话打 1–5 星（第 48 刀，CSAT）。
+
+    闸序与发问/反馈一致（IP 闸 -> 401 -> 409 非 active -> 422 分值/留言长度）。
+    **一会话一评**：已评 409（与 thumbs 幂等同口径）；低分不做任何写动作
+    （intake 裁决 9）。comment 库内原文；出口（操作者面/仪表）必掩。
+    """
+    retry_after = limits.check_ask_ip(client_ip(request))
+    if retry_after is not None:
+        raise _rate_limited(retry_after)
+
+    session = _authorize_customer_session(db, session_id, request)
+    if session.status != ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"只有进行中的会话可以评分，当前状态: {session.status}",
+        )
+    if body.score not in RATING_SCORES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"评分必须是 {RATING_SCORES[0]}–{RATING_SCORES[-1]} 的整数",
+        )
+    comment = (body.comment or "").strip() or None
+    if comment is not None and len(comment) > _RATING_COMMENT_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"留言不能超过 {_RATING_COMMENT_MAX} 字",
+        )
+    existing = db.scalar(select(SessionRating).where(SessionRating.session_id == session_id))
+    if existing is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该会话已评过分")
+
+    rating = SessionRating(session_id=session_id, score=body.score, comment=comment)
+    db.add(rating)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        # 并发两次提交：唯一约束兜住（与 thumbs 的「非空即已反馈」同口径）。
+        # 只翻译「会话唯一约束」这一种冲突——FK 违约等其它完整性错误照旧上抛，
+        # 别把「会话刚被删」误报成「已评过分」。
+        if "uq_session_ratings_session_id" not in str(exc.orig):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="该会话已评过分"
+        ) from exc
+    db.refresh(rating)
+    return RatingOut(
+        session_id=rating.session_id,
+        score=rating.score,
+        comment=rating.comment,
+        created_at=rating.created_at,
     )
 
 
