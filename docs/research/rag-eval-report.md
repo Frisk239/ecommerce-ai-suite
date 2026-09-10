@@ -156,3 +156,29 @@ after（5 行，只列已定价）：
 
 工具式轨迹 `result` 保持「在售 115 件」不变（golden 断言 `tool_summary_contains: "在售"`）；
 一件都没定价时改说「目前都没有公布价格」并请顾客直接问商品名（不再逐条写「价格未定」）。
+
+---
+
+## After（第 46 刀 video 正文源改由 transcript 字段承载，2026-09-11）
+
+本刀改了检索侧一处：`index_chunks_for_version` 对 `kind='video'` **不再读对象字节**，正文
+只从 `transcript` 字段取（confirmed 优先、回落 extracted；字段缺失/为空即正文为空）。原因是
+切片登记字节从「时间码文本」变成**真 mp4 二进制**（ADR 0047），读回会进切块路径变乱码。
+同库同种子复跑（本刀工作树）：
+
+```
+golden：scripts\eval\out\golden_large.json（96 条）  检索 top-3
+分布             条数  recall@1  recall@3     拒答率     误拒率    混淆@1
+positive       40     70.0%     75.0%       -    2.5%       -
+paraphrase     25     60.0%     72.0%       -       -       -
+confusion      15     60.0%     80.0%       -       -   60.0%
+refusal        16         -         -  100.0%       -       -
+overall        96     65.0%     75.0%  100.0%    2.5%   60.0%
+```
+
+**结论：大集零漂移**——与第 41/UX-A2 两节逐位一致。这次不是「碰巧没漂」而是**结构性**
+的：大集 47 条引用资产经库内盘点**全是 document / dialogue / material**（无 video），
+`video` 分支不在大集路径上。**本刀真实回归保护**是 `test_real_clips_integration.py::
+test_published_video_chunks_come_from_transcript_field`（发布真 mp4 资产 → 块表内容 = 转写
+原文、发布不因二进制报错）与既有 `test_clips_integration` 的「video 字段集 / PATCH 422」
+断言——它们直接钉住「video 正文源是字段而不是字节」这条契约。

@@ -8,6 +8,7 @@ import type {
   AssetVersion,
   AuditEntry,
   ClipCandidate,
+  ClipRecording,
   CoachQuestion,
   CoachQuestionKey,
   CoachRecord,
@@ -154,10 +155,18 @@ export const api = {
   retryMaterialTask: (taskId: number) =>
     request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 30_000),
 
-  // 直播切片（第 18 刀/ADR 0014/0039）：候选不是中台对象；pick 批量把勾选候选
-  // 登记为 kind=视频/来源=切片拣选资产（登记字节=带时间码转写文本），返回登记
-  // 结果列表供卡片换「已登记 A-xxxx」。批量含已登记整体 409（事务不落）。
+  // 直播切片（第 18 刀/ADR 0014/0039；第 46 刀真链路）：候选不是中台对象；
+  // 上传源录像（.mp4，≤200MB；上传即绑「尚无源录像」的 pending 候选）后，pick
+  // 对有源录像的候选真切 mp4 片段登记为 kind=视频/来源=切片拣选资产，无源录像
+  // 的仍写时间码转写文本。返回登记结果列表供卡片换「已登记 A-xxxx」。批量含
+  // 已登记整体 409（事务不落）；切失败 422 且该候选保持可重拣。
   listClipCandidates: () => request<ClipCandidate[]>('/clips/candidates'),
+  uploadClipRecording: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    // 上传超时宽于默认 15s：原始录像最大 200MB，慢链路上传会超过默认阈值
+    return request<ClipRecording>('/clips/recordings', { method: 'POST', body: form }, 120_000)
+  },
   pickClips: (ids: number[]) =>
     request<AssetListItem[]>('/clips/candidates/pick', {
       method: 'POST',

@@ -176,6 +176,41 @@ def test_index_chunks_document_confirmed_field_blocks_unchanged() -> None:
     assert "问：怪\n答：怪" in chunks  # 按字段值成块（防御口径，文档链路不产生此字段）
 
 
+# ---------- 第 46 刀：video 正文只来自 transcript 字段（纯函数，不依赖 ffmpeg） ----------
+
+
+class _ExplodingStorage:
+    """video 路径的字节是 mp4 二进制：任何一次读字节都是 bug，直接炸出来。
+
+    （真切用例依赖 ffmpeg、无 ffmpeg 的环境整套 skip——这条纯单测保证「video
+    永不读字节」在任何环境都有回归网。）"""
+
+    def get_bytes(self, object_key: str) -> bytes:
+        raise AssertionError(f"video 正文不该读对象字节: {object_key}")
+
+
+def test_index_chunks_video_body_comes_from_transcript_field() -> None:
+    extracted = {"transcript": {"value": "现场实测：灌95度热水六小时后63度。", "source": "machine"}}
+    chunks = index_chunks_for_version(
+        _ExplodingStorage(), "clips/x/1.mp4", "video", {}, extracted
+    )
+    assert chunks == ["现场实测：灌95度热水六小时后63度。"]
+
+
+def test_index_chunks_video_without_transcript_field_has_empty_body() -> None:
+    """字段缺失=正文为空（照常发布，只是没有正文块）——不回落读字节。"""
+    assert index_chunks_for_version(_ExplodingStorage(), "clips/x/2.mp4", "video", {}, {}) == []
+    assert index_chunks_for_version(_ExplodingStorage(), "clips/x/3.mp4", "video", {}) == []
+
+
+def test_index_chunks_document_still_reads_bytes() -> None:
+    """其余种类照旧读字节切块（回归钉子：video 分派没把别人带偏）。"""
+    chunks = index_chunks_for_version(
+        _FakeStorage("产品说明。".encode()), "documents/x/2.txt", "document", {}
+    )
+    assert chunks == ["产品说明"]
+
+
 # ---------- 查询词法单元 ----------
 
 

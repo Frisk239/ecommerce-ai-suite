@@ -445,13 +445,24 @@ export interface MaterialTask {
   created_at: string
 }
 
-// ---------- 直播切片候选（routes/clips.py 契约，第 18 刀/ADR 0014/0015/0039） ----------
+// ---------- 直播切片候选（routes/clips.py 契约，第 18 刀/ADR 0014/0015/0039；第 46 刀真链路） ----------
 
 /** 候选两态（0039 单向状态机；不是资产三态）：pending=待拣选 /
  * registered=已登记（registered_asset_id 回执锚指向登记出的视频资产）。
- * 候选不是中台对象（0014）：transcript 是种子 mock 的 ASR 转写，
- * 登记字节=「[timecode_start-timecode_end] 转写」文本（非 mp4，0039）。 */
+ * 候选不是中台对象（0014）：transcript 是种子 mock 的 ASR 转写。有源录像
+ * （第 46 刀）时拣选真切 mp4 片段并把 transcript 预置为版本字段；无源录像时
+ * 仍写「[timecode_start-timecode_end] 转写」文本（旧路径）。 */
 export type ClipCandidateStatus = 'pending' | 'registered'
+
+/** 源录像（第 46 刀，routes/clips.py POST /recordings）：切片模块自有的上传
+ * 字节，不是中台资产——不能发布、不进检索、不进治理台，只是拣选时 ffmpeg 的
+ * 输入源与溯源锚。 */
+export interface ClipRecording {
+  id: number
+  label: string
+  size_bytes: number
+  created_at: string
+}
 
 export interface ClipCandidate {
   id: number
@@ -462,6 +473,8 @@ export interface ClipCandidate {
   timecode_end: string
   transcript: string
   source_video_label: string
+  /** 绑定的源录像；null=无源录像（拣选走时间码文本旧路径）。 */
+  recording: ClipRecording | null
   registered_asset_id: number | null
   created_at: string
 }

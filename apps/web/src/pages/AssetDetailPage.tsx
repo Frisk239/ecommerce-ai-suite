@@ -828,7 +828,9 @@ export default function AssetDetailPage() {
 
   // 生命周期出口三件（0042）：闸门与后端同口径——换正文=待人洗未发布版；
   // 放弃修订=有 version_no>1 的未发布版；废弃=已接入且从未发布（指针空）。
-  const canUploadBytes = editable && activeVersion !== null
+  // 第 46 刀：视频资产不出换正文（ADR 0047——正文由转写字段承载、字节是切片，
+  // 换字节会把键写成 .mp4 装文本并清空转写；后端 409 同口径）。
+  const canUploadBytes = editable && activeVersion !== null && detail?.kind !== 'video'
   const canDiscardRevision = unpublished !== null && unpublished.version_no > 1
   const canDiscardAsset = detail?.status === 'ingested' && currentPublishedNo === null
 
