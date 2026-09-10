@@ -439,3 +439,20 @@ def test_rating_records_csat_metric(api: ApiFixture) -> None:
     assert _rate(client, session_id, token, 5, "很好").status_code == 200
     after = REGISTRY.get_sample_value("csat_ratings_total", {"score": "5"}) or 0.0
     assert after == before + 1
+
+
+def test_session_detail_exposes_rating(api: ApiFixture) -> None:
+    """第 57 刀：详情也带评分——深链 `?session=N` 进来要看到与列表行同样的上下文。"""
+    client, _ = api
+    token = "csat-detail"
+    session_id = _customer_session(client, token)
+    assert _rate(client, session_id, token, 4, "还行").status_code == 200
+
+    _login(client)
+    detail = client.get(f"/api/service/sessions/{session_id}").json()
+    assert detail["rating"] == 4
+    assert detail["host_origin"] is None  # 独立访问建的会话：没有宿主
+
+    # 对照：未评分的会话详情也是 None（不是 0）
+    other = _customer_session(client, "csat-detail-2")
+    assert client.get(f"/api/service/sessions/{other}").json()["rating"] is None

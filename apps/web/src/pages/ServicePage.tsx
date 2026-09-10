@@ -539,6 +539,25 @@ export default function ServicePage() {
               {/* 详情契约无 message_count：用已加载消息数分叉，空会话与列表同为「未开始」 */}
               <SessionStatusBadge status={session.status} messageCount={messages.length} />
               <span>· 开始于 {formatDateTime(session.created_at)}</span>
+              {/* 第 57 刀：站点/访客/评分与列表行同口径——深链进详情也能看到同一上下文 */}
+              {session.host_origin !== null && session.host_origin !== '' && (
+                <span
+                  className="kind-chip"
+                  title={`嵌入小组件的宿主站点：${session.host_origin}`}
+                >
+                  站点 {session.host_origin.replace(/^https?:\/\//, '').slice(0, 18)}
+                </span>
+              )}
+              {session.visitor_id !== null && session.visitor_id !== '' && (
+                <span className="kind-chip" title={`宿主访客 id：${session.visitor_id}`}>
+                  访客 {session.visitor_id.slice(0, 8)}
+                </span>
+              )}
+              {session.rating != null && (
+                <span className="kind-chip" title={`顾客对这次会话的评分：${session.rating} 星`}>
+                  ★ {session.rating}
+                </span>
+              )}
               {session.status === 'registered' && session.registered_asset_id !== null && (
                 <span>
                   · 已回流

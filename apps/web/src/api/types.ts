@@ -315,6 +315,10 @@ export interface ServiceSessionDetail extends ServiceSession {
   ticket: HandoffTicket | null
   /** 第 54 刀：嵌入宿主的来源站点（与列表同源；独立访问/操作者预览为 null）。 */
   host_origin: string | null
+  /** 第 57 刀：嵌入宿主的访客 id（与列表同源）。 */
+  visitor_id: string | null
+  /** 第 57 刀：本会话的顾客评分（1–5；未评为 null）——详情头与列表行同口径。 */
+  rating: number | null
 }
 
 // ---------- 转人工工单（第 42 刀，ADR 0046） ----------

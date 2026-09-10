@@ -147,6 +147,10 @@ class MessageOut(BaseModel):
 
 class SessionDetail(SessionOut):
     messages: list[MessageOut]
+    # 第 57 刀：详情头部要展示「这段会话从哪来、评了几分」——列表行有的信息
+    # （visitor_id / rating）详情一并给，深链进来（?session=N）才看得到同样的上下文
+    visitor_id: str | None = None
+    rating: int | None = None
     # 第 42 刀（ADR 0046 §5）：本会话工单（一会话一单，无则 null）。操作者面
     # 出口掩电话/邮箱；详情头部据此渲染「结单」动作。联系方式随工单展示。
     ticket: HandoffTicketOut | None = None
@@ -321,12 +325,17 @@ def get_session(
     session = _get_session_or_404(db, session_id)
     # 第 42 刀（ADR 0046 §5）：本会话工单（一会话一单）；操作者面掩电话/邮箱
     ticket = db.scalar(select(HandoffTicket).where(HandoffTicket.session_id == session.id))
+    # 第 57 刀：评分（一会话一评，未评为 None）——详情头部与列表行同口径
+    rating = db.scalar(select(SessionRating.score).where(SessionRating.session_id == session.id))
     return SessionDetail(
         id=session.id,
         status=session.status,
         created_at=session.created_at,
         closed_at=session.closed_at,
         registered_asset_id=session.registered_asset_id,
+        # 第 54/57 刀：来源站点与访客（列表行同源）；第 57 刀补评分
+        visitor_id=session.visitor_id,
+        rating=rating,
         # 第 54 刀：宿主站点在详情同样要给（审计刀 11 P0：此前详情恒回 None，
         # 与「列表与详情同源」的声称不符——外部消费者会拿到「没有宿主」的错值）
         host_origin=session.host_origin,
