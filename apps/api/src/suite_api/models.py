@@ -214,6 +214,10 @@ class ServiceSession(Base):
     # uuid，随 X-Visitor-Id 在建会话时落库——商家用自己那边的 id 对账用。独立
     # 访问（/customer 直开）为 NULL。
     visitor_id: Mapped[str | None] = mapped_column(String(64))
+    # 嵌入宿主的来源站点（第 54 刀，迁移 0027）：过闸的 X-Widget-Origin 归一值
+    # （小写、去尾斜杠）——**商家可能把 widget 挂在自己多个站点上**，只靠访客 id
+    # 对账看不出「这条来自哪个站」。独立访问为 NULL（没有宿主）。
+    host_origin: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
