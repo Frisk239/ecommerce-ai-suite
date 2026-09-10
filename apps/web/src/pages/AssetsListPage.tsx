@@ -238,7 +238,10 @@ export default function AssetsListPage() {
   // 视角、总数与原有次序不变（导入组内保持 filtered 的相对次序）。
   const importedRows = useMemo(() => filtered.filter(isImportedSource), [filtered])
   const primaryRows = useMemo(() => filtered.filter((a) => !isImportedSource(a)), [filtered])
-  const [importsOpen, setImportsOpen] = useState(false)
+  const [importsOpenManual, setImportsOpen] = useState(false)
+  // 自动展开（审计刀 12 P1）：筛选/搜索只命中导入货时（主行 0 条），收起态会让屏幕
+  // 只剩一条折叠头——像「没找到」，而用户搜的正是那条导入资产。手动折叠仍可选。
+  const importsOpen = importsOpenManual || (primaryRows.length === 0 && importedRows.length > 0)
 
   // 「去补文档」（审计刀 8 P1：方案 UX-C.3 明令禁止静默开修订）：
   // 该商品已有已发布规格文档时，先问清「在这份上开修订」还是「另起一份新文档」——
@@ -724,7 +727,7 @@ export default function AssetsListPage() {
               {importedRows.length > 0 ? (
                 <>
                   <tr className="bg-canvas">
-                    <td colSpan={8} className="px-3 py-1.5">
+                    <td colSpan={9} className="px-3 py-1.5">
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
@@ -789,7 +792,34 @@ export default function AssetsListPage() {
                               ? `v${asset.current_published_version_no}`
                               : '—'}
                           </td>
-                          <td className="text-xs text-ink-3">—</td>
+                          <td className="max-w-[14rem] truncate text-xs text-ink-3" title={asset.last_error ?? undefined}>
+                            {asset.status === 'ingested' && asset.last_error ? (
+                              <span className="text-danger">{asset.last_error}</span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td>
+                            {asset.status === 'ingested' ? (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void retryWash(asset.id)
+                                }}
+                                disabled={retryingId !== null}
+                                title="只有已接入（机洗未完成或失败）的资产可以重试"
+                              >
+                                <ArrowsClockwise aria-hidden size={12} />
+                                {retryingId === asset.id ? '重试中…' : '重试机洗'}
+                              </button>
+                            ) : (
+                              <span className="row-caret flex items-center justify-end text-caption">
+                                <CaretRight aria-hidden size={13} />
+                              </span>
+                            )}
+                          </td>
                         </tr>
                       ))
                     : null}
