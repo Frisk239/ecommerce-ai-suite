@@ -82,10 +82,11 @@ export function toUi(m: {
   })
 }
 
-/** 顾客侧引用芯片：同 cite-chip 视觉，不可跳转（顾客页不进操作者控制台）。 */
+/** 顾客侧引用芯片：中性只读变体（UX-B），不可跳转也不像链接——顾客页不进
+ * 操作者控制台；保留 A-xxxx · vN 文本。操作者侧 CitationChip 仍是可点蓝链。 */
 function CitationChipPlain({ assetId, version }: { assetId: number; version: number }) {
   return (
-    <span className="cite-chip" title="回答依据的已发布资料版本">
+    <span className="cite-chip-readonly" title="回答依据的已发布资料版本（只读）">
       {formatAssetId(assetId)} · v{version}
     </span>
   )

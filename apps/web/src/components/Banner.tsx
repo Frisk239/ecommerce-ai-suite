@@ -1,7 +1,8 @@
-// 显性横幅：API 错误（红，带重试）与发布成功（安静绿）。不静默白屏。
+// 显性横幅：API 错误（红，带重试）、发布成功（安静绿）与中性信息（品牌蓝）。
+// 不静默白屏。
 
 import type { ReactNode } from 'react'
-import { ArrowClockwise, CheckCircle, Warning } from '@phosphor-icons/react'
+import { ArrowClockwise, CheckCircle, Info, Warning } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 
 export function ErrorBanner({
@@ -24,6 +25,21 @@ export function ErrorBanner({
           重试
         </button>
       ) : null}
+    </div>
+  )
+}
+
+/** 状态横幅（信息语义）：品牌蓝描边/底，语义弱于成功与错误。用于页面状态
+ * 说明（如只读证据视图），不是瞬时反馈。 */
+export function InfoBanner({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div
+      role="note"
+      className="mb-4 flex items-start gap-2.5 rounded-[8px] border border-[rgba(65,118,230,0.22)] bg-[rgba(65,118,230,0.05)] px-3.5 py-2.5 shadow-sm"
+    >
+      <Info aria-hidden size={15} className="mt-px shrink-0 text-accent-strong" />
+      <div className="min-w-0 flex-1 text-[13px] leading-5 text-ink-2">{children}</div>
+      {action}
     </div>
   )
 }

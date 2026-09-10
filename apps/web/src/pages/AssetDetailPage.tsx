@@ -30,7 +30,7 @@ import { resolveFieldValue, toFieldView, type FieldView } from '../api/fields'
 import type { AssetVersion, Product, QaPair } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { formatDateTime, formatAssetId, isStale, sourceKindLabel } from '../labels'
-import { ErrorBanner, SuccessBanner } from '../components/Banner'
+import { ErrorBanner, InfoBanner, SuccessBanner } from '../components/Banner'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { LoadingHint } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
@@ -176,28 +176,50 @@ function FieldRow({
   )
 }
 
-/** dialogue 转写正文（只读）：版本字节 text/plain 直读，人洗必须看得见原文。 */
-function TranscriptPanel({ assetId, versionNo }: { assetId: number; versionNo: number }) {
+/** 版本正文（只读，text/plain 直读）：dialogue 人洗必须看得见转写原文；UX-B
+ * 只读证据视图复用它展示被引用版本的正文。title/note/errorLabel 由调用方给，
+ * dialogue 传对话文案，只读证据传「该版本正文」。 */
+function VersionTextPanel({
+  assetId,
+  versionNo,
+  title,
+  note,
+  errorLabel = '正文',
+  emptyText,
+}: {
+  assetId: number
+  versionNo: number
+  title: string
+  note?: string
+  errorLabel?: string
+  emptyText?: string
+}) {
   const fetcher = useCallback(() => api.getVersionText(assetId, versionNo), [assetId, versionNo])
   const q = useApiData(fetcher)
   return (
     <div className="panel">
       <div className="panel-title flex-wrap">
-        <span>对话转写 · v{versionNo}</span>
-        <span className="text-xs font-normal text-ink-3">
-          登记时的转写原文（只读）；发布后按轮成块入检索
+        <span>
+          {title} · v{versionNo}
         </span>
+        {note !== undefined ? (
+          <span className="text-xs font-normal text-ink-3">{note}</span>
+        ) : null}
       </div>
-      {q.state.phase === 'loading' ? <LoadingHint text="加载转写…" /> : null}
+      {q.state.phase === 'loading' ? <LoadingHint text={`加载${errorLabel}…`} /> : null}
       {q.state.phase === 'error' ? (
         <div className="px-4 py-3 text-[13px] leading-6 text-ink-3">
-          转写读取失败：{detailText(q.state.error)}
+          {errorLabel}读取失败：{detailText(q.state.error)}
         </div>
       ) : null}
       {q.state.phase === 'ok' ? (
-        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-sans text-[13px] leading-6 text-ink-2">
-          {q.state.data}
-        </pre>
+        emptyText !== undefined && q.state.data.trim() === '' ? (
+          <div className="px-4 py-3 text-[13px] leading-6 text-ink-3">{emptyText}</div>
+        ) : (
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-sans text-[13px] leading-6 text-ink-2">
+            {q.state.data}
+          </pre>
+        )
       ) : null}
     </div>
   )
@@ -644,22 +666,35 @@ export default function AssetDetailPage() {
   const anchorParam = searchParams.get('v')
   const anchorVersionNo =
     anchorParam !== null && /^\d+$/.test(anchorParam) ? Number(anchorParam) : null
-  const anchored =
-    anchorVersionNo !== null && versions.some((v) => v.version_no === anchorVersionNo)
+  const anchorVersion =
+    anchorVersionNo !== null ? versions.find((v) => v.version_no === anchorVersionNo) ?? null : null
+  const anchored = anchorVersion !== null
+
+  // UX-B 只读证据视图：anchor 指向「已发布的不可变快照」时进入只读——主栏展示
+  // 该版正文与快照字段，全部写动作隐藏。判据只要求 anchor 已发布：引用芯片恒指向
+  // 已发布版（检索只回已发布），撞上「当前已发布版」恰恰是最常见情形，必须能看见
+  // 该版原文（否则引用仍不可核验）。anchor 指向未发布草稿（手改 URL 才会发生）时
+  // 仍是治理编辑页——那正是要去编辑的那一版。
+  const readOnlyEvidence = anchorVersion !== null && anchorVersion.published_at !== null
+  const evidenceVersionNo = readOnlyEvidence ? anchorVersionNo : null
+
+  // 只读证据视图下主栏字段也锁到 anchor 那一版：正文与字段必须同属一个快照，
+  // 否则会出现「正文 v1、字段 v3」的自相矛盾。其余情况仍是工作版本（editable 数据源不动）。
+  const viewedVersion = readOnlyEvidence ? anchorVersion : activeVersion
 
   const fieldViews = useMemo<FieldView[]>(() => {
-    if (activeVersion === null || product === null) return []
+    if (viewedVersion === null || product === null) return []
     return Object.entries(product.spec_schema).map(([field, rule]) =>
-      toFieldView(activeVersion, field, rule.required === true),
+      toFieldView(viewedVersion, field, rule.required === true),
     )
-  }, [activeVersion, product])
+  }, [viewedVersion, product])
 
   // dialogue 的唯一结构化字段：qa_pairs（ADR 0035）；编辑器读它的数组值
   const qaView = useMemo<FieldView | null>(
-    () => (detail?.kind === 'dialogue' && activeVersion !== null
-      ? toFieldView(activeVersion, 'qa_pairs', false)
+    () => (detail?.kind === 'dialogue' && viewedVersion !== null
+      ? toFieldView(viewedVersion, 'qa_pairs', false)
       : null),
-    [detail?.kind, activeVersion],
+    [detail?.kind, viewedVersion],
   )
 
   const requiredNames = useMemo(
@@ -896,13 +931,15 @@ export default function AssetDetailPage() {
   if (detail === null) return null
 
   const pub = detail.publishability
-  const fieldsNote = editable
-    ? revising
-      ? '修订中：继承的确认值可直接发布，改动会丢掉继承标记'
-      : '待人洗版本：机洗值可一键确认，弃权字段可补填'
-    : detail.status === 'published'
-      ? '当前已发布版本 · 只读（已发布字段不可编辑）'
-      : '机洗未完成 · 无可编辑字段'
+  const fieldsNote = readOnlyEvidence
+    ? '只读证据视图 · 快照字段只读'
+    : editable
+      ? revising
+        ? '修订中：继承的确认值可直接发布，改动会丢掉继承标记'
+        : '待人洗版本：机洗值可一键确认，弃权字段可补填'
+      : detail.status === 'published'
+        ? '当前已发布版本 · 只读（已发布字段不可编辑）'
+        : '机洗未完成 · 无可编辑字段'
 
   const confirmBody = (
     <div className="space-y-2">
@@ -939,7 +976,17 @@ export default function AssetDetailPage() {
       {discardRevNote !== null ? <SuccessBanner>{discardRevNote}</SuccessBanner> : null}
       {discardAssetNote !== null ? <SuccessBanner>{discardAssetNote}</SuccessBanner> : null}
       {registerNote !== null ? <SuccessBanner>{registerNote}</SuccessBanner> : null}
-      {anchored ? (
+      {readOnlyEvidence ? (
+        <InfoBanner
+          action={
+            <Link to={`/platform/assets/${detail.id}`} className="btn btn-ghost btn-sm shrink-0">
+              去工作版本
+            </Link>
+          }
+        >
+          只读证据视图：引用指向 v{anchorVersionNo} 的不可变快照。要改内容，请在待人洗版本上开修订。
+        </InfoBanner>
+      ) : anchored ? (
         <div className="mb-3 text-xs leading-5 text-accent-strong">
           正在查看 v{anchorVersionNo} · 引用回放锚定——本页由引用芯片跳入，该版本已在下方版本列表中高亮。
         </div>
@@ -982,13 +1029,15 @@ export default function AssetDetailPage() {
           </span>
         }
         desc={
-          revising
-            ? `修订中：线上仍引用 v${currentPublishedNo ?? '—'}；发布修订后指针前移。`
-            : detail.status === 'pending_review'
-              ? '机洗已完成：确认机洗值、补填弃权字段，过发布闸门后即可发布。'
-              : detail.status === 'published'
-                ? '已发布版本是只读证据；线上内容以此版本为准。'
-                : '已接入：机洗未完成或失败，重试成功后进入待人洗。'
+          readOnlyEvidence
+            ? `只读证据视图：本页展示引用指向 v${anchorVersionNo} 的已发布不可变快照，全部写动作已隐藏。`
+            : revising
+              ? `修订中：线上仍引用 v${currentPublishedNo ?? '—'}；发布修订后指针前移。`
+              : detail.status === 'pending_review'
+                ? '机洗已完成：确认机洗值、补填弃权字段，过发布闸门后即可发布。'
+                : detail.status === 'published'
+                  ? '已发布版本是只读证据；线上内容以此版本为准。'
+                  : '已接入：机洗未完成或失败，重试成功后进入待人洗。'
         }
       />
 
@@ -1029,9 +1078,25 @@ export default function AssetDetailPage() {
             </div>
           ) : null}
 
-          {detail.kind === 'dialogue' && activeVersion !== null && qaView !== null ? (
+          {evidenceVersionNo !== null ? (
+            <VersionTextPanel
+              assetId={detail.id}
+              versionNo={evidenceVersionNo}
+              title="该版本正文"
+              note="引用指向的已发布不可变快照 · 只读"
+              emptyText="该版本正文为空。"
+            />
+          ) : null}
+
+          {!readOnlyEvidence && detail.kind === 'dialogue' && activeVersion !== null && qaView !== null ? (
             <>
-              <TranscriptPanel assetId={detail.id} versionNo={activeVersion.version_no} />
+              <VersionTextPanel
+                assetId={detail.id}
+                versionNo={activeVersion.version_no}
+                title="对话转写"
+                note="登记时的转写原文（只读）；发布后按轮成块入检索"
+                errorLabel="转写"
+              />
               <QaPairsEditor
                 key={`${activeVersion.version_no}:${qaView.source ?? 'none'}:${JSON.stringify(qaView.qaPairs ?? [])}`}
                 assetId={detail.id}
@@ -1050,9 +1115,9 @@ export default function AssetDetailPage() {
           ) : (
             <div className="panel">
               <div className="panel-title flex-wrap">
-                <span>结构化字段 · v{activeVersion?.version_no ?? '—'}</span>
+                <span>结构化字段 · v{viewedVersion?.version_no ?? '—'}</span>
                 <span className="text-xs font-normal text-ink-3">{fieldsNote}</span>
-                {requiredNames.length > 0 ? (
+                {!readOnlyEvidence && requiredNames.length > 0 ? (
                   <span className="text-xs font-normal text-ink-3">
                     （发布必填：{requiredNames.join('、')}）
                   </span>
@@ -1063,9 +1128,9 @@ export default function AssetDetailPage() {
                   <FieldRow
                     key={view.field}
                     assetId={detail.id}
-                    versionNo={activeVersion?.version_no ?? 0}
+                    versionNo={viewedVersion?.version_no ?? 0}
                     view={view}
-                    editable={editable}
+                    editable={editable && !readOnlyEvidence}
                     onSaved={reloadDetail}
                   />
                 ))
@@ -1084,7 +1149,12 @@ export default function AssetDetailPage() {
         <div className="space-y-4 lg:sticky lg:top-[72px]">
           <div className="panel px-4 py-4">
             <div className="mb-3 text-xs font-medium text-ink-3">治理动作</div>
-            {(detail.status === 'pending_review' || revising) && activeVersion !== null ? (
+            {readOnlyEvidence ? (
+              <div className="text-xs leading-5 text-ink-3">
+                只读证据视图：本页是引用指向 v{anchorVersionNo} 的不可变快照，不提供发布、修订、
+                换正文等治理写动作。要改内容，请回工作版本。
+              </div>
+            ) : (detail.status === 'pending_review' || revising) && activeVersion !== null ? (
               <div className="space-y-2.5">
                 <button
                   type="button"
@@ -1295,6 +1365,7 @@ export default function AssetDetailPage() {
                   (detail.status === 'pending_review' || revising) && version === latest,
                 )
                 const canRollback =
+                  !readOnlyEvidence &&
                   version.published_at !== null &&
                   version.version_no !== currentPublishedNo &&
                   !revising
