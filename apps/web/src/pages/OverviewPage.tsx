@@ -15,7 +15,7 @@ import {
 } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
-import type { AssetListItem, StatsFeedbackAsset, StatsOverview } from '../api/types'
+import type { AssetListItem, StatsCsat, StatsFeedbackAsset, StatsOverview } from '../api/types'
 import { formatAssetId } from '../labels'
 import { filterWorkAssets, isIngested, isPendingWash, isPublished } from '../workQueue'
 import { useApiData } from '../hooks/useApiData'
@@ -164,6 +164,68 @@ function TrendPanel({ data }: { data: StatsOverview }) {
         {/* 口径硬标注：分母是「回答」，不是 RAG 准确率（Owner 裁决 2） */}
         <span>引用覆盖率分母是「回答」（含模板/工具回答与 citations 为空的回答），不是 RAG 准确率；拒答按定义无引用，不混进分母。</span>
       </div>
+    </div>
+  )
+}
+
+/** CSAT 行（第 48 刀）：近 7 日会话评分。均分与分布同屏——4.3 可能是
+ * 5+5+3，只看均值会把「有人很不满意」读成「总体还行」；无样本时均分是「—」
+ * （后端给 null，不返回 0 冒充）；留言已在后端掩码 + 截断。 */
+function CsatPanel({ csat }: { csat: StatsCsat }) {
+  const total = csat.ratings_last_7d
+  const max = Math.max(1, ...Object.values(csat.distribution))
+  return (
+    <div className="panel mt-4">
+      <div className="panel-title flex-wrap">
+        <span>顾客满意度 · 近 7 日</span>
+        <span className="text-xs font-normal text-ink-3">
+          {total === 0
+            ? '还没有评分'
+            : `均分 ${csat.average_last_7d === null ? '—' : csat.average_last_7d} / 5 · ${total} 条评分（会话级，与「没有帮助」正交）`}
+        </span>
+      </div>
+      {total === 0 ? (
+        <div className="px-4 py-3.5 text-[13px] leading-6 text-ink-3">
+          顾客在客服页打完分后会汇总在这里；低于 3 分不自动触发任何治理动作（那要走「没有帮助」）。
+        </div>
+      ) : (
+        <>
+          <div className="space-y-1 px-4 py-3">
+            {[5, 4, 3, 2, 1].map((score) => {
+              const count = csat.distribution[String(score)] ?? 0
+              return (
+                <div key={score} className="flex items-center gap-2.5">
+                  <span className="w-6 shrink-0 text-right text-xs tabular-nums text-ink-3">
+                    {score} 星
+                  </span>
+                  <span className="h-2.5 flex-1 overflow-hidden rounded-[2px] bg-fill">
+                    <span
+                      className="block h-full rounded-[2px]"
+                      style={{
+                        width: `${Math.round((count / max) * 100)}%`,
+                        background: score >= 4 ? 'var(--color-ink-2)' : 'var(--color-danger)',
+                      }}
+                    />
+                  </span>
+                  <span className="w-8 shrink-0 text-xs tabular-nums text-ink-2">{count}</span>
+                </div>
+              )
+            })}
+          </div>
+          {csat.recent_comments.length > 0 && (
+            <div className="border-t border-line-1 px-4 py-2.5">
+              <div className="text-[11px] text-caption">最新留言（已掩码）</div>
+              <ul className="mt-1 space-y-0.5">
+                {csat.recent_comments.map((text, index) => (
+                  <li key={`${index}-${text.slice(0, 8)}`} className="text-[12.5px] text-ink-2">
+                    「{text}」
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -327,6 +389,7 @@ export default function OverviewPage() {
         <>
           <TrendPanel data={statsState.data} />
           <FeedbackPanel assets={statsState.data.feedback_assets} />
+          <CsatPanel csat={statsState.data.csat} />
         </>
       )}
 

@@ -248,6 +248,29 @@ class ServiceMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class SessionRating(Base):
+    """第 48 刀（迁移 0024）：顾客对**这次会话**的 1–5 星满意度（CSAT）。
+
+    与消息级 ``service_messages.feedback``（thumbs）正交：thumbs 问「这条回答
+    有没有帮助」（带证据分诊语义），评分问「这次服务怎么样」（会话级主观分）。
+    ``session_id`` **唯一**——一会话一评，不做多评/改评（v1）。
+
+    comment 是顾客手打的自由文本：**库内原文、出口必掩**（ADR 0038——操作者面
+    展示前过 redact_contact）。低分不触发任何写动作（不撤销验证、不建缺口/工单）：
+    CSAT 可能因为物流慢，把它当「证据有问题」是误伤（intake 裁决 9）。
+    """
+
+    __tablename__ = "session_ratings"
+    __table_args__ = (UniqueConstraint("session_id", name="uq_session_ratings_session_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("service_sessions.id"))
+    # 1–5；合法值集与校验在服务层（沿用「合法值集单一来源」先例：ORDER_STATUSES）
+    score: Mapped[int] = mapped_column(Integer)
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Order(Base):
     """ADR 0036：订单表=订单工具（get_order_status）的数据源，不是中台对象。
 

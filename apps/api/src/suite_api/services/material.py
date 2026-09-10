@@ -39,6 +39,9 @@ PENDING_QC = "pending_qc"
 REGISTERED = "registered"
 FAILED = "failed"
 
+# 打回理由长度上限（第 48 刀）：路由 422 挡超长，服务层兜底截断
+REJECT_REASON_MAX = 200
+
 TASK_STATUSES = (QUEUED, RUNNING, PENDING_QC, REGISTERED, FAILED)
 
 # 规则质检阈值（0038 锁死：非空/总长≤2000/标题非空/正文含商品名）
@@ -216,8 +219,14 @@ def approve_task(db: Session, storage: ObjectStorage, task: MaterialTask) -> Mat
     return task
 
 
-def reject_task(db: Session, task: MaterialTask) -> MaterialTask:
-    """抽检打回（pending_qc → failed，原因=人工打回）：可重试再生成。
+def reject_task(db: Session, task: MaterialTask, *, reason: str | None = None) -> MaterialTask:
+    """抽检打回（pending_qc → failed）：可重试再生成。
+
+    第 48 刀：收可选打回理由（运营要看得见「为什么被打回」，否则生成方无从改）。
+    理由复用既有 ``last_error`` 列（UI 已在展示失败原因，不新造列与展示口径）：
+    有理由 -> ``人工打回：{reason}``，无 -> 保持 ``人工打回``。理由在服务层截断
+    到 ``REJECT_REASON_MAX``，路由/服务都不接受超长（路由负责 422，服务负责
+    兜底截断——服务也可能被别的调用方使用）。
 
     commit 收在服务层（debt-2 第 24 刀）：与 run/approve 同一转移纪律，路由层
     不再补 commit——非法转移 409 抛在 commit 前，天然不落半途写。
@@ -227,7 +236,9 @@ def reject_task(db: Session, task: MaterialTask) -> MaterialTask:
             status_code=status.HTTP_409_CONFLICT,
             detail=f"只有待抽检的任务可以打回，当前状态: {task.status}",
         )
-    _fail(task, "人工打回")
+    cleaned = (reason or "").strip()
+    detail = cleaned[:REJECT_REASON_MAX]
+    _fail(task, f"人工打回：{detail}" if detail else "人工打回")
     db.commit()
     return task
 

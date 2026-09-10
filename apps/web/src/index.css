@@ -585,6 +585,27 @@
     cursor: default;
   }
 
+  /* 评分星（第 48 刀 CSAT）：实色、无位移、无渐变——UX-E 形态约束同款；
+     hover 只改色（品牌蓝仅在语义处：这里是「选中」语义，允许用 accent）。 */
+  .star-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    background: transparent;
+    color: var(--color-ink-3);
+    cursor: pointer;
+  }
+  .star-btn:hover:not(:disabled) {
+    color: var(--color-accent);
+  }
+  .star-btn:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
   /* ---------- 工具条（第 13 刀/ADR 0036，UX-NOTES §6 冻结口径） ----------
      灰底 mono「参数→结果」，与青底 cite-chip 视觉分离：引用=证据指向，
      工具条=引擎已发生的动作留档。灰阶取 badge-ingested 同款。 */

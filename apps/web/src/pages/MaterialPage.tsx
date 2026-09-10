@@ -145,6 +145,10 @@ function TaskDetailDrawer({
 }) {
   const [busy, setBusy] = useState<null | 'approve' | 'reject' | 'retry'>(null)
   const [error, setError] = useState<string | null>(null)
+  // 第 48 刀：打回理由（可选，≤200 字）——写进任务 last_error 的详情段，运营
+  // 与生成方都能看到「为什么被打回」；不填等价于旧口径「人工打回」。
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejecting, setRejecting] = useState(false)
 
   // 动作进行中不可中断：Esc 与遮罩同一门禁（走查实录 A1：此前 Esc 无响应）
   useEscapeClose(task !== null, onClose, busy === null)
@@ -157,7 +161,7 @@ function TaskDetailDrawer({
     setError(null)
     try {
       if (action === 'approve') await api.approveMaterialTask(task.id)
-      else if (action === 'reject') await api.rejectMaterialTask(task.id)
+      else if (action === 'reject') await api.rejectMaterialTask(task.id, rejectReason.trim() || null)
       else await api.retryMaterialTask(task.id)
       onActioned()
     } catch (err) {
@@ -218,14 +222,53 @@ function TaskDetailDrawer({
             </div>
           ) : null}
 
+          {rejecting && task.status === 'pending_qc' ? (
+            <div className="mt-3 rounded-[6px] border border-line-2 bg-canvas px-3 py-2.5">
+              <div className="text-[12px] text-ink-2">
+                打回理由（可选，≤200 字）——会记进任务失败原因，生成方据此调整。
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  className="input h-8 flex-1 text-[13px]"
+                  placeholder="例如：卖点与商品不符 / 画面糊"
+                  value={rejectReason}
+                  maxLength={200}
+                  disabled={busy !== null}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => void run('reject')}
+                  disabled={busy !== null}
+                >
+                  {busy === 'reject' ? '打回中…' : '确认打回'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setRejecting(false)}
+                  disabled={busy !== null}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {error ? <ActionError message={error} /> : null}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-line-2 px-4 py-3">
           {task.status === 'pending_qc' ? (
             <>
-              <button type="button" className="btn btn-secondary" onClick={() => void run('reject')} disabled={busy !== null}>
-                {busy === 'reject' ? '打回中…' : '打回'}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setRejecting((prev) => !prev)}
+                disabled={busy !== null}
+              >
+                打回
               </button>
               <button type="button" className="btn btn-primary" onClick={() => void run('approve')} disabled={busy !== null}>
                 {busy === 'approve' ? '登记中…' : '抽检通过 · 登记为资产'}
@@ -465,7 +508,14 @@ export default function MaterialPage() {
       )}
 
       <CreateTaskDrawer open={createOpen} onClose={() => setCreateOpen(false)} onCreated={reload} />
-      <TaskDetailDrawer task={detailTask} onClose={() => setDetailId(null)} onActioned={reload} />
+      {/* key 按任务 id：抽屉始终挂载（task=null 时内部返回 null），不换 key 的话
+          打回理由输入框的值会跨任务残留——A 的理由可能被打进 B 的失败原因 */}
+      <TaskDetailDrawer
+        key={detailTask?.id ?? 'none'}
+        task={detailTask}
+        onClose={() => setDetailId(null)}
+        onActioned={reload}
+      />
     </div>
   )
 }

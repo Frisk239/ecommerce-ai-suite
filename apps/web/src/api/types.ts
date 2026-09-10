@@ -260,6 +260,8 @@ export interface ServiceSessionSummary extends ServiceSession {
   pending_ticket_count: number
   /** 第 45b 刀：嵌入小组件的宿主访客 id（第一方 uuid）；独立访问为 null。 */
   visitor_id: string | null
+  /** 第 48 刀：本会话的顾客评分（1–5）；未评为 null——客服页据此显示星级徽章。 */
+  rating: number | null
 }
 
 /** 引用（CONTEXT 词条：指向一条证据 = 资产 ID + 版本号，检索用当前已发布版）。 */
@@ -363,6 +365,15 @@ export interface StatsFeedbackAsset {
  * 拒答与转人工是两个数（语义不同，不合并）；citation_rate_last_7d 同时下发
  * 分子分母供 UI 标注口径——分母是「回答」（kind=answer，模板/工具回答也是
  * answer 且 citations 为空），不是 RAG 准确率；分子为 0 时为 null（不除零）。 */
+/** CSAT 段（第 48 刀）：近 7 日窗；average 无样本时 null（不返回 0 冒充均分）；
+ * distribution 恒含 1–5 五档（前端不用补键）；recent_comments 已掩码 + 截断。 */
+export interface StatsCsat {
+  ratings_last_7d: number
+  average_last_7d: number | null
+  distribution: Record<string, number>
+  recent_comments: string[]
+}
+
 export interface StatsOverview {
   window_days: number
   daily: StatsDaily[]
@@ -377,6 +388,7 @@ export interface StatsOverview {
   citation_rate_last_7d: number | null
   badges: StatsBadges
   feedback_assets: StatsFeedbackAsset[]
+  csat: StatsCsat
 }
 
 /** SSE complete 事件的负载（与后端 event_stream 尾事件一致）。
@@ -412,6 +424,14 @@ export interface FeedbackResult {
   message_id: number
   feedback: { helpful: boolean; at: string }
   triaged_asset_ids: number[]
+}
+
+/** 会话评分回执（第 48 刀，CSAT）：一会话一评；comment 回显顾客自己的输入。 */
+export interface SessionRating {
+  session_id: number
+  score: number
+  comment: string | null
+  created_at: string
 }
 
 /** 退货确认结果：确认后订单全部物流事件（含新追加的确认事件）。 */

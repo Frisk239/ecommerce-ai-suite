@@ -443,6 +443,14 @@ export default function ServicePage() {
                             顾客
                           </span>
                         )}
+                        {s.rating != null && (
+                          <span
+                            className="kind-chip"
+                            title={`顾客对这次会话的评分：${s.rating} 星（第 48 刀 CSAT）`}
+                          >
+                            ★ {s.rating}
+                          </span>
+                        )}
                         {s.visitor_id !== null && s.visitor_id !== '' ? (
                           <span
                             className="kind-chip"
