@@ -43,11 +43,13 @@ SOURCE_KINDS = (
 )
 
 
-def make_object_key(kind: str, content_bytes: bytes) -> str:
-    """对象键 = {documents|dialogue|clips}/{uuid}/{sha256前16}.txt（ADR 0003 每版一把键）。
+def make_object_key(kind: str, content_bytes: bytes, *, suffix: str | None = None) -> str:
+    """对象键 = {documents|dialogue|clips}/{uuid}/{sha256前16}.{txt|mp4}（ADR 0003 每版一把键）。
 
-    video（切片拣选登记）走 clips/ 前缀（ADR 0039）——登记的字节是带时间码头
-    的转写文本，扩展名仍 .txt；真视频字节与切出是部署刀的事。
+    扩展名**跟实际字节走**（第 46 刀裁决 4；评审 P1 修正）：`suffix` 显式给定时
+    以它为准——切片的真 mp4 路径传 `.mp4`、**无源录像的旧文本路径传 `.txt`**
+    （否则会出现「键说 mp4、字节是文本」的不一致）。不给 suffix 时按 kind 兜底
+    （video→mp4，其余→txt）。前缀照旧：video 走 clips/（ADR 0039）。
     """
     if kind == "dialogue":
         prefix = "dialogue"
@@ -55,8 +57,9 @@ def make_object_key(kind: str, content_bytes: bytes) -> str:
         prefix = "clips"
     else:
         prefix = "documents"
+    extension = suffix if suffix is not None else ("mp4" if kind == "video" else "txt")
     digest = hashlib.sha256(content_bytes).hexdigest()[:16]
-    return f"{prefix}/{uuid4().hex}/{digest}.txt"
+    return f"{prefix}/{uuid4().hex}/{digest}.{extension}"
 
 
 def validate_source_kind(source_kind: str) -> str:
@@ -94,16 +97,23 @@ def register_asset(
     filename: str | None,
     product_id: int | None,
     source_kind: str,
+    preset_fields: dict[str, str] | None = None,
+    key_suffix: str | None = None,
 ) -> Asset:
     """登记资产 + v1 版本（含同步机洗推进），返回 asset（未 commit）。
 
     - source_kind 必填（0025），入口先校验——坏值在任何字节落库前失败。
-    - 字节先落对象存储，对象键 = {documents|dialogue}/{uuid}/{sha256前16}.txt；
-      filename 不参与键（ADR 0003 每版一把键，扩展名固定 .txt），仅作为登记
-      入口的来源信息保留在签名里。
+    - 字节先落对象存储，对象键 = {documents|dialogue|clips}/{uuid}/{sha256前16}；
+      filename 不参与键（ADR 0003 每版一把键），仅作为登记入口的来源信息保留
+      在签名里。扩展名按 kind 分派（第 46 刀：video=.mp4，其余=.txt）。
     - 机洗字段集按种类分派（machine_wash_field_names）：dialogue -> qa_pairs
       （LLM 抽 QA 草稿；未配置模型=弃权降级照常待人洗，失败=停已接入可重试）；
       文档挂商品 -> spec_schema keys；文档不挂商品 -> 空集直接待人洗。
+    - preset_fields（第 46 刀）：登记时就已知的正文来源（如切片候选的转写），
+      {字段: 值} 在机洗之后并入 extracted_fields（source=machine，值不被机洗
+      覆盖：setdefault）。video 字段集恒空（machine_wash_field_names），且有源
+      录像时字节是 mp4 二进制——机洗读字节必解码失败，故「有预置字段且机洗字段
+      集为空」时跳过读字节（预置字段即这批资产的机洗成果），照常推进待人洗。
     - product_id 给了但不存在 -> 404（在字节落库前失败，与路由原校验同口径）。
     - 机洗前 commit（P1#2）：LLM 等待至多 20s，不得 idle-in-transaction 占连接。
     """
@@ -114,7 +124,7 @@ def register_asset(
         if product is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="商品不存在")
 
-    object_key = make_object_key(kind, content_bytes)
+    object_key = make_object_key(kind, content_bytes, suffix=key_suffix)
     storage.put_bytes(object_key, content_bytes)
 
     asset = Asset(
@@ -145,7 +155,14 @@ def register_asset(
     db.commit()
 
     try:
-        extracted = run_machine_wash(storage, object_key, field_names, kind)
+        # 预置字段 + 空机洗字段集（第 46 刀 video 真切路径）：字节是 mp4，机洗
+        # 读字节必解码失败，且空字段集本就是空操作——跳过读字节，预置字段即成果。
+        if preset_fields is not None and not field_names:
+            extracted: dict[str, dict] = {}
+        else:
+            extracted = run_machine_wash(storage, object_key, field_names, kind)
+        for name, value in (preset_fields or {}).items():
+            extracted.setdefault(name, {"value": value, "source": "machine"})
         version.extracted_fields = extracted  # JSONB 整体赋值，确保变更可追踪
         asset.status = PENDING_REVIEW
     except (MachineWashError, FileNotFoundError) as exc:

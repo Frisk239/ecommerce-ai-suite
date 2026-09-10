@@ -5,6 +5,13 @@ ENV PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
+# ffmpeg（第 46 刀切片真链路）：第 46 刀起切片拣选用 `ffmpeg -c copy` 真切 mp4；
+# slim 基础镜像不带，apt 装最小集（--no-install-recommends 少拖编码器依赖树），
+# 装完清 apt lists 控制层体积。CI 的 ubuntu-latest 自带 ffmpeg，无需改 workflow。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir uv==0.12.1
 
 WORKDIR /app

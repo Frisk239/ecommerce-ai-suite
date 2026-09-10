@@ -141,13 +141,20 @@ def qa_pair_chunks(confirmed_fields: dict[str, Any]) -> list[str]:
     return chunks
 
 
+def _field_text(fields: dict[str, Any], name: str) -> str | None:
+    """从 {字段: {value}} 形状取字符串值（非 dict/非 str/空串 -> None）。"""
+    value = _confirmed_entry_value(fields, name)
+    return value if isinstance(value, str) and value.strip() else None
+
+
 def index_chunks_for_version(
     storage: ObjectStorage,
     object_key: str,
     kind: str,
     confirmed_fields: dict[str, Any],
+    extracted_fields: dict[str, Any] | None = None,
 ) -> list[str]:
-    """发布事务用的切块入口：confirmed 块 + 版本字节切块（seq 续排）。
+    """发布事务用的切块入口：confirmed 块 + 版本正文切块（seq 续排）。
 
     确认字段块的目的：机洗没抽到/抽散的字段，其「字段名：值」仍可被检索
     （问「净含量」命中字段块）；只用 confirmed（写回口径同 0010：confirmed
@@ -159,11 +166,27 @@ def index_chunks_for_version(
     确认过的 QA 是人洗成果、价值密度最高，而块表截断在 [:MAX_CHUNKS]：
     长转写（>200 轮）下 QA 排尾会被静默截掉，排首则任何截断先丢正文。
     其余确认字段块仍续在正文块后（与第 12 刀口径一致）。
+
+    正文文本源按 kind 分派（第 46 刀，裁决 5；评审 P1 修正）：
+    - video：正文**只来自 transcript 字段**（confirmed 优先，回落 extracted），
+      **永不读对象字节**——字节可能是 mp4 二进制（有源录像）或旧路径的时间码
+      文本，前者读回是乱码、后者能读但那是历史形态；用「字段缺失就回落读字节」
+      会留下一条静默乱码/409 的路（评审 P1-2）。字段缺失或为空 = 正文为空
+      （视频资产无必填字段闸，照常可发布，只是没有正文块）。
+    - 其余 kind：照旧 read_index_text(storage, object_key) 读字节切块。
     """
     from suite_api.services.publishing import confirmed_value
 
+    if kind == "video":
+        transcript = _field_text(confirmed_fields, "transcript")
+        if transcript is None and extracted_fields is not None:
+            transcript = _field_text(extracted_fields, "transcript")
+        body = transcript or ""  # 永不读字节：mp4 二进制不进切块（评审 P1-2）
+    else:
+        body = read_index_text(storage, object_key)
+
     chunks = qa_pair_chunks(confirmed_fields)
-    chunks.extend(chunk_text(read_index_text(storage, object_key), kind))
+    chunks.extend(chunk_text(body, kind))
     for field in sorted(confirmed_fields):
         if field == QA_FIELD:
             continue

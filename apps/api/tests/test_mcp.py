@@ -85,6 +85,45 @@ def test_read_version_text_missing_object(tmp_path: Path) -> None:
     assert "对象缺失" in str(excinfo.value)
 
 
+class _SessionStub:
+    """只实现 read_version_text 回落路径用到的那一次 ``get(Asset, id)``（不连库）。"""
+
+    def __init__(self, asset: Asset | None) -> None:
+        self._asset = asset
+
+    def get(self, entity: object, ident: object) -> Asset | None:
+        del entity, ident
+        return self._asset
+
+
+def _video_asset() -> Asset:
+    return Asset(id=7, kind="video", status="published", source_kind="clip_pick", title="切片")
+
+
+def test_read_version_text_video_falls_back_to_transcript(tmp_path: Path) -> None:
+    """第 46 刀（ADR 0047）：真切出的切片资产字节是 mp4 二进制——正文回落
+    ``transcript`` 字段。没有这条回落，库里任何一份已发布切片都会让 MCP 的
+    get_asset / export_published 整体报错、版本正文端点 409。"""
+    storage = LocalDirectoryStorage(tmp_path)
+    storage.put_bytes("v1", b"\x00\x00\x00\x18ftypmp42\xff\xfe binary")
+    version = AssetVersion(object_key="v1", asset_id=7)
+    version.extracted_fields = {"transcript": {"value": "现场实测保温 63 度。", "source": "machine"}}
+    got = read_version_text(_SessionStub(_video_asset()), storage, version)
+    assert got == "现场实测保温 63 度。"
+
+
+def test_read_version_text_non_video_binary_still_errors(tmp_path: Path) -> None:
+    """回落**只给 video**：别的种类的非 UTF-8 字节仍是真错误（即便碰巧有 transcript
+    字段也不许拿它掩盖坏字节）。"""
+    storage = LocalDirectoryStorage(tmp_path)
+    storage.put_bytes("d1", b"\xff\xfe\x00g\x00b")
+    version = AssetVersion(object_key="d1", asset_id=8)
+    version.extracted_fields = {"transcript": {"value": "不该被用到", "source": "machine"}}
+    document = Asset(id=8, kind="document", status="published", source_kind="upload", title="文档")
+    with pytest.raises(VersionTextError):
+        read_version_text(_SessionStub(document), storage, version)
+
+
 # ---------- 鉴权：Bearer 闸门（无 DB / 无 lifespan，401 在子应用外层返回） ----------
 
 

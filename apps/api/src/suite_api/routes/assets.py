@@ -567,7 +567,9 @@ def publish(
     # -> 资产指针前移 -> 商品写回 -> 审计一行（0005/0006/0010）。
     # 切块失败（字节不可读/非 UTF-8）整体回滚：索引没写就不算发布成功（0004）。
     try:
-        index_chunks = index_chunks_for_version(storage, version.object_key, asset.kind, confirmed)
+        index_chunks = index_chunks_for_version(
+            storage, version.object_key, asset.kind, confirmed, extracted
+        )
     except ChunkingError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -811,6 +813,16 @@ def replace_version_bytes(
     )
     if version is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产版本不存在")
+    if asset.kind == "video":
+        # 第 46 刀（ADR 0047）：视频资产的正文由 transcript 字段承载、字节是切出的
+        # mp4 片段。换字节在这里有两重坏处：①上传的是文本，而 video 的对象键按
+        # kind 走 .mp4——键与字节不一致；②video 机洗字段集恒空，重算会把预置的
+        # transcript 整体覆盖成空集，检索块静默归零。故直接拒绝（想要别的片段，
+        # 去切片页重拣）。
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="视频资产的正文来自转写字段、字节是切片，不支持换正文；请回切片页重拣",
+        )
     if not _can_replace_version_bytes(asset, version):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

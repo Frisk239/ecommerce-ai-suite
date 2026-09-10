@@ -104,18 +104,20 @@ def test_transcript_bytes_is_timecode_prefixed_text() -> None:
 
 
 @pytest.mark.parametrize(
-    ("kind", "prefix"),
+    ("kind", "prefix", "extension"),
     [
-        ("video", "clips"),
-        ("dialogue", "dialogue"),
-        ("document", "documents"),
-        ("material", "documents"),
+        ("video", "clips", ".mp4"),  # 第 46 刀：video 字节可是真切 mp4
+        ("dialogue", "dialogue", ".txt"),
+        ("document", "documents", ".txt"),
+        ("material", "documents", ".txt"),
     ],
 )
-def test_make_object_key_prefix_dispatch(kind: str, prefix: str) -> None:
+def test_make_object_key_prefix_and_extension_dispatch(
+    kind: str, prefix: str, extension: str
+) -> None:
     key = make_object_key(kind, b"x")
     assert key.startswith(f"{prefix}/")
-    assert key.endswith(".txt")  # video 登记的字节是转写文本，扩展名仍 .txt
+    assert key.endswith(extension)
 
 
 # ---------- 机洗字段集：video 恒空（挂商品也不跑规格正则） ----------

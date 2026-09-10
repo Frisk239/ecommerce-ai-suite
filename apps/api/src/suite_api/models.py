@@ -301,14 +301,36 @@ class MaterialTask(Base):
     )
 
 
+class ClipRecording(Base):
+    """第 46 刀：直播源录像=切片模块自有的上传字节，不是中台对象（同候选 0014）。
+
+    object_key 落在 recordings/ 前缀（ADR 0003 每份上传一把键）；label 是上传
+    文件名（展示用）、size_bytes 是字节数。**不进检索、不能发布、不进治理台、
+    无 MCP 触点**——它只是拣选时 ffmpeg 的输入源与溯源锚。候选经 recording_id
+    指向它：有源录像 -> 拣选真切出 mp4 片段；无（NULL）-> 退回时间码文本旧路径。
+    本刀是「上传即绑待拣候选」的单源模型（多源按候选绑定留 Out）。
+    """
+
+    __tablename__ = "clip_recordings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    label: Mapped[str] = mapped_column(String(200))
+    object_key: Mapped[str] = mapped_column(String(500))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ClipCandidate(Base):
     """ADR 0014/0039：直播切片候选=切片模块自有的种子 mock，不是中台对象。
 
     status ∈ pending/registered——单向状态机：拣选才切开字节登记
     （0014），已登记不可再拣选（409）。timecode_start/end 是源录像的时间码
-    边界（HH:MM:SS 字符串）；transcript 是 ASR 转写 mock，登记字节 =
-    「[start-end] 转写」文本（kind=video，非 mp4，0039——真视频切出留部署刀）。
-    source_video_label 是源录像的名称字符串（mock 店铺语境，不存录像字节）。
+    边界（HH:MM:SS 字符串）；transcript 是 ASR 转写 mock。第 46 刀起登记字节
+    按 recording_id 分派：有源录像 -> ffmpeg 真切 mp4 片段（登记时预置
+    transcript 字段承载正文）；无源录像（NULL）-> 仍写「[start-end] 转写」
+    文本（旧路径保留，ADR 0039）。
+    source_video_label 是源录像的名称字符串（mock 店铺语境）；真实上传的
+    录像经 recording_id 指向 clip_recordings（不存资产语义）。
     registered_asset_id 只在 registered 后指向登记出的视频资产（回执锚，
     UI 跳治理台的锚，同 MaterialTask.asset_id 先例）。
     """
@@ -323,6 +345,9 @@ class ClipCandidate(Base):
     timecode_end: Mapped[str] = mapped_column(String(8))
     transcript: Mapped[str] = mapped_column(Text)
     source_video_label: Mapped[str] = mapped_column(String(120))
+    # 源录像（第 46 刀）：上传即绑待拣候选；无上传为 NULL=走时间码文本旧路径。
+    # 已登记候选的绑定不随新上传改写（回执锚已定，裁决 2）。
+    recording_id: Mapped[int | None] = mapped_column(ForeignKey("clip_recordings.id"))
     # 拣选登记出的视频资产（kind=video、source_kind=clip_pick）；未拣选为 NULL
     registered_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

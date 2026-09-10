@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, Product
-from suite_api.services.publishing import evaluate_publish_gate
+from suite_api.services.publishing import evaluate_publish_gate, resolve_field_value
 from suite_api.services.registration import PENDING_REVIEW, PUBLISHED
 from suite_platform.storage import ObjectStorage
 
@@ -29,8 +29,14 @@ def read_version_text(session: Session, storage: ObjectStorage, version: AssetVe
     session 与其他服务函数同构（调用方都在会话内），读取本身只依赖对象键。
     decode 失败给明确错误，不静默替换字符（外部 Agent 拿到的正文必须与
     登记字节一致）。
+
+    **video 二进制回落（第 46 刀，ADR 0047）**：真切出的切片资产字节是 mp4
+    二进制，解 UTF-8 必失败——此时正文改由 ``transcript`` 字段供给（与检索
+    切块同口径：confirmed 优先、extracted 次之），否则 MCP 的 get_asset /
+    export_published 与版本正文端点会被一份切片资产整体带崩。旧路径（无源
+    录像）字节本就是时间码文本，上面已照常返回、形态不变。**只对 video
+    回落**：别的种类字节不是文本是真错误（409），不拿字段掩盖坏字节。
     """
-    del session  # 读取只走对象存储；参数保留对齐服务层签名（调用方无需特判）
     try:
         data = storage.get_bytes(version.object_key)
     except FileNotFoundError as exc:
@@ -38,7 +44,23 @@ def read_version_text(session: Session, storage: ObjectStorage, version: AssetVe
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError as exc:
+        if session is not None:
+            transcript = _video_transcript(session, version)
+            if transcript is not None:
+                return transcript
         raise VersionTextError("版本字节不是合法 UTF-8 文本，无法读取正文") from exc
+
+
+def _video_transcript(session: Session, version: AssetVersion) -> str | None:
+    """video 资产的正文源：``transcript`` 字段（confirmed 优先、extracted 次之）。
+
+    非 video 资产、或字段缺失/为空 -> None（调用方照旧报错，不静默降级）。"""
+    asset = session.get(Asset, version.asset_id)
+    if asset is None or asset.kind != "video":
+        return None
+    return resolve_field_value(
+        version.extracted_fields or {}, version.confirmed_fields or {}, "transcript"
+    )
 
 
 class ProductRef(BaseModel):

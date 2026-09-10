@@ -160,8 +160,13 @@ def test_pick_publish_retrieval_and_surface(api: ApiFixture) -> None:
         assert asset["title"] == candidate["transcript"][:60]
         version = asset["versions"][0]
         assert version["object_key"].startswith("clips/")
-        assert version["extracted_fields"] == {}  # video 字段集恒空：不跑规格正则
-        # 登记字节 = [start-end] 转写 文本（0039：不是 mp4）
+        # 第 46 刀：video 字段集不再是空集——转写预置为 transcript 字段（检索正文源，
+        # roadmap 明写「转写字段保留」）；仍不跑规格正则（类目字段集为空，preset
+        # 与机洗无关，故不会有类目字段）
+        assert set(version["extracted_fields"]) == {"transcript"}
+        assert version["extracted_fields"]["transcript"]["source"] == "machine"
+        # 无源录像的旧路径：登记字节仍是 [start-end] 转写 文本（0039；真切 mp4
+        # 见 test_real_clips_integration，本文件的种子候选没有被上传绑定过）
         text = client.get(f"/api/assets/{out['id']}/versions/1/text")
         assert text.status_code == 200
         assert (
