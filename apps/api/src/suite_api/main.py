@@ -29,6 +29,7 @@ from suite_api.routes import (
     ops,
     products,
     service,
+    stats,
 )
 from suite_api.services.rate_limit import (
     LOGIN_IP_LIMIT,
@@ -106,6 +107,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(audit.router)
     app.include_router(service.router)
     app.include_router(knowledge_gaps.router)
+    # 操作者仪表（第 43 刀）：现有表现场聚合（无新表/迁移），一次请求喂侧栏
+    # 角标、总览 7 日趋势条与反馈汇总三处；近 7 日固定窗、UTC 天
+    app.include_router(stats.router)
     # 素材中心（第 17 刀/ADR 0038）：任务不是中台对象（0012），六端点全操作者鉴权
     app.include_router(material.router)
     # 直播切片（第 18 刀/ADR 0014/0015/0039）：候选不是中台对象，拣选只登记视频

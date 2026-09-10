@@ -3,7 +3,7 @@
 // （第 17 刀起含素材中心；第 18 刀起含直播切片；第 19 刀起含销售考核；
 // 第 22 刀起含运营 Agent；第 23 刀起含连接层，/ 为总览）。
 
-import { useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
   ChatCircleDots,
@@ -19,20 +19,36 @@ import {
   Storefront,
   X,
 } from '@phosphor-icons/react'
+import type { Icon } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
+import { api } from '../api/endpoints'
+import type { StatsBadges } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { useApiData } from '../hooks/useApiData'
+import { StatsContext, type StatsValue } from '../stats/StatsContext'
 
-const NAV = [
-  { to: '/platform/assets', label: '中台 · 资产', icon: Database, group: '数据中台' },
+// 第 43 刀：角标键指向 StatsBadges 字段——一项最多一个角标，0 时不渲染
+type BadgeKey = 'open_gaps' | 'pending_qc' | 'open_tickets'
+
+interface NavItem {
+  to: string
+  label: string
+  icon: Icon
+  group: string | null
+  badgeKey?: BadgeKey
+}
+
+const NAV: NavItem[] = [
+  { to: '/platform/assets', label: '中台 · 资产', icon: Database, group: '数据中台', badgeKey: 'open_gaps' },
   { to: '/platform/products', label: '中台 · 商品', icon: Package, group: null },
   // 连接层是操作者对外部 Agent 的门面，归数据中台组语义（group:null 跟随商品先例）
   { to: '/connect', label: '连接层', icon: PlugsConnected, group: null },
-  { to: '/service', label: 'AI 客服', icon: ChatCircleDots, group: '业务能力' },
-  { to: '/material', label: '素材中心', icon: Megaphone, group: null },
+  { to: '/service', label: 'AI 客服', icon: ChatCircleDots, group: '业务能力', badgeKey: 'open_tickets' },
+  { to: '/material', label: '素材中心', icon: Megaphone, group: null, badgeKey: 'pending_qc' },
   { to: '/clips', label: '直播切片', icon: FilmSlate, group: null },
   { to: '/coach', label: '销售考核', icon: GraduationCap, group: null },
   { to: '/ops', label: '运营 Agent', icon: Robot, group: null },
-] as const
+]
 
 function useCrumb(): string | null {
   const { pathname } = useLocation()
@@ -49,7 +65,13 @@ function useCrumb(): string | null {
   return null
 }
 
-function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarBody({
+  onNavigate,
+  badges,
+}: {
+  onNavigate?: () => void
+  badges: StatsBadges | null
+}) {
   return (
     <nav className="flex h-full flex-col" aria-label="主导航">
       <Link
@@ -78,6 +100,10 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
             >
               <item.icon aria-hidden size={16} className="shrink-0" />
               <span className="flex-1">{item.label}</span>
+              {/* 角标渲染在 label 之后；0 隐藏（先例：客服页行内「工单 N」） */}
+              {item.badgeKey !== undefined && badges !== null && badges[item.badgeKey] > 0 ? (
+                <span className="nav-badge">{badges[item.badgeKey]}</span>
+              ) : null}
             </NavLink>
           </div>
         ))}
@@ -104,58 +130,83 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const crumb = useCrumb()
   const { pathname } = useLocation()
 
-  return (
-    <div className="flex min-h-screen bg-canvas">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 shrink-0 border-r border-line-1 bg-surface lg:block">
-        <SidebarBody />
-      </aside>
+  // 第 43 刀：角标 = 近 7 日仪表的当前态计数。fetcher 用 useCallback 钉稳
+  // （useApiData 依赖它，行内箭头会每次渲染重取）；pathname 作 reloadKey =
+  // 每次导航刷一次，绝不用定时器（不做轮询）。
+  const statsFetcher = useCallback(() => api.getStatsOverview(), [])
+  const statsQ = useApiData(statsFetcher, pathname)
+  // 防闪烁：pathname 变化会先置 loading（badges 短暂变 null）——把上一帧成功的
+  // 角标存进 state，loading 时沿用它。这是 React 官方「渲染期调整 state」模式
+  // （同组件内条件 setState），不用 effect（set-state-in-effect 会级联渲染），
+  // 也不用 ref（渲染期读写 ref 被 react-hooks/refs 禁）。
+  const [lastBadges, setLastBadges] = useState<StatsBadges | null>(null)
+  if (statsQ.state.phase === 'ok' && statsQ.state.data.badges !== lastBadges) {
+    setLastBadges(statsQ.state.data.badges)
+  }
+  const badges = statsQ.state.phase === 'ok' ? statsQ.state.data.badges : lastBadges
+  // 下发同一份 stats：侧栏角标与总览页消费它，OverviewPage 不再自行请求
+  const statsValue = useMemo<StatsValue>(
+    () => ({ state: statsQ.state, reload: statsQ.reload }),
+    [statsQ.state, statsQ.reload],
+  )
 
-      {open ? (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div
-            className="absolute inset-0 bg-[rgba(15,17,21,0.35)]"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <aside className="absolute inset-y-0 left-0 w-72 border-r border-line-2 bg-surface shadow-xl">
+  return (
+    <StatsContext.Provider value={statsValue}>
+      <div className="flex min-h-screen bg-canvas">
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 shrink-0 border-r border-line-1 bg-surface lg:block">
+          <SidebarBody badges={badges} />
+        </aside>
+
+        {open ? (
+          <div className="fixed inset-0 z-40 lg:hidden">
+            <div
+              className="absolute inset-0 bg-[rgba(15,17,21,0.35)]"
+              onClick={() => setOpen(false)}
+              aria-hidden
+            />
+            <aside className="absolute inset-y-0 left-0 w-72 border-r border-line-2 bg-surface shadow-xl">
+              <button
+                type="button"
+                className="absolute right-3 top-4 rounded-[6px] p-1.5 text-caption hover:bg-hover"
+                onClick={() => setOpen(false)}
+                aria-label="关闭导航"
+              >
+                <X aria-hidden size={18} />
+              </button>
+              <SidebarBody badges={badges} onNavigate={() => setOpen(false)} />
+            </aside>
+          </div>
+        ) : null}
+
+        <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
+          <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line-2 bg-canvas/90 px-4 backdrop-blur lg:px-6">
             <button
               type="button"
-              className="absolute right-3 top-4 rounded-[6px] p-1.5 text-caption hover:bg-hover"
-              onClick={() => setOpen(false)}
-              aria-label="关闭导航"
+              className="-ml-1.5 rounded-[6px] p-2 text-ink-2 hover:bg-hover lg:hidden"
+              onClick={() => setOpen(true)}
+              aria-label="打开导航"
             >
-              <X aria-hidden size={18} />
+              <List aria-hidden size={20} />
             </button>
-            <SidebarBody onNavigate={() => setOpen(false)} />
-          </aside>
-        </div>
-      ) : null}
-
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line-2 bg-canvas/90 px-4 backdrop-blur lg:px-6">
-          <button
-            type="button"
-            className="-ml-1.5 rounded-[6px] p-2 text-ink-2 hover:bg-hover lg:hidden"
-            onClick={() => setOpen(true)}
-            aria-label="打开导航"
+            {crumb ? <div className="crumb">{crumb}</div> : null}
+            <span className="flex-1" />
+            <span className="text-xs text-ink-3">操作者</span>
+            <span className="max-w-40 truncate text-[13px] font-medium text-ink">
+              {operator?.username ?? '—'}
+            </span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
+              <SignOut aria-hidden size={13} />
+              退出
+            </button>
+          </header>
+          <main
+            key={pathname}
+            className="page-enter mx-auto w-full max-w-6xl flex-1 px-4 py-6 lg:px-6"
           >
-            <List aria-hidden size={20} />
-          </button>
-          {crumb ? <div className="crumb">{crumb}</div> : null}
-          <span className="flex-1" />
-          <span className="text-xs text-ink-3">操作者</span>
-          <span className="max-w-40 truncate text-[13px] font-medium text-ink">
-            {operator?.username ?? '—'}
-          </span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
-            <SignOut aria-hidden size={13} />
-            退出
-          </button>
-        </header>
-        <main key={pathname} className="page-enter mx-auto w-full max-w-6xl flex-1 px-4 py-6 lg:px-6">
-          {children}
-        </main>
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </StatsContext.Provider>
   )
 }

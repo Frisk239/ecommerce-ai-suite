@@ -51,10 +51,20 @@ _PHONE_RE = re.compile(r"^[0-9+\-() ]{5,20}$")
 
 def triage_asset_ids(citations: list[dict[str, Any]]) -> list[int]:
     """负反馈分诊的资产集合（纯函数便于单测）：逐 citation 收集 asset_id
-    去重升序——分诊语义见 leave_feedback（ADR 0044 §四）。"""
-    return sorted(
-        {int(c["asset_id"]) for c in citations if isinstance(c, dict) and "asset_id" in c}
-    )
+    去重升序——分诊语义见 leave_feedback（ADR 0044 §四）。
+
+    防御式解析（第 43 刀加固，读路径复用后不允许坏行 500）：只收 dict 且
+    ``asset_id`` 为 int 的条目——键缺失、``asset_id: null``、字符串 id 都跳过
+    （``int(None)`` 会抛 TypeError；bool 是 int 子类，防御性排除，同 lineage 口径）。
+    """
+    asset_ids: set[int] = set()
+    for citation in citations:
+        if not isinstance(citation, dict):
+            continue
+        asset_id = citation.get("asset_id")
+        if isinstance(asset_id, int) and not isinstance(asset_id, bool):
+            asset_ids.add(asset_id)
+    return sorted(asset_ids)
 
 ACTIVE = "active"
 

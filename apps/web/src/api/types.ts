@@ -332,6 +332,51 @@ export interface HandoffTicketResult {
   contact_at: string
 }
 
+// ---------- 操作者仪表（第 43 刀） ----------
+
+/** 每天的会话/拒答/被踩（UTC 自然日，YYYY-MM-DD）；后端零填充 7 天升序。 */
+export interface StatsDaily {
+  date: string
+  sessions: number
+  refusals: number
+  thumbs_down: number
+}
+
+/** 侧栏角标：当前态计数（与列表页同源谓词）。0 时前端隐藏（后端如实给 0）。 */
+export interface StatsBadges {
+  open_gaps: number
+  pending_qc: number
+  open_tickets: number
+}
+
+/** 被踩最多的资产：count=引用了该资产 id 的被踩消息数；title 来自
+ * assets.title，资产缺失（废弃/删除）时为 null（不编造标题）。 */
+export interface StatsFeedbackAsset {
+  asset_id: number
+  title: string | null
+  count: number
+}
+
+/** 操作者仪表聚合（GET /stats/overview）：近 7 日固定窗、UTC 天、零填充升序。
+ * 拒答与转人工是两个数（语义不同，不合并）；citation_rate_last_7d 同时下发
+ * 分子分母供 UI 标注口径——分母是「回答」（kind=answer，模板/工具回答也是
+ * answer 且 citations 为空），不是 RAG 准确率；分子为 0 时为 null（不除零）。 */
+export interface StatsOverview {
+  window_days: number
+  daily: StatsDaily[]
+  sessions_last_7d: number
+  refusals_last_7d: number
+  handoffs_last_7d: number
+  thumbs_down_last_7d: number
+  gaps_opened_last_7d: number
+  gaps_resolved_last_7d: number
+  answers_last_7d: number
+  answers_with_citations_last_7d: number
+  citation_rate_last_7d: number | null
+  badges: StatsBadges
+  feedback_assets: StatsFeedbackAsset[]
+}
+
 /** SSE complete 事件的负载（与后端 event_stream 尾事件一致）。
  * gap_id 仅 refusal 时非空（ADR 0030：运行时返回，消息表不加列——重载会话后
  * 芯片不重现，属契约口径）。fallback 仅 answer 且厂商生成失败降级模板时为

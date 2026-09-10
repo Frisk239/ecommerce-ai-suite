@@ -15,9 +15,11 @@ import {
 } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
-import type { AssetListItem } from '../api/types'
+import type { AssetListItem, StatsFeedbackAsset, StatsOverview } from '../api/types'
+import { formatAssetId } from '../labels'
 import { filterWorkAssets, isIngested, isPendingWash, isPublished } from '../workQueue'
 import { useApiData } from '../hooks/useApiData'
+import { useStats } from '../stats/StatsContext'
 import { ErrorBanner } from '../components/Banner'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
@@ -91,6 +93,126 @@ const REMAINING: { to: string; label: string; line: string }[] = [
 
 const EMPTY_ASSETS: AssetListItem[] = []
 
+/** 柱高：三序列共用同一纵轴刻度（跨序列可比），按窗口内全局最大值归一；
+ * 非零最小值 3px，避免小值被 0 高柱淹没。 */
+function trendHeight(value: number, max: number): number {
+  if (value <= 0 || max <= 0) return 0
+  return Math.max(3, Math.round((value / max) * 56))
+}
+
+/** 7 日趋势条（第 43 刀）：一条横排、每日一组 CSS 柱，不引图表库，不是磁贴网格。 */
+function TrendPanel({ data }: { data: StatsOverview }) {
+  const max = Math.max(
+    0,
+    ...data.daily.flatMap((d) => [d.sessions, d.refusals, d.thumbs_down]),
+  )
+  const rate = data.citation_rate_last_7d
+  const legend: { label: string; color: string }[] = [
+    { label: '会话', color: 'var(--color-ink-3)' },
+    { label: '拒答', color: 'var(--color-warn)' },
+    { label: '被踩', color: 'var(--color-danger)' },
+  ]
+  return (
+    <div className="panel mb-4">
+      <div className="panel-title flex-wrap">
+        <span>近 {data.window_days} 日</span>
+        <span className="text-xs font-normal text-ink-3">
+          会话 {data.sessions_last_7d} · 拒答 {data.refusals_last_7d} · 转人工{' '}
+          {data.handoffs_last_7d} · 被踩 {data.thumbs_down_last_7d}
+        </span>
+        <span className="flex-1" />
+        <span
+          className="text-xs font-normal text-ink-3"
+          title="有引用的回答 / 全部回答（模板与工具回答也是回答）"
+        >
+          引用覆盖率 {rate === null ? '—' : `${Math.round(rate * 100)}%`}（
+          {data.answers_with_citations_last_7d}/{data.answers_last_7d}）
+        </span>
+      </div>
+      <div className="flex items-end gap-2 px-4 pb-3 pt-4">
+        {data.daily.map((day) => (
+          <div key={day.date} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+            <div className="flex h-14 w-full items-end justify-center gap-[3px]">
+              <span
+                className="trend-bar trend-bar-sessions"
+                style={{ height: trendHeight(day.sessions, max) }}
+                title={`${day.date} 会话 ${day.sessions}`}
+              />
+              <span
+                className="trend-bar trend-bar-refusals"
+                style={{ height: trendHeight(day.refusals, max) }}
+                title={`${day.date} 拒答 ${day.refusals}`}
+              />
+              <span
+                className="trend-bar trend-bar-thumbs"
+                style={{ height: trendHeight(day.thumbs_down, max) }}
+                title={`${day.date} 被踩 ${day.thumbs_down}`}
+              />
+            </div>
+            <span className="text-[11px] tabular-nums text-caption">{day.date.slice(5)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-1 px-4 py-2 text-[11px] leading-5 text-ink-3">
+        {legend.map((l) => (
+          <span key={l.label} className="flex items-center gap-1.5">
+            <span className="trend-legend-dot" style={{ background: l.color }} />
+            {l.label}
+          </span>
+        ))}
+        <span className="flex-1" />
+        {/* 口径硬标注：分母是「回答」，不是 RAG 准确率（Owner 裁决 2） */}
+        <span>引用覆盖率分母是「回答」（含模板/工具回答与 citations 为空的回答），不是 RAG 准确率；拒答按定义无引用，不混进分母。</span>
+      </div>
+    </div>
+  )
+}
+
+/** 反馈汇总行（第 43 刀）：被踩最多的资产 top 3，每条带「去重新验证」深链。
+ * 行/条形态（与摘要条同一语言），不是磁贴网格。 */
+function FeedbackPanel({ assets }: { assets: StatsFeedbackAsset[] }) {
+  return (
+    <div className="panel mt-4">
+      <div className="panel-title flex-wrap">
+        {/* 口径显式「全时段」：与同屏「近 7 日」趋势条区分（Owner 裁决） */}
+        <span>被踩最多的资产 · 全时段</span>
+        <span className="text-xs font-normal text-ink-3">
+          顾客「没有帮助」反馈逐引用资产分诊；点「去重新验证」到详情页定位，不自动执行
+        </span>
+      </div>
+      {assets.length === 0 ? (
+        <div className="px-4 py-3.5 text-[13px] leading-6 text-ink-3">
+          还没有被「没有帮助」反馈过的资产。反馈发生后，被引用的资产会在这里汇总。
+        </div>
+      ) : (
+        assets.map((a) => (
+          <div
+            key={a.asset_id}
+            className="flex items-center gap-3 border-b border-line-1 px-4 py-2.5 last:border-b-0"
+          >
+            <span className="shrink-0 font-mono text-xs text-ink-3">
+              {formatAssetId(a.asset_id)}
+            </span>
+            <span
+              className="min-w-0 flex-1 truncate text-[13px] text-ink"
+              title={a.title ?? undefined}
+            >
+              {a.title ?? '（资产已不存在）'}
+            </span>
+            <span className="shrink-0 text-xs tabular-nums text-ink-2">被踩 {a.count} 次</span>
+            <Link
+              to={`/platform/assets/${a.asset_id}?verify=1`}
+              className="shrink-0 text-xs text-accent transition-colors duration-150 hover:text-accent-strong hover:underline"
+            >
+              去重新验证
+            </Link>
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
 export default function OverviewPage() {
   const fetcher = useCallback(
     () =>
@@ -102,6 +224,10 @@ export default function OverviewPage() {
     [],
   )
   const { state, reload } = useApiData(fetcher)
+
+  // 第 43 刀：仪表由 AppShell 取一次并经 context 下发（角标与总览同源，避免同一
+  // 路由每次导航发两次 /stats/overview）；刷新语义仍在 AppShell（pathname 作 key）
+  const { state: statsState, reload: reloadStats } = useStats()
 
   const assets = state.phase === 'ok' ? state.data[0] : EMPTY_ASSETS
   const openGaps = state.phase === 'ok' ? state.data[1].length : null
@@ -187,6 +313,21 @@ export default function OverviewPage() {
             </Fragment>
           ))}
         </div>
+      )}
+
+      {/* 第 43 刀：7 日趋势条 + 反馈汇总行（摘要条之后、能力闭环之前；行/条形态）。
+          仪表取数失败不静默：给一行错误提示 + 重试（复用 ErrorBanner，不新造组件）。 */}
+      {statsState.phase === 'loading' ? (
+        <div className="panel mb-4">
+          <SkeletonRows rows={1} />
+        </div>
+      ) : statsState.phase === 'error' ? (
+        <ErrorBanner error={statsState.error} onRetry={reloadStats} />
+      ) : (
+        <>
+          <TrendPanel data={statsState.data} />
+          <FeedbackPanel assets={statsState.data.feedback_assets} />
+        </>
       )}
 
       {/* 三条故事线：步进器（每个节点是真路由），不是营销磁贴；主区域点击跳首步页 */}
