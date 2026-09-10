@@ -8,7 +8,7 @@
 // 「新会话」随时可重签令牌。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, ChatCircleDots, ThumbsDown } from '@phosphor-icons/react'
+import { ArrowUp, ChatCircleDots, Stop, ThumbsDown } from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
 import MessageBubble, { type UiMessage } from '../components/MessageBubble'
 import { ErrorBanner } from '../components/Banner'
@@ -45,6 +45,7 @@ export default function CustomerPage() {
     messages,
     streaming,
     send: sendStream,
+    stop,
     reset: resetMessages,
   } = useAskStream({
     ask: (question, handlers, signal) => {
@@ -64,6 +65,16 @@ export default function CustomerPage() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [messages.length, totalChars])
+
+  // 停止：Esc 与发送钮原位替换（与操作者预览同一状态机，UX-NOTES §二点八）
+  useEffect(() => {
+    if (!streaming) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') stop()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [streaming, stop])
 
   const startSession = async () => {
     if (creating || streaming) return
@@ -217,7 +228,9 @@ export default function CustomerPage() {
                 <textarea
                   ref={taRef}
                   rows={1}
-                  placeholder={streaming ? 'AI 客服正在回答…' : '输入你的问题…（Enter 发送，Shift+Enter 换行）'}
+                  placeholder={
+                    streaming ? 'AI 客服正在回答…（Esc 停止）' : '输入你的问题…（Enter 发送，Shift+Enter 换行）'
+                  }
                   value={input}
                   disabled={!canAsk}
                   onChange={(e) => {
@@ -232,16 +245,28 @@ export default function CustomerPage() {
                     }
                   }}
                 />
-                <button
-                  type="button"
-                  className="send-btn"
-                  onClick={() => void send(input)}
-                  disabled={input.trim() === '' || !canAsk}
-                  title="发送（Enter）"
-                  aria-label="发送"
-                >
-                  <ArrowUp aria-hidden size={16} weight="bold" />
-                </button>
+                {streaming ? (
+                  <button
+                    type="button"
+                    className="send-btn send-stop"
+                    onClick={stop}
+                    title="停止输出（Esc）"
+                    aria-label="停止输出"
+                  >
+                    <Stop aria-hidden size={13} weight="fill" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="send-btn"
+                    onClick={() => void send(input)}
+                    disabled={input.trim() === '' || !canAsk}
+                    title="发送（Enter）"
+                    aria-label="发送"
+                  >
+                    <ArrowUp aria-hidden size={16} weight="bold" />
+                  </button>
+                )}
               </div>
             </div>
           </>

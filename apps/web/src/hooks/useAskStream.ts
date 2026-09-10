@@ -10,7 +10,7 @@
 // - 收尾副作用：操作者页 onSettled 刷新会话列表。
 // 建议列表等页面差异留在页面内；SSE 协议与事件序不动。
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ServiceAnswerComplete, ToolCallRecord } from '../api/types'
 import { toUiMessage, type UiMessage } from '../components/MessageBubble'
 
@@ -77,6 +77,20 @@ export function useAskStream(options: AskStreamOptions): AskStream {
     const controller = new AbortController()
     abortRef.current = controller
     let completed = false
+    // 顾客通道口径的收尾（失败与停止共用）：收到过任何事件（引擎先落库再流式）
+    // = 后端确有完整回答留档，保留已收文本 + 停止标注；空占位=请求未进引擎
+    // （409/401/429/建流失败/刚发出即停），没有回答落库，「已留档」对它是不实陈述
+    // ——移除，原因由 onError/alert 表达。
+    const pruneOrStopAgent = () =>
+      setMessages((prev) =>
+        prev.flatMap((m) => {
+          if (m.key !== agentKey) return [m]
+          if (m.content !== '' || m.thinkingText !== null) {
+            return [{ ...m, streaming: false, stopped: true }]
+          }
+          return []
+        }),
+      )
     try {
       await options.ask(
         question,
@@ -104,25 +118,15 @@ export function useAskStream(options: AskStreamOptions): AskStream {
       )
     } catch (err) {
       options.onError(err)
-      if (options.pruneEmptyOnFailure) {
-        setMessages((prev) =>
-          prev.flatMap((m) => {
-            if (m.key !== agentKey) return [m]
-            // 收到过任何事件（引擎先落库再流式）= 后端确有完整回答留档，
-            // 保留已收文本+停止标注；空占位=请求未进引擎（409/401/429/建流
-            // 失败），没有回答落库，「已留档」对它是不实陈述——移除，原因由 alert 表达
-            if (m.content !== '' || m.thinkingText !== null) {
-              return [{ ...m, streaming: false, stopped: true }]
-            }
-            return []
-          }),
-        )
-      }
+      if (options.pruneEmptyOnFailure) pruneOrStopAgent()
     } finally {
       abortRef.current = null
-      // 中止/断流：已收文本保留，标「已停止展示 · 完整回答已留档」
       if (options.markStoppedOnFinally) {
+        // 中止/断流：已收文本保留，标「已停止展示 · 完整回答已留档」
         patchAgent((m) => ({ ...m, streaming: false, stopped: !completed }))
+      } else if (options.pruneEmptyOnFailure && !completed) {
+        // 顾客通道的停止收尾：abort 是静默返回（不是错误），不进 catch，只走这里
+        pruneOrStopAgent()
       }
       setStreaming(false)
       options.onSettled?.()
@@ -139,6 +143,9 @@ export function useAskStream(options: AskStreamOptions): AskStream {
     setMessages([])
     setStreaming(false)
   }, [])
+
+  // 卸载即断订阅：离开顾客会话页/切走预览时不留后台 SSE 连接
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   return { messages, streaming, send, stop, reset }
 }
