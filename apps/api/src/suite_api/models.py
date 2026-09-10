@@ -396,6 +396,10 @@ class KnowledgeGap(Base):
     # NULL 不回填（resolved 不参与查重，历史行不动）。
     normalized_question: Mapped[str | None] = mapped_column(Text)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    # 来源会话（走查修复）：首次拒答落这条缺口时所在的会话，给操作者一条
+    # 「去读原始对话」的线索。只在首次插入时写、命中复用不改（溯源是可核对
+    # 的历史，不是「最近一次」）；历史行保持 NULL（不可追溯就不编）。
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("service_sessions.id"))
     status: Mapped[str] = mapped_column(
         String(20), server_default=text("'open'")
     )  # open | resolved

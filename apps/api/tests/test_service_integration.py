@@ -419,6 +419,28 @@ def test_refusal_gap_normalized_idempotency(api: ApiFixture) -> None:
         assert gaps[0].status == "open"
 
 
+def test_refusal_gap_records_source_session(api: ApiFixture) -> None:
+    """走查修复：拒答落的缺口记下**来源会话**（首次拒答所在会话），归一化命中
+    复用时**不改写**——操作者从缺口抽屉跳回的是最早问出这问题的原始对话，不是
+    「最近一次」。"""
+    client, _ = api
+    _login(client)
+    sid = client.post("/api/service/sessions").json()["id"]
+    events = _ask(client, sid, "孕妇可以喝这个茶吗？")
+    gap_id = events[-1][1]["gap_id"]
+    assert isinstance(gap_id, int)
+    row = next(g for g in client.get("/api/knowledge-gaps").json() if g["id"] == gap_id)
+    assert row["session_id"] == sid
+
+    # 另一条会话问同问法（归一化命中复用）：来源保持首次那条，热度 +1
+    sid2 = client.post("/api/service/sessions").json()["id"]
+    events2 = _ask(client, sid2, "孕妇可以喝这个茶吗")
+    assert events2[-1][1]["gap_id"] == gap_id
+    row2 = next(g for g in client.get("/api/knowledge-gaps").json() if g["id"] == gap_id)
+    assert row2["session_id"] == sid
+    assert row2["hit_count"] == 2
+
+
 def test_refusal_gap_question_masked_on_exit(api: ApiFixture) -> None:
     """第 26 刀缺口路（0038 修订口径）：gaps.question 出口掩——拒答仍按顾客
     原问落库（同 service_messages 落库豁免，不回写），治理台列表视图（出口）

@@ -308,6 +308,18 @@ export default function RegisterAssetDrawer({
                   {gap.product !== null ? (
                     <span className="text-ink-3">（预选挂商品：{gap.product.name}）</span>
                   ) : null}
+                  {gap.session_id !== null ? (
+                    <>
+                      {' '}
+                      <Link
+                        to={`/service?session=${gap.session_id}`}
+                        className="text-accent hover:text-accent-strong hover:underline"
+                        title="打开首次问出这个问题的顾客会话"
+                      >
+                        来源会话 #{gap.session_id}
+                      </Link>
+                    </>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-xs leading-5 text-ink-3">

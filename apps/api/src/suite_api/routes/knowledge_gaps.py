@@ -39,6 +39,8 @@ class KnowledgeGapOut(BaseModel):
     resolved_at: datetime | None
     # 第 39 刀热度：被问次数（归一化幂等命中既有 open 缺口时 +1）
     hit_count: int
+    # 走查修复：来源会话（首次拒答所在会话；历史行/无来源为 NULL）
+    session_id: int | None
 
 
 @router.get("", response_model=list[KnowledgeGapOut])
@@ -87,6 +89,7 @@ def list_knowledge_gaps(
             created_at=g.created_at,
             resolved_at=g.resolved_at,
             hit_count=g.hit_count,
+            session_id=g.session_id,
         )
         for g in gaps
     ]
