@@ -5,17 +5,13 @@
 // 第 27 刀补「其余能力」四行入口（对照原型 Overview.tsx:177 冻结形状：
 // 资产/商品/考核/连接层，路由换工程路由）。
 
-import { useCallback, useMemo } from 'react'
+import { Fragment, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
   ChatCircleDots,
-  CheckCircle,
-  Database,
   ImageSquare,
   PlugsConnected,
-  Tray,
-  Warning,
 } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
@@ -123,47 +119,37 @@ export default function OverviewPage() {
     [workAssets],
   )
 
-  const stats: {
-    label: string
-    value: number | null
-    hint: string
-    to: string
-    icon: Icon
-  }[] = [
+  // 一条摘要条：数字 + 标签，每个数字仍可点进对应列表（hint 只作 title 兜底，不上界面）。
+  const stats: { label: string; value: number | null; hint: string; to: string }[] = [
     {
-      label: '待人洗队列',
+      label: '待人洗',
       value: counts.pending_review,
       hint: '纯新待办：机洗值等确认、缺项等补填',
       to: '/platform/assets?status=待人洗',
-      icon: Tray,
     },
     {
       label: '已接入',
       value: counts.ingested,
       hint: '刚登记或机洗失败，等待进治理流水线',
       to: '/platform/assets?status=已接入',
-      icon: Database,
     },
     {
-      label: '已发布 · 可被 Agent 检索',
+      label: '已发布',
       value: counts.published,
-      hint: '按可检索口径计数：修订中的资产线上版仍在服务',
+      hint: '可被 Agent 检索；修订中的资产线上版仍在服务',
       to: '/platform/assets?status=已发布',
-      icon: CheckCircle,
     },
     {
-      label: '开放知识缺口',
+      label: '知识缺口',
       value: openGaps,
       hint: '随拒答产生，解决只随发布发生',
       to: '/platform/assets?status=知识缺口',
-      icon: Warning,
     },
     {
       label: '客服会话',
       value: sessions,
       hint: '操作者预览与顾客通道共用同一引擎',
       to: '/service',
-      icon: ChatCircleDots,
     },
   ]
 
@@ -171,7 +157,7 @@ export default function OverviewPage() {
     <div>
       <PageHeader
         title="总览"
-        desc="七块能力共用一份被治理过的数据。知识变好靠缺口和发布，不靠训练。治理队列是每天的入口。"
+        desc="七块能力共用一份被治理过的数据；知识变好靠发布，不靠训练。"
       />
 
       {state.phase === 'error' ? <ErrorBanner error={state.error} onRetry={reload} /> : null}
@@ -180,18 +166,25 @@ export default function OverviewPage() {
           <SkeletonRows rows={2} />
         </div>
       ) : (
-        <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-5">
-          {stats.map((st) => (
-            <Link key={st.label} to={st.to} className="stat-card">
-              <div className="flex items-start justify-between gap-2">
-                <div className="stat-label">{st.label}</div>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] border border-line-2 bg-fill text-ink-3">
-                  <st.icon aria-hidden size={15} />
-                </div>
-              </div>
-              <div className="stat-value">{st.value ?? '—'}</div>
-              <div className="stat-hint">{st.hint}</div>
-            </Link>
+        /* 一条可点摘要条：数字 + 标签横排，不是磁贴网格（§三 列表页=分段+密度表） */
+        <div
+          className="panel mb-4 flex flex-wrap items-center gap-x-3.5 gap-y-2 px-4 py-3"
+          aria-label="关键数字"
+        >
+          {stats.map((st, i) => (
+            <Fragment key={st.label}>
+              {i > 0 ? <span className="h-4 w-px shrink-0 bg-line-2" aria-hidden /> : null}
+              <Link
+                to={st.to}
+                className="group flex items-baseline gap-1.5"
+                title={st.hint}
+              >
+                <span className="text-lg font-semibold tabular-nums leading-6 text-ink group-hover:text-accent-strong">
+                  {st.value ?? '—'}
+                </span>
+                <span className="text-[13px] text-ink-3 group-hover:text-ink">{st.label}</span>
+              </Link>
+            </Fragment>
           ))}
         </div>
       )}
@@ -216,13 +209,14 @@ export default function OverviewPage() {
               {loop.line}
             </p>
             <p className="text-xs leading-5 text-ink-3 md:hidden">{loop.line}</p>
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-y-2">
+            {/* 单行不折：步骤再多也横向滚动，不把第 4 步掉到第二行 */}
+            <div className="flex min-w-0 flex-1 flex-nowrap items-center overflow-x-auto">
               {loop.steps.map((st, i) => (
-                <div key={`${loop.name}-${st.label}`} className="flex items-center">
-                  {i > 0 ? <div className="mx-0.5 h-px w-5 bg-line-3" /> : null}
+                <div key={`${loop.name}-${st.label}`} className="flex shrink-0 items-center">
+                  {i > 0 ? <div className="mx-0.5 h-px w-5 shrink-0 bg-line-3" /> : null}
                   <Link
                     to={st.to}
-                    className="group/step flex items-center gap-1.5 rounded-[6px] px-1.5 py-1 hover:bg-fill"
+                    className="group/step flex shrink-0 items-center gap-1.5 rounded-[6px] px-1.5 py-1 hover:bg-fill"
                   >
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-fill font-mono text-[11px] tabular-nums text-ink-3 group-hover/step:bg-accent group-hover/step:text-white">
                       {i + 1}

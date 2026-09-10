@@ -294,9 +294,14 @@ export default function ProductsPage() {
   const featured = ordered.filter((p) => productRank(p) < 2)
   const rest = ordered.filter((p) => productRank(p) === 2)
 
-  const renderCard = (product: Product) => (
-    <div key={product.id} className="panel panel-hover">
-      <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3.5">
+  const renderCard = (product: Product) => {
+    // 有写回规格才撑规格表；无写回的卡只留名/类目/库存/价/编辑（空表=说明书噪音）。
+    const hasSpec = hasWrittenSpec(product)
+    return (
+      <div key={product.id} className="panel panel-hover">
+        <div
+          className={`flex items-center gap-3 px-4 py-3.5 ${hasSpec ? 'border-b border-line-2' : ''}`}
+        >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] bg-accent-soft text-accent-strong">
           <Package aria-hidden size={17} />
         </span>
@@ -334,46 +339,49 @@ export default function ProductsPage() {
         </button>
       </div>
 
-      <table className="table-gov">
-        <thead>
-          <tr>
-            <th className="w-24">规格字段</th>
-            <th>当前值</th>
-            <th className="w-32">写回来源</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(product.spec_schema).map(([field, rule]) => {
-            const entry = product.spec_values[field]
-            return (
-              <tr key={field}>
-                <td className="text-ink-2">
-                  {field}
-                  {rule.required === true ? <span className="ml-0.5 text-danger">*</span> : null}
-                </td>
-                <td className={entry ? 'font-medium text-ink' : 'text-ink-3'}>
-                  {entry ? entry.value : '—'}
-                </td>
-                <td>
-                  {entry ? (
-                    <CitationChip assetId={entry.source.asset_id} version={entry.source.version} />
-                  ) : (
-                    <span className="text-ink-3">—</span>
-                  )}
-                </td>
+        {hasSpec ? (
+          <table className="table-gov">
+            <thead>
+              <tr>
+                <th className="w-24">规格字段</th>
+                <th>当前值</th>
+                <th className="w-32">写回来源</th>
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
+            </thead>
+            <tbody>
+              {Object.entries(product.spec_schema).map(([field, rule]) => {
+                const entry = product.spec_values[field]
+                return (
+                  <tr key={field}>
+                    <td className="text-ink-2">
+                      {field}
+                      {rule.required === true ? <span className="ml-0.5 text-danger">*</span> : null}
+                    </td>
+                    <td className={entry ? 'font-medium text-ink' : 'text-ink-3'}>
+                      {entry ? entry.value : '—'}
+                    </td>
+                    <td>
+                      {entry ? (
+                        <CitationChip assetId={entry.source.asset_id} version={entry.source.version} />
+                      ) : (
+                        <span className="text-ink-3">—</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <div>
       <PageHeader
         title="中台 · 商品"
-        desc="可卖对象的结构化事实。规格字段按类目定（食品有保质期，器皿是材质与净含量），只在资产发布时写回；未写回的字段显示 —。单价直写即时生效（目录报价读实时行价），改价记留痕。"
+        desc="可卖对象的结构化事实；价格直写，规格只在资产发布时写回。"
         actions={
           <button
             type="button"

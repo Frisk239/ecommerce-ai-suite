@@ -343,7 +343,7 @@ function LineagePanel({ assetId }: { assetId: number }) {
                 </div>
               ))}
               <div className="px-4 py-1.5 text-xs text-ink-3">
-                写回随发布/回滚同事务（0010/0034）；字段按该版确认值如实派生。
+                写回随发布/回滚同事务；字段按该版确认值如实派生。
               </div>
             </div>
           ) : null}
@@ -388,7 +388,7 @@ function LineagePanel({ assetId }: { assetId: number }) {
                 </div>
               ))}
               <div className="px-4 py-1.5 text-xs text-ink-3">
-                连接层 export_published 的留痕（0041）：每次导出每份资产一行，只记版本与时间，不存正文。
+                连接层 export_published 的留痕：每次导出每份资产一行，只记版本与时间，不存正文。
               </div>
             </div>
           ) : null}
@@ -497,7 +497,7 @@ function QaPairsEditor({
               </button>
             </div>
             {pair.q.trim() === '' || pair.a.trim() === '' ? (
-              <div className="mt-1.5 pl-7 text-xs text-warn">问与答都须非空（禁止空串确认，0009）</div>
+              <div className="mt-1.5 pl-7 text-xs text-warn">问与答都须非空</div>
             ) : null}
           </div>
         ))
@@ -1030,11 +1030,11 @@ export default function AssetDetailPage() {
         }
         desc={
           readOnlyEvidence
-            ? `只读证据视图：本页展示引用指向 v${anchorVersionNo} 的已发布不可变快照，全部写动作已隐藏。`
+            ? `只读证据：引用指向 v${anchorVersionNo} 的已发布不可变快照。`
             : revising
               ? `修订中：线上仍引用 v${currentPublishedNo ?? '—'}；发布修订后指针前移。`
               : detail.status === 'pending_review'
-                ? '机洗已完成：确认机洗值、补填弃权字段，过发布闸门后即可发布。'
+                ? '机洗已完成：确认机洗值、补填必填项后可发布。'
                 : detail.status === 'published'
                   ? '已发布版本是只读证据；线上内容以此版本为准。'
                   : '已接入：机洗未完成或失败，重试成功后进入待人洗。'

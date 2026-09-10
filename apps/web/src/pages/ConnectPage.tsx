@@ -152,7 +152,7 @@ export default function ConnectPage() {
     <div className="max-w-[960px]">
       <PageHeader
         title="连接层"
-        desc="把中台接口以 MCP 工具的形式暴露给外部 Agent（Cursor、Claude、未来的第九个系统）。内部模块互调不走这里。"
+        desc="把中台能力以 MCP 工具暴露给外部 Agent。"
       />
 
       {state.phase === 'error' ? <ErrorBanner error={state.error} onRetry={reload} /> : null}
@@ -181,9 +181,9 @@ export default function ConnectPage() {
               </div>
             ))}
           </div>
-          <div className="flex items-center gap-2 border-t border-line-1 bg-[rgba(180,35,24,0.04)] px-4 py-2.5 text-[13px] text-danger">
+          <div className="flex items-center gap-2 border-t border-line-1 bg-fill px-4 py-2.5 text-[13px] text-ink-2">
             <Prohibit aria-hidden size={14} className="shrink-0" />
-            工具列表里没有「publish」——发布只在治理台（0005）：外部 Agent 可以登记与读取，发布权只在操作者手里。
+            工具列表里没有「publish」——发布只在治理台：外部 Agent 可以登记与读取，发布权只在操作者手里。
           </div>
         </div>
       </div>
@@ -320,8 +320,8 @@ export default function ConnectPage() {
           {MCP_JSON}
         </pre>
         <div className="border-t border-line-1 px-4 py-2.5 text-xs leading-5 text-caption">
-          把占位符换成服务端配置的 MCP_BEARER_TOKEN 即接入；真实 token 只在本机 .env，
-          本页与仓库都不出现明文。鉴权与操作者登录会话完全隔离（0032）。
+          把占位符换成服务端配置的 MCP_BEARER_TOKEN 即接入；真实 token 只存在服务端配置，
+          本页与仓库都不出现明文。鉴权与操作者登录会话完全隔离。
           {copyFailed ? (
             <span className="ml-1 text-danger">复制失败：请手动选中代码块复制。</span>
           ) : null}

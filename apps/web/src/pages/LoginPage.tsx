@@ -90,7 +90,7 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-4 text-center text-[11px] leading-4 text-caption">
-          本地开发环境 · 凭证见仓库 .env.example（生产必换）
+          本地开发环境 · 演示凭证（生产必换）
         </p>
       </div>
     </div>

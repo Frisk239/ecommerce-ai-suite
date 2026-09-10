@@ -157,8 +157,8 @@ export default function OpsPage() {
   return (
     <div className="max-w-[900px]">
       <PageHeader
-        title="业务能力 · 运营 Agent"
-        desc="选商品开始编排：读商品卖点 → 厂商模型生成投放文案草稿 → 组装并引用「当时已发布」的素材/切片。每一步工具轨迹可见、失败可重试；投放发布前需要操作者确认——那是渠道动作，不是治理台的「发布资产」。"
+        title="运营 Agent"
+        desc="选商品编排投放文案：三步轨迹可见，投放发布前需确认。"
         actions={
           <>
             {shown !== null && (hasFailed || allDone || delivered) ? (
@@ -256,15 +256,20 @@ export default function OpsPage() {
             {delivered ? (
               <span className="badge badge-published">已投放 · {formatDateTime(shown.delivered_at)}</span>
             ) : (
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!allDone || busy !== null}
-                onClick={() => setConfirming(true)}
-              >
-                <PaperPlaneTilt aria-hidden size={14} />
-                {busy === 'deliver' ? '投放中…' : '投放发布'}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={!allDone || busy !== null}
+                  onClick={() => setConfirming(true)}
+                >
+                  <PaperPlaneTilt aria-hidden size={14} />
+                  {busy === 'deliver' ? '投放中…' : '投放发布'}
+                </button>
+                {!allDone ? (
+                  <span className="text-xs text-ink-3">三步轨迹都完成后才能投放</span>
+                ) : null}
+              </>
             )}
           </div>
 

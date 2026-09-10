@@ -296,7 +296,7 @@ export default function ServicePage() {
 
       <PageHeader
         title="客服"
-        desc="操作者预览顾客对话：回答只引用已发布资产（带版本号），无已发布证据则拒答并转人工；会话结束后回流登记为对话资产。"
+        desc="预览顾客对话：只引已发布证据，无证据则拒答转人工。"
         actions={
           <button type="button" className="btn btn-primary" onClick={() => void newSession()} disabled={creating || streaming}>
             <ChatCircleDots aria-hidden size={14} />
@@ -343,7 +343,7 @@ export default function ServicePage() {
                         <span className="font-mono text-[11px] tabular-nums text-ink-3">#{s.id}</span>
                         <SessionStatusBadge status={s.status} messageCount={s.message_count} />
                         {s.origin === 'customer' && (
-                          <span className="kind-chip" title="来自顾客通道 /customer 的会话（ADR 0021）">
+                          <span className="kind-chip" title="来自顾客通道 /customer 的会话">
                             顾客
                           </span>
                         )}
