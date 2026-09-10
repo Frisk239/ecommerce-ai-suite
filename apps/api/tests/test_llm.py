@@ -11,6 +11,7 @@ from types import SimpleNamespace as NS
 from typing import Any
 
 import pytest
+from prometheus_client import REGISTRY
 
 from suite_api.services import llm
 from suite_api.settings import Settings
@@ -121,11 +122,17 @@ def _install_fake_client(monkeypatch: pytest.MonkeyPatch, create_result: Any) ->
 
 
 class _FakeStream:
-    """openai 流块形状：chunk.choices[0].delta.content（含 None 增量首块）。"""
+    """openai 流块形状：chunk.choices[0].delta.content（含 None 增量首块）。
 
-    def __init__(self, chunks: list[str | None], fail_on: int | None = None) -> None:
+    第 47 刀：``usage`` 只挂最后一块（OpenAI 兼容口径的「流末给累计总量」）。
+    """
+
+    def __init__(
+        self, chunks: list[str | None], fail_on: int | None = None, usage: Any = None
+    ) -> None:
         self._chunks = chunks
         self._fail_on = fail_on
+        self._usage = usage
         self._i = 0
 
     def __aiter__(self) -> "_FakeStream":
@@ -139,7 +146,10 @@ class _FakeStream:
         except IndexError:
             raise StopAsyncIteration from None
         self._i += 1
-        return NS(choices=[NS(delta=NS(content=text))])
+        return NS(
+            choices=[NS(delta=NS(content=text))],
+            usage=self._usage if self._i == len(self._chunks) else None,
+        )
 
 
 def test_stream_chat_yields_text_pieces_with_chat_shape(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -234,9 +244,87 @@ def test_stream_chat_wraps_midstream_errors_without_leaking(
     assert len(calls) == 1
 
 
+# ---------- 第 47 刀：厂商 usage -> llm_tokens_total（接线钉子） ----------
+
+
+def _token_sample(direction: str) -> float:
+    value = REGISTRY.get_sample_value(
+        "llm_tokens_total", {"direction": direction, "model": "fake-model"}
+    )
+    return 0.0 if value is None else value
+
+
+def test_stream_chat_records_provider_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """流末 usage -> 两个方向各记一次（删掉 stream_chat 的 finally 这例必红）。"""
+    usage = NS(prompt_tokens=120, completion_tokens=45)
+    _install_fake_client(monkeypatch, _FakeStream(["净含量", "为480ml"], usage=usage))
+    before_in, before_out = _token_sample("input"), _token_sample("output")
+
+    assert _consume() == ["净含量", "为480ml"]
+
+    assert _token_sample("input") == before_in + 120
+    assert _token_sample("output") == before_out + 45
+
+
+def test_stream_chat_without_usage_records_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """厂商没给 usage -> 一条都不记（不用字数估算冒充 token）。"""
+    _install_fake_client(monkeypatch, _FakeStream(["答"]))
+    before_in, before_out = _token_sample("input"), _token_sample("output")
+    assert _consume() == ["答"]
+    assert (_token_sample("input"), _token_sample("output")) == (before_in, before_out)
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [
+        NS(prompt_tokens="abc", completion_tokens=3),  # 字符串
+        NS(prompt_tokens={"nested": 1}, completion_tokens=3),  # 嵌套对象
+        {"prompt_tokens": ["x"], "completion_tokens": 3},  # dict 里放列表
+    ],
+)
+def test_malformed_usage_never_breaks_the_stream(
+    monkeypatch: pytest.MonkeyPatch, usage: Any
+) -> None:
+    """形状不认识的 usage **不许抛**：调用点在 finally 里，抛出会顶掉原本的异常
+    （把「超时→模板降级」变成 500）。"""
+    _install_fake_client(monkeypatch, _FakeStream(["答"], usage=usage))
+    before_in, before_out = _token_sample("input"), _token_sample("output")
+    assert _consume() == ["答"]  # 正常产出，不炸
+    assert (_token_sample("input"), _token_sample("output")) == (before_in, before_out)
+
+
+def test_malformed_usage_does_not_mask_midstream_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """畸形 usage + 流中途失败：抛的必须还是 LLMUnavailable（降级路径可预期）。"""
+    _install_fake_client(
+        monkeypatch,
+        _FakeStream(["半"], fail_on=1, usage=NS(prompt_tokens="abc", completion_tokens=1)),
+    )
+    with pytest.raises(llm.LLMUnavailable):
+        _consume()
+
+
+def test_complete_tool_proposal_records_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """非流式提议步同样记 usage（resp.usage）。"""
+    result = NS(
+        choices=[NS(message=NS(content="TOOL: order_status {}"))],
+        usage=NS(prompt_tokens=88, completion_tokens=7),
+    )
+    _install_fake_client(monkeypatch, result)
+    before_in, before_out = _token_sample("input"), _token_sample("output")
+
+    async def run() -> str:
+        return await llm.complete_tool_proposal("s", "u")
+
+    assert asyncio.run(run()) == "TOOL: order_status {}"
+    assert _token_sample("input") == before_in + 88
+    assert _token_sample("output") == before_out + 7
+
+
 # ---------- complete_chat：流式聚合为全文（第 12 刀回流 QA 抽取用） ----------
-
-
 def _complete(monkeypatch: pytest.MonkeyPatch, chunks: list[str | None]) -> tuple[str, list[dict]]:
     calls = _install_fake_client(monkeypatch, _FakeStream(chunks))
 

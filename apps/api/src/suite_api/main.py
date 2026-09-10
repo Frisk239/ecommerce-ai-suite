@@ -11,11 +11,17 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from suite_api import mcp_server
 from suite_api.db import create_database_engine, create_session_factory, to_sqlalchemy_url
+from suite_api.observability import (
+    CorrelationIdMiddleware,
+    build_metrics_registry,
+    configure_logging,
+)
 from suite_api.routes import (
     assets,
     audit,
@@ -31,6 +37,7 @@ from suite_api.routes import (
     service,
     stats,
 )
+from suite_api.routes.metrics import require_metrics_token
 from suite_api.services.rate_limit import (
     LOGIN_IP_LIMIT,
     LOGIN_WINDOW_SECONDS,
@@ -56,6 +63,9 @@ def _run_migrations(database_url: str) -> None:
     cfg = Config(str(_API_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_API_ROOT / "migrations"))
     cfg.set_main_option("sqlalchemy.url", to_sqlalchemy_url(database_url))
+    # 第 47 刀：不让 alembic 的 fileConfig 顶掉本进程的 JSON 日志配置（见
+    # migrations/env.py 的同名属性读取）。CLI 直跑不带该属性，行为不变。
+    cfg.attributes["configure_logger"] = False
     command.upgrade(cfg, "head")
 
 
@@ -93,6 +103,11 @@ async def lifespan(app: FastAPI):
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Ecommerce AI Suite API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings or get_settings()
+    # 第 47 刀：结构化日志先装配——此后本进程所有 getLogger 调用（含下面的启动
+    # 逻辑与 uvicorn）都渲染成 JSON 行并自带 correlation_id。
+    configure_logging(app.state.settings.log_level)
+    # correlation id 走纯 ASGI 中间件（SSE 长流不能被 BaseHTTPMiddleware 包）
+    app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_DEV_WEB_ORIGINS,
@@ -132,6 +147,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # /mcp/；Bearer 闸门在子应用层，/api/* 与 /health 不经过它。session
     # manager 由 lifespan 代跑（见 lifespan 内 AsyncExitStack）。
     app.mount("/mcp", mcp_server.build_mcp_app(app))
+
+    # 可观测（第 47 刀）：HTTP RED 默认指标 + /metrics 端点（Bearer 闸，见
+    # routes/metrics）。两个排除项：/metrics 自抓会自我放大、/health 是探针。
+    # should_exclude_streaming_duration：SSE 端点只计到响应首字节——否则一条
+    # 长流会把 HTTP 延迟分布顶穿、失真。
+    # registry 每 app 一份：用默认全局 registry 时，同进程建第二个 app 会因
+    # 「同名指标已存在」被 instrumentator 静默放弃全部默认 instrumentation。
+    Instrumentator(
+        excluded_handlers=["/metrics", "/health"],
+        should_exclude_streaming_duration=True,
+        registry=build_metrics_registry(),
+    ).instrument(app).expose(
+        app,
+        endpoint="/metrics",
+        include_in_schema=False,
+        dependencies=[Depends(require_metrics_token)],
+    )
     return app
 
 

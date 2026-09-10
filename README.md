@@ -177,6 +177,14 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
   npm run dev                  # /api 代理到 http://localhost:8000
   ```
 
+## 观测（第 47 刀）
+
+- **日志**：structlog JSON 打到 stdout（既有 `getLogger(...)` 调用一行未改，渲染层统一）；`LOG_LEVEL` 调级别，默认 INFO。
+- **关联 id**：每个响应带 `X-Request-Id`，同值进每条 JSON 日志的 `correlation_id` 字段——一行一问能拼回一条请求链。客户端传合规 id（8–64 位 `[A-Za-z0-9._-]`）则沿用，否则服务端生成（脏值不原样回显）。
+- **指标**：`GET /metrics`（Prometheus 文本格式），**独立 Bearer**——设 `METRICS_TOKEN` 才可用，**留空一律 401**（默认栈不裸奔），不接受登录 cookie。内容 = HTTP RED（`http_requests_total` / `http_request_duration_seconds`，`/metrics` 与 `/health` 自身不入账）+ 三个自定义：`chat_requests_total{channel,kind,generated}`（`generated=false` 即模板/工具回答，顺带给出回退率）、`ttft_seconds`（请求进入 → 厂商首个增量，只记生成路径）、`llm_tokens_total{direction,model}`（厂商 usage，缺了不记、不用字数估算冒充）。
+- **抓取（可选，默认不启）**：**先建令牌文件再起**——`printf '%s' "$METRICS_TOKEN" > ops/metrics_token`（与 api 的 `METRICS_TOKEN` 同值；该文件已 gitignore，模板见 `ops/metrics_token.example`），然后 `docker compose --profile metrics up` → Prometheus 起在 <http://localhost:9090>，配置 `ops/prometheus.yml`。两点环境事实：①Prometheus **不展开**配置文件里的 `${VAR}`，故令牌只能走 `credentials_file` 挂文件；②缺该文件时 Docker 会把源路径建成同名**目录**，表现为 target down（不是 401）。
+- 口径、标签基数纪律与 Out（不接 OTel/trace 传播、无面板/告警/远端写）见 `docs/progress/observability-intake.md`。
+
 ## 数据库迁移（Alembic）
 
 迁移挂在 `apps/api`（`alembic.ini` + `migrations/`）；连接串读 env `DATABASE_URL`：

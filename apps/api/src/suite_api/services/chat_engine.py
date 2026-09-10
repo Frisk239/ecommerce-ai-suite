@@ -56,6 +56,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, HandoffTicket, KnowledgeGap, ServiceMessage, ServiceSession
+from suite_api.observability import observe_first_token
 from suite_api.services import llm
 from suite_api.services.agent_tools import (
     ToolDecision,
@@ -100,6 +101,7 @@ from suite_api.services.stock_tools import (
     render_stock_handoff_content,
     summarize_stock_result,
 )
+from suite_api.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -365,12 +367,16 @@ async def run_ask(
         system_prompt, user_prompt = llm.build_prompts(hits, question)
         gen_history = (history if PRONOUN_RE.search(question) else []) + tool_history
         try:
-            pieces = [
-                piece
-                async for piece in llm.stream_chat(
-                    system_prompt, user_prompt, history=gen_history or None
-                )
-            ]
+            pieces: list[str] = []
+            # 第 47 刀：首个生成增量处记一次 TTFT（口径=请求进入中间件 → 首字，
+            # 含检索/提议/工具步；非生成路径不记）。直调 run_ask 的测试没有请求
+            # 起点，observe_first_token 内部会跳过——不记假值。
+            async for piece in llm.stream_chat(
+                system_prompt, user_prompt, history=gen_history or None
+            ):
+                if not pieces:
+                    observe_first_token(get_settings().llm_model)
+                pieces.append(piece)
             generated = "".join(pieces).strip() or None
         except llm.LLMError as exc:
             # 错误细节只进服务端日志（llm.stream_chat 已保证消息不含密钥/端点）

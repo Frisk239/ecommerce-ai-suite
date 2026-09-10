@@ -1,0 +1,3 @@
+# 复制成 ops/metrics_token 并填入与 .env 里 METRICS_TOKEN 相同的值：
+#   printf '%s' "$METRICS_TOKEN" > ops/metrics_token
+# 该真实文件已在 .gitignore，不进仓库。
