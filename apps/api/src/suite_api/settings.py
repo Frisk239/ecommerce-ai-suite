@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     # 连接层 Bearer（ADR 0032）。空则 MCP 全部 401；与操作者会话无关。
     mcp_bearer_token: str = ""
 
+    # 指标端点（第 47 刀）：/metrics 的独立 Bearer。**空 = 端点一律 401**
+    # （fail-closed：默认栈不裸奔）；Prometheus 不会登录，故不复用操作者会话
+    # cookie——指标面比治理面宽，单独凭证更干净（口径见 observability-intake）。
+    metrics_token: str = ""
+
+    # 日志级别（第 47 刀）：structlog JSON 输出到 stdout，默认 INFO。
+    log_level: str = "INFO"
+
     # 顾客通道 XFF 信任模式（安全面收口刀）。默认 False=直连：限流 IP 口径只信
     # TCP 对端地址，完全忽略 X-Forwarded-For（自报头换不了 IP 闸 key）；True=
     # 反代模式：信 XFF 第一跳，部署者负责让反向代理强制覆盖该头（README 顾客

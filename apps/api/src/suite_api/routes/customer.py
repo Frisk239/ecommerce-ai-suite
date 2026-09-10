@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.deps import get_db
 from suite_api.models import Asset, HandoffTicket, ServiceMessage, ServiceSession
+from suite_api.observability import record_chat_request
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.handoff_tickets import submit_contact, ticket_no
 from suite_api.services.rate_limit import CustomerRateLimits
@@ -273,6 +274,8 @@ async def ask(
     # expose_gap_id=False：顾客白名单一个闸管两处（第 27 刀起延伸到拒答消息
     # 文本——不带「缺口：G-xxxx」段；complete 载荷不带 gap_id 口径不变）
     outcome = await run_ask(db, session, question, expose_gap_id=False)
+    # 第 47 刀：发问计数（channel 区分顾客/操作者通道；口径见 observability）
+    record_chat_request(outcome, channel="customer")
     # SSE 生成器不碰 DB：返回前归还连接，慢客户端不再钉住池（get_db 幂等 close）
     db.commit()
     db.close()

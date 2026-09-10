@@ -28,6 +28,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
+from suite_api.observability import record_llm_usage
 from suite_api.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,7 @@ async def stream_chat(
     可能含 base_url/请求 id，一律不外泄）。
     """
     client = _get_client()
+    usage: Any = None
     try:
         stream = await client.chat.completions.create(
             model=get_settings().llm_model,
@@ -155,11 +157,22 @@ async def stream_chat(
             # 首块 delta 可能只有 role（content=None）；空增量直接跳过
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
+            # 第 47 刀：网关在流末给 usage（实测默认就有，不必传 stream_options
+            # ——省掉「网关不认新参数 → 静默降级」的风险）。留**最后一次**非空值，
+            # 由 finally 记一次：口径假设是「流末给累计总量」（OpenAI 兼容口径；
+            # 若某网关逐块给增量，这里会按最后一块记、低估——宁可少记不重复记）。
+            # 厂商没给就一条都不记（不拿字数估算冒充 token）。
+            if getattr(chunk, "usage", None) is not None:
+                usage = chunk.usage
     except LLMError:
         raise
     except Exception as exc:  # noqa: BLE001 - 统一转通用文案，凭证/端点不外泄
         logger.warning("厂商 Chat API 调用失败: %s", type(exc).__name__)
         raise LLMUnavailable("厂商模型暂时不可用") from exc
+    finally:
+        # finally 而非循环后：消费方提前断开（StreamingResponse 被取消）时
+        # GeneratorExit 也走这里——已经拿到的 usage 不该因为断连就丢掉
+        record_llm_usage(usage, model=get_settings().llm_model)
 
 
 async def complete_chat(system_prompt: str, user_prompt: str) -> str:
@@ -193,6 +206,8 @@ async def complete_tool_proposal(system_prompt: str, user_prompt: str) -> str:
             extra_headers={"x-opencode-session": uuid.uuid4().hex},
         )
         content = resp.choices[0].message.content if resp.choices else None
+        # 第 47 刀：非流式响应自带 usage，同口径记一次（缺失即不记）
+        record_llm_usage(getattr(resp, "usage", None), model=get_settings().llm_model)
         return content or ""
     except LLMError:
         raise

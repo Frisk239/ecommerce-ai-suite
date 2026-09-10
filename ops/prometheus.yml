@@ -1,0 +1,21 @@
+# 可选抓取配置（第 47 刀）：`docker compose --profile metrics up` 才起 prometheus。
+#
+# 令牌走**文件**（Prometheus 不展开配置文件里的 ${VAR}——实测如此，别指望环境
+# 变量）：把与 api 同值的 METRICS_TOKEN 写进 ops/metrics_token（已在 .gitignore，
+# 不进仓库），compose 把它挂成 /etc/prometheus/metrics_token 只读。
+#    printf '%s' "$METRICS_TOKEN" > ops/metrics_token
+# **先建文件再起**：源路径不存在时 Docker 会把它建成同名**目录**（容器内读成
+# Is a directory），Prometheus 起得来但抓取失败、target down——不是「401」那种
+# 干净失败，看到 target down 先查这一步。令牌为空/不带令牌时端点一律 401
+# （fail-closed）——默认栈不裸奔指标。
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: suite-api
+    metrics_path: /metrics
+    authorization:
+      credentials_file: /etc/prometheus/metrics_token
+    static_configs:
+      # compose 网络内服务名（prometheus 与 api 同网）
+      - targets: ["api:8000"]

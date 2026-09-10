@@ -38,6 +38,10 @@ services:
       # 这里放演示宿主页（apps/web/public/embed-demo.html，与 web 同源）以便本地
       # 端到端验证；生产改成商家站点 origin。
       WIDGET_ALLOWED_ORIGINS: ${WIDGET_ALLOWED_ORIGINS:-http://localhost:5173}  # 演示默认放行本地宿主页；生产改成商家 origin，留空=未启用
+      # 指标端点（第 47 刀）：/metrics 的独立 Bearer。空=端点一律 401（默认不裸奔）。
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # 日志级别（第 47 刀）：structlog JSON 输出到 stdout。
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "8000:8000"
     volumes:
@@ -53,6 +57,22 @@ services:
       API_PROXY_TARGET: http://api:8000
     ports:
       - "5173:5173"
+
+  # 可观测（第 47 刀）：可选抓取，**默认不启**——
+  #   printf '%s' "$METRICS_TOKEN" > ops/metrics_token   # 与 api 同值（该文件已 gitignore）
+  #   docker compose --profile metrics up
+  # 令牌走文件：Prometheus 不展开配置文件里的 ${VAR}（实测），故不能用环境变量。
+  # 没写该文件时抓取 401（端点 fail-closed）——这是刻意的：默认栈不裸奔指标。
+  prometheus:
+    image: prom/prometheus:v3.6.0
+    profiles: ["metrics"]
+    depends_on:
+      - api
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/metrics_token:/etc/prometheus/metrics_token:ro
+    ports:
+      - "9090:9090"
 
 volumes:
   pgdata:

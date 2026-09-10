@@ -20,7 +20,12 @@ from suite_api.db import to_sqlalchemy_url  # noqa: E402
 from suite_api.models import Base  # noqa: E402
 
 config = context.config
-if config.config_file_name is not None:
+# 程序化调用（应用启动 lifespan 的 _run_migrations）传 configure_logger=False：
+# 第 47 刀起进程日志由 observability.configure_logging 统一成 structlog JSON，
+# fileConfig 会把 root handler 换成 alembic.ini 的裸文本（且 disable_existing
+# _loggers 默认 True）——启动后整个进程的日志格式被悄悄改掉。CLI 直跑
+# （uv run alembic ...）不带该属性，行为照旧。
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata

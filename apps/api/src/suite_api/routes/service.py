@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
 from suite_api.models import HandoffTicket, Operator, ServiceMessage, ServiceSession
+from suite_api.observability import record_chat_request
 from suite_api.services import return_tools
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
 from suite_api.services.chat_engine import run_ask, sse_event_stream
@@ -339,6 +340,9 @@ async def ask(
         )
 
     outcome = await run_ask(db, session, question)
+    # 第 47 刀：发问计数（结局+是否厂商生成）。在 route 记而非 SSE 生成器里记——
+    # 生成器是懒执行的（客户端不读就不跑），计数不该取决于客户端读没读。
+    record_chat_request(outcome, channel="operator")
     # SSE 生成器不碰 DB：返回前归还连接，慢客户端不再钉住池（get_db 幂等 close）
     db.commit()
     db.close()
