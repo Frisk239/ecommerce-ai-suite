@@ -2,7 +2,7 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 53 刀 CSAT 留言可回溯**（`feat/csat-trace-53`，closeout 见 `docs/progress/csat-trace-closeout.md`）——解审计刀 10 的 CSAT 缺口（低分留言看不回上下文）：`GET /api/stats/overview` 的 `csat.recent_comments` 由 `list[str]` 变 `list[{session_id, score, comment}]`（掩码与截断口径不变）+ 总览留言行加「N 星」与 **`#会话号` 链接**（跳 `/service?session=N` 客服页深链）。**无新表无迁移**。实测：接口返回 `{session_id: 98, score: 2, comment: '答不上来，体验差'}`（掩码仍生效）；浏览器点 `#98` → `/service?session=98` 定位会话。集成 926→927 passed。第 52 刀按类目问价（PR #80）、审计刀 10（PR #79）、第 49–51 刀（PR #76/#77/#78）、审计刀 9（PR #75）、第 46–48 刀（PR #72/#73/#74）均已合并 main。
+上一刀：**第 54 刀 嵌入宿主的来源站点落库**（`feat/widget-origin-54`，closeout 见 `docs/progress/widget-origin-closeout.md`）——收掉审计刀 8/9/10 结转的最后一条产品面缺口，**迁移 0027**：`service_sessions.host_origin`（过闸的 `X-Widget-Origin` **归一值**，与闸的比对口径同源；独立访问为 NULL、存量不回填）；`SessionOut/SessionSummary` 带该字段，客服页会话行显示**「站点 shop.example.com」**。实测：演示宿主页 → widget 建会话 #102 → `host_origin=http://localhost:5173`，客服页显示「顾客 · 站点 localhost:5173 · 访客 bc1988d4」；独立访问会话两字段均 NULL；伪造来源 403 不落库；`HTTP://LOCALHOST:5173/` 归一落库。集成 927→930 passed。第 53 刀 CSAT 留言可回溯（PR #81）、第 52 刀类目问价（PR #80）、审计刀 10（PR #79）、第 49–51 刀（PR #76/#77/#78）、审计刀 9（PR #75）、第 46–48 刀（PR #72/#73/#74）均已合并 main。
 
 当前阶段：**第三阶段产品硬ening（第二梯队 46/47/48 已全部走完）**（施工权威 `docs/roadmap-product-hardening.md`）。**审计刀 8 已完成**（三路并行审计 **P0 全零**，P1×5 实修；证据 `docs/progress/audit-8-closeout.md`）。下一刀：**审计刀 9**（按「每五刀一审计」节奏，覆盖第 46–48 刀 + UI/UX 后续；第 49/50 刀若按第三梯队「对标增强」按需开则顺延）。**待 Owner 裁决**：审计刀 8 记债的四条产品面缺口（商品价 3/115、多来源在产品面不可见、工作队列首屏 183 条原始灌入、widget 不落宿主 origin）。
 
@@ -310,3 +310,8 @@
 ## 第 53 刀：CSAT 留言可回溯（已交付，`feat/csat-trace-53`）——审计刀 10 的 CSAT 缺口
 
 **路径：** 第 48 刀的 CSAT 段只给「最近 3 条掩码留言（纯文本）」——操作者看到「物流太慢」也没法回看那次对话，跟进只能去客服页逐行找 ★（审计刀 10 记债）。本刀（**无新表无迁移**）：①`csat.recent_comments` 元素从字符串变 `{session_id, score, comment}`（**契约变更**，已同刀更新唯一消费者控制台总览页）；②总览留言行前加「N 星」、后加 **`#会话号` 链接** → `/service?session=N`（客服页既有深链，纯派生、不自动写库），标题写明「点会话号回看那次对话」；③纯函数 `_build_csat` 行元组加 `session_id`（越界分/均值/分布口径不变）。实测：接口返回 `{98, 2, '答不上来，体验差'}`（掩码仍生效）+ `{84, 4, '客服很快，回电 1********00'}`；浏览器点 `#98` → `/service?session=98` 定位到该会话。集成 926→927 passed；ruff 全过；前端 build 绿、lint 7/0。**未做**：改评（要动产品语义：评分可撤销=满意度历史可修饰，留待裁决）、全量留言页。证据见 `docs/progress/csat-trace-closeout.md`。
+
+
+## 第 54 刀：嵌入宿主的来源站点落库（已交付，`feat/widget-origin-54`）——审计刀 8 起最后一条产品面缺口
+
+**路径：** 第 45b 刀的来源闸**校验**了 `X-Widget-Origin` 却**不落库**——商家可能把 widget 挂在自己**多个站点**上，只靠 `visitor_id`（宿主自己那边的 uuid）对账，看不出「这条会话来自哪个站」（审计刀 8 记债，审计刀 9/10 两次复核仍成立）。本刀（**迁移 0027**）：①`service_sessions.host_origin`（String(255) nullable）= 过闸来源的**归一值**（小写、去尾斜杠，与 `_widget_gate` 比对口径同源），建会话时落库；**独立访问为 NULL**、**存量不回填**（没有这个事实就不编造）；②`SessionOut/SessionSummary` 带该字段（列表/详情同源，无新查询），客服页会话行在访客徽章旁显示**「站点 shop.example.com」**（展示层剥协议前缀，title 给完整 origin）。实测：演示宿主页 → widget 建会话 #102 → `host_origin=http://localhost:5173` + 访客 id 齐；客服页显示「顾客 · 站点 localhost:5173 · 访客 bc1988d4」；独立访问会话两字段均 NULL；独立访问伪造 `X-Widget-Origin` → 403（闸先行）不落库；`HTTP://LOCALHOST:5173/` 归一后落库。集成 927→930 passed（新增 3 例）；ruff 全过；前端 build 绿、lint 7/0；迁移 0027 往返可逆。**至此审计刀 8/9/10 结转的四条产品面缺口全部处理完**（价与来源→第 50 刀；工作队列→第 51 刀给筛选工具、默认视角待裁决；widget origin→本刀）。证据见 `docs/progress/widget-origin-closeout.md`。

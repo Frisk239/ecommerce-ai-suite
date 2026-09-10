@@ -267,6 +267,9 @@ export interface ServiceSessionSummary extends ServiceSession {
   pending_ticket_count: number
   /** 第 45b 刀：嵌入小组件的宿主访客 id（第一方 uuid）；独立访问为 null。 */
   visitor_id: string | null
+  /** 第 54 刀：嵌入宿主的来源站点（过闸的归一 origin）；独立访问/操作者预览为 null。
+   * 商家把 widget 挂到多个站点时，靠它分辨会话来自哪个站。 */
+  host_origin: string | null
   /** 第 48 刀：本会话的顾客评分（1–5）；未评为 null——客服页据此显示星级徽章。 */
   rating: number | null
 }

@@ -67,6 +67,13 @@ def _visitor_in_db(url: str, session_id: int) -> str | None:
     return None if row is None else row[0]
 
 
+def _host_origin_in_db(url: str, session_id: int) -> str | None:
+    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("SELECT host_origin FROM service_sessions WHERE id = %s", (session_id,))
+        row = cur.fetchone()
+    return None if row is None else row[0]
+
+
 # ---------- 独立访问：行为不变 ----------
 
 
@@ -157,3 +164,51 @@ def test_visitor_id_too_long_is_truncated() -> None:
     assert _visitor_id(_Req()) == "v" * 64
     assert _visitor_id(type("R", (), {"headers": {}})()) is None
     assert _visitor_id(type("R", (), {"headers": {"X-Visitor-Id": "  "}})()) is None
+
+
+# ---------- 宿主站点落库（第 54 刀） ----------
+
+
+def test_host_origin_persisted_and_visible_to_operator(api: ApiFixture) -> None:
+    """过闸的宿主来源落 `host_origin` 并在操作者会话列表可见（第 54 刀）。
+
+    商家把 widget 挂在自己多个站点时，只靠访客 id 对账看不出「这条来自哪个站」。
+    """
+    client, _ = api
+    url = os.environ[_URL_ENV]
+    _set_allowlist(client, _ALLOWED)
+    created = _create(client, **{"X-Widget-Origin": _ALLOWED})
+    assert created.status_code == 201
+    session_id = created.json()["session_id"]
+
+    # 落库值 = 过闸的**归一值**（小写、去尾斜杠）
+    assert _host_origin_in_db(url, session_id) == _ALLOWED.rstrip("/").lower()
+
+    _login(client)
+    row = next(r for r in client.get("/api/service/sessions").json() if r["id"] == session_id)
+    assert row["host_origin"] == _ALLOWED.rstrip("/").lower()
+
+
+def test_host_origin_is_normalized(api: ApiFixture) -> None:
+    """大小写与尾斜杠都按闸的归一值落库（闸怎么判，库里就怎么记）。"""
+    client, _ = api
+    url = os.environ[_URL_ENV]
+    _set_allowlist(client, _ALLOWED)
+    created = _create(client, **{"X-Widget-Origin": _ALLOWED.upper() + "/"})
+    assert created.status_code == 201
+    assert _host_origin_in_db(url, created.json()["session_id"]) == _ALLOWED.rstrip("/").lower()
+
+
+def test_standalone_visit_has_no_host_origin(api: ApiFixture) -> None:
+    """独立访问没有宿主：host_origin 为 NULL（不是空串），自带该头也不算（同访客 id 口径）。"""
+    client, _ = api
+    url = os.environ[_URL_ENV]
+    _set_allowlist(client, "")
+    created = _create(client)
+    assert created.status_code == 201
+    assert _host_origin_in_db(url, created.json()["session_id"]) is None
+
+    # 独立访问自带 X-Widget-Origin：闸会拦（未启用嵌入）-> 403，不会落库
+    _set_allowlist(client, _ALLOWED)
+    spoofed = _create(client, **{"X-Widget-Origin": "http://evil.example"})
+    assert spoofed.status_code == 403

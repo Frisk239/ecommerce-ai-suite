@@ -242,6 +242,9 @@ def create_session(
         # 访客 id 只在**嵌入请求**上收：独立访问自带这个头也不落（它不是商家的
         # 访客，落库就是脏数据——review P2）
         visitor_id=_visitor_id(request) if widget_origin is not None else None,
+        # 宿主站点（第 54 刀）：过闸的来源归一值同落一行——商家挂多个站点时靠它
+        # 分辨会话来自哪个站（独立访问没有宿主，为 NULL）
+        host_origin=widget_origin,
     )
     db.add(session)
     db.commit()

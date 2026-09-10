@@ -71,6 +71,9 @@ class SessionOut(BaseModel):
     created_at: datetime
     closed_at: datetime | None
     registered_asset_id: int | None
+    # 第 54 刀：嵌入宿主的来源站点（过闸的归一 origin；独立访问/操作者预览为 None）。
+    # 商家会把 widget 挂到多个站点，靠它分辨「这条会话从哪个站来」。
+    host_origin: str | None = None
 
 
 class SessionSummary(SessionOut):
@@ -242,6 +245,7 @@ def create_session(
         created_at=session.created_at,
         closed_at=session.closed_at,
         registered_asset_id=session.registered_asset_id,
+        host_origin=session.host_origin,
     )
 
 
@@ -300,6 +304,7 @@ def list_sessions(
             origin=_origin(s),
             pending_ticket_count=pending_tickets.get(s.id, 0),
             visitor_id=s.visitor_id,
+            host_origin=s.host_origin,
             rating=ratings.get(s.id),
         )
         for s in sessions

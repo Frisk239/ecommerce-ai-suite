@@ -451,6 +451,14 @@ export default function ServicePage() {
                             ★ {s.rating}
                           </span>
                         )}
+                        {s.host_origin !== null && s.host_origin !== '' ? (
+                          <span
+                            className="kind-chip"
+                            title={`嵌入小组件的宿主站点（第 54 刀：过闸来源落库）：${s.host_origin}`}
+                          >
+                            站点 {s.host_origin.replace(/^https?:\/\//, '').slice(0, 18)}
+                          </span>
+                        ) : null}
                         {s.visitor_id !== null && s.visitor_id !== '' ? (
                           <span
                             className="kind-chip"

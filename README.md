@@ -106,7 +106,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 <script src="https://<控制台地址>/embed.js" data-label="在线客服"></script>
 ```
 
-做三件事：Shadow DOM 里的启动钮（样式与宿主页完全隔离）、首次点按才注入 iframe（`<控制台>/widget`，不给宿主首屏加负担）、postMessage 开关（面板内「收起」发消息回来；宿主也可用 `window.EcomAiWidget.open()/close()`）。访客身份是**宿主域第一方 localStorage 里的 uuid**，随 iframe 传入并落到会话上——操作者在客服页能看到「访客 xxxxxxxx」，商家可用自己那边的标识对账。
+做三件事：Shadow DOM 里的启动钮（样式与宿主页完全隔离）、首次点按才注入 iframe（`<控制台>/widget`，不给宿主首屏加负担）、postMessage 开关（面板内「收起」发消息回来；宿主也可用 `window.EcomAiWidget.open()/close()`）。访客身份是**宿主域第一方 localStorage 里的 uuid**，随 iframe 传入并落到会话上——操作者在客服页能看到「访客 xxxxxxxx」，商家可用自己那边的标识对账。**宿主站点也落库**（第 54 刀）：过闸的来源归一值记进会话，客服页会话行显示「站点 shop.example.com」——商家把 widget 挂在自己多个站点时，靠它分辨每条会话来自哪个站（独立访问没有宿主，两个字段都为空）。
 
 **能否嵌入由服务端白名单判定（唯一闸）**：`WIDGET_ALLOWED_ORIGINS` 逗号分隔宿主 origin，**空 = 未启用嵌入**；被嵌入的页面在建会话时会带上宿主来源，**不在白名单一律 403**（本地演示默认放行了 `http://localhost:5173`，即仓库里的演示宿主页 `apps/web/public/embed-demo.html`）。样例与端到端验收就是打开那个页面。
 
