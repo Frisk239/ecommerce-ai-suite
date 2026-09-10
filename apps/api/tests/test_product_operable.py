@@ -478,3 +478,118 @@ class TestCatalogIntentHandoverFixes:
 
         assert catalog_intent("保温杯多少钱") == "price"
         assert catalog_intent("瓶装水价格") == "price"
+
+
+# ---------- 第 50 刀：报价不看检索命中（ADR 0045 修订） ----------
+
+
+def _fake_db_with(products: list[Any]) -> Any:
+    from unittest.mock import MagicMock
+
+    db = MagicMock()
+    db.scalars.return_value = products
+    return db
+
+
+def test_try_price_answer_fires_with_hits_for_named_product() -> None:
+    """报价意图 + 命中商品名 + 有价 -> 直接答行价（不看检索命中）。
+
+    这条是第 50 刀修订 ADR 0045 的落点：老口径要求「有命中永不回落」，而演示库
+    里带商品名的问句几乎都有命中，于是补齐的 115 行价永远问不出来。
+    """
+    from suite_api.services.catalog_tools import try_price_answer
+
+    product = _mem_product(7, "钛钢保温杯", 12900)
+    answer = try_price_answer(_fake_db_with([product]), "钛钢保温杯多少钱？")
+    assert answer is not None
+    assert "129" in answer.content
+    assert answer.tool["arg"] == "钛钢保温杯"
+    assert answer.tool["name"] == "catalog"
+
+
+def test_try_price_answer_requires_price_intent() -> None:
+    """只有报价意图才吃这条路：列举/规格问/政策问都不许被它抢走。"""
+    from suite_api.services.catalog_tools import try_price_answer
+
+    db = _fake_db_with([_mem_product(7, "钛钢保温杯", 12900)])
+    assert try_price_answer(db, "你们卖什么？") is None  # 列举：仍走空命中闸
+    assert try_price_answer(db, "保温杯的净含量是多少？") is None  # 规格问
+    assert try_price_answer(db, "退货运费多少钱？") is None  # 政策问（政策词闸）
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "保温杯刻字怎么收费",  # 服务问：含「收费」但主体是刻字
+        "钛钢保温杯怎么保养，收费吗",
+        "保温杯刻字限多少字",
+    ],
+)
+def test_try_price_answer_does_not_steal_service_questions(question: str) -> None:
+    """评审 P1：含价格词 + 命中商品名，但问的是服务/规格 -> 交回 RAG 答文档。
+
+    （演示库里有「定制刻字服务怎么收费」这类文档；报价模板抢答会答成售价。）
+    """
+    from suite_api.services.catalog_tools import try_price_answer
+
+    db = _fake_db_with([_mem_product(2, "钛钢保温杯", 12900)])
+    assert try_price_answer(db, question) is None
+
+
+def test_price_residual_is_pure_function() -> None:
+    """扣掉商品名与问价虚词后剩什么：空=纯问价（可回落），非空=实质问句。"""
+    from suite_api.services.catalog_tools import price_residual
+
+    assert price_residual("钛钢保温杯多少钱？", "钛钢保温杯") == ""
+    assert price_residual("请问钛钢保温杯的售价是多少？", "钛钢保温杯") == ""
+    assert price_residual("保温杯刻字怎么收费", "钛钢保温杯") != ""  # 剩下「刻字」这类实质词
+
+
+def test_try_price_answer_misses_on_unknown_or_unpriced_product() -> None:
+    from suite_api.services.catalog_tools import try_price_answer
+
+    assert try_price_answer(_fake_db_with([_mem_product(7, "帆布包", None)]), "帆布包多少钱？") is None
+    assert try_price_answer(_fake_db_with([]), "小龙虾多少钱？") is None
+
+
+# 端到端用例用的正文（模块级常量：避免把多行中文塞进 files= 的元组里）
+_CUP_NOTICE = "钛钢保温杯调价通知" + chr(10) + "钛钢保温杯将于下月调价，具体以门店为准。"
+
+
+def test_price_question_uses_row_price_even_when_retrieval_hits(api: ApiFixture) -> None:
+    """端到端（真引擎）：库里已有会命中的资产时，问价仍答**行价**。
+
+    修订前这条问句走 RAG（证据里没有价）→ 答「证据未覆盖价格」，把补齐的价白
+    放了。现在：报价意图 + 命中商品名 → 工具式行价（citations 恒空、kind=answer）。
+    """
+    client, _ = api
+    _login(client)
+    # **先造出检索命中**（评审 P1-2）：发布一份正文含「钛钢保温杯」的资产，
+    # 并确认 retrieve 真的会命中——否则这条用例走的是老的「空命中回落」，
+    # 删掉引擎里 try_price_answer 那两行它照样绿。
+    registered = client.post(
+        "/api/assets/register",
+        files={
+            "file": (
+                "cup-notice.txt",
+                _CUP_NOTICE.encode(),
+                "text/plain",
+            )
+        },
+        data={"title": "钛钢保温杯调价通知"},
+    )
+    assert registered.status_code == 201
+    asset_id = registered.json()["id"]
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+
+    with client.app.state.session_factory() as db:
+        from suite_api.services.retrieval import retrieve
+
+        assert retrieve(db, "钛钢保温杯多少钱"), "本用例要求检索有命中（否则钉不到新路径）"
+
+    outcome, _ = _run_question(client, "钛钢保温杯多少钱？")
+    assert outcome.tool is not None and outcome.tool["name"] == "catalog"
+    assert outcome.answer.citations == []  # 工具数据源不是引用（0007）
+    assert outcome.answer.kind == "answer"
+    assert "129" in outcome.answer.content
+    assert outcome.fallback is False  # 模板即正式产出，不是降级

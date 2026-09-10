@@ -35,8 +35,9 @@ export function kindLabel(kind: string): string {
   return KIND_LABELS[kind] ?? kind
 }
 
-/** 来源（CONTEXT「来源」词条全枚举）：当前只会出现 upload / session_backflow，
- * 其余为后续刀预留映射；未知值原样显示，不发明词。 */
+/** 来源（CONTEXT「来源」词条全枚举；后端 SOURCE_KINDS 是权威集合）：未知值原样
+ * 显示，不发明词。第 50 刀增两值——真实数据集导入不再被压成「上传」：
+ * review_import=评论数据集导入、open_dataset=开放数据集（Wikidata/OFF）。 */
 const SOURCE_KIND_LABELS: Record<string, string> = {
   upload: '上传',
   session_backflow: '会话回流',
@@ -44,6 +45,8 @@ const SOURCE_KIND_LABELS: Record<string, string> = {
   material_generated: '素材生成',
   mcp_registered: '连接层登记',
   seed: '种子',
+  review_import: '评论导入',
+  open_dataset: '开放数据集',
 }
 
 export function sourceKindLabel(kind: string): string {

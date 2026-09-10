@@ -8,6 +8,7 @@ import { CaretDown, CaretRight, Package, PencilSimple, Plus, Warning, X } from '
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { Product } from '../api/types'
+import { sourceKindLabel } from '../labels'
 import { useApiData } from '../hooks/useApiData'
 import { useEscapeClose } from '../hooks/useEscapeClose'
 import ActionError from '../components/ActionError'
@@ -195,6 +196,12 @@ function ProductDrawer({
               onChange={(e) => setName(e.target.value)}
               placeholder="如：帆布包"
             />
+            {product !== null && product.source_kind != null ? (
+              <div className="mt-1.5 text-xs text-ink-3">
+                来源：{sourceKindLabel(product.source_kind)}
+                <span className="ml-1 text-caption">（只读：来源是既成事实，不能在这里改）</span>
+              </div>
+            ) : null}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -377,6 +384,13 @@ export default function ProductsPage() {
             <span className="font-mono text-xs text-ink-2" title="单价：抽屉里直写即时生效，改价记留痕">
               单价 {formatProductPrice(product.price_cents, product.currency)}
             </span>
+            {/* 来源（第 50 刀，只读）：商品是从哪来的——真实数据集导入 vs 种子 vs
+                手建。以前四份真实数据在界面上全看不出区别。 */}
+            {product.source_kind != null ? (
+              <span className="kind-chip" title="商品来源（只读）：进口数据不是运营手建的">
+                {sourceKindLabel(product.source_kind)}
+              </span>
+            ) : null}
           </div>
         </div>
         <button

@@ -41,6 +41,9 @@ class ProductOut(BaseModel):
     # 第 41 刀单价（分，NULL=未定价）与币种（缺省 CNY，v1 单币种不结算）。
     price_cents: int | None
     currency: str
+    # 第 50 刀来源（只读）：open_dataset=开放数据集导入 / seed=种子 / NULL=手建。
+    # 不放进 ProductCreate/Update——来源是既成事实，运营改不了（可改=可造假溯源）。
+    source_kind: str | None = None
 
 
 class ProductCreate(BaseModel):
@@ -68,6 +71,7 @@ def _product_out(product: Product) -> ProductOut:
         spec_schema=dict(product.spec_schema),
         spec_values=dict(product.spec_values),
         stock=product.stock,
+        source_kind=product.source_kind,
         price_cents=product.price_cents,
         currency=product.currency,
     )

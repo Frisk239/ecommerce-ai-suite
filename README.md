@@ -189,6 +189,21 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 - **`/metrics` 默认是关的**：不设 `METRICS_TOKEN` 一律 401；要现场演示抓取，先 `printf '%s' "$METRICS_TOKEN" > ops/metrics_token` 再 `--profile metrics up`。
 - **ffmpeg 必须在**：compose 的 api 镜像已装、CI 显式安装；本机裸跑需自带（缺失时拣选报 422「ffmpeg 无法执行」，不是静默降级）。
 
+## 数据来源与演示价（第 50 刀）
+
+演示库里有**四份真实数据集**，它们在产品面上的来源是可见的（资产来源列 / 商品来源 chip）：
+
+| 数据 | 量 | 落在哪 | 产品面显示 |
+| --- | --- | --- | --- |
+| Wikidata 商品（`scripts/realdata/fetch_wikidata_products.py`） | 91 | `products` | 商品卡「开放数据集」 |
+| OpenFoodFacts（`load_openfoodfacts.py`） | 20 商品 + 20 规格资产 | `products` / `assets` | 商品卡 + 资产来源「开放数据集」 |
+| 在线购物评论（`load_reviews.py`） | 200 资产 | `assets` | 资产来源「评论导入」 |
+| WANDS 家具检索基准（`load_wands_clips.py`） | 30 切片候选 | `clip_candidates` | 切片页源录像标签「WANDS · wayfair 家具检索基准」 |
+
+许可与出处见 `scripts/realdata/README.md`；**来源是只读字段**（既成事实，运营改不了——可改就成可造假的溯源）。
+
+**商品价一律是演示价**：`services/seed.py` 的 `CATEGORY_DEMO_PRICES`（食品 3 元 / 器皿 129 元 / 图书 59 元 / 家具 899 元 / 笔记本 4999 元 / 手机 2999 元 / 平板 1999 元 / 电视 3499 元 / 洗衣机 2199 元）是 **mock 数据、非真实售价**，迁移 0026 只给未定价的行回填、不覆盖手改价。顾客侧问价直接答实时行价（「钛钢保温杯多少钱？」→「售价 129元」；报价是工具式回答、不带引用）；「你们卖什么」列已定价前 8 件。
+
 ## 观测（第 47 刀）
 
 - **日志**：structlog JSON 打到 stdout（既有 `getLogger(...)` 调用一行未改，渲染层统一）；`LOG_LEVEL` 调级别，默认 INFO。

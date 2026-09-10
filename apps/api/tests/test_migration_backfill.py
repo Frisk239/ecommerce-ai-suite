@@ -99,7 +99,10 @@ def test_upgrade_0018_adds_price_and_product_audit(backfill_db_url: str) -> None
             " VALUES ('旧结构存量商品', '食品', '{}', '{}')"
         )
 
-    command.upgrade(cfg, "head")  # 0018：加列并回填存量行
+    # **升到 0018 为止**（不是 head）：本用例钉的是 0018 的契约「只加列不写价」；
+    # 后来第 50 刀（0026）会按类目基准回填演示价，升到 head 会把这条断言变成
+    # 在验 0026（0026 自己的回填另有 test_upgrade_0026_... 专测）
+    command.upgrade(cfg, "0018")
 
     with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute("SELECT price_cents, currency FROM products WHERE name = '旧结构存量商品'")
@@ -183,3 +186,63 @@ def test_upgrade_0015_backfills_normalized_and_dedupes_open_gaps(backfill_db_url
         index_names = {r[0] for r in cur.fetchall()}
         assert "uq_knowledge_gaps_open_question" not in index_names
         assert "uq_knowledge_gaps_open_normalized" in index_names
+
+
+# 第 50 刀（多来源可见 + 演示价回填）：0026 在旧结构（0025 之前）上按稳定形态回填
+# ——评论资产 -> review_import、OFF 规格资产 -> open_dataset、商品来源列 + 类目
+# 基准演示价（只写 NULL）。downgrade 把两类来源还原为 upload、价格清回 NULL。
+def test_upgrade_0026_backfills_sources_and_demo_prices(backfill_db_url: str) -> None:
+    cfg = _alembic_config(backfill_db_url)
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0025")  # 回到 0025：products 尚无 source_kind；价/来源未回填
+
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO products (name, category, spec_schema, spec_values, price_cents)"
+            " VALUES ('旧结构评论载体', '图书', '{}', '{}', NULL),"
+            "        ('旧结构已定价', '图书', '{}', '{}', 12345),"
+            # 种子形态（名在种子表里 + 价恰好等于类目基准）：降级时**不许被清**
+            # ——评审 P0：按值匹配的回滚会把 0026 之前就存在的种子价一起清掉
+            "        ('瓶装水', '食品', '{}', '{}', 300)"
+        )
+        cur.execute(
+            "INSERT INTO assets (kind, status, source_kind, title)"
+            " VALUES ('document', 'pending_review', 'upload', '图书评论 · 这本旧结构书还行'),"
+            "        ('document', 'pending_review', 'upload', '旧结构杯 规格（OFF）'),"
+            "        ('document', 'pending_review', 'session_backflow', '图书评论 · 回流的别动')"
+        )
+
+    command.upgrade(cfg, "head")
+
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT title, source_kind FROM assets WHERE title LIKE '旧结构%' OR title LIKE '%旧结构书%'"
+        )
+        rows = {title: kind for title, kind in cur.fetchall()}
+        assert rows["图书评论 · 这本旧结构书还行"] == "review_import"
+        assert rows["旧结构杯 规格（OFF）"] == "open_dataset"
+        # 只动 upload：已是 session_backflow 的评论形态资产不被改写
+        cur.execute("SELECT source_kind FROM assets WHERE title = '图书评论 · 回流的别动'")
+        assert cur.fetchone()[0] == "session_backflow"
+
+        # 商品：NULL 价按类目基准回填（图书 5900）；手改价（12345）不被覆盖
+        cur.execute(
+            "SELECT name, price_cents, source_kind FROM products WHERE name LIKE '旧结构%'"
+        )
+        products = {name: (cents, src) for name, cents, src in cur.fetchall()}
+        assert products["旧结构评论载体"][0] == 5900
+        assert products["旧结构已定价"][0] == 12345  # 不覆盖
+        assert products["旧结构评论载体"][1] == "open_dataset"  # 六类目 + 空模板
+
+    # downgrade：来源还原、价格清回（只清正好等于基准价的那批）
+    command.downgrade(cfg, "0025")
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM assets WHERE source_kind IN ('review_import', 'open_dataset')")
+        assert cur.fetchone()[0] == 0
+        cur.execute("SELECT count(*) FROM products WHERE price_cents = 5900")
+        assert cur.fetchone()[0] == 0
+        cur.execute("SELECT count(*) FROM products WHERE price_cents = 12345")
+        assert cur.fetchone()[0] == 1  # 手改价原样
+        # 种子价在降级后仍在（评审 P0 的钉子：按值匹配会误清它）
+        cur.execute("SELECT price_cents FROM products WHERE name = '瓶装水'")
+        assert cur.fetchone()[0] == 300

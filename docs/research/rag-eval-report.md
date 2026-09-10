@@ -182,3 +182,33 @@ overall        96     65.0%     75.0%  100.0%    2.5%   60.0%
 test_published_video_chunks_come_from_transcript_field`（发布真 mp4 资产 → 块表内容 = 转写
 原文、发布不因二进制报错）与既有 `test_clips_integration` 的「video 字段集 / PATCH 422」
 断言——它们直接钉住「video 正文源是字段而不是字节」这条契约。
+
+---
+
+## After（第 50 刀 报价不看命中 + 演示价回填，2026-09-11）
+
+本刀动了引擎的一处路由：`catalog_tools.try_price_answer`——**报价意图 + 命中商品名 +
+该商品有价** 时直接答实时行价（不再要求 `retrieve == []`，ADR 0045 §二修订）；列举
+仍走空命中闸，政策问/规格问/要真人仍被 `catalog_intent` 的四道闸挡住。另回填了
+演示价（115 件全有价，此前 3 件）。
+
+大集复跑（`run_eval.py` 直调 retrieve+compose，不经引擎路由分支）：
+
+```
+golden：scripts\eval\out\golden_large.json（96 条）  检索 top-3
+分布             条数  recall@1  recall@3     拒答率     误拒率    混淆@1
+positive       40     70.0%     75.0%       -    2.5%       -
+paraphrase     25     60.0%     72.0%       -       -       -
+confusion      15     60.0%     80.0%       -       -   60.0%
+refusal        16         -         -  100.0%       -       -
+overall        96     65.0%     75.0%  100.0%    2.5%   60.0%
+```
+
+**结论：大集零漂移**（与上一节逐位一致）——如第 41 刀所记，大集不过引擎的目录/报价
+回落分支，**数学上不可能漂移**。**本刀的真实回归网是引擎级评测集**
+`apps/api/evals/golden.json`（`test_eval_set.py` 真跑引擎）：三例目录用例
+（`catalog-listing` 列举 / `catalog-quote-new-product` 报价 / `catalog-miss-refuse`
+未命中仍拒答）全部通过。**注意口径**：这三例都不带检索命中（夹具里没有与问句
+重叠的已发布块），走的是**老的空命中回落**——「有命中时也走行价」这条新路径由
+`test_product_operable.py::test_price_question_uses_row_price_even_when_retrieval_hits`
+钉（该用例先发布一份含商品名的资产并断言 `retrieve` 非空，再断言回答仍是行价）。

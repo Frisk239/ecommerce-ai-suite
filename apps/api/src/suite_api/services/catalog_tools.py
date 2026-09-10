@@ -210,6 +210,59 @@ def try_catalog_answer(
                 "result": f"在售 {len(products)} 件",
             },
         )
+    return _quote_answer(question, products)
+
+
+# 报价问句的虚词/语境词（提纯时剔除）：与列举的 `_TRIVIAL_RE` 同精神，另加问价
+# 用词本身。**扣掉商品名、价格词、这些虚词后必须什么都不剩**，报价才成立。
+_PRICE_RE = re.compile(
+    "多少钱|价格|售价|定价|报价|收费|贵不贵|便宜|花多少|多少|"
+    "请问|问一下|你们|咱们|的|是|要|买|这个|这款|这件|那|款|"
+    r"[的吗呢啊嘛呀吧呗哦噢]|、|，|？|\?|！|!|。| |　"
+)
+
+
+def price_residual(question: str, product_name: str) -> str:
+    """扣掉商品名与问价虚词后剩余的「实质成分」（纯函数，便于单测）。
+
+    报价回落只在**问句主体就是「商品名 + 问价」**时生效：像「保温杯刻字怎么收费」
+    「钛钢保温杯怎么保养，收费吗」这类问句虽然含价格词（`收费`）且能匹配到商品名，
+    问的却是**服务/规格**（该走文档），报价模板答「售价 129元」是答非所问
+    （评审实拍）。剩余非空即视为实质问句 -> 不回落。
+    """
+    rest = question.replace(product_name, "") if product_name else question
+    return _PRICE_RE.sub("", rest).strip()
+
+
+def try_price_answer(db: Session, question: str) -> CatalogAnswer | None:
+    """报价判定（第 50 刀，**修订 ADR 0045 的「有命中永不回落」**）。
+
+    为什么需要它：原口径要求 `retrieve == []` 才回落到目录，可演示库里已发布
+    资产不少，**带商品名的问句常常有检索命中**——于是「X 多少钱」走 RAG，而证据
+    里没有行价，模型只能答「证据未覆盖价格」；把 115 件商品的价补齐了顾客仍问不
+    出价（第 50 刀验收实测）。价格是**商品行的事实**（0002 商品不是中台对象），
+    行就是权威来源，文档里的价是快照、可能过期。
+
+    口径（三道闸，缺一不可）：
+    1. **报价意图**（`catalog_intent == "price"`：政策词/规格词/要真人已被挡掉）；
+    2. **命中商品名**且该商品**有价**；
+    3. **问句主体就是「商品名 + 问价」**——`price_residual` 扣掉商品名与问价虚词
+       后为空（否则「保温杯刻字怎么收费」会被答成售价，评审 P1）。
+
+    **列举不受影响**：仍走 `try_catalog_answer` 的空命中闸（否则「你们卖什么」会
+    抢掉有目录类证据的回答）。
+    """
+    if catalog_intent(question) != "price":
+        return None
+    products = list(db.scalars(select(Product).order_by(Product.id)))
+    product = match_product(question, products)
+    if product is None or price_residual(question, product.name) != "":
+        return None
+    return _quote_answer(question, [product])
+
+
+def _quote_answer(question: str, products: list[Product]) -> CatalogAnswer | None:
+    """报价模板（两条路径共用：空命中回落 / 报价判定）：无匹配或无价返回 None。"""
     product = match_product(question, products)
     if product is None or product.price_cents is None:
         return None
