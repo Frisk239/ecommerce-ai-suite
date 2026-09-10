@@ -8,7 +8,7 @@
 // 详情——不可撤销不可重切。交互状态对照原型 Clips.tsx 冻结口径（勾选态/批量
 // 按钮/登记后卡换徽章/单向），视觉照 UX-NOTES §二点七（实色、无 hover 位移）。
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowUDownLeft,
@@ -66,13 +66,41 @@ export default function ClipsPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [uploadNote, setUploadNote] = useState<string | null>(null)
   const [pickNote, setPickNote] = useState<string | null>(null)
+  const [bindNote, setBindNote] = useState<string | null>(null)
+  // 第 49 刀：源录像列表 + 选择器（「改绑到哪一份」得先看得见有哪些份）
+  const [recordings, setRecordings] = useState<ClipRecording[]>([])
+  const [chosenRecordingId, setChosenRecordingId] = useState<number | null>(null)
+  const [binding, setBinding] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 单向：勾选只对 pending 有意义；reload 后已登记/被移除的选中项自动出列
   const registrable = clips.filter((c) => c.status === 'pending' && selected.has(c.id))
   const pendingCount = clips.filter((c) => c.status === 'pending').length
-  const bindableCount = clips.filter((c) => c.status === 'pending' && c.recording === null).length
   const currentRecording = latestRecording(clips)
+
+  // 录像列表随页加载（一次性）：选择器默认选最新一份；上传后也会重拉（见下）
+  useEffect(() => {
+    let alive = true
+    void api
+      .listClipRecordings()
+      .then((rows) => {
+        if (!alive) return
+        // 按 id 合并而不是整体替换：这次拉取可能在上传之后才回来（竞态），
+        // 整体替换会把刚上传的那份从选择器里抹掉
+        setRecordings((prev) => {
+          const byId = new Map(prev.map((r) => [r.id, r]))
+          for (const row of rows) if (!byId.has(row.id)) byId.set(row.id, row)
+          return [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at))
+        })
+        setChosenRecordingId((prev) => prev ?? rows[0]?.id ?? null)
+      })
+      .catch(() => {
+        // 列表拉不到不挡主流程（页头仍有「当前源录像」一行）；改绑按钮会提示重试
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const toggle = (candidate: ClipCandidate) => {
     if (candidate.status !== 'pending' || submitting) return
@@ -95,16 +123,19 @@ export default function ClipsPage() {
     setActionError(null)
     setUploadNote(null)
     setPickNote(null)
-    // 绑定数=上传前「pending 且尚无源录像」的候选数（上传即绑这些；已登记不追改）
-    const bound = bindableCount
+    setBindNote(null)
     setUploading(true)
     try {
       const recording = await api.uploadClipRecording(file)
+      // 绑定条数用**后端回执的真值**（bound_count），不再拿前端上传前的候选数猜
+      const bound = recording.bound_count ?? 0
       setUploadNote(
         bound > 0
           ? `已上传源录像《${recording.label}》（${formatBytes(recording.size_bytes)}），已绑定 ${bound} 条待拣候选；勾选后拣选即从源录像切出真 mp4 片段。`
-          : `已上传源录像《${recording.label}》（${formatBytes(recording.size_bytes)}）；当前没有「尚无源录像」的待拣候选可绑定（已登记/已绑定的候选不追改）。`,
+          : `已上传源录像《${recording.label}》（${formatBytes(recording.size_bytes)}）；没有「尚无源录像」的待拣候选可顺手绑定。要用它切片段，在下面把待拣候选改绑到这一份。`,
       )
+      setRecordings((prev) => [recording, ...prev.filter((r) => r.id !== recording.id)])
+      setChosenRecordingId(recording.id)
       reload()
     } catch (err) {
       setActionError(detailText(err))
@@ -115,25 +146,57 @@ export default function ClipsPage() {
     }
   }
 
+  // 改绑（第 49 刀）：勾了候选就只改勾选的，没勾就改全部待拣；已登记候选不动
+  // （后端 409，文案由 detailText 呈现）。
+  const rebind = async () => {
+    if (binding || chosenRecordingId === null) return
+    const ids = registrable.length > 0 ? registrable.map((c) => c.id) : null
+    setBinding(true)
+    setActionError(null)
+    setBindNote(null)
+    setUploadNote(null)
+    try {
+      const result = await api.bindClipRecording(chosenRecordingId, ids)
+      setBindNote(
+        result.bound_count > 0
+          ? `已把 ${result.bound_count} 条待拣候选改绑到《${result.label}》；现在拣选就从这一份切出真 mp4 片段。`
+          : `《${result.label}》没有可改绑的待拣候选（当前都是已登记候选）。`,
+      )
+      reload()
+    } catch (err) {
+      setActionError(detailText(err))
+    } finally {
+      setBinding(false)
+    }
+  }
+
   const pick = async () => {
     if (submitting || registrable.length === 0) return
     setSubmitting(true)
     setActionError(null)
     setPickNote(null)
     setUploadNote(null)
-    // 回执口径按「勾选候选是否绑了源录像」分：真切片段 vs 时间码文本旧路径
-    const realCount = registrable.filter((c) => c.recording !== null).length
+    setBindNote(null)
+    // 回执口径按「勾选候选是否绑了源录像」分：真切片段 vs 时间码文本旧路径；
+    // 真切的那几段还要**指名切自哪一份**（审计刀 9：回执不指名来源，用户没法核对）
+    const realOnes = registrable.filter((c) => c.recording !== null)
+    const realCount = realOnes.length
     const textCount = registrable.length - realCount
+    const sourceLabels = [
+      ...new Set(realOnes.map((c) => c.recording?.label ?? '').filter((label) => label !== '')),
+    ]
+    const sourceText =
+      sourceLabels.length === 1 ? `《${sourceLabels[0]}》` : `${sourceLabels.length} 份源录像`
     try {
       await api.pickClips(registrable.map((c) => c.id))
       setSelected(new Set())
       if (realCount > 0 && textCount > 0) {
         setPickNote(
-          `已登记 ${registrable.length} 条：${realCount} 条已从源录像切出真 mp4 片段、${textCount} 条无源录像走时间码转写文本（待人洗）。`,
+          `已登记 ${registrable.length} 条：${realCount} 条已从${sourceText}切出真 mp4 片段、${textCount} 条无源录像走时间码转写文本（待人洗）。`,
         )
       } else if (realCount > 0) {
         setPickNote(
-          `已登记 ${registrable.length} 条：均已从源录像切出真 mp4 片段，转写已预置为可检索字段（待人洗）。`,
+          `已登记 ${registrable.length} 条：均已从${sourceText}切出真 mp4 片段，转写已预置为可检索字段（待人洗）。`,
         )
       } else {
         setPickNote(`已登记 ${registrable.length} 条：本次无源录像，仍写时间码转写文本（待人洗）。`)
@@ -153,6 +216,7 @@ export default function ClipsPage() {
       {actionError ? <ActionError message={actionError} variant="prominent" className="mb-4" /> : null}
       {uploadNote ? <SuccessBanner>{uploadNote}</SuccessBanner> : null}
       {pickNote ? <SuccessBanner>{pickNote}</SuccessBanner> : null}
+      {bindNote ? <SuccessBanner>{bindNote}</SuccessBanner> : null}
 
       <PageHeader
         title="直播切片"
@@ -198,10 +262,41 @@ export default function ClipsPage() {
             {currentRecording !== null
               ? `当前源录像：《${currentRecording.label}》（${formatBytes(currentRecording.size_bytes)}）— 拣选将从中切出真 mp4 片段`
               : '尚无源录像：拣选仍登记时间码转写文本。上传 .mp4 源录像可切出真片段。'}
-            {currentRecording !== null && bindableCount > 0
-              ? ` · 另有 ${bindableCount} 条待拣候选尚无源录像`
-              : ''}
+            {pendingCount > 0 ? ` · ${pendingCount} 条待拣候选` : ''}
           </div>
+          {/* 第 49 刀：改绑——源录像不再是「绑错就锁死」。勾了候选改勾选的，
+              没勾改全部待拣；已登记候选一律不动（后端 409）。 */}
+          {recordings.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 border-t border-line-1 px-3.5 py-2">
+              <span className="text-xs text-ink-3">改绑待拣候选到</span>
+              <select
+                className="input h-7 max-w-64 text-[12px]"
+                value={chosenRecordingId ?? ''}
+                disabled={binding || submitting}
+                onChange={(e) => setChosenRecordingId(Number(e.target.value))}
+              >
+                {recordings.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.label}（{formatBytes(r.size_bytes)}）
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => void rebind()}
+                disabled={binding || submitting || chosenRecordingId === null}
+                title="把待拣候选的源录像改成这一份；已登记的候选不动"
+              >
+                <ArrowUDownLeft aria-hidden size={13} />
+                {binding
+                  ? '改绑中…'
+                  : registrable.length > 0
+                    ? `改绑勾选的 ${registrable.length} 条`
+                    : '改绑全部待拣'}
+              </button>
+            </div>
+          ) : null}
         </div>
       </PageHeader>
 

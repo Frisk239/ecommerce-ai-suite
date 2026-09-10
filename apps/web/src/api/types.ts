@@ -482,6 +482,15 @@ export interface ClipRecording {
   label: string
   size_bytes: number
   created_at: string
+  /** 第 49 刀：上传回执顺手绑定的条数（后端真值）；列表端点不带（null）。 */
+  bound_count?: number | null
+}
+
+/** 改绑结果（第 49 刀）：把待拣候选改绑到某份源录像后的真值条数。 */
+export interface ClipBindResult {
+  recording_id: number
+  label: string
+  bound_count: number
 }
 
 export interface ClipCandidate {

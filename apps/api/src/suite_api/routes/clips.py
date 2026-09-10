@@ -37,7 +37,12 @@ from suite_api.services.asset_view import (
     revising_asset_ids,
     to_asset_out,
 )
-from suite_api.services.clips import pick_candidates, register_recording
+from suite_api.services.clips import (
+    bind_candidates,
+    pick_candidates,
+    register_recording,
+    split_pending_ids,
+)
 from suite_platform.storage import ObjectStorage
 
 router = APIRouter(prefix="/api/clips", tags=["clips"])
@@ -49,10 +54,35 @@ MAX_RECORDING_BYTES = 200 * 1024 * 1024
 
 
 class ClipRecordingOut(BaseModel):
+    """源录像视图（列表与候选行里的 recording 字段共用）：**只有这四个字段**。"""
+
     id: int
     label: str
     size_bytes: int
     created_at: datetime
+
+
+class ClipRecordingUploadOut(ClipRecordingOut):
+    """上传回执（第 49 刀）：多一个 bound_count——本次顺手绑定的待拣候选条数，
+    是后端真值（前端不再拿上传前的候选数猜）。"""
+
+    bound_count: int
+
+
+class ClipBindIn(BaseModel):
+    """改绑请求体（第 49 刀）：candidate_ids 缺省/null = 全部待拣候选。"""
+
+    candidate_ids: Annotated[list[int], Field(min_length=1)] | None = None
+
+
+class ClipBindOut(BaseModel):
+    recording_id: int
+    label: str
+    bound_count: int
+
+
+# 源录像列表上限（第 49 刀）：够选即可，不做分页（录像不是中台对象，数量级=演示）
+RECORDING_LIST_LIMIT = 20
 
 
 class ClipCandidateOut(BaseModel):
@@ -124,13 +154,13 @@ def list_candidates(
     ]
 
 
-@router.post("/recordings", response_model=ClipRecordingOut, status_code=status.HTTP_201_CREATED)
+@router.post("/recordings", response_model=ClipRecordingUploadOut, status_code=status.HTTP_201_CREATED)
 def upload_recording(
     file: Annotated[UploadFile, File()],
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
     storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
-) -> ClipRecordingOut:
+) -> ClipRecordingUploadOut:
     """上传源录像（第 46 刀裁决 1/2/9）：扩展名须 .mp4，≤200MB，非空。
 
     录像是切片模块自有的输入源（不是资产、不进检索）；登记行后把「尚无源录像」
@@ -156,18 +186,86 @@ def upload_recording(
         )
     if not data:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能作为源录像")
-    recording = register_recording(
+    recording, bound_count = register_recording(
         db, storage, label=(filename or "未命名录像")[:200], content_bytes=data
     )
     logger.info(
-        "源录像已登记: id=%s label=%s size=%s", recording.id, recording.label, recording.size_bytes
+        "源录像已登记: id=%s label=%s size=%s bound=%s",
+        recording.id,
+        recording.label,
+        recording.size_bytes,
+        bound_count,
     )
-    return ClipRecordingOut(
+    return ClipRecordingUploadOut(
         id=recording.id,
         label=recording.label,
         size_bytes=recording.size_bytes,
         created_at=recording.created_at,
+        bound_count=bound_count,
     )
+
+
+@router.get("/recordings", response_model=list[ClipRecordingOut])
+def list_recordings(
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> list[ClipRecordingOut]:
+    """源录像列表（第 49 刀）：created_at 降序、最多 20 条。
+
+    「改绑到哪一份」需要先看得见有哪些份——没有列表就只有「刚上传的那份」可选，
+    等于把「绑错锁死」换成「只能改成最新一份」。录像不是中台对象（第 46 刀裁决
+    1）：不做分页/搜索/删除，列表只是选择器的数据源。
+    """
+    del operator  # 读接口同样要求登录
+    rows = db.scalars(
+        select(ClipRecording)
+        .order_by(ClipRecording.created_at.desc(), ClipRecording.id.desc())
+        .limit(RECORDING_LIST_LIMIT)
+    )
+    return [
+        ClipRecordingOut(
+            id=r.id, label=r.label, size_bytes=r.size_bytes, created_at=r.created_at
+        )
+        for r in rows
+    ]
+
+
+@router.post("/recordings/{recording_id}/bind", response_model=ClipBindOut)
+def bind_recording(
+    recording_id: int,
+    body: ClipBindIn | None = None,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> ClipBindOut:
+    """把待拣候选改绑到指定源录像（第 49 刀，**修订第 46 刀裁决 2**）。
+
+    语义：`candidate_ids` 缺省/null = 全部待拣候选；给了就只改这些。已绑的候选
+    **允许改绑**（这条就是本刀要解锁的：原来「绑过就不许改」把绑错变成终态）；
+    已登记候选**一律不动**（回执锚已定），指定了就 409 且一行不写。返回后端真值
+    `bound_count`。
+    """
+    del operator  # 写接口仅要求登录，401 口径同既有写端点
+    recording = db.get(ClipRecording, recording_id)
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="源录像不存在")
+    candidate_ids = body.candidate_ids if body is not None else None
+    if candidate_ids is not None:
+        found, registered = split_pending_ids(db, list(dict.fromkeys(candidate_ids)))
+        if len(found) != len(set(candidate_ids)):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="切片候选不存在"
+            )
+        if registered:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"切片候选 {registered[0]} 已登记为资产，源录像绑定不可追改",
+            )
+    bound = bind_candidates(db, recording.id, candidate_ids=candidate_ids)
+    db.commit()
+    logger.info(
+        "源录像改绑: recording=%s label=%s bound=%s", recording.id, recording.label, bound
+    )
+    return ClipBindOut(recording_id=recording.id, label=recording.label, bound_count=bound)
 
 
 @router.post("/candidates/pick", response_model=list[AssetOut])

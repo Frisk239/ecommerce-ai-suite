@@ -137,12 +137,14 @@ def cut_clip_bytes(storage: ObjectStorage, recording: ClipRecording, start: str,
 def register_recording(
     db: Session, storage: ObjectStorage, *, label: str, content_bytes: bytes
 ) -> ClipRecording:
-    """落一份源录像 + 上传即绑定（第 46 刀裁决 1/2）。
+    """落一份源录像 + 上传即绑定（第 46 刀裁决 1/2；第 49 刀加真值回执）。
 
     对象键 ``recordings/{uuid}/<sha16>.mp4``（源录像不是资产，不进 clips/ 资产
     前缀、不进检索、不能发布）；插行拿主键后，把**尚无源录像**（recording_id
     IS NULL）的 pending 候选 UPDATE 绑到这份录像——已登记候选不动（回执锚已
-    在），已绑过的候选也不改绑（本刀单源模型，裁决 2）。返回录像行。
+    在），已绑过的候选也不改绑（**顺手的默认动作**；改绑交给第 49 刀的显式端点
+    ``bind_candidates``）。返回 (录像行, 本次绑定条数)——条数是后端真值，回执
+    不再用前端猜的候选数。
     """
     digest = hashlib.sha256(content_bytes).hexdigest()[:16]
     object_key = f"recordings/{uuid4().hex}/{digest}.mp4"
@@ -151,14 +153,53 @@ def register_recording(
     recording = ClipRecording(label=label, object_key=object_key, size_bytes=len(content_bytes))
     db.add(recording)
     db.flush()  # 拿主键（绑定 UPDATE 要 recording_id）
-    db.execute(
-        update(ClipCandidate)
-        .where(ClipCandidate.recording_id.is_(None), ClipCandidate.status == PENDING)
-        .values(recording_id=recording.id)
-    )
+    bound = bind_candidates(db, recording.id, candidate_ids=None, only_unbound=True)
     db.commit()
     db.refresh(recording)
-    return recording
+    return recording, bound
+
+
+def bind_candidates(
+    db: Session,
+    recording_id: int,
+    *,
+    candidate_ids: list[int] | None,
+    only_unbound: bool = False,
+) -> int:
+    """把候选的源录像改绑到 `recording_id`，返回本次影响的条数（第 49 刀）。
+
+    - `candidate_ids=None` -> 全部待拣（pending）候选；给了 id 就只动这些。
+    - `only_unbound=True` -> 只动「尚无源录像」的（上传端点的顺手默认动作）；
+      否则连已绑的一起改——这正是改绑要解决的问题（第 46 刀裁决 2 曾被读成
+      「绑过就不许改」，把「绑错」变成终态）。
+    - 已登记候选一律不动：它们已经拣选过，录像绑定是历史事实（改它不改变已切出
+      的字节，只会让留痕失真）。调用方负责把「指定了已登记候选」判成 409。
+    - 不 commit（由调用方收口：上传路径在 register_recording 里 commit，改绑端点
+      自己 commit）。
+    """
+    if candidate_ids == []:
+        return 0  # `in_([])` 会生成恒假条件（静默 0 行）；显式返回更诚实
+    statement = update(ClipCandidate).where(ClipCandidate.status == PENDING)
+    if candidate_ids is not None:
+        statement = statement.where(ClipCandidate.id.in_(candidate_ids))
+    if only_unbound:
+        statement = statement.where(ClipCandidate.recording_id.is_(None))
+    result = db.execute(statement.values(recording_id=recording_id))
+    return result.rowcount
+
+
+def split_pending_ids(db: Session, ids: list[int]) -> tuple[list[int], list[int]]:
+    """把给定 id 分成 (库里存在的, 其中已登记的) 两拨（校验用，纯读）。
+
+    调用方：存在的短于入参 -> 404（有 id 不存在）；已登记的非空 -> 409（与拣选的
+    拒绝原子性同口径：校验先于任何写入）。
+    """
+    rows = db.execute(
+        select(ClipCandidate.id, ClipCandidate.status).where(ClipCandidate.id.in_(ids))
+    ).all()
+    found = [row[0] for row in rows]
+    registered = [row[0] for row in rows if row[1] != PENDING]
+    return found, registered
 
 
 def _claim_candidate(db: Session, candidate_id: int) -> int:
@@ -240,8 +281,17 @@ def pick_candidates(db: Session, storage: ObjectStorage, ids: list[int]) -> list
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"切片候选 {candidate.id} 已登记为资产，不可重复拣选",
             )
+        # CAS 之后**重读绑定**（第 49 刀改绑引入的竞态）：预检到占位之间若有人改绑，
+        # 内存里还是旧录像——切出来的字节会与库里记的绑定不一致。refresh 一次，
+        # 让「切自哪一份」与「库里绑哪一份」恒同（改绑端点只动 pending，占位后
+        # 本行已 registered，不会再被改走）。
+        db.refresh(candidate)
         if candidate.recording_id is not None:
-            recording = recordings.get(candidate.recording_id)
+            # 预取的 map 是**预检时**的快照：并发改绑把候选改到 B 之后，refresh 读到的
+            # 是新 id 而 map 里没有 -> 会误判「源录像不存在」。按 id 兜底回查一次。
+            recording = recordings.get(candidate.recording_id) or db.get(
+                ClipRecording, candidate.recording_id
+            )
             if recording is None:  # pragma: no cover - FK 保证存在，防御性同口径
                 _release_claim(db, candidate.id)
                 raise HTTPException(

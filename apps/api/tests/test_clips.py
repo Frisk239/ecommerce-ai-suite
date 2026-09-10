@@ -85,6 +85,10 @@ class _FakeClipDb:
     def commit(self) -> None:
         self.commits += 1
 
+    def refresh(self, obj: Any) -> None:
+        """no-op：假库里对象就是真值（真库上这步用来重读改绑后的 recording_id）。"""
+        del obj
+
 
 class _MemoryStorage:
     def __init__(self) -> None:
