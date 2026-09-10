@@ -9,13 +9,14 @@
 // 缺口关闭发生在发布事务里）——列表页用 key 区分实例，预填只落在初始
 // state，普通登记路径不受影响。
 
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useCallback, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileCsv, FileText, X } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { CsvImportReport, KnowledgeGap, Product } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 import { formatAssetId, formatGapId } from '../labels'
 import ActionError from '../components/ActionError'
 import ProductSelect from '../components/ProductSelect'
@@ -123,14 +124,8 @@ export default function RegisterAssetDrawer({
   // gap.question 是出口掩后的视图文本（0038），提示条不引入新的原文出口。
   const gapFillNote = gap !== undefined ? `本资产用于补口径：${gap.question}——发布后该缺口将自动解决` : null
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  // Esc 关闭（统一口径 useEscapeClose）；提交中由下面的 enabled 门禁挡住
+  useEscapeClose(open, onClose, mode === 'single' ? !submitting : !csvSubmitting)
 
   if (!open) return null
 
@@ -256,13 +251,19 @@ export default function RegisterAssetDrawer({
 
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={gap !== undefined ? `补缺口 ${formatGapId(gap.id)}` : '登记资产'}>
-      <div className="modal-backdrop absolute inset-0" onClick={onClose} aria-hidden />
+      <div className="modal-backdrop absolute inset-0" onClick={busy ? undefined : onClose} aria-hidden />
       <aside className="drawer-panel absolute inset-y-0 right-0 flex w-full max-w-md flex-col">
         <div className="flex items-center gap-2 border-b border-line-2 px-4 py-3">
           <div className="flex-1 text-[14px] font-semibold text-ink">
             {gap !== undefined ? `补缺口 ${formatGapId(gap.id)}` : '登记资产'}
           </div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="关闭登记表单">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="关闭登记表单"
+          >
             <X aria-hidden size={14} />
           </button>
         </div>
@@ -296,22 +297,18 @@ export default function RegisterAssetDrawer({
           {mode === 'single' ? (
             <>
               {gap !== undefined ? (
-                <>
-                  {/* 提示条（第 30 刀 Must 2）：显式带缺口问句，发布后自动解决——
-                      操作者补错文档时在这里就有感。 */}
-                  <div
-                    className="rounded-[6px] border border-[rgba(154,91,6,0.25)] bg-[rgba(154,91,6,0.05)] px-3 py-2 text-xs leading-5 text-warn"
-                    role="status"
-                  >
-                    {gapFillNote}
-                  </div>
-                  <div className="rounded-[6px] border border-line-2 bg-surface px-3 py-2 text-xs leading-5 text-ink-2">
-                    补缺口 {formatGapId(gap.id)}：登记后进入已接入，请确认内容能回答上面的问句再发布。
-                    {gap.product !== null ? (
-                      <span className="text-ink-3">（预选挂商品：{gap.product.name}）</span>
-                    ) : null}
-                  </div>
-                </>
+                /* 单条提示：问句 + 关闭条件 + 预选商品合成一条——此前叠两条横幅
+                   （warn 提示 + 灰说明），信息重复又挤占表单。 */
+                <div
+                  className="rounded-[6px] border border-[rgba(154,91,6,0.25)] bg-[rgba(154,91,6,0.05)] px-3 py-2 text-xs leading-5 text-warn"
+                  role="status"
+                >
+                  {gapFillNote}
+                  <span className="text-ink-2">登记后进入已接入。</span>
+                  {gap.product !== null ? (
+                    <span className="text-ink-3">（预选挂商品：{gap.product.name}）</span>
+                  ) : null}
+                </div>
               ) : (
                 <p className="text-xs leading-5 text-ink-3">
                   登记即把文件字节写入对象存储并进入已接入（来源=上传）；机洗成功直接到待人洗，失败会停在已接入并给出原因。

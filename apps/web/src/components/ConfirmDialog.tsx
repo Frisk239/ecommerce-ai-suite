@@ -1,5 +1,6 @@
-import { useEffect, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { X } from '@phosphor-icons/react'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 
 // 确认框：发布等破坏性/生效动作前用；Esc / 背景点击取消，busy 时锁按钮。
 export default function ConfirmDialog({
@@ -21,20 +22,14 @@ export default function ConfirmDialog({
   onCancel: () => void
   onConfirm: () => void
 }) {
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onCancel])
+  // Esc 取消（统一口径 useEscapeClose）；busy 时不响应，与「busy 锁按钮」同门禁
+  useEscapeClose(open, onCancel, !busy)
 
   if (!open) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="modal-backdrop absolute inset-0" onClick={onCancel} aria-hidden />
+      <div className="modal-backdrop absolute inset-0" onClick={busy ? undefined : onCancel} aria-hidden />
       <div className="modal-card relative w-full max-w-md">
         <div className="flex items-start gap-3 border-b border-line-2 px-4 py-3">
           <div className="min-w-0 flex-1 text-[14px] font-semibold leading-6 text-ink">{title}</div>

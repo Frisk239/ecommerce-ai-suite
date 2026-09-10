@@ -23,6 +23,7 @@ import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { AssetListItem, MaterialTask } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 import { formatAssetId, formatDateTime, formatTaskId } from '../labels'
 import { ErrorBanner } from '../components/Banner'
 import ActionError from '../components/ActionError'
@@ -58,6 +59,9 @@ function CreateTaskDrawer({
   const [productId, setProductId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // 提交中不可中断：Esc 与遮罩同一门禁（走查实录 A1：此前 Esc 无响应）
+  useEscapeClose(open, onClose, !submitting)
 
   if (!open) return null
 
@@ -141,6 +145,9 @@ function TaskDetailDrawer({
 }) {
   const [busy, setBusy] = useState<null | 'approve' | 'reject' | 'retry'>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // 动作进行中不可中断：Esc 与遮罩同一门禁（走查实录 A1：此前 Esc 无响应）
+  useEscapeClose(task !== null, onClose, busy === null)
 
   if (task === null) return null
 
