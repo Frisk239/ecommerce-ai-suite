@@ -46,11 +46,16 @@ function hasWrittenSpec(product: Product): boolean {
   return Object.keys(product.spec_schema).some((k) => product.spec_values?.[k])
 }
 
-/** 首屏排序档：0=已定价，1=未定价但有写回规格，2=其余（折进可展开区）。 */
+/** 首屏排序档（第 55 刀起只用于**排序**，不再决定收不收）：0=已定价、1=未定价但有
+ * 写回规格、2=其余；超出 FEATURED_LIMIT 的统一进折叠区。 */
 function productRank(product: Product): number {
   if (product.price_cents !== null) return 0
   return hasWrittenSpec(product) ? 1 : 2
 }
+
+// 首屏商品卡上限（第 55 刀）：已定价在前（productRank），超出的收进折叠区。
+// 24 ≈ 两列 12 行，足够扫读又不会把页面拉成一条长龙。
+const FEATURED_LIMIT = 24
 
 // 稳定空数组：加载/错误态复用同一引用，排序 useMemo 的依赖才不会每渲染都变。
 const EMPTY_PRODUCTS: Product[] = []
@@ -341,7 +346,10 @@ export default function ProductsPage() {
     open: false,
     product: null,
   })
-  // 其余商品默认收起：首屏只留可卖物（已定价 / 有写回规格），百科货不抢视线。
+  // 其余商品默认收起：首屏只留一小批可卖物，其余收回折叠区。
+  // 第 55 刀：原来「已定价=展示、未定价=收起」——第 50 刀把 115 件全部回填了演示价
+  // 之后，折叠判据整体失效（featured=115、rest=0），首屏变成 115 张卡糊屏
+  // （审计刀 11 P1）。改成**按数量收口**：已定价优先、超出上限的进折叠区。
   const [restOpen, setRestOpen] = useState(false)
 
   // 稳定排序：档位优先，同档按 id 升序兜底（否则每次渲染跳位）。
@@ -349,8 +357,8 @@ export default function ProductsPage() {
     () => [...products].sort((a, b) => productRank(a) - productRank(b) || a.id - b.id),
     [products],
   )
-  const featured = ordered.filter((p) => productRank(p) < 2)
-  const rest = ordered.filter((p) => productRank(p) === 2)
+  const featured = ordered.slice(0, FEATURED_LIMIT)
+  const rest = ordered.slice(FEATURED_LIMIT)
 
   const renderCard = (product: Product) => {
     // 有写回规格才撑规格表；无写回的卡只留名/类目/库存/价/编辑（空表=说明书噪音）。
@@ -502,7 +510,9 @@ export default function ProductsPage() {
                 <span className="flex items-center text-caption">
                   {restOpen ? <CaretDown aria-hidden size={13} /> : <CaretRight aria-hidden size={13} />}
                 </span>
-                <span className="text-[13px] font-medium text-ink">其余商品 {rest.length}</span>
+                <span className="text-[13px] font-medium text-ink">
+                  其余 {rest.length} 件（已定价优先排在前面）
+                </span>
                 <span className="text-xs text-ink-3">未定价且尚无写回规格，收在这里</span>
               </button>
               {restOpen ? (

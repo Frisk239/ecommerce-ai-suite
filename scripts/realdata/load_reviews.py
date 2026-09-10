@@ -229,6 +229,32 @@ def post_publish(
         return False
 
 
+def fixup_asset_sources(db_url: str) -> int:
+    """把本脚本导入的评论资产来源从 `upload` 改写成 `review_import`（第 55 刀）。
+
+    为什么必须在脚本里做：登记通道（`POST /assets/register`）的 source_kind 是服务端
+    定值 `upload`，而迁移 0026/0028 的形态回填只在**已有数据**上跑——按 README 的复位
+    顺序（先 `alembic upgrade head` 再灌数据）重新导入时，回填早已跑完，200 条评论资产
+    会全部显示「上传」，「多来源可见」在产品面消失（审计刀 11 P1）。判据与迁移同源
+    （标题形如「{类目}评论 · …」），只动 `upload` 的行。
+    """
+    from sqlalchemy import create_engine, text
+
+    from suite_api.db import to_sqlalchemy_url
+
+    engine = create_engine(to_sqlalchemy_url(db_url))
+    with engine.begin() as connection:
+        result = connection.execute(
+            text(
+                "UPDATE assets SET source_kind = 'review_import'"
+                " WHERE source_kind = 'upload' AND title LIKE '%评论 ·%'"
+            )
+        )
+        changed = result.rowcount or 0
+    engine.dispose()
+    return changed
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="中文电商评论下载/抽样/批量导入（研究用途）")
     parser.add_argument("--n", type=int, default=DEFAULT_N, help=f"抽样条数（默认 {DEFAULT_N}）")
@@ -292,6 +318,10 @@ def main(argv: list[str] | None = None) -> int:
         skipped_total += skipped
         print(f"  批 {index}/{len(batches)}：行 {len(batch)}，created {len(batch_ids)}，skipped {skipped}")
     print(f"导入汇总：created {len(created_ids)}，skipped {skipped_total}")
+    # 第 55 刀：来源按形态补写成 review_import（登记通道定值是 upload；迁移回填
+    # 只在存量数据上跑，重导后靠这里补——否则产品面丢「评论导入」这个词）
+    changed = fixup_asset_sources(args.db)
+    print(f"来源补写：review_import {changed} 条")
 
     if args.publish > 0:
         publish_ids = random.Random(args.seed).sample(created_ids, min(args.publish, len(created_ids)))

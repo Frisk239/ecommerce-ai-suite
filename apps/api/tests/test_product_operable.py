@@ -701,3 +701,72 @@ def test_category_question_uses_category_quote_end_to_end(api: ApiFixture) -> No
     assert outcome.tool is not None and outcome.tool["name"] == "catalog"
     assert outcome.answer.citations == []
     assert "食品" in outcome.answer.content and "3元" in outcome.answer.content
+
+
+def test_category_quote_wins_when_product_name_contains_category() -> None:
+    """审计刀 11 P1：商品名里含完整类目名时，类目问价不能被单品劫持。
+
+    反例形态：商品「WANDS 家具（演示）」含「家具」——按单品走会答成这一个商品的价，
+    类目聚合（件数/区间/未定价）被静默吞掉；再加一件不同价的商品就答错。
+    """
+    from suite_api.services.catalog_tools import try_price_answer
+
+    products = [
+        _mem_product(1, "WANDS 家具（演示）", 89900),
+        _mem_product(2, "实木餐桌", 159900),
+    ]
+    for product in products:
+        product.category = "家具"
+    answer = try_price_answer(_catalog_db(products), "家具多少钱？")
+    assert answer is not None
+    assert answer.tool["arg"] == "家具"  # 类目聚合，不是单品
+    assert "共 2 件" in answer.content
+    assert "899" in answer.content and "1599" in answer.content  # 区间
+
+    # 具体型号问价仍走单品
+    single = try_price_answer(_catalog_db(products), "实木餐桌多少钱？")
+    assert single is not None and single.tool["arg"] == "实木餐桌"
+
+
+def test_category_quote_refuses_mixed_currency() -> None:
+    """混币种不做类目聚合（跨币种比大小无意义）——宁可拒答也不给假区间。"""
+    from suite_api.services.catalog_tools import try_price_answer
+
+    first = _mem_product(1, "甲", 300)
+    first.category = "食品"
+    second = _mem_product(2, "乙", 500)
+    second.category = "食品"
+    second.currency = "USD"
+    assert try_price_answer(_catalog_db([first, second]), "食品多少钱？") is None
+
+
+def test_catalog_answer_closes_matching_open_gap(api: ApiFixture) -> None:
+    """审计刀 11 P0-1：目录能答 = 这条不是「知识待补」——同问的 open 缺口一并收掉。
+
+    （否则治理台「待补」写着客服当下已经能答的问题，点「去补文档」还把人引去补
+    一份不需要的文档。）
+    """
+    client, _ = api
+    _login(client)
+    factory = client.app.state.session_factory
+    with factory() as db:
+        from suite_api.models import KnowledgeGap
+        from suite_api.services.knowledge_gaps import normalize_question
+
+        gap = KnowledgeGap(
+            question="食品多少钱？", normalized_question=normalize_question("食品多少钱？")
+        )
+        db.add(gap)
+        db.commit()
+        gap_id = gap.id
+
+    outcome, _ = _run_question(client, "食品多少钱？")
+    assert outcome.tool is not None and outcome.tool["name"] == "catalog"
+
+    with factory() as db:
+        from suite_api.models import KnowledgeGap
+
+        row = db.get(KnowledgeGap, gap_id)
+        assert row.status == "resolved"
+        assert row.resolved_at is not None
+        assert row.resolved_by_asset_id is None  # 不是靠文档补上的，如实留白

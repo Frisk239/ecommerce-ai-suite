@@ -14,7 +14,7 @@
 
 ## 验收（实测）
 
-1. **库内分布**（演示库跑完 0028）：商品 `wikidata 91 / openfoodfacts 20 / seed 2 / wands 1`；资产 `openfoodfacts 20`（OFF 规格资产，其余资产不受影响）。
+1. **库内分布**（演示库跑完 0028）：商品 `wikidata 91 / openfoodfacts 20 / seed 2 / wands 1` + **1 条运营手建（NULL，共 115 件）**；资产 `openfoodfacts 20`（OFF 规格资产，其余资产不受影响）。`open_dataset` 残留 **0 行**（已加钉子断言）。
 2. **界面**：商品页出现「Wikidata」「OpenFoodFacts」「WANDS 基准」三种来源 chip，**不再出现「开放数据集」**；资产列表的来源筛选 chips 与来源列同步（评论导入/切片拣选/会话回流/上传 + 已发布页签里的 OpenFoodFacts）。
 3. **迁移可逆**：临时库 `upgrade head → downgrade 0027 → upgrade head` 往返通过；降级后三个数据集值归零、`open_dataset` 回到 3 行（商品）。
 4. **门禁**：集成 **930 → 934 passed / 0 failed / 0 skipped**（新增 1 例迁移拆细 + 3 例随枚举扩值的既有参数化用例）；ruff 全过；前端 build 绿、lint 7/0。

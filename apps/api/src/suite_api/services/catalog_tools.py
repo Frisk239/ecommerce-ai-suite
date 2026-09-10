@@ -304,6 +304,14 @@ def _quote_answer(question: str, products: list[Product]) -> CatalogAnswer | Non
        类目价，等于自相矛盾）；2. 该商品有价 / 该类目有已定价商品；3. **纯度**——
        扣掉命中片段与问价虚词后必须什么都不剩（问句主体就是「名字 + 问价」）。
     """
+    # **先类目、后单品**（审计刀 11 P1）：商品名里含完整类目名时（「WANDS 家具
+    # （演示）」含「家具」），单品路径会先命中并把「家具多少钱？」答成**这一个商品**
+    # 的价——类目聚合（件数/区间/未定价计数）被静默吞掉，一旦该类目再来一件不同价
+    # 的商品就答错。类目路径自带纯度闸：问句扣掉类目名后还有实质内容（如具体型号
+    # 「笔记本 A 多少钱」）就不会命中，此时才走单品。
+    category_answer = _category_quote(question, products)
+    if category_answer is not None:
+        return category_answer
     product = match_product(question, products)
     if product is not None and product.price_cents is not None:
         if price_residual(question, product.name) == "":
@@ -316,10 +324,7 @@ def _quote_answer(question: str, products: list[Product]) -> CatalogAnswer | Non
                     "result": f"{product.name} · {price_text}",
                 },
             )
-        # 命中的商品名不是问句主体：可能是「笔记本电脑多少钱」这类**按类目**问价
-        # （商品名恰含「笔记本」三字，LCS 命中但它问的是类目）——交给类目路径再判
-        # 一次纯度；两条都不成立才算实质问句（服务/规格），交回 RAG。
-    return _category_quote(question, products)
+    return None
 
 
 def _category_quote(question: str, products: list[Product]) -> CatalogAnswer | None:
@@ -337,15 +342,28 @@ def _category_quote(question: str, products: list[Product]) -> CatalogAnswer | N
         priced = [p for p in members if p.price_cents is not None]
         if not priced:
             return None
-        prices = [p.price_cents for p in priced if p.price_cents is not None]
+        # 混币种不做类目聚合（跨币种比大小无意义，v1 单币种是约定不是保证）——
+        # 宁可拒答留缺口，也不给一个「3元–5美元」的假区间（审计刀 11 P2）
+        currencies = {p.currency for p in priced}
+        if len(currencies) > 1:
+            return None
+        content = render_category_quote(category, priced, len(members))
         return CatalogAnswer(
-            content=render_category_quote(category, priced, len(members)),
+            content=content,
             tool={
                 "name": TOOL_NAME,
                 "arg": category,
-                "result": (
-                    f"{category} {len(members)} 件 · {min(prices) // 100}–{max(prices) // 100} 元"
-                ),
+                "result": f"{category} {len(members)} 件 · {_range_text(priced)}",
             },
         )
+
+
+def _range_text(priced: list[Product]) -> str:
+    """类目轨迹的价格段（与正文同口径：复用 format_price，不手搓「//100 元」）。"""
+    prices = [p.price_cents for p in priced if p.price_cents is not None]
+    currency = priced[0].currency
+    low, high = min(prices), max(prices)
+    if low == high:
+        return format_price(low, currency)
+    return f"{format_price(low, currency)}–{format_price(high, currency)}"
     return None

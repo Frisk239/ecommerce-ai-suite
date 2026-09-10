@@ -343,6 +343,31 @@ def cached_data_rows(path: Path) -> int:
         return sum(1 for _ in handle) - 1
 
 
+def fixup_asset_sources(db_url: str) -> int:
+    """把本脚本登记的 OFF 规格资产来源从 `upload` 改写成 `openfoodfacts`（第 55 刀）。
+
+    登记通道（`POST /assets/register`）的 source_kind 是服务端定值 `upload`，而迁移
+    0026/0028 的形态回填只在**已有数据**上跑——按 README 顺序（先迁移再灌数据）重导时
+    回填早已跑完，20 份 OFF 资产会全显示「上传」（审计刀 11 P1）。判据与迁移同源
+    （标题形如「… 规格（OFF）」），只动 `upload` 的行。
+    """
+    from sqlalchemy import create_engine, text
+
+    from suite_api.db import to_sqlalchemy_url
+
+    engine = create_engine(to_sqlalchemy_url(db_url))
+    with engine.begin() as connection:
+        result = connection.execute(
+            text(
+                "UPDATE assets SET source_kind = 'openfoodfacts'"
+                " WHERE source_kind = 'upload' AND title LIKE '%规格（OFF）'"
+            )
+        )
+        changed = result.rowcount or 0
+    engine.dispose()
+    return changed
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Open Food Facts dump 清洗灌入（ODbL）")
     parser.add_argument("--n", type=int, default=DEFAULT_N)
@@ -387,6 +412,10 @@ def main(argv: list[str] | None = None) -> int:
             args.api, args.user, args.password, args.db, rows, publish=args.publish
         )
         print(f"register={registered} publish={published}")
+        # 第 55 刀：来源按形态补写成 openfoodfacts（登记通道定值 upload；迁移回填
+        # 只在存量上跑，重导后靠这里补——否则产品面丢「OpenFoodFacts」这个词）
+        if args.db:
+            print(f"来源补写：openfoodfacts {fixup_asset_sources(args.db)} 条")
     return 0
 
 
