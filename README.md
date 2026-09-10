@@ -188,6 +188,14 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
   （录像本身会留在对象存储里成为孤儿——录像是切片模块自有的输入源，没有删除端点，这是有意的。）
 - **`/metrics` 默认是关的**：不设 `METRICS_TOKEN` 一律 401；要现场演示抓取，先 `printf '%s' "$METRICS_TOKEN" > ops/metrics_token` 再 `--profile metrics up`。
 - **ffmpeg 必须在**：compose 的 api 镜像已装、CI 显式安装；本机裸跑需自带（缺失时拣选报 422「ffmpeg 无法执行」，不是静默降级）。
+- **探针数据（第 61 刀）**：冒烟、审计与端到端探针会在演示库留下空会话与探针资产（客服页一堆「未开始」、资产列表里 `mcp-smoke` / `evidence probe` 机器行）。演示前清一次：
+
+  ```bash
+  uv run python scripts/demo_reset.py --db postgresql://suite:suite@localhost:5433/suite            # 只报告（默认 dry-run，不写库）
+  uv run python scripts/demo_reset.py --db postgresql://suite:suite@localhost:5433/suite --apply    # 真清
+  ```
+
+  它清**两类特征行**（空会话：无消息/工单/评分/缺口/回流锚；探针资产：`mcp_registered` 且标题 `^mcp-smoke|^evidence probe` → 置 discarded 不删行）。**知识缺口与工单只报告不清**——那些是「拒答留缺口 → 去补 → 再问命中」与「转人工闭环」的演示素材。默认 dry-run、必须显式 `--apply`。
 
 ## 数据来源与演示价（第 50 / 55 刀）
 
