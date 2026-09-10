@@ -7,6 +7,7 @@ import type {
   AssetListItem,
   AssetVersion,
   AuditEntry,
+  ClipBindResult,
   ClipCandidate,
   ClipRecording,
   CoachQuestion,
@@ -167,6 +168,15 @@ export const api = {
   // 的仍写时间码转写文本。返回登记结果列表供卡片换「已登记 A-xxxx」。批量含
   // 已登记整体 409（事务不落）；切失败 422 且该候选保持可重拣。
   listClipCandidates: () => request<ClipCandidate[]>('/clips/candidates'),
+  // 第 49 刀：源录像列表（改绑选择器的数据源；created_at 降序、≤20）
+  listClipRecordings: () => request<ClipRecording[]>('/clips/recordings'),
+  // 第 49 刀：改绑——candidateIds 为 null 时改绑全部待拣候选（这是本条把
+  // 「绑错就锁死」解锁的动作；已登记候选一律不动，指定了会 409）
+  bindClipRecording: (recordingId: number, candidateIds: number[] | null) =>
+    request<ClipBindResult>(`/clips/recordings/${recordingId}/bind`, {
+      method: 'POST',
+      body: JSON.stringify({ candidate_ids: candidateIds }),
+    }),
   uploadClipRecording: (file: File) => {
     const form = new FormData()
     form.append('file', file)
