@@ -45,7 +45,11 @@ MAX_LISTED = 8
 # 卖什么的/有目录吗/有哪些啊」——交接审查揪出原表漏掉主打痛点句式）。
 LISTING_RE = re.compile("卖什么|卖啥|有什么|有啥|都卖哪|卖哪些|有哪些|目录|在售")
 # 报价意图（显式价格词；裸「多少」另走规格闸）。
-PRICE_RE = re.compile("多少钱|价格|售价|定价|报价|收费|贵不贵|便宜|花多少")
+PRICE_RE = re.compile(
+    "多少钱|价格|售价|定价|报价|收费|贵不贵|便宜|花多少|"
+    # 第 56 刀：口语问价（「笔记本电脑怎么卖？」「什么价？」「多钱？」）
+    "怎么卖|怎么买|卖多少|什么价|啥价|多钱"
+)
 # 裸「多少」（ verdict 触发词之一）：规格词在场时是规格问，不触发。
 _BARE_MUCH_RE = re.compile("多少")
 # 政策词闸（交接审查实修：退货运费/优惠规则/发票税费这类政策问即使带价格词
@@ -92,6 +96,19 @@ _TRIVIAL_RE = re.compile(
     "[的吗呢啊嘛呀吧呗哦噢]|"
     "、|，|？|\\?|！|!|。| |　"
 )
+
+# 类目口语别名（第 56 刀）：顾客常说的短称 → 库里的类目名。
+# **保守**：只收无歧义的（「笔记本」→「笔记本电脑」）；像「书」这种会撞「说明书」
+# 的不收——宁可漏认（照旧拒答留缺口），也不要把无关问句吸进类目报价。
+# 纯度闸仍然生效：「手机壳多少钱」剔完「手机」还剩「壳」→ 不回落。
+CATEGORY_ALIASES: dict[str, str] = {
+    "笔记本": "笔记本电脑",
+    "笔电": "笔记本电脑",
+    "手提电脑": "笔记本电脑",
+    "手机": "智能手机",
+    "平板": "平板电脑",
+    "电视": "电视机",
+}
 
 CatalogIntent = Literal["listing", "price"]
 
@@ -239,11 +256,14 @@ def try_catalog_answer(
 
 # 报价问句的虚词/语境词（提纯时剔除）：与列举的 `_TRIVIAL_RE` 同精神，另加问价
 # 用词本身。**扣掉商品名、价格词、这些虚词后必须什么都不剩**，报价才成立。
+# 提纯用的词表**只收原子词**（不收「什么价」这类复合词）：正则择先按书写顺序，
+# 复合词会把原子词的后缀切掉留下残渣（「什么价格」被「什么价」吃掉后剩「格」，
+# 评测集里就有这例）。口语问价靠原子词覆盖——「怎么卖」= 怎么 + 卖，「什么价」
+# = 什么 + 价格。长原子词仍写在短原子词前面（多少钱 → 多少）。
 _PRICE_RE = re.compile(
-    "多少钱|价格|售价|定价|报价|收费|贵不贵|便宜|花多少|多少|"
-    # 「什么」是纯疑问词（「帆布包什么价格？」是标准问价形态，评测集里就有这例；
-    # 漏了它会把合法问价静默挡回 RAG）
-    "什么|咋|请问|问一下|你们|咱们|的|是|要|买|这个|这款|这件|那|款|"
+    "多少钱|贵不贵|花多少|"
+    "价格|售价|定价|报价|收费|便宜|请问|问一下|多少|多钱|什么|怎么|怎样|如何|"
+    "这个|这款|这件|你们|咱们|的|是|要|买|卖|那|款|啥|咋|"
     r"[的吗呢啊嘛呀吧呗哦噢]|、|，|？|\?|！|!|。| |　"
 )
 
@@ -335,27 +355,40 @@ def _category_quote(question: str, products: list[Product]) -> CatalogAnswer | N
     （沿既有拒答 + 缺口口径：去补 = 改价/上新）。
     """
     categories = sorted({p.category for p in products}, key=len, reverse=True)
+    # 别名先归一到库里类目名：命中别名时用**别名**做纯度剔除（顾客说的是「笔记本」，
+    # 问句里没有「笔记本电脑」这四个字），但聚合按目标类目算（第 56 刀）
+    for alias, target in CATEGORY_ALIASES.items():
+        if target not in categories:
+            continue
+        if alias in question and price_residual(question, alias) == "":
+            return _category_answer(target, products)
     for category in categories:
         if category not in question or price_residual(question, category) != "":
             continue
-        members = [p for p in products if p.category == category]
-        priced = [p for p in members if p.price_cents is not None]
-        if not priced:
-            return None
-        # 混币种不做类目聚合（跨币种比大小无意义，v1 单币种是约定不是保证）——
-        # 宁可拒答留缺口，也不给一个「3元–5美元」的假区间（审计刀 11 P2）
-        currencies = {p.currency for p in priced}
-        if len(currencies) > 1:
-            return None
-        content = render_category_quote(category, priced, len(members))
-        return CatalogAnswer(
-            content=content,
-            tool={
-                "name": TOOL_NAME,
-                "arg": category,
-                "result": f"{category} {len(members)} 件 · {_range_text(priced)}",
-            },
-        )
+        return _category_answer(category, products)
+    return None
+
+
+def _category_answer(category: str, products: list[Product]) -> CatalogAnswer | None:
+    """按类目聚合报价（命中类目名或口语别名后共用；混币种不猜）。"""
+    members = [p for p in products if p.category == category]
+    priced = [p for p in members if p.price_cents is not None]
+    if not priced:
+        return None
+    # 混币种不做类目聚合（跨币种比大小无意义，v1 单币种是约定不是保证）——
+    # 宁可拒答留缺口，也不给一个「3元–5美元」的假区间（审计刀 11 P2）
+    currencies = {p.currency for p in priced}
+    if len(currencies) > 1:
+        return None
+    content = render_category_quote(category, priced, len(members))
+    return CatalogAnswer(
+        content=content,
+        tool={
+            "name": TOOL_NAME,
+            "arg": category,
+            "result": f"{category} {len(members)} 件 · {_range_text(priced)}",
+        },
+    )
 
 
 def _range_text(priced: list[Product]) -> str:

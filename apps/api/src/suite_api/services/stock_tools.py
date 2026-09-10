@@ -34,7 +34,10 @@ logger = logging.getLogger(__name__)
 # 跳过检索，政策永远查不到）；去掉「剩」——「保温杯还剩多少毫升」这类规格问句
 # 含商品名会被 LCS 命中误答「有货」。规格类词（净含量/保质期/材质）本就不在列。
 # 收窄后仍要求商品匹配前置（chat_engine 分派处）：裸「有货吗」无商品名回检索。
-STOCK_KEYWORD_PATTERN = re.compile("有货|没货|无货|缺货")
+# 第 56 刀补「有…吗 / 有没有…」口语形态（「你们有笔记本吗」）——只做**路由器**：
+# 命中后查库存，查到（含类目聚合）就走事实模板，查不到原样落回检索/拒答路径，
+# 所以放宽词表不会误答（「有优惠吗」查不到 -> 照旧走 RAG）。
+STOCK_KEYWORD_PATTERN = re.compile("有货|没货|无货|缺货|有没有|有.{0,12}吗")
 
 # 商品名与问题最长公共子串的最小命中长度（中文字符计）
 _MATCH_MIN_LCS = 2
@@ -123,7 +126,13 @@ def get_stock(db: Session, product: Product) -> dict[str, Any]:
 def query_stock(db: Session, question: str) -> dict[str, Any]:
     """库存工具入口：列商品 -> match_product -> get_stock（引擎分派后单点调用，
     单测在此打桩）。商品未命中 {found: False}；DB 异常（列查询或读取失败）
-    {error: True}；命中 {found: True, product_name, stock}。"""
+    {error: True}；命中 {found: True, product_name, stock}。
+
+    **类目聚合（第 56 刀）**：商品名不中时再看**类目**（含口语别名，如「笔记本」
+    →「笔记本电脑」）——「你们有笔记本吗」问的是这一类有没有货，逐件匹配商品名
+    必然落空（审计刀 11 C-P1-3）。命中返回 `{found: True, category, total,
+    in_stock, stock_sum}`（`product_name` 给类目名，供文案与工具条复用）。
+    """
     try:
         products = list(db.scalars(select(Product).order_by(Product.id)))
     except SQLAlchemyError:
@@ -135,8 +144,36 @@ def query_stock(db: Session, question: str) -> dict[str, Any]:
         return {"error": True}
     product = match_product(question, products)
     if product is None:
-        return {"found": False}
+        return _category_stock(question, products) or {"found": False}
     return get_stock(db, product)
+
+
+def _category_stock(question: str, products: list[Product]) -> dict[str, Any] | None:
+    """类目（或口语别名）聚合库存：命中返回聚合结果，否则 None。
+
+    只做**计数与合计**（不编造每件明细）：total 类目商品数 / in_stock 有货件数
+    （stock>0）/ stock_sum 已设置库存合计（None=都没设置）。别名表与
+    `catalog_tools.CATEGORY_ALIASES` 同源（函数内导入避开模块环）。
+    """
+    from suite_api.services.catalog_tools import CATEGORY_ALIASES
+
+    categories = {p.category for p in products}
+    targets: list[tuple[str, str]] = list(CATEGORY_ALIASES.items())
+    targets += [(category, category) for category in sorted(categories, key=len, reverse=True)]
+    for token, category in targets:
+        if category not in categories or token not in question:
+            continue
+        members = [p for p in products if p.category == category]
+        stocks = [p.stock for p in members if p.stock is not None]
+        return {
+            "found": True,
+            "category": category,
+            "product_name": category,
+            "total": len(members),
+            "in_stock": sum(1 for stock in stocks if stock > 0),
+            "stock_sum": sum(stocks) if stocks else None,
+        }
+    return None
 
 
 def summarize_stock_result(result: dict[str, Any]) -> str:
@@ -145,6 +182,8 @@ def summarize_stock_result(result: dict[str, Any]) -> str:
         return "查询失败"
     if not result.get("found"):
         return "未找到商品"
+    if "category" in result:
+        return f"{result['category']} {result['total']} 件 · 有货 {result['in_stock']}"
     stock = result["stock"]
     if stock is None:
         return "未设置"
@@ -154,7 +193,16 @@ def summarize_stock_result(result: dict[str, Any]) -> str:
 
 
 def render_stock_answer(result: dict[str, Any]) -> str:
-    """事实分支模板（0037：stock==0 是事实数据不是失败，正常回答）。"""
+    """事实分支模板（0037：stock==0 是事实数据不是失败，正常回答）。
+
+    类目聚合（第 56 刀）单独一行：件数 + 有货件数 + 合计库存（未逐件设置就只说件数）。
+    """
+    if "category" in result:
+        total = result["total"]
+        in_stock = result["in_stock"]
+        stock_sum = result.get("stock_sum")
+        tail = f"，库存合计 {stock_sum} 件" if stock_sum is not None else "（库存未逐件设置）"
+        return f"{result['category']}共 {total} 件，其中有货 {in_stock} 件{tail}。"
     stock = result["stock"]
     if stock is not None and stock > 0:
         return _IN_STOCK_TPL.format(product_name=result["product_name"], stock=stock)
