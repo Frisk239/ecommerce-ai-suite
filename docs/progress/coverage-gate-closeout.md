@@ -21,9 +21,11 @@
 - **反向钉子**：正常作答（含「根据已发布证据」但不含未覆盖谓语）**不被误判**——`kind=answer`、`fallback_reason is None`。
 - 门禁：集成 **943 → 945 passed / 0 failed / 0 skipped**；ruff 全过；前端未改（build/lint 7/0 回归确认）。
 
-## 评测（重要：如实记录一处基线漂移）
+## 评测（重要：一处基线漂移——第 60 刀已查明并订正）
 
-大集复跑 **positive recall@1 70.0% → 67.5%**、overall **65.0% → 63.7%**。**本刀代码没有动检索路径**（`run_eval.py` 直调 retrieve+compose，不经引擎）。**原因是审计刀 11 的治理性数据订正**：asset 13（规格）v3 与 asset 6 的退货政策互相矛盾，走「开修订→换正文→发布 v4」对齐后，**v3 的正文与块被 v4 取代**——受影响的正是 `pos-017`（「该商品的净含量是500ml吗」，期望 `13/v3`：现在 top-1 是 asset 3，且期望版本本身已过期）。逐条比对正例 top-1 得 12 条未命中（=28/40=70.0%，与旧基线一致），runner 记 67.5% 差的那条是同分位次。已写进 `docs/research/rag-eval-report.md` 的 After 段。
+大集复跑 **positive recall@1 70.0% → 67.5%**、overall **65.0% → 63.7%**。**本刀代码没有动检索路径**（`run_eval.py` 直调 retrieve+compose，不经引擎）。
+
+**订正（第 60 刀）**：当时的解释（「v3 的正文与块被 v4 取代 → 分数变化」）**不准确**——逐条盘点 golden 里「期望版本 ≠ 当前已发布版」的条目后确认：这 1.3pp **全部是过期版本期望**（`pos-008`/`pos-017` 都期望 `13/v3`，而 asset 13 已发布 v4；runner 比对 `(asset_id, version_no)`，版本对不上即记未命中），与块/分数无关。把两条期望指到当前已发布版后**基线逐位恢复**（positive 70.0/75.0、overall 65.0/75.0）。详见 `docs/progress/golden-refresh-closeout.md` 与评测报告的「订正」小节——留痕比好看重要，写偏的解释一并订正。
 
 ## 诚实披露
 
