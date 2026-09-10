@@ -3,10 +3,19 @@
 // 状态行）→ delta 逐片追加（尾部 CSS 光标）→ complete（引用芯片落位）；停止 =
 // 中断 SSE 订阅，已收文本保留（后端断连仍完整落库，stopped 只是前端表达）。
 // 不搬的：35ms 定时器模拟、mock 大脑、localStorage 补全——传输由真实 SSE 驱动。
+// 第 42 刀（ADR 0046）：会话列表待处理工单置顶 + 徽章 + 「全部/待处理工单」分段；
+// 详情头部显示工单号/状态/掩码联系方式，并给「结单」动作（ConfirmDialog 确认）。
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowUDownLeft, ArrowUp, ChatCircleDots, Prohibit, Stop } from '@phosphor-icons/react'
+import {
+  ArrowUDownLeft,
+  ArrowUp,
+  ChatCircleDots,
+  CheckCircle,
+  Prohibit,
+  Stop,
+} from '@phosphor-icons/react'
 import { api } from '../api/endpoints'
 import type { ServiceSessionSummary } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
@@ -89,14 +98,30 @@ export default function ServicePage() {
       : null
   const selectedId = chosenId ?? linkedSession?.id ?? defaultSession?.id ?? null
 
-  // 列表排序：0 消息会话沉底（组内按 id desc，稳定不跳位）
+  // 列表排序：待处理工单置顶（第 42 刀，ADR 0046 §5）-> 0 消息会话沉底
+  // （组内按 id desc，稳定不跳位）
+  const [ticketFilter, setTicketFilter] = useState<'all' | 'pending'>('all')
   const orderedSessions = useMemo(
     () =>
       [...sessions].sort((a, b) => {
+        const ap = a.pending_ticket_count > 0 ? 0 : 1
+        const bp = b.pending_ticket_count > 0 ? 0 : 1
         const az = a.message_count === 0 ? 1 : 0
         const bz = b.message_count === 0 ? 1 : 0
-        return az - bz || b.id - a.id
+        return ap - bp || az - bz || b.id - a.id
       }),
+    [sessions],
+  )
+  // 「待处理工单」分段筛选（先例：资产页缺口分段）；计数按会话（有待处理工单的会话数）
+  const visibleSessions = useMemo(
+    () =>
+      ticketFilter === 'pending'
+        ? orderedSessions.filter((s) => s.pending_ticket_count > 0)
+        : orderedSessions,
+    [orderedSessions, ticketFilter],
+  )
+  const pendingSessionCount = useMemo(
+    () => sessions.filter((s) => s.pending_ticket_count > 0).length,
     [sessions],
   )
   const detailFetcher = useCallback(
@@ -118,6 +143,11 @@ export default function ServicePage() {
   // 在途确认 id；确认成功后刷新会话即见服务端落的 create_return 工具轨迹。
   const [returnConfirmed, setReturnConfirmed] = useState<number[]>([])
   const [returnConfirming, setReturnConfirming] = useState<number | null>(null)
+
+  // 第 42 刀（ADR 0046 §5）：工单结单确认框与在途态；结单成功后刷新会话列表
+  // （pending_ticket_count 与置顶随之更新）与详情（工单状态转 resolved）。
+  const [resolveConfirmOpen, setResolveConfirmOpen] = useState(false)
+  const [resolving, setResolving] = useState(false)
 
   // 本地流式追加的消息（换会话/回流登记/同步时清空，以服务器为准）——占位构造、
   // SSE 事件回填与停止/失败口径都收敛在共享 hook（第 25 刀；顾客通道同钩）
@@ -158,6 +188,7 @@ export default function ServicePage() {
     (id: number) => {
       resetLive()
       setReturnConfirmed([])
+      setResolveConfirmOpen(false)
       setStreamError(null)
       setChosenId(id)
     },
@@ -253,6 +284,25 @@ export default function ServicePage() {
     }
   }
 
+  // 工单结单（第 42 刀，ADR 0046 §5）：pending -> resolved；幂等服务端 409。
+  // 结单只影响工单，不触碰知识缺口（两者独立，0046 §3）。
+  const resolveHandoffTicket = async () => {
+    if (session === null || session.ticket === null || resolving) return
+    setResolving(true)
+    setActionError(null)
+    try {
+      await api.resolveHandoffTicket(session.ticket.id)
+      setResolveConfirmOpen(false)
+      list.reload()
+      detail.reload()
+    } catch (err) {
+      setActionError(err)
+      setResolveConfirmOpen(false)
+    } finally {
+      setResolving(false)
+    }
+  }
+
   // 资格消息的确认卡 footer：工具条 result 含「待确认 token=…」才有按钮
   // （不可退货/查无没有令牌，自然不渲染）；已确认就地标注，无复杂 UI。
   const confirmFooter = (m: UiMessage): ReactNode => {
@@ -320,21 +370,53 @@ export default function ServicePage() {
             <span className="flex-1">历史会话</span>
             <span className="font-mono text-[11px] font-normal text-caption">{sessions.length}</span>
           </div>
+          {/* 第 42 刀（ADR 0046 §5）：全部 / 待处理工单分段（先例：资产页缺口分段） */}
+          <div className="border-b border-line-1 px-3 py-2">
+            <div className="seg" role="tablist" aria-label="会话筛选">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={ticketFilter === 'all'}
+                className={`seg-btn ${ticketFilter === 'all' ? 'seg-btn-active' : ''}`}
+                onClick={() => setTicketFilter('all')}
+              >
+                全部
+                <span className={ticketFilter === 'all' ? 'text-ink-3' : ''}>{sessions.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={ticketFilter === 'pending'}
+                className={`seg-btn ${ticketFilter === 'pending' ? 'seg-btn-active' : ''}`}
+                onClick={() => setTicketFilter('pending')}
+                title="有待处理转人工工单的会话（置顶）"
+              >
+                待处理工单
+                <span className={ticketFilter === 'pending' ? 'text-ink-3' : ''}>
+                  {pendingSessionCount}
+                </span>
+              </button>
+            </div>
+          </div>
           {list.state.phase === 'loading' ? (
             <div className="py-8 text-center text-xs text-ink-3">加载中…</div>
           ) : list.state.phase === 'error' ? (
             <div className="px-3 py-6 text-center text-xs text-ink-3">
               会话列表加载失败，上方横幅可重试
             </div>
-          ) : sessions.length === 0 ? (
+          ) : visibleSessions.length === 0 ? (
             <div className="px-3 py-6 text-center text-xs leading-5 text-ink-3">
-              还没有历史会话。
-              <br />
-              新开一条会话，扮演顾客提问。
+              {ticketFilter === 'pending' ? '没有待处理工单的会话。' : '还没有历史会话。'}
+              {ticketFilter === 'all' && (
+                <>
+                  <br />
+                  新开一条会话，扮演顾客提问。
+                </>
+              )}
             </div>
           ) : (
             <ul className="max-h-[calc(100dvh-320px)] overflow-y-auto">
-              {orderedSessions.map((s) => {
+              {visibleSessions.map((s) => {
                 const selected = s.id === selectedId
                 return (
                   <li key={s.id} className="border-b border-line-1 last:border-b-0">
@@ -350,6 +432,11 @@ export default function ServicePage() {
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono text-[11px] tabular-nums text-ink-3">#{s.id}</span>
                         <SessionStatusBadge status={s.status} messageCount={s.message_count} />
+                        {s.pending_ticket_count > 0 && (
+                          <span className="badge badge-review" title="有顾客要求转人工，待处理">
+                            工单 {s.pending_ticket_count}
+                          </span>
+                        )}
                         {s.origin === 'customer' && (
                           <span className="kind-chip" title="来自顾客通道 /customer 的会话">
                             顾客
@@ -438,7 +525,28 @@ export default function ServicePage() {
                   </Link>
                 </span>
               )}
+              {/* 第 42 刀（ADR 0046 §5）：本会话工单——号 + 状态；联系方式与
+                  留言单独一行展示（掩码后），见下方 */}
+              {session.ticket !== null && (
+                <span className="flex flex-wrap items-center gap-1.5">
+                  · 工单 <span className="font-mono text-ink-2">{session.ticket.ticket_no}</span>
+                  <span className={session.ticket.status === 'pending' ? 'badge badge-review' : 'badge badge-ingested'}>
+                    {session.ticket.status === 'pending' ? '待处理' : '已结单'}
+                  </span>
+                </span>
+              )}
               <span className="flex-1" />
+              {session.ticket !== null && session.ticket.status === 'pending' && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setResolveConfirmOpen(true)}
+                  title="顾客问题已有人回复处理，结单"
+                >
+                  <CheckCircle aria-hidden size={12} />
+                  结单
+                </button>
+              )}
               {canRegister && (
                 <button
                   type="button"
@@ -451,6 +559,30 @@ export default function ServicePage() {
                 </button>
               )}
             </div>
+
+            {/* 工单联系方式面板（第 42 刀，ADR 0046 §5/§6）：顾客留的联系方式与
+                留言——电话/邮箱/留言均掩码，姓名不掩；contact_at 为 null 时无面板 */}
+            {session.ticket !== null && session.ticket.contact_at !== null && (
+              <div className="border-b border-line-2 bg-surface px-4 py-2 text-xs leading-5 text-ink-2">
+                <div className="flex flex-wrap items-center gap-x-3">
+                  <span className="text-caption" title="联系方式与留言中的电话/邮箱已掩码，姓名不掩">
+                    工单联系方式
+                  </span>
+                  <span className="font-medium text-ink">{session.ticket.name ?? '—'}</span>
+                  {session.ticket.phone !== null && <span className="tabular-nums">{session.ticket.phone}</span>}
+                  {session.ticket.email !== null && <span className="font-mono">{session.ticket.email}</span>}
+                  <span className="text-caption">
+                    留于 {formatDateTime(session.ticket.contact_at)}
+                  </span>
+                </div>
+                {session.ticket.note !== null && (
+                  <div className="mt-0.5">
+                    <span className="text-caption">留言：</span>
+                    {session.ticket.note}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 消息流 */}
             <div className="chat-scroll flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -547,6 +679,22 @@ export default function ServicePage() {
             <p>本会话将转为只读，同时产生：</p>
             <p>· 一条种类为「对话」的新资产（已接入或待人洗，按机洗结果；进入治理队列，治理台可对人洗与发布）</p>
             <p>· 客服检索暂不可见——发布之后才能被引用</p>
+          </div>
+        }
+      />
+
+      {/* 第 42 刀（ADR 0046 §5）：工单结单确认（Esc 关闭由 ConfirmDialog 接入） */}
+      <ConfirmDialog
+        open={resolveConfirmOpen}
+        title="结单"
+        confirmLabel="确认结单"
+        busy={resolving}
+        onCancel={() => setResolveConfirmOpen(false)}
+        onConfirm={() => void resolveHandoffTicket()}
+        body={
+          <div className="space-y-1.5">
+            <p>确认顾客问题已有人回复处理？结单后该工单不再计入待处理。</p>
+            <p>工单与知识缺口相互独立：结单不会关闭、也不会新建任何知识缺口。</p>
           </div>
         }
       />

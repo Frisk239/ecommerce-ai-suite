@@ -2,7 +2,7 @@
 
 商家侧电商 Agent 体系：七块业务能力共用数据中台（客服、运营、切片、中台、素材、考核、连接层）。不做模型微调。本产品给商家用，不给购物者开店。当前完成定义是 `docs/goal.md` §6.2 面试级（形状 7/7 已达成）；①④⑦ 加厚主线，②③⑤⑥ 契约证人。
 
-推进：产品阶段已验收冻结（`prototype/` 是交互规格，真产品是 `apps/`）。第三阶段产品硬ening 推进中：**第 41 刀商品可运营+目录可答已交付**（ADR 0045：价格字段/POST-PATCH/目录回落三道闸——「卖什么/多少钱」可答）。**下一刀=第 42 刀转人工真闭环**→43 仪表→44 退货状态；审计刀 8 于 45 后。施工权威 `docs/roadmap-product-hardening.md`。控制台观感与交互平行方案 `docs/ui-ux-plan.md`（不改 42–44 刀序；43 前建议先做去卡）；**UX-B 引用只读证据视图已交付**（`docs/progress/ux-b-evidence-view-closeout.md`——「引用可核验」从口号变为可点穿：`?v=N` 只读快照 + 该版正文/字段 + 写动作全隐）；**UX-A1 工作台可扫读已交付**（`docs/progress/ux-a-workbench-closeout.md`——工作队列为默认视角、CI 探针行不出现、列表可跨状态搜、商品按已定价优先排序、空会话降噪）；**UX-A2 目录列举模板已交付**（`docs/progress/ux-a-catalog-listing-closeout.md`——只列已定价前 8 件，不再 20 行「价格未定」糊屏）；**UX-E1 CSS 去光泽已交付**（`docs/progress/ux-e-flat-closeout.md`——实色化+全站无 hover 位移+发送钮只改色不改形）；**UX-E2 去卡与文案压句已交付**（`docs/progress/ux-e-decouple-closeout.md`——总览摘要条/资产页去重复卡/页头一句/投放次钮/商品空表；**UX-E 全部 Must 达成，43 刀仪表前置就绪**）；**UX-D 顾客停答已交付**（`docs/progress/ux-d-customer-stop-closeout.md`——发送钮原位变停止、Esc 停、卸载断订阅；排在 42 刀前清掉同一文件的冲突点）；**走查缺陷全修**（`docs/progress/ui-ux-walkthrough-findings.md` 实录 6 项 + `walkthrough-fixes-closeout.md`：抽屉 Esc 统一 `useEscapeClose`、商品抽屉未保存确认、清空画布、缺口待补/已解决分段、提示合一条、favicon）；**缺口来源会话已交付**（`docs/progress/gap-source-session-closeout.md`——迁移 0019 `knowledge_gaps.session_id`，抽屉「来源会话 #N」链到 `/service?session=N`）。密钥只在本地 `.env`。
+推进：产品阶段已验收冻结（`prototype/` 是交互规格，真产品是 `apps/`）。第三阶段产品硬ening 推进中：**第 41 刀商品可运营+目录可答已交付**（ADR 0045：价格字段/POST-PATCH/目录回落三道闸——「卖什么/多少钱」可答）。**下一刀=第 43 刀操作者仪表+通知**→44 退货状态迁移；审计刀 8 于 45 后。施工权威 `docs/roadmap-product-hardening.md`。控制台观感与交互平行方案 `docs/ui-ux-plan.md`（不改 42–44 刀序；43 前建议先做去卡）；**UX-B 引用只读证据视图已交付**（`docs/progress/ux-b-evidence-view-closeout.md`——「引用可核验」从口号变为可点穿：`?v=N` 只读快照 + 该版正文/字段 + 写动作全隐）；**UX-A1 工作台可扫读已交付**（`docs/progress/ux-a-workbench-closeout.md`——工作队列为默认视角、CI 探针行不出现、列表可跨状态搜、商品按已定价优先排序、空会话降噪）；**UX-A2 目录列举模板已交付**（`docs/progress/ux-a-catalog-listing-closeout.md`——只列已定价前 8 件，不再 20 行「价格未定」糊屏）；**UX-E1 CSS 去光泽已交付**（`docs/progress/ux-e-flat-closeout.md`——实色化+全站无 hover 位移+发送钮只改色不改形）；**UX-E2 去卡与文案压句已交付**（`docs/progress/ux-e-decouple-closeout.md`——总览摘要条/资产页去重复卡/页头一句/投放次钮/商品空表；**UX-E 全部 Must 达成，43 刀仪表前置就绪**）；**UX-D 顾客停答已交付**（`docs/progress/ux-d-customer-stop-closeout.md`——发送钮原位变停止、Esc 停、卸载断订阅；排在 42 刀前清掉同一文件的冲突点）；**走查缺陷全修**（`docs/progress/ui-ux-walkthrough-findings.md` 实录 6 项 + `walkthrough-fixes-closeout.md`：抽屉 Esc 统一 `useEscapeClose`、商品抽屉未保存确认、清空画布、缺口待补/已解决分段、提示合一条、favicon）；**缺口来源会话已交付**（`docs/progress/gap-source-session-closeout.md`——迁移 0019 `knowledge_gaps.session_id`，抽屉「来源会话 #N」链到 `/service?session=N`）；**第 42 刀转人工真闭环已交付**（ADR 0046 + 迁移 0020：意图双路径（词表最前置 + 提议第三选项）/ 一会话一单 H-xxxx / 联系方式表单 / 操作者面筛选置顶结单；工具失败与拒答同样建单——凡亮「已转人工」徽章必有工单接住；回执话术不外发）。密钥只在本地 `.env`。
 
 ## Language
 
@@ -156,8 +156,8 @@ _Avoid_: 第三个中台对象, 聊天记录（当中台主对象时）, 顾客�
 _Avoid_: 未引用中台的常识回答, 低置信仍答
 
 **转人工**:
-把会话交给人。无证据拒答时一并发生；库存/订单工具失败时同样发生，不拿检索顶。退货写操作两阶段：资格查询在代码（15 天窗+签名令牌），创建须操作者确认（确认端点携 token 执行，模型不能提议 create_return，0044）。v1 只是消息种类，没有坐席队列。
-_Avoid_: 拒答后仍继续跟模型聊, 用规格文档回答有没有货, 客服工单产品
+把会话交给人。显式要求（转人工/找人工/要人工/人工客服/真人/投诉/举报，或模型识别）与无证据拒答都经**一个会话一张工单**（H-xxxx，工单号由主键派生）接住：显式要求回执给工单号与「工作时间 4 小时内回复」的承诺话术（**话术不外发**，不真发短信/邮件），顾客可留联系方式（姓名+留言必填、邮箱/电话可选、整表可跳过）；操作者回复后结单（pending -> resolved）。库存/订单等工具失败同样转人工，不拿检索顶。退货写操作两阶段：资格查询在代码（15 天窗+签名令牌），创建须操作者确认（确认端点携 token 执行，模型不能提议 create_return，0044）。工单是「顾客要人」、知识缺口是「知识待补」，两者独立、同一会话可并存。**没有坐席队列/分派/SLA**（0046）。
+_Avoid_: 拒答后仍继续跟模型聊, 用规格文档回答有没有货, 客服工单产品, 坐席队列, 把工单当缺口（或反之）
 
 **知识缺口**:
 无证据拒答（或因此转人工）时留下的待补项，可挂商品。状态为待补（open）或已补（resolved）。重复问法累加热度（hit_count），列表按热度排。不是资产：不能检索、不能发布。去补=新登记，或商品已有已发布规格时开该资产修订（0031）；发布事务内标 resolved（且须过检索验证闸：内容答不上问句就保持 open）。整段会话回流是另一件事。工具失败转人工不产生缺口。

@@ -255,6 +255,9 @@ export interface ServiceSessionSummary extends ServiceSession {
   /** 会话来源（ADR 0021）：operator=控制台预览；customer=顾客通道 /customer
    * 签发（后端判据：customer_token 非空，不加 origin 列）。 */
   origin: 'operator' | 'customer'
+  /** 第 42 刀（ADR 0046）：待处理工单数（status=pending）；客服页据此置顶、
+   * 徽章与「待处理工单」分段筛选。 */
+  pending_ticket_count: number
 }
 
 /** 引用（CONTEXT 词条：指向一条证据 = 资产 ID + 版本号，检索用当前已发布版）。 */
@@ -287,6 +290,46 @@ export interface ServiceMessage {
 
 export interface ServiceSessionDetail extends ServiceSession {
   messages: ServiceMessage[]
+  /** 第 42 刀（ADR 0046）：本会话工单（一会话一单，无则 null）。操作者面
+   * 电话/邮箱已出口掩（name 不掩），详情头部据此渲染「结单」动作。 */
+  ticket: HandoffTicket | null
+}
+
+// ---------- 转人工工单（第 42 刀，ADR 0046） ----------
+
+/** 工单两态（0046）：pending=待处理 / resolved=已结单。没有分派/坐席/SLA。 */
+export type HandoffTicketStatus = 'pending' | 'resolved'
+
+/** 一个会话一张工单；工单号 H-{id:04d} 由 PK 派生（后端给出 ticket_no）。
+ * 操作者面 phone/email 已掩（machine_wash.redact），顾客面回显不掩。 */
+export interface HandoffTicket {
+  id: number
+  ticket_no: string
+  session_id: number
+  message_id: number | null
+  status: HandoffTicketStatus
+  name: string | null
+  note: string | null
+  email: string | null
+  phone: string | null
+  contact_at: string | null
+  resolved_at: string | null
+  created_at: string
+}
+
+/** 顾客提交联系方式的载荷：name+note 必填、email/phone 可选、整表可跳过。 */
+export interface HandoffTicketCreate {
+  name: string
+  note: string
+  email?: string
+  phone?: string
+}
+
+/** 顾客提交联系方式的回执：后端只回工单号与提交时间（顾客面不借操作者
+ * 掩码视图，也不回显联系方式原文）。 */
+export interface HandoffTicketResult {
+  ticket_no: string
+  contact_at: string
 }
 
 /** SSE complete 事件的负载（与后端 event_stream 尾事件一致）。
@@ -306,6 +349,12 @@ export interface ServiceAnswerComplete {
    * 失败降级只带 fallback 不带该键——运行时返回口径，消息表不加列。 */
   fallback_reason?: string
   tool: ToolCallRecord | null
+  /** 第 42 刀（ADR 0046 §4）：handoff/拒答路径的工单回执——运行时可选键，
+   * 不走 gap_id 白名单（H 号是给顾客的回执），两通道同形状。ticket_contact_at
+   * NULL=还没留联系方式。 */
+  ticket_id?: number
+  ticket_no?: string
+  ticket_contact_at?: string | null
 }
 
 // ---------- 顾客反馈与退货确认（第 40 刀，ADR 0044 §一/§四） ----------

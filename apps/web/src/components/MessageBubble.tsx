@@ -35,6 +35,12 @@ export interface UiMessage {
   /** 订单工具调用记录（第 13 刀/ADR 0036）：与 fallback 相反——随消息落库，
    * 重载后灰底 mono 工具条照样还原（回放完整性）。 */
   tool: ToolCallRecord | null
+  /** 第 42 刀（ADR 0046）：本条 handoff/拒答消息的工单 id（complete 带回的
+   * 运行时可选键）。重载后服务器消息不带（工单详情在会话详情 ticket 上）；
+   * 顾客页据此渲染联系方式表单。H 号只在回执正文里，不单独携带。 */
+  ticketId: number | null
+  /** 联系方式提交时间（NULL=还没留）：重载/恢复后由后端 contact_at 决定表单态。 */
+  ticketContactAt: string | null
 }
 
 /** UiMessage 构造单点（第 25 刀收口）：13 字段默认值集中在这里，调用方只给
@@ -54,6 +60,8 @@ export function toUiMessage(
     gapId: null,
     fallback: false,
     tool: null,
+    ticketId: null,
+    ticketContactAt: null,
     ...init,
   }
 }

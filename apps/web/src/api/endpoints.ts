@@ -16,6 +16,9 @@ import type {
   CustomerSessionCreated,
   CsvImportReport,
   FeedbackResult,
+  HandoffTicket,
+  HandoffTicketCreate,
+  HandoffTicketResult,
   KnowledgeGap,
   KnowledgeGapStatus,
   MaterialTask,
@@ -257,4 +260,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ message_id: messageId, confirmation_token: confirmationToken }),
     }),
+
+  // 转人工工单（第 42 刀，ADR 0046）：顾客提交联系方式（bearer 会话令牌，
+  // 整表可跳过——不提交也能拿到工单，提交只是让它可回访）；操作者结单
+  // （pending -> resolved，非法状态后端 409）。
+  submitHandoffTicket: (
+    sessionId: number,
+    ticketId: number,
+    token: string,
+    payload: HandoffTicketCreate,
+  ) =>
+    request<HandoffTicketResult>(`/customer/sessions/${sessionId}/handoff-tickets/${ticketId}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  resolveHandoffTicket: (ticketId: number) =>
+    request<HandoffTicket>(`/service/handoff-tickets/${ticketId}/resolve`, { method: 'POST' }),
 }

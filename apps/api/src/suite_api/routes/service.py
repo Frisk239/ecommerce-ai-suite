@@ -18,6 +18,10 @@
   并指向登记出的资产。登记不是 0005 三类治理动作，不新增审计 action。登记骨架
   与文档登记共享 services/registration.register_asset（source_kind 由本端点定
   session_backflow）。
+- 转人工工单（第 42 刀，ADR 0046 §5）：会话列表带待处理工单计数（批量统计）
+  与「全部/待处理工单」分段；会话详情带本会话工单（操作者面掩电话/邮箱）；
+  ``POST /handoff-tickets/{id}/resolve`` 结单（pending -> resolved，非法状态
+  409）。结单不碰知识缺口（工单与缺口独立，0046 §3）。
 """
 
 from datetime import UTC, datetime
@@ -30,11 +34,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import Operator, ServiceMessage, ServiceSession
+from suite_api.models import HandoffTicket, Operator, ServiceMessage, ServiceSession
 from suite_api.services import return_tools
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
 from suite_api.services.chat_engine import run_ask, sse_event_stream
-from suite_api.services.machine_wash import redact
+from suite_api.services.handoff_tickets import (
+    resolve_ticket,
+    ticket_no,
+)
+from suite_api.services.machine_wash import redact, redact_contact
 from suite_api.services.registration import register_asset
 from suite_platform.storage import ObjectStorage
 
@@ -63,6 +71,51 @@ class SessionSummary(SessionOut):
     message_count: int
     # operator=控制台预览（无令牌）| customer=顾客通道签发（0021；token 非空即 customer）
     origin: str
+    # 第 42 刀（ADR 0046 §5）：待处理工单数（status=pending；批量统计非 N+1）。
+    # 客服页据此置顶 + 徽章 + 「待处理工单」分段筛选。
+    pending_ticket_count: int
+
+
+class HandoffTicketOut(BaseModel):
+    """工单出口（第 42 刀，ADR 0046）。
+
+    操作者面 ``to_handoff_ticket_out(..., mask=True)`` 对 phone/email/note 过
+    machine_wash.redact_contact（0046 §6 出口掩，姓名不掩）；顾客面回显自己的
+    输入不掩（顾客提交走独立的 ``HandoffContactAck``，不借本掩码模型）。
+    """
+
+    id: int
+    ticket_no: str  # H-{id:04d}（由 PK 派生，不落列）
+    session_id: int
+    message_id: int | None
+    status: str  # pending | resolved
+    name: str | None
+    note: str | None
+    email: str | None
+    phone: str | None
+    contact_at: datetime | None
+    resolved_at: datetime | None
+    created_at: datetime
+
+
+def to_handoff_ticket_out(ticket: HandoffTicket, *, mask: bool) -> HandoffTicketOut:
+    """工单 -> 出口模型。mask=True 仅操作者面：phone/email/**note** 过
+    machine_wash.redact_contact（ADR 0046 §6 出口必掩——note 是自由文本也可能
+    带 PII）；姓名不掩（操作者要称呼对方）。顾客面回显自己的输入不掩。"""
+    return HandoffTicketOut(
+        id=ticket.id,
+        ticket_no=ticket_no(ticket),
+        session_id=ticket.session_id,
+        message_id=ticket.message_id,
+        status=ticket.status,
+        name=ticket.name,
+        note=redact_contact(ticket.note) if mask else ticket.note,
+        email=redact_contact(ticket.email) if mask else ticket.email,
+        phone=redact_contact(ticket.phone) if mask else ticket.phone,
+        contact_at=ticket.contact_at,
+        resolved_at=ticket.resolved_at,
+        created_at=ticket.created_at,
+    )
 
 
 class MessageOut(BaseModel):
@@ -80,6 +133,9 @@ class MessageOut(BaseModel):
 
 class SessionDetail(SessionOut):
     messages: list[MessageOut]
+    # 第 42 刀（ADR 0046 §5）：本会话工单（一会话一单，无则 null）。操作者面
+    # 出口掩电话/邮箱；详情头部据此渲染「结单」动作。联系方式随工单展示。
+    ticket: HandoffTicketOut | None = None
 
 
 class AskBody(BaseModel):
@@ -198,6 +254,17 @@ def list_sessions(
         .order_by(ServiceMessage.id)
     ).all():
         firsts.setdefault(session_id, content)  # 全局 id 升序：setdefault 保留每会话最早一条
+    # 第 42 刀（ADR 0046 §5）：第二个 group-by 批量取待处理工单数（不 N+1）
+    pending_tickets = dict(
+        db.execute(
+            select(HandoffTicket.session_id, func.count())
+            .where(
+                HandoffTicket.session_id.in_(session_ids),
+                HandoffTicket.status == "pending",
+            )
+            .group_by(HandoffTicket.session_id)
+        ).all()
+    )
     return [
         SessionSummary(
             id=s.id,
@@ -208,6 +275,7 @@ def list_sessions(
             first_question=_first_question(firsts[s.id]) if s.id in firsts else None,
             message_count=counts.get(s.id, 0),
             origin=_origin(s),
+            pending_ticket_count=pending_tickets.get(s.id, 0),
         )
         for s in sessions
     ]
@@ -221,6 +289,8 @@ def get_session(
 ) -> SessionDetail:
     del operator
     session = _get_session_or_404(db, session_id)
+    # 第 42 刀（ADR 0046 §5）：本会话工单（一会话一单）；操作者面掩电话/邮箱
+    ticket = db.scalar(select(HandoffTicket).where(HandoffTicket.session_id == session.id))
     return SessionDetail(
         id=session.id,
         status=session.status,
@@ -228,6 +298,7 @@ def get_session(
         closed_at=session.closed_at,
         registered_asset_id=session.registered_asset_id,
         messages=[_to_message_out(m) for m in _session_messages(db, session.id)],
+        ticket=to_handoff_ticket_out(ticket, mask=True) if ticket is not None else None,
     )
 
 
@@ -331,6 +402,29 @@ def confirm_return(
     db.commit()
     db.refresh(follow_up)
     return ConfirmReturnOut(message_id=follow_up.id, order_no=order_no, events=events)
+
+
+# ---------- 转人工工单结单（第 42 刀，ADR 0046 §5） ----------
+
+
+@router.post("/handoff-tickets/{ticket_id}/resolve", response_model=HandoffTicketOut)
+def resolve_handoff_ticket(
+    ticket_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> HandoffTicketOut:
+    """操作者结单（pending -> resolved）：人回复后置终态。
+
+    非法状态（已 resolved）由服务层抛 409（照 confirm_return/register 状态机
+    先例）；工单不存在 404。没有「反结单」；工单号由 PK 派生随出口带出。
+    出口掩电话/邮箱（0038 出口掩，姓名不掩）。
+    """
+    del operator
+    ticket = db.get(HandoffTicket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工单不存在")
+    resolve_ticket(db, ticket, resolved_at=datetime.now(UTC))
+    return to_handoff_ticket_out(ticket, mask=True)
 
 
 # ---------- 回流登记（CONTEXT「会话」：结束后由操作者回流登记为资产） ----------

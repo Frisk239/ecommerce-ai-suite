@@ -4,12 +4,17 @@
 // complete），引用芯片只读展示（顾客不进控制台）；complete 不带 gap_id，
 // 拒答时只呈现「拒答 · 无已发布证据 / 已转人工」。消息气泡复用共享
 // MessageBubble（0021 同一视觉语言），本页只做轻页头 + 会话生命周期。
+// 第 42 刀（ADR 0046）：handoff/拒答消息下方挂内联联系方式表单（姓名+留言
+// 必填、邮箱/电话可选、可跳过），提交走顾客 Bearer 会话令牌；成功后标「已记录
+// 联系方式」（本地 state，工单级）。
 // 429（0033 限流）与 409（会话已被操作者回流登记）都以后端 detail 文案呈现，
 // 「新会话」随时可重签令牌。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUp, ChatCircleDots, Stop, ThumbsDown } from '@phosphor-icons/react'
+import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
+import type { HandoffTicketCreate } from '../api/types'
 import MessageBubble, { type UiMessage } from '../components/MessageBubble'
 import { ErrorBanner } from '../components/Banner'
 import Empty from '../components/Empty'
@@ -29,6 +34,98 @@ interface CustomerSession {
   token: string
 }
 
+/** 转人工联系方式内联表单（第 42 刀，ADR 0046 §4）：姓名+留言必填、邮箱/电话
+ * 可选、整表可跳过（不填也能拿到工单——联系方式只是让工单可回访）。表单只做
+ * 必填的本前端校验，格式与 404/409/422 由后端裁决后经 detailText 呈现。 */
+function HandoffContactForm({
+  onSubmit,
+  onSkip,
+}: {
+  onSubmit: (payload: HandoffTicketCreate) => Promise<void>
+  onSkip: () => void
+}) {
+  const [name, setName] = useState('')
+  const [note, setNote] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const submit = async () => {
+    if (busy) return
+    if (name.trim() === '' || note.trim() === '') {
+      setErr('姓名与留言必填')
+      return
+    }
+    setBusy(true)
+    setErr(null)
+    try {
+      await onSubmit({
+        name: name.trim(),
+        note: note.trim(),
+        ...(email.trim() !== '' ? { email: email.trim() } : {}),
+        ...(phone.trim() !== '' ? { phone: phone.trim() } : {}),
+      })
+    } catch (e) {
+      setErr(detailText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="w-full max-w-md space-y-2 rounded-[6px] border border-line-2 bg-white p-2.5">
+      <div className="text-[11px] leading-4 text-caption">
+        留下联系方式方便我们联系你；姓名与留言必填，邮箱/电话可选，不填也能跳过。
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          className="input"
+          placeholder="姓名 *"
+          aria-label="姓名"
+          value={name}
+          disabled={busy}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="电话（可选）"
+          aria-label="电话"
+          value={phone}
+          disabled={busy}
+          onChange={(e) => setPhone(e.target.value)}
+        />
+      </div>
+      <input
+        className="input"
+        placeholder="邮箱（可选）"
+        aria-label="邮箱"
+        value={email}
+        disabled={busy}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <textarea
+        className="input"
+        rows={2}
+        placeholder="留言 *（想咨询的问题）"
+        aria-label="留言"
+        value={note}
+        disabled={busy}
+        onChange={(e) => setNote(e.target.value)}
+      />
+      {err !== null && <div className="text-[11px] leading-4 text-danger">{err}</div>}
+      <div className="flex items-center gap-2">
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void submit()}>
+          {busy ? '提交中…' : '提交联系方式'}
+        </button>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onSkip}>
+          暂时不用，跳过
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function CustomerPage() {
   const [session, setSession] = useState<CustomerSession | null>(null)
   const [input, setInput] = useState('')
@@ -38,6 +135,12 @@ export default function CustomerPage() {
   // 第 40 刀（ADR 0044 §四）：「没有帮助」反馈——已反馈的消息 id 集合（本地
   // 表达；幂等服务端钉死：同消息二次反馈 409）。换会话即清空。
   const [feedbackSent, setFeedbackSent] = useState<number[]>([])
+
+  // 第 42 刀（ADR 0046）：工单联系方式已提交/已跳过的工单 id（本地表达；
+  // 一会话一单，按工单而非消息计——同会话多条 handoff 消息指向同一工单）。
+  // 刷新即新会话（顾客页不保历史），服务端 contact_at 是权威。
+  const [contactSentTickets, setContactSentTickets] = useState<number[]>([])
+  const [skippedTickets, setSkippedTickets] = useState<number[]>([])
 
   // 发问状态机与操作者预览共用 useAskStream（第 25 刀）：顾客版 complete 载荷
   // 无 gap_id（服务端白名单裁剪），失败剪掉未进引擎的空占位——口径参数化
@@ -85,6 +188,8 @@ export default function CustomerPage() {
       setSession({ id: created.session_id, token: created.token })
       resetMessages()
       setFeedbackSent([])
+      setContactSentTickets([])
+      setSkippedTickets([])
       taRef.current?.focus()
     } catch (err) {
       setError(err)
@@ -145,6 +250,34 @@ export default function CustomerPage() {
   }
 
   const canAsk = session !== null && !streaming
+
+  // 转人工工单联系方式提交（第 42 刀，ADR 0046 §4）：成功即把该工单标为已记录
+  // （同会话多条 handoff 消息共享同一工单，故按工单 id 记）；失败上抛给表单内联呈现。
+  const submitHandoff = async (ticketId: number, payload: HandoffTicketCreate) => {
+    if (session === null) throw new Error('会话已失效')
+    await api.submitHandoffTicket(session.id, ticketId, session.token, payload)
+    setContactSentTickets((prev) => [...prev, ticketId])
+  }
+
+  const handoffFooter = (m: UiMessage): ReactNode => {
+    if (session === null || m.streaming || m.role !== 'agent') return undefined
+    if (!m.handoff || m.ticketId === null) return undefined
+    const ticketId = m.ticketId
+    if (contactSentTickets.includes(ticketId) || m.ticketContactAt !== null) {
+      return (
+        <span className="text-[11px] text-caption" title="已收到你的联系方式，我们会在工作时间回复">
+          已记录联系方式
+        </span>
+      )
+    }
+    if (skippedTickets.includes(ticketId)) return undefined
+    return (
+      <HandoffContactForm
+        onSubmit={(payload) => submitHandoff(ticketId, payload)}
+        onSkip={() => setSkippedTickets((prev) => [...prev, ticketId])}
+      />
+    )
+  }
 
   return (
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col px-4 py-6">
@@ -217,7 +350,13 @@ export default function CustomerPage() {
                 </div>
               )}
               {messages.map((m, i) => (
-                <MessageBubble key={m.key} m={m} prev={messages[i - 1]} citationAsLink={false} footer={feedbackFooter(m)} />
+                <MessageBubble
+                  key={m.key}
+                  m={m}
+                  prev={messages[i - 1]}
+                  citationAsLink={false}
+                  footer={handoffFooter(m) ?? feedbackFooter(m)}
+                />
               ))}
               <div ref={endRef} />
             </div>

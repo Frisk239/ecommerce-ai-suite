@@ -366,6 +366,49 @@ class OpsRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class HandoffTicket(Base):
+    """ADR 0046：转人工工单=「这段对话要人接」的回执，不是中台对象，也不是缺口。
+
+    一个会话一张工单（session_id 唯一）：该会话第一次 handoff 事件（显式要人
+    或拒答）创建，后续复用——工单描述的是「这段对话要人接」，不是每条消息
+    一张。status ∈ pending/resolved 两态：**没有分派、没有坐席、没有 SLA
+    计时器**（0046 边界）。工单号 ``H-{id:04d}`` 由 PK 派生（不落列，Postgres
+    serial 天然唯一，无 max+1 竞态）。
+
+    联系方式：name/note 表单内必填、email/phone 可选、整表可跳过；contact_at
+    NULL=还没留。落库存原文（0038「字节不动」），操作者面出口掩电话/邮箱
+    （machine_wash.redact），姓名不掩（操作者要称呼对方）。
+    """
+
+    __tablename__ = "handoff_tickets"
+    __table_args__ = (
+        Index("ix_handoff_tickets_status", "status"),
+        # 一会话一单（裁决 1）：唯一约束兜并发（ensure_session_ticket 的
+        # SAVEPOINT + IntegrityError 兜底依赖它）
+        Index("uq_handoff_tickets_session_id", "session_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("service_sessions.id"))
+    # 触发它的那条 agent 消息（顾客联系方式表单挂在它下面）；建单时写，
+    # 幂等复用不覆盖锚点（与 0019 缺口来源会话同口径：溯源不追「最近一次」）
+    message_id: Mapped[int | None] = mapped_column(ForeignKey("service_messages.id"))
+    status: Mapped[str] = mapped_column(
+        String(16), server_default=text("'pending'")
+    )  # pending | resolved
+    name: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(String(200))
+    phone: Mapped[str | None] = mapped_column(String(50))
+    # 联系方式提交时间（NULL=还没留；覆盖提交刷新为最近一次）
+    contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class KnowledgeGap(Base):
     """ADR 0024/0030：知识缺口=无证据拒答留下的待补项，可挂商品。
 

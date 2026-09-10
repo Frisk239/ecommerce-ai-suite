@@ -54,7 +54,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from suite_api.models import Asset, KnowledgeGap, ServiceMessage, ServiceSession
+from suite_api.models import Asset, HandoffTicket, KnowledgeGap, ServiceMessage, ServiceSession
 from suite_api.services import llm
 from suite_api.services.agent_tools import (
     ToolDecision,
@@ -66,6 +66,12 @@ from suite_api.services.agent_tools import (
 from suite_api.services.answer import ComposedAnswer, build_refusal_handoff_content, compose_answer
 from suite_api.services.catalog_tools import try_catalog_answer
 from suite_api.services.conversation_memory import PRONOUN_RE, recent_turns, retrieval_query
+from suite_api.services.handoff_tickets import (
+    ensure_session_ticket,
+    render_handoff_receipt,
+    ticket_no,
+    wants_human,
+)
 from suite_api.services.knowledge_gaps import record_refusal_gap
 from suite_api.services.machine_wash import redact
 from suite_api.services.order_tools import (
@@ -116,6 +122,9 @@ GENERATING_THINKING_TEXT = "正在生成回答…"
 REJECTED_THINKING_TEXT = "提议校验未通过，正在转人工…"
 # 同口径的固定交接文案（handoff kind，不缺口）
 REJECTED_CONTENT = "工具提议被拒绝，已转人工。"
+# 第 42 刀（ADR 0046）：转人工路径的状态行——本次真实动作是建/取工单并回执，
+# 没有检索也没有工具查询，状态行必须诚实（同 REJECTED_THINKING_TEXT 口径）
+HANDOFF_THINKING_TEXT = "正在转接人工…"
 # 服务端回答分片粒度（~10-20 字/片；打字节奏由前端呈现层控制，服务端不模拟延迟）
 _DELTA_CHARS = 12
 
@@ -143,6 +152,9 @@ class AskOutcome:
     # 第 40 刀（ADR 0044 §二）：忠实度闸触发原因（complete 带 fallback_reason
     # 供观测与校准；普通厂商失败降级为 None——该键不出场，事件形状不破）
     fallback_reason: str | None = None
+    # 第 42 刀（ADR 0046）：本会话工单（handoff/拒答路径非 None；answer/工具
+    # 查得路径恒 None）。SSE complete 据此带工单号回执（运行时可选键）。
+    ticket: HandoffTicket | None = None
 
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
@@ -195,6 +207,13 @@ async def run_ask(
     是工具数据源不是引用）。miss（空店/无匹配/无价）沿既有拒答+转人工+
     缺口（去补=上新/改价，回落读实时行价）；显式要真人不抢（留第 42 刀）。
 
+    第 42 刀转人工真闭环（ADR 0046）：步 0 词表快路径（显式要真人/投诉/举报，
+    含裸「人工」不含——见 handoff_tickets）插在一切工具之前；模型提议步识别
+    ``TOOL: handoff {}`` sentinel 走同一出口；拒答路径同事务建/取工单（消息
+    文本不动）。三处都经 ensure_session_ticket 幂等建/取本会话唯一工单，回执
+    带 H-xxxx（运行时可选键 ticket_id/ticket_no），前端据此挂联系方式表单。
+    工单是「顾客要人」，缺口是「知识待补」，同一会话可并存不合并（0046 §3）。
+
     ``expose_gap_id``（第 27 刀）：与 sse_event_stream 同名白名单闸——顾客
     路由传 False，拒答消息文本不带「缺口：G-xxxx」段（问句摘要两通道都带）；
     操作者默认 True。缺口本身两通道照常落库（0024 语义不动）。
@@ -211,6 +230,13 @@ async def run_ask(
     customer_message = ServiceMessage(session_id=session.id, role="customer", content=question)
     db.add(customer_message)
     db.commit()
+
+    # 步 0 词表快路径（第 42 刀，ADR 0046 裁决 4）：显式要真人/投诉/举报优先于
+    # 一切工具——插在订单/库存快路径之前。词表不含裸「人工」（会误伤「人工智能」，
+    # 见 handoff_tickets.HUMAN_REQUEST_RE）。命中即建/取本会话工单并回执，不检索
+    # 不调模型不落缺口（工单是服务问题、缺口是知识问题，0046 §3）。
+    if wants_human(question):
+        return _run_handoff_ask(db, session, question, source="词表")
 
     # 步 1 快路径（零 LLM）：订单号命中 -> 工具路径（跳过检索，ADR 0036）
     order_no = find_order_no(question)
@@ -253,6 +279,11 @@ async def run_ask(
         # 越狱/坏参/未注册：拒绝+转人工——不检索、不调模型、不落缺口
         # （对齐 0024 工具路径不产生缺口；轨迹记 rejected 条供回放）
         return _run_rejected_proposal(db, session, decision)
+    if decision.handoff:
+        # 第 42 刀（ADR 0046 §2）：模型识别出顾客明确要人 -> 与词表快路径同一
+        # 出口（建/取工单 + 回执消息）。handoff 是 sentinel 不在 registry，
+        # 解析已在 parse_tool_proposal 里先识别，不会落「未注册工具」被拒。
+        return _run_handoff_ask(db, session, question, source="提议")
     if decision.proposal is not None:
         # 合法提议 -> 代码授权执行（复用 order/stock 工具既有实现）；
         # 结果作为 history 附加轮进步 3 生成 prompt（检索仍按原问句）
@@ -348,12 +379,17 @@ async def run_ask(
     # 务内先改属性再 commit，SSE delta 流自然带出全文。REFUSAL_CONTENT 常
     # 量结构不变。
     gap: KnowledgeGap | None = None
+    ticket: HandoffTicket | None = None
     if answer.kind == "refusal":
         # 带上来源会话（走查修复）：操作者能从缺口抽屉跳回这条原始对话
         gap = record_refusal_gap(db, question, session_id=session.id)
         agent_message.content = build_refusal_handoff_content(
             question, gap.id if expose_gap_id and gap is not None else None
         )
+        # 第 42 刀（ADR 0046 §2）：拒答也建/取工单——前端见 handoff=true 已亮
+        # 「已转人工」徽章，必须真有东西接住。同事务 create-or-get；**拒答消息
+        # 文本一个字符都不改**（REFUSAL_CONTENT 与既有全等断言保持）。
+        ticket = ensure_session_ticket(db, session, message=agent_message)
     db.commit()
     db.refresh(agent_message)
 
@@ -368,6 +404,56 @@ async def run_ask(
         # 已执行），不补检索状态行——retrieved_after_tool 只属于提议步混意图。
         retrieved_after_tool=tool_record is not None and not is_catalog,
         fallback_reason="coverage" if gate_fallback else None,
+        ticket=ticket,
+    )
+
+
+def _run_handoff_ask(
+    db: Session, session: ServiceSession, question: str, *, source: str
+) -> AskOutcome:
+    """显式转人工出口（词表快路径与模型提议共用，ADR 0046 §2）。
+
+    建/取本会话工单（幂等，一会话一单）-> 落 kind="handoff" 消息（回执带实际
+    工单号）-> 同一事务提交。不检索、不调模型、不落缺口（工单是服务问题、
+    缺口是知识问题，0046 §3）。工具条 ``{name:"handoff", arg:来源, result:
+    工单号}``——与订单/库存工具同为「已发生的动作留档」，重载可回放；顾客联系
+    方式表单由前端按 handoff 旗标挂在这条消息下。
+
+    ``question`` 保留在签名里与其它 _run_* 出口同形（本路径不消费问句）。
+    ``source`` 是轨迹 arg（词表/提议），回放时能看出哪条路径接住。
+    """
+    del question  # 本路径不消费问句；保留参数与其它出口同签
+    ticket = ensure_session_ticket(db, session)  # 建单并 flush 拿 PK（回执要号码）
+    no = ticket_no(ticket)
+    tool_record = {"name": "handoff", "arg": source, "result": f"已记录工单 {no}"}
+    content = render_handoff_receipt(no)
+    agent_message = ServiceMessage(
+        session_id=session.id,
+        role="agent",
+        content=content,
+        citations=[],
+        kind="handoff",
+        handoff=True,
+        tool=tool_record,
+    )
+    db.add(agent_message)
+    db.flush()  # 拿消息 PK
+    if ticket.message_id is None:
+        # 触发它的第一条 agent 消息（表单挂它下面）；旧工单复用不覆盖锚点
+        ticket.message_id = agent_message.id
+    db.commit()
+    db.refresh(agent_message)
+    db.refresh(ticket)
+
+    answer = ComposedAnswer(content=content, citations=[], kind="handoff", handoff=True)
+    return AskOutcome(
+        agent_message=agent_message,
+        answer=answer,
+        gap=None,
+        generated=False,  # 不调模型：不多发「正在生成回答…」thinking
+        fallback=False,  # 非降级——转人工是本路径的正式产出
+        tool=tool_record,
+        ticket=ticket,
     )
 
 
@@ -408,6 +494,23 @@ def _proposal_tool_record(
     return {"name": proposal.name, "arg": arg, "result": summarize_tool_result(result)}
 
 
+def _ensure_handoff_ticket(
+    db: Session, session: ServiceSession, agent_message: ServiceMessage, handoff: bool
+) -> HandoffTicket | None:
+    """工具失败转人工出口共用（第 42 刀，ADR 0046 补口）：凡是亮「已转人工」
+    徽章的路径，背后都必须有工单。
+
+    同事务建/取本会话唯一工单（幂等），工单挂在第一条触发 agent 消息上；
+    handoff=False 的 answer 分支恒 None。**不改这些路径的既有文案与工具轨迹**
+    （order/stock/return 的精确文案断言保持绿）。同 ensure_session_ticket 的
+    SAVEPOINT 兜底，绝不在本函数里 commit/rollback——调用方随后统一 commit，
+    与 agent 消息同事务。
+    """
+    if not handoff:
+        return None
+    return ensure_session_ticket(db, session, message=agent_message)
+
+
 def _run_rejected_proposal(
     db: Session, session: ServiceSession, decision: ToolDecision
 ) -> AskOutcome:
@@ -433,6 +536,8 @@ def _run_rejected_proposal(
         tool=tool_record,
     )
     db.add(agent_message)
+    # 转人工出口建/取工单（第 42 刀补口）：徽章背后必须有工单
+    ticket = ensure_session_ticket(db, session, message=agent_message)
     db.commit()
     db.refresh(agent_message)
 
@@ -444,6 +549,7 @@ def _run_rejected_proposal(
         generated=False,  # 不调模型：不多发「正在生成回答…」thinking
         fallback=False,  # 非降级——转人工是本路径的正式产出
         tool=tool_record,
+        ticket=ticket,
     )
 
 
@@ -483,6 +589,8 @@ def _run_return_eligibility_ask(
         tool=tool_record,
     )
     db.add(agent_message)
+    # 查无/故障走 handoff -> 建/取工单（answer 分支 _ensure_handoff_ticket 恒 None）
+    ticket = _ensure_handoff_ticket(db, session, agent_message, handoff)
     db.commit()
     db.refresh(agent_message)
 
@@ -494,6 +602,7 @@ def _run_return_eligibility_ask(
         generated=False,  # 资格判定是结构化事实，不调 LLM（同订单工具口径）
         fallback=False,  # 模板组装是本路径的正式产出，非降级
         tool=tool_record,
+        ticket=ticket,
     )
 
 
@@ -530,6 +639,8 @@ def _run_order_ask(db: Session, session: ServiceSession, order_no: str) -> AskOu
         tool=tool_record,
     )
     db.add(agent_message)
+    # 查无/故障走 handoff -> 建/取工单（第 42 刀补口，answer 分支恒 None）
+    ticket = _ensure_handoff_ticket(db, session, agent_message, handoff)
     db.commit()
     db.refresh(agent_message)
 
@@ -541,6 +652,7 @@ def _run_order_ask(db: Session, session: ServiceSession, order_no: str) -> AskOu
         generated=False,  # 工具路径不调 LLM：不多发「正在生成回答…」thinking
         fallback=False,  # 非降级——模板组装是工具路径的正式产出（0036 v1）
         tool=tool_record,
+        ticket=ticket,
     )
 
 
@@ -581,6 +693,8 @@ def _run_stock_ask(
         tool=tool_record,
     )
     db.add(agent_message)
+    # 库存 NULL/故障/无商品走 handoff -> 建/取工单（第 42 刀补口）
+    ticket = _ensure_handoff_ticket(db, session, agent_message, handoff)
     db.commit()
     db.refresh(agent_message)
 
@@ -592,6 +706,7 @@ def _run_stock_ask(
         generated=False,  # 工具路径不调 LLM（0037 与 0036 同口径）
         fallback=False,  # 模板组装是正式产出，非降级
         tool=tool_record,
+        ticket=ticket,
     )
 
 
@@ -614,6 +729,11 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     （kind=handoff）；retrieved_after_tool（混意图：提议工具已执行、检索步
     也真实发生）-> 工具 thinking -> tool -> 检索 thinking -> [生成 thinking]
     -> delta* -> complete（tool+引用并存）。
+
+    第 42 刀（ADR 0046 §4）：handoff/拒答路径 outcome.ticket 非 None ->
+    complete 追加运行时可选键 ticket_id/ticket_no/ticket_contact_at（H 号是
+    给顾客的回执，**不走 expose_gap_id 白名单**——缺口号是内部 ID；两条通道
+    同形状）。工具条 name="handoff" 的 thinking 换「正在转接人工…」。
     """
     if outcome.tool is not None:
         # 0036/0037：状态行按工具名换成真实动作；0043 被拒：只陈述校验与转人工
@@ -626,6 +746,8 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
                 "check_return_eligibility": RETURN_THINKING_TEXT,
                 # 第 41 刀：目录回落（ADR 0045，工具式模板）
                 "catalog": CATALOG_THINKING_TEXT,
+                # 第 42 刀：转人工（ADR 0046，建/取工单+回执）
+                "handoff": HANDOFF_THINKING_TEXT,
             }.get(str(outcome.tool.get("name")), ORDER_THINKING_TEXT)
         yield sse_event("thinking", {"text": thinking_text})
         yield sse_event("tool", outcome.tool)
@@ -657,4 +779,14 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
         # 第 40 刀：忠实度闸触发原因（可观测可校准；普通厂商失败降级不带
         # 该键——运行时返回口径同 fallback，消息表不加列）
         complete["fallback_reason"] = outcome.fallback_reason
+    if outcome.ticket is not None:
+        # 第 42 刀（ADR 0046 §4/裁决 8）：H 号是给顾客的回执——运行时可选键，
+        # **不走 expose_gap_id 白名单**（缺口号是内部 ID，工单号是顾客的）；
+        # 两条通道（顾客/操作者）同形状。ticket_contact_at 让前端在重载后由
+        # 后端 contact_at 决定表单状态（NULL=还没留）。
+        complete["ticket_id"] = outcome.ticket.id
+        complete["ticket_no"] = ticket_no(outcome.ticket)
+        complete["ticket_contact_at"] = (
+            outcome.ticket.contact_at.isoformat() if outcome.ticket.contact_at is not None else None
+        )
     yield sse_event("complete", complete)
