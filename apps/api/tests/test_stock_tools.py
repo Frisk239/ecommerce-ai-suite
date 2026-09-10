@@ -71,7 +71,6 @@ def test_stock_pattern_hits(question: str) -> None:
         "我的订单 SO-1001 到哪了？",
         # 第 16 刀词表收窄（P1#3）：通用词与「剩」不再是分派词——
         "库存还剩多少？",  # 无商品名的泛问回检索
-        "有现货吗",  # 「现货」吞已发布政策文档，已去
         "还剩下几件？",  # 「剩」误伤规格问句，已去
         "保温杯还剩多少毫升",  # 规格问句含「剩」：不命中，回检索不误答有货
         "库存政策是什么",  # 含「库存」的政策问句：不命中，政策文档可被检索命中
@@ -503,3 +502,39 @@ def test_sse_stream_order_thinking_not_regressed() -> None:
     )
     events = _parse(list(sse_event_stream(outcome)))
     assert events[0][1] == {"text": "查询订单中…"}
+
+
+def test_stock_router_hit_without_lookup_falls_through() -> None:
+    """第 56 刀：词表是**路由器**不是判据——「有现货吗」会命中（`有.{0,12}吗`），
+    但 `query_stock` 查不到商品/类目（`{found: False}`），引擎随即回落检索/拒答路径
+    （`chat_engine`：只有 found/error 才走库存事实模板）。所以放宽词表不会吞政策问。
+
+    这条替换了原来「断言词表不命中『有现货吗』」的写法：那是拿**代理信号**当契约
+    （真正的保证在 found 检查处）。
+    """
+    assert stock_tools.STOCK_KEYWORD_PATTERN.search("有现货吗") is not None
+    # 查不到就不作答：类目/商品都不中 -> found False（引擎据此回落）
+    result = stock_tools._category_stock("有现货吗", _SEED_LIKE)
+    assert result is None
+
+
+def test_category_stock_renders_fact_answer() -> None:
+    """第 56 刀：类目聚合结果（无单件 stock 字段）必须走事实模板。
+
+    真栈上漏过一版：`render_stock_answer` 直接取 `result["stock"]` -> KeyError 500；
+    这里两种形态都钉住（有库存合计 / 未逐件设置）。
+    """
+    with_sum = {
+        "found": True,
+        "category": "笔记本电脑",
+        "product_name": "笔记本电脑",
+        "total": 34,
+        "in_stock": 30,
+        "stock_sum": 500,
+    }
+    text = stock_tools.render_stock_answer(with_sum)
+    assert text == "笔记本电脑共 34 件，其中有货 30 件，库存合计 500 件。"
+    assert "笔记本" in stock_tools.summarize_stock_result(with_sum)
+
+    without_sum = {**with_sum, "stock_sum": None}
+    assert stock_tools.render_stock_answer(without_sum).endswith("（库存未逐件设置）。")

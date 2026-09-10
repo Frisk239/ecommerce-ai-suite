@@ -710,12 +710,15 @@ def _run_stock_ask(
     """
     found = bool(result.get("found"))
     stock = result.get("stock")
+    # 类目聚合（第 56 刀）：结果里带 category 就算事实分支（它没有单件 stock 字段——
+    # 「你们有笔记本吗」问的是一类有没有货，件数/有货数是事实，不是「未设置」）
+    is_category = "category" in result
     tool_record = {
         "name": "get_stock",
         "arg": result["product_name"] if found else question,
         "result": summarize_stock_result(result),
     }
-    if found and stock is not None:
+    if found and (is_category or stock is not None):
         kind, handoff = "answer", False
         content = render_stock_answer(result)
     else:

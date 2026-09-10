@@ -770,3 +770,80 @@ def test_catalog_answer_closes_matching_open_gap(api: ApiFixture) -> None:
         assert row.status == "resolved"
         assert row.resolved_at is not None
         assert row.resolved_by_asset_id is None  # 不是靠文档补上的，如实留白
+
+
+# ---------- 第 56 刀：类目别名与口语问价 ----------
+
+
+def test_category_alias_matches_library_category() -> None:
+    """「笔记本多少钱？」这类口语短称要认到库里的类目（审计刀 11 C-P1-3）。
+
+    纯度闸用**别名**剔除（顾客没说「笔记本电脑」四个字），聚合仍按目标类目算。
+    """
+    from suite_api.services.catalog_tools import try_price_answer
+
+    products = [_mem_product(i, f"笔记本{i}", 499900) for i in range(1, 4)]
+    for product in products:
+        product.category = "笔记本电脑"
+    db = _catalog_db(products)
+
+    answer = try_price_answer(db, "笔记本多少钱？")
+    assert answer is not None
+    assert answer.tool["arg"] == "笔记本电脑"
+    assert "共 3 件" in answer.content
+
+    # 别名 + 服务问仍被挡（纯度闸）
+    assert try_price_answer(db, "笔记本怎么刻字？") is None
+
+
+def test_price_intent_covers_colloquial_phrasings() -> None:
+    """口语问价词（怎么卖 / 什么价 / 多钱）都算报价意图；规格/服务问照旧不算。"""
+    from suite_api.services.catalog_tools import catalog_intent, try_price_answer
+
+    assert catalog_intent("笔记本电脑怎么卖？") == "price"
+    assert catalog_intent("笔记本电脑什么价？") == "price"
+    assert catalog_intent("笔记本电脑多钱？") == "price"
+
+    product = _mem_product(1, "笔记本 A", 499900)
+    product.category = "笔记本电脑"
+    db = _catalog_db([product])
+    assert try_price_answer(db, "笔记本电脑怎么卖？") is not None
+    # 规格问不被吸进来
+    assert try_price_answer(db, "笔记本电脑的净含量是多少？") is None
+
+
+def test_service_question_is_not_taken_as_price() -> None:
+    """服务/规格问仍交回 RAG（虚词表补了「怎么/如何」后仍要挡得住刻字这类实质词）。"""
+    from suite_api.services.catalog_tools import price_residual
+
+    assert price_residual("笔记本电脑怎么卖？", "笔记本电脑") == ""
+    assert price_residual("保温杯刻字怎么收费", "钛钢保温杯") != ""
+    assert price_residual("笔记本电脑怎么保养？", "笔记本电脑") != ""
+
+
+def test_stock_question_by_category_answers_aggregate(api: ApiFixture) -> None:
+    """「你们有笔记本吗？」问的是一类有没有货——第 56 刀起给类目聚合。
+
+    逐件匹配商品名必然落空（类目名不是商品名），此前落到「未找到商品」+转人工。
+    """
+    client, _ = api
+    _login(client)
+    outcome, _ = _run_question(client, "你们有笔记本吗？")
+    # 种子里没有笔记本电脑类商品时不该编造：走到别处也算（断言只钉「有该类目时答聚合」）
+    factory = client.app.state.session_factory
+    with factory() as db:
+        from sqlalchemy import select
+
+        from suite_api.models import Product
+        from suite_api.services.stock_tools import query_stock
+
+        products = list(db.scalars(select(Product).order_by(Product.id)))
+        result = query_stock(db, "你们有笔记本吗？")
+        categories = {p.category for p in products}
+        if "笔记本电脑" in categories:
+            assert result["found"] is True
+            assert result["category"] == "笔记本电脑"
+            assert result["total"] >= 1
+        else:
+            assert result == {"found": False}
+    assert outcome is not None
