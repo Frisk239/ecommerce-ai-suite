@@ -85,6 +85,14 @@ class StatsFeedbackAsset(BaseModel):
     count: int
 
 
+class StatsCsatComment(BaseModel):
+    """一条带评分的顾客留言（第 53 刀）：**已掩码 + 截断**，可点到来源会话。"""
+
+    session_id: int
+    score: int
+    comment: str
+
+
 class StatsCsat(BaseModel):
     """第 48 刀：CSAT（会话级 1–5 星，近 7 日窗与其余口径一致）。
 
@@ -97,7 +105,9 @@ class StatsCsat(BaseModel):
     ratings_last_7d: int
     average_last_7d: float | None
     distribution: dict[str, int]  # {"1": n, … "5": n}，键是字符串（JSON 口径）
-    recent_comments: list[str]
+    # 第 53 刀：最近留言带 session_id/score——低分留言要能**点回那次会话**
+    # （此前只有一段文本，看到「物流太慢」也找不到上下文，跟进只能逐行找 ★）。
+    recent_comments: list[StatsCsatComment]
 
 
 class StatsOverview(BaseModel):
@@ -147,7 +157,7 @@ def _empty_daily(day: date) -> StatsDaily:
     return StatsDaily(date=day.isoformat(), sessions=0, refusals=0, thumbs_down=0)
 
 
-def _build_csat(rows: list[tuple[int, str | None, datetime]]) -> StatsCsat:
+def _build_csat(rows: list[tuple[int, int, str | None, datetime]]) -> StatsCsat:
     """近 7 日评分行 -> CSAT 段（纯函数，便于单测）。
 
     行序按 created_at 降序（SQL 已排）——最近留言取前 N 条即可，不重排。
@@ -162,19 +172,27 @@ def _build_csat(rows: list[tuple[int, str | None, datetime]]) -> StatsCsat:
     留言：库内原文 -> ``redact_contact`` -> 截断 60 字（**先掩后截**：先截会把
     手机号切断成掩不住的残片）。
     """
-    valid = [(score, comment) for score, comment, _created_at in rows if score in RATING_SCORES]
+    valid_rows = [
+        (session_id, score, comment)
+        for session_id, score, comment, _created_at in rows
+        if score in RATING_SCORES
+    ]
     distribution = {str(score): 0 for score in RATING_SCORES}
-    for score, _comment in valid:
+    for _session_id, score, _comment in valid_rows:
         distribution[str(score)] += 1
-    total = len(valid)
+    total = len(valid_rows)
     average = (
-        math.floor(sum(score for score, _c in valid) / total * 10 + 0.5) / 10
+        math.floor(sum(score for _s, score, _c in valid_rows) / total * 10 + 0.5) / 10
         if total
         else None
     )
     comments = [
-        redact_contact(comment).strip()[:CSAT_COMMENT_MAX_CHARS]
-        for _score, comment in valid
+        StatsCsatComment(
+            session_id=session_id,
+            score=score,
+            comment=redact_contact(comment).strip()[:CSAT_COMMENT_MAX_CHARS],
+        )
+        for session_id, score, comment in valid_rows
         if comment and comment.strip()
     ][:CSAT_COMMENT_LIMIT]
     return StatsCsat(
@@ -309,7 +327,12 @@ def stats_overview(
     csat = _build_csat(
         list(
             db.execute(
-                select(SessionRating.score, SessionRating.comment, SessionRating.created_at)
+                select(
+                    SessionRating.session_id,
+                    SessionRating.score,
+                    SessionRating.comment,
+                    SessionRating.created_at,
+                )
                 .where(SessionRating.created_at >= since)
                 .order_by(SessionRating.created_at.desc(), SessionRating.id.desc())
             ).all()
