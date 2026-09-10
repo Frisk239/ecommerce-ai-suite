@@ -113,3 +113,75 @@ def test_refusal_path_untouched_by_gate(
     assert outcome.answer.kind == "refusal"
     assert outcome.fallback is False
     assert outcome.fallback_reason is None
+
+
+# ---------- 第 58 刀：弱命中但模型自述「证据未覆盖」-> 按拒答收口 ----------
+
+
+def test_model_declares_no_coverage_becomes_refusal(
+    engine: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """审计刀 11 C-P1-1：有弱命中时模型答「证据未覆盖…」也是一种「答不了」。
+
+    此前它被记成 kind=answer（还挂引用）、既不落缺口也不转人工——同一处知识缺失
+    因为「检索有没有边际命中」产生两种系统状态。第 58 刀起按拒答收口。
+    """
+
+    def fake_no_coverage(_system: str, _user: str, history: list[dict[str, str]] | None = None):
+        del history
+
+        async def _gen() -> Any:
+            yield "当前已发布证据未覆盖刻字收费信息。"
+
+        return _gen()
+
+    monkeypatch.setattr("suite_api.services.chat_engine.llm.stream_chat", fake_no_coverage)
+    # 缺口记录用替身：真函数 flush 后才有 id，MagicMock 会话给不出 id（拒答文案要格式化）
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.record_refusal_gap",
+        lambda *_a, **_k: type("G", (), {"id": 1})(),
+    )
+    # 两条命中（覆盖够，忠实度闸不触发）——正是审计刀 11 实测的那条路径
+    hits = [_hit(3, "叉子：不锈钢"), _hit(9, "客服：整机一年保修。")]
+    monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: hits)
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.assets_meta",
+        lambda *_a, **_k: {3: {"kind": "document", "title": "叉子说明"}, 9: {"kind": "dialogue", "title": "保修"}},
+    )
+
+    outcome = asyncio.run(run_ask(engine["db"], engine["session"], "保温杯刻字怎么收费？"))
+
+    assert outcome.answer.kind == "refusal"  # 不是 answer
+    assert outcome.answer.citations == []  # 引用清零（不再拿引用背「没答」）
+    assert outcome.answer.handoff is True  # 转人工
+    assert outcome.fallback_reason == "no_coverage"  # 可观测的触发原因
+    assert outcome.generated is False
+    # 缺口照落（同一知识洞只有一种形态）
+    assert engine["db"].add.called
+
+
+def test_real_answer_is_not_mistaken_for_no_coverage(
+    engine: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """反向钉子：正常作答（含「证据」字样但不含未覆盖谓语）不许被误判成拒答。"""
+
+    def fake_answer(_system: str, _user: str, history: list[dict[str, str]] | None = None):
+        del history
+
+        async def _gen() -> Any:
+            yield "根据已发布证据，净含量为 500ml。[1]"
+
+        return _gen()
+
+    monkeypatch.setattr("suite_api.services.chat_engine.llm.stream_chat", fake_answer)
+    hits = [_hit(3, "净含量：500ml"), _hit(9, "客服：净含量为500ml。")]
+    monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: hits)
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.assets_meta",
+        lambda *_a, **_k: {3: {"kind": "document", "title": "规格"}, 9: {"kind": "dialogue", "title": "对话"}},
+    )
+
+    outcome = asyncio.run(run_ask(engine["db"], engine["session"], "保温杯的净含量是多少？"))
+
+    assert outcome.answer.kind == "answer"
+    assert outcome.fallback_reason is None

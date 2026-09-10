@@ -2,7 +2,7 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 57 刀 会话详情补齐站点/访客/评分**（`feat/session-detail-57`，closeout 见 `docs/progress/session-detail-closeout.md`）——收审计刀 11 建议 ③（CSAT 与 widget 闭环最后一环），**无新表无迁移**：`SessionDetail` 补 `visitor_id` 与 `rating`（`host_origin` 审计刀 11 已补）——详情与列表行**同源**，深链 `?session=N` 进来看到同样上下文；详情头部显示站点 / 访客 / ★ 三枚 chip（未评分不渲染）。实测：`/service?session=102` 头部「站点 localhost:5173 · 访客 bc1988d4」、`/service?session=84` 头部「★ 4」；接口三字段与列表逐字段一致。集成 941→943 passed。第 56 刀类目别名与口语问价（PR #85）、审计刀 11（PR #84）、第 55 刀数据集逐个可见（PR #83）、第 54 刀 widget 宿主站点（PR #82）、第 53 刀 CSAT 留言可回溯（PR #81）、第 52 刀类目问价（PR #80）均已合并 main。
+上一刀：**第 58 刀 弱命中「模型自述证据未覆盖」按拒答收口**（`feat/coverage-gate-58`，closeout 见 `docs/progress/coverage-gate-closeout.md`）——收审计刀 11 C-P1-1（同一知识缺失因「检索有没有边际命中」产生两种系统状态），**无新表无迁移**：`_NO_COVERAGE_RE`（保守只认「证据/资料/信息 + 未覆盖/未涉及/不包含」与「无法回答/提供」两类说法）命中模型输出时把 `answer` 收成 `refusal`（citations 清零、handoff=true、内容走既有拒答模板、缺口照落），`fallback_reason="no_coverage"` 可观测。钉子：真引擎 + 替身 LLM 两条命中 + 自述未覆盖 → refusal/零引用/缺口照落；反向：正常作答不被误判。集成 943→945 passed。**评测基线如实记录一处漂移**：positive recall@1 70.0%→67.5%，原因是审计刀 11 的治理性订正（asset 13 v3→v4 换正文）取代了 golden 里 `pos-017` 期望的版本，**本刀代码不经检索路径**；已写进 `docs/research/rag-eval-report.md`。第 57 刀会话详情补齐站点/访客/评分（PR #86）、第 56 刀类目别名（PR #85）、审计刀 11（PR #84）、第 55 刀数据集逐个可见（PR #83）均已合并 main。
 
 当前阶段：**第三阶段产品硬ening（第二梯队 46/47/48 已全部走完）**（施工权威 `docs/roadmap-product-hardening.md`）。**审计刀 8 已完成**（三路并行审计 **P0 全零**，P1×5 实修；证据 `docs/progress/audit-8-closeout.md`）。下一刀：**审计刀 9**（按「每五刀一审计」节奏，覆盖第 46–48 刀 + UI/UX 后续；第 49/50 刀若按第三梯队「对标增强」按需开则顺延）。**待 Owner 裁决**：审计刀 8 记债的四条产品面缺口（商品价 3/115、多来源在产品面不可见、工作队列首屏 183 条原始灌入、widget 不落宿主 origin）。
 
@@ -335,3 +335,8 @@
 ## 第 57 刀：会话详情补齐站点/访客/评分（已交付，`feat/session-detail-57`）——审计刀 11 建议 ③
 
 **路径：** 第 54/56 刀把「站点/访客/评分」做进了会话**列表行**，但会话**详情**只带了 `host_origin`（审计刀 11 P0 修的那一版）——从总览 CSAT 的 `#会话号` 深链进来（`/service?session=N`），右栏看不到站点、看不到访客、也看不到自己刚点的星（审计刀 11 P2-1）。本刀（**无新表无迁移**）：①`SessionDetail` 补 `visitor_id` 与 `rating`（一次 `select score`；一会话一评、未评 None），与列表行**同源**；②详情头部在「会话 #N / 状态 / 开始时间」后显示**站点 / 访客 / ★** 三枚 chip（与列表同行同形同文案；未评分不渲染，不出现「★ undefined」）。实测：`/service?session=102` → 头部「站点 localhost:5173 · 访客 bc1988d4」；`/service?session=84` → 头部「★ 4」；接口 `{host_origin, visitor_id, rating}` 与列表逐字段一致。集成 941→943 passed；ruff 全过；前端 build 绿、lint 7/0。证据见 `docs/progress/session-detail-closeout.md`（含诚实披露：详情仍不带 message_count；站点/访客仍是前端自报+白名单，本刀只渲染不提高可信度；评分不可改）。
+
+
+## 第 58 刀：弱命中「模型自述证据未覆盖」按拒答收口（已交付，`feat/coverage-gate-58`）——审计刀 11 C-P1-1
+
+**路径：** 审计刀 11 实测：`保温杯刻字怎么收费？`（5 条弱命中）→ 忠实度闸不触发（命中>1）→ 模型生成「当前已发布证据未覆盖刻字收费信息。」→ 落库 `kind=answer`、**citations=[13,9]**、`handoff=false`、**不落缺口**；而同一问句在无命中时是拒答+缺口+转人工——**同一种知识缺失两种系统状态**，且「没答」还挂着引用芯片。本刀（**无新表无迁移**）：①`_NO_COVERAGE_RE` 覆盖声明闸（保守：只认「证据/资料/信息/数据 + 未覆盖/未涉及/未包含/不包含/中没有」与「无法回答/提供/确认/给出」两类说法）；②命中则把 `answer` 收成 `refusal`——citations 清零、handoff=true、`generated=None` 使内容走**既有拒答模板**（固定文案 + 问句摘要 + 缺口号）、缺口照落、工单照建；③`fallback_reason="no_coverage"` 随 complete 带出（与忠实度闸的 `"coverage"` 并列，可观测）。钉子：真引擎 + 替身 LLM（两条命中 + 自述未覆盖）→ refusal/零引用/缺口照落；反向钉子：正常作答（含「根据已发布证据」）不被误判。集成 943→945 passed；ruff 全过；前端未改（build/lint 7/0 回归确认）。**评测基线如实记录一处漂移**（positive recall@1 70.0%→67.5%）：原因是审计刀 11 的治理性订正（asset 13 走「开修订→换正文→发布 v4」对齐退货政策口径）取代了 golden 里 `pos-017` 期望的 `13/v3`；**本刀代码不经检索路径**（run_eval 直调 retrieve+compose），已写进 `docs/research/rag-eval-report.md` 的 After 段并说明「大集基线随演示库数据变化」。证据见 `docs/progress/coverage-gate-closeout.md`。
