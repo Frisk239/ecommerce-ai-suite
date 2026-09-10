@@ -6,7 +6,7 @@
 // 生命周期出口三件（第 28 刀/ADR 0042）：待人洗版「上传新正文」、未发布修订
 // 「放弃修订」、从未发布的失败资产「废弃」——均为二次确认对话框，明示字节删除不可恢复。
 
-import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowCounterClockwise,
@@ -592,6 +592,26 @@ export default function AssetDetailPage() {
   const detailQ = useApiData(detailFetcher)
   const { reload: reloadDetailData } = detailQ
   const detail = detailQ.state.phase === 'ok' ? detailQ.state.data : null
+
+  // 第 43 刀深链 ?verify=1（总览「被踩最多」的「去重新验证」跳入）：把「重新
+  // 验证」块滚入视口并短暂高亮——只定位，不自动点按钮（深链触发写是坏模式，
+  // 刷新/分享链接会写库）。只执行一次：验证动作会 reload detail，不重复高亮。
+  const verifyParam = searchParams.get('verify')
+  const verifyBlockRef = useRef<HTMLDivElement>(null)
+  const [verifyHighlight, setVerifyHighlight] = useState(false)
+  const verifyScrolled = useRef(false)
+  useEffect(() => {
+    if (verifyParam !== '1' || verifyScrolled.current) return
+    const el = verifyBlockRef.current
+    if (el === null) return
+    verifyScrolled.current = true
+    // 动效降级：偏好减弱动画时用即时滚动（同 CSS 的 reduced-motion 纪律）
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' })
+    setVerifyHighlight(true)
+    const timer = window.setTimeout(() => setVerifyHighlight(false), 1600)
+    return () => window.clearTimeout(timer)
+  }, [verifyParam, detail])
 
   const productId = detail?.product?.id ?? null
   const productFetcher = useCallback(
@@ -1271,7 +1291,10 @@ export default function AssetDetailPage() {
                 </div>
                 {/* 第 39 刀保鲜：重新验证（刷新 last_verified_at + audit 留痕）。
                     NULL=新灌未验证按新鲜处理不降权，只有验证过后超阈值才降权。 */}
-                <div className="space-y-1.5 border-t border-line-1 pt-2.5">
+                <div
+                  ref={verifyBlockRef}
+                  className={`space-y-1.5 border-t border-line-1 pt-2.5${verifyHighlight ? ' verify-flash' : ''}`}
+                >
                   <button
                     type="button"
                     className="btn btn-secondary w-full"

@@ -32,6 +32,7 @@ import type {
   ServiceSession,
   ServiceSessionDetail,
   ServiceSessionSummary,
+  StatsOverview,
   ToolCallRecord,
 } from './types'
 
@@ -277,4 +278,8 @@ export const api = {
     }),
   resolveHandoffTicket: (ticketId: number) =>
     request<HandoffTicket>(`/service/handoff-tickets/${ticketId}/resolve`, { method: 'POST' }),
+
+  // 操作者仪表（第 43 刀）：现有表现场聚合，一次请求喂侧栏角标、总览趋势条与
+  // 反馈汇总三处；固定近 7 日窗，无轮询（shell 每次导航刷一次）。
+  getStatsOverview: () => request<StatsOverview>('/stats/overview'),
 }
