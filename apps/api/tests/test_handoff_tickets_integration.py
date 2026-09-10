@@ -14,6 +14,7 @@
 """
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -90,10 +91,18 @@ def _customer_ask(client: TestClient, session_id: int, token: str, question: str
 
 def _seed_customer_session(client: TestClient, token: str) -> int:
     """直接落一条顾客会话（绕过建会话 IP 闸）：本文件需多次建顾客会话做多形态
-    掩码钉测，走 /customer/sessions 会撞 5/60s 的 IP 建会话闸。"""
+    掩码钉测，走 /customer/sessions 会撞 5/60s 的 IP 建会话闸。
+
+    第 45 刀：绕过签发端点就得把签发时该写的字段写全——**过期时刻必须给**
+    （鉴权侧把 NULL 视为不可用，只塞令牌不塞过期时刻会被判 401）。
+    """
     factory = client.app.state.session_factory
     with factory() as db:
-        session = ServiceSession(status="active", customer_token=token)
+        session = ServiceSession(
+            status="active",
+            customer_token=token,
+            customer_token_expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
         db.add(session)
         db.commit()
         return session.id

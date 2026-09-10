@@ -4,8 +4,9 @@
   原文，迁移 0005 落列）；201 返回 ``{session_id, token}``。无操作者鉴权
   （0021：顾客不是本套件账号），靠 IP 建会话限流（0033：不做无令牌狂刷）。
 - ``POST /api/customer/sessions/{id}/messages``：``Authorization: Bearer <token>``
-  鉴权（compare_digest 恒定时间比较；会话不存在与令牌无效统一 401 带
-  WWW-Authenticate——自增 id 不可探测），
+  鉴权（统一走 `_authorize_customer_session`：会话存在 + compare_digest 恒定时间
+  比对 + **未过期**；会话不存在/令牌无效/**令牌过期** 统一 401 带
+  WWW-Authenticate——自增 id 不可探测，过期也不单独提示），
   发问走 chat_engine（0021 同一引擎：与操作者预览同事件序 thinking ->
   delta* -> complete），**complete 不带 gap_id**（spec 工程裁决：顾客不暴露
   内部缺口 id，事件载荷白名单裁剪——拒答照常落缺口，操作者在治理台可见）。
@@ -25,7 +26,7 @@
 
 import re
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
 from typing import Annotated, Any
 
@@ -122,6 +123,32 @@ def _unauthorized() -> HTTPException:
     )
 
 
+def _authorize_customer_session(db: Session, session_id: int, request: Request) -> ServiceSession:
+    """顾客会话鉴权单一出处（第 45 刀）：存在 + Bearer 恒定时间比对 + **未过期**。
+
+    三处（发问 / 反馈 / 提交联系方式）此前各抄一份同样的判断；第 45 刀把令牌 TTL
+    加进来时若再抄第四份，迟早漂移。**过期与无效同 401 同文案**（见
+    `_unauthorized`）：不向调用方区分「令牌错」与「令牌过期」——那既是对攻击者的
+    信息泄露，也和既有口径一致（会话不存在与令牌无效本来就不区分）。
+
+    `expires_at` 为 NULL 视为不可用（严格）：迁移 0021 已把存量顾客会话按
+    `created_at + 24h` 回填，NULL 出现即为异常，不给静默放行的口子。
+    """
+    session = db.get(ServiceSession, session_id)
+    token = _bearer_token(request)
+    if (
+        session is None
+        or token is None
+        or session.customer_token is None
+        or not compare_digest(session.customer_token.encode(), token.encode())
+    ):
+        raise _unauthorized()
+    expires_at = session.customer_token_expires_at
+    if expires_at is None or datetime.now(UTC) > expires_at:
+        raise _unauthorized()
+    return session
+
+
 def _rate_limited(retry_after: int) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -140,14 +167,21 @@ def create_session(
 ) -> CustomerSessionCreated:
     """签发顾客会话：新令牌随会话落库（非空即顾客会话，列表 origin=customer）。
 
-    令牌只在本响应里完整出现一次，顾客侧自行保存；不做过期/刷新/吊销（本刀
-    Out）——会话终结（操作者回流登记置 registered）后令牌随之失去发问资格。
+    令牌只在本响应里完整出现一次，顾客侧自行保存；**签发即带 TTL**（第 45 刀：
+    `customer_token_ttl_seconds`，默认 24h）——过期后与无效同 401 同文案。不做
+    刷新/续期/吊销（本刀 Out）；会话终结（操作者回流登记置 registered）后令牌
+    随之失去发问资格。
     """
     retry_after = limits.check_create(client_ip(request))
     if retry_after is not None:
         raise _rate_limited(retry_after)
     token = secrets.token_urlsafe(_TOKEN_BYTES)
-    session = ServiceSession(status=ACTIVE, customer_token=token)
+    ttl_seconds = request.app.state.settings.customer_token_ttl_seconds
+    session = ServiceSession(
+        status=ACTIVE,
+        customer_token=token,
+        customer_token_expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
+    )
     db.add(session)
     db.commit()
     db.refresh(session)
@@ -174,15 +208,7 @@ async def ask(
     if retry_after is not None:
         raise _rate_limited(retry_after)
 
-    session = db.get(ServiceSession, session_id)
-    token = _bearer_token(request)
-    if (
-        session is None
-        or token is None
-        or session.customer_token is None
-        or not compare_digest(session.customer_token.encode(), token.encode())
-    ):
-        raise _unauthorized()
+    session = _authorize_customer_session(db, session_id, request)
 
     retry_after = limits.check_ask_session(str(session_id))
     if retry_after is not None:
@@ -246,15 +272,7 @@ def leave_feedback(
     if retry_after is not None:
         raise _rate_limited(retry_after)
 
-    session = db.get(ServiceSession, session_id)
-    token = _bearer_token(request)
-    if (
-        session is None
-        or token is None
-        or session.customer_token is None
-        or not compare_digest(session.customer_token.encode(), token.encode())
-    ):
-        raise _unauthorized()
+    session = _authorize_customer_session(db, session_id, request)
     if session.status != ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -336,15 +354,7 @@ def submit_handoff_contact(
     if retry_after is not None:
         raise _rate_limited(retry_after)
 
-    session = db.get(ServiceSession, session_id)
-    token = _bearer_token(request)
-    if (
-        session is None
-        or token is None
-        or session.customer_token is None
-        or not compare_digest(session.customer_token.encode(), token.encode())
-    ):
-        raise _unauthorized()
+    session = _authorize_customer_session(db, session_id, request)
 
     retry_after = limits.check_ask_session(str(session_id))
     if retry_after is not None:

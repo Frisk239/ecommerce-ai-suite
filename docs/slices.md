@@ -4,7 +4,7 @@
 
 上一刀：**第 44 刀退货确认迁移订单状态**（`feat/return-status`，closeout 见 `docs/progress/return-status-closeout.md`）——roadmap v3 第四刀（纸糊#3，无新表无迁移）：立 `ORDER_STATUSES` 合法值集（+「退货中」）为单一来源；`confirm_return` 在同一事务把 `orders.status` 真迁移到「退货中」；加**状态闸**（已退货中/已退款 → 409，且拒绝即不写）；顺手把「确认退货」补成 ConfirmDialog 确认。钉测：确认前已发货 → 确认后退货中 → 进度问句答退货中。第 43 刀操作者仪表、第 42 刀转人工真闭环（ADR 0046 + 迁移 0020）、第 41 刀商品可运营+目录可答（ADR 0045）、第 26–40 刀+审计刀 6/7 均已合并 main。
 
-当前阶段：**第三阶段产品硬ening**（施工权威 `docs/roadmap-product-hardening.md`）。下一刀：**第 45 刀令牌 TTL + embed.js**（顾客会话令牌加 TTL、顾客通道做成可嵌入单文件小组件 + origin 白名单）→ 之后 **审计刀 8**（第 45 刀后，按路线图节奏）。
+当前阶段：**第三阶段产品硬ening**（施工权威 `docs/roadmap-product-hardening.md`）。进行中：**第 45 刀拆两刀**——**45a 顾客令牌 TTL 已交付**（`feat/token-ttl`，迁移 0021：签发即 24h、鉴权收敛到单一出处、过期与无效同 401 同文案），**45b 嵌入 widget 待做**（`embed.js` loader + `/widget` 轻页 + origin 白名单 + postMessage + 第一方访客 id + README 的 CSP 清单）；45b 后 → **审计刀 8**（第 45 刀后，按路线图节奏）。
 
 ## 怎么切
 
@@ -234,3 +234,7 @@
 ## 第 44 刀：退货确认迁移订单状态（已交付，`feat/return-status`）——roadmap v3 第四刀
 
 **路径：** 纸糊#3——确认退货后 `orders.status` 纹丝不动，追问一句「退货进度怎么样」就答回「已发货」而穿帮。本刀：①`services/order_tools.py` 立订单状态合法值集 `ORDER_STATUSES`（已发货/运输中/已签收/**退货中**/**已退款**）与 `RETURNABLE_STATUSES`（前三个），作为单一来源（`models.py` 注释指向它）；②`return_tools.confirm_return` 在同一事务里既追加事件、又把状态**真迁移到「退货中」**；③**状态闸**：只有前三个可发起退货，已是退货中/已退款 → 409，且**闸在任何写入之前 return**（拒绝即不写）；④判定顺序 `duplicate` 先于 `status_not_returnable`（重复确认文案不变）；⑤顺手把「确认退货」从一击即写补成 **ConfirmDialog 确认**（与发布/结单同形）。**无新表无迁移**。钉测：确认前「已发货」→ 确认后库内「退货中」+ 进度问句答「当前状态：退货中」+ 二次确认 409；「已退款」单被 409 挡下且状态与事件都没动；状态集自检（种子值 ⊆ 合法集）。集成 786→788 passed；ruff 全过；前端 build 绿、lint 7/0；浏览器全链（SO-1002 运输中→退货中；取消不写库）。证据见 `docs/progress/return-status-closeout.md`。
+
+## 第 45 刀（45a 段）：顾客令牌 TTL（已交付，`feat/token-ttl`）——第 45 刀拆两刀走
+
+**路径：** 令牌此前**永不过期**（签发处 docstring 自陈「不做过期/刷新/吊销（本刀 Out）」，审计刀 2 起在案）——泄露即永久可写会话。本刀：①新设置 `customer_token_ttl_seconds`（默认 **24h**，与操作者 cookie 的 7 天分开）；②迁移 **0021** 加 `service_sessions.customer_token_expires_at`，**迁移内回填**存量有令牌会话为 `created_at + 24h`（操作者预览会话保持 NULL）；③鉴权抽成**单一出处** `_authorize_customer_session`（存在 + 恒定时间比对 + 未过期）——三处调用点（发问/反馈/留联系方式）此前各抄一份，现全部收敛；④**过期与无效同 401 同文案同响应头**；⑤`expires_at` 为 NULL 视为不可用（严格，不给静默放行口子）。钉测 7 例（签发带 TTL / 有效可用 / 过期 401 且与无效逐字同文案 / 未来过期仍可用（证明不是一律 401）/ NULL 不可用 / 三处端点一致 / 跨会话越权回归）；迁移回填在演示库实测 38 行全填、0 漏、操作者预览行未误填（CI 空库无法复现该路径，如实记录）。集成 788→795 passed；ruff 全过。**45b 段（嵌入 widget：embed.js + /widget + origin 白名单）待做**，之后审计刀 8。证据见 `docs/progress/token-ttl-closeout.md`。

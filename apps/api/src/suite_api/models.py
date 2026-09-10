@@ -201,6 +201,11 @@ class ServiceSession(Base):
     # 裁决：单店内部系统，DB 泄露不在威胁模型；hash 则无法按令牌直查）；操作者
     # 预览会话恒为 NULL——非空与否即顾客/操作者会话的唯一判据
     customer_token: Mapped[str | None] = mapped_column(String(64))
+    # 令牌过期时刻（第 45 刀，迁移 0021）：签发即 created_at + customer_token_ttl
+    # （默认 24h）。过期与「令牌无效」同 401 同文案（不向调用方区分，见
+    # routes/customer._authorize_customer_session）；NULL 视为不可用（严格——
+    # 迁移已回填存量行，NULL 出现即异常，不给静默放行的口子）。
+    customer_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
