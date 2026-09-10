@@ -11,7 +11,7 @@
 // 「新会话」随时可重签令牌。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, ChatCircleDots, Stop, ThumbsDown } from '@phosphor-icons/react'
+import { ArrowUp, ChatCircleDots, Prohibit, Stop, ThumbsDown, X } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { HandoffTicketCreate } from '../api/types'
@@ -126,7 +126,7 @@ function HandoffContactForm({
   )
 }
 
-export default function CustomerPage() {
+export default function CustomerPage({ embed = false }: { embed?: boolean } = {}) {
   const [session, setSession] = useState<CustomerSession | null>(null)
   const [input, setInput] = useState('')
   const [error, setError] = useState<unknown>(null)
@@ -179,12 +179,30 @@ export default function CustomerPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [streaming, stop])
 
+  // 嵌入判定（第 45b 刀）：**被框住就算嵌入**，不只看 /widget 路由——否则第三方
+  // 直接 iframe /customer 就绕过了来源白名单。宿主来源取自 document.referrer；
+  // 被 no-referrer 之类策略剥掉时**不静默退回独立访问**，而是拒绝建会话
+  // （fail-closed：宁可拒绝，也不给「剥掉来源就免费嵌」这条路）。
+  const framed = window.self !== window.top
+  const frameHostOrigin = framed && document.referrer !== '' ? new URL(document.referrer).origin : null
+  const frameOriginUnknown = framed && frameHostOrigin === null
+  const embedVisitor = framed ? new URLSearchParams(window.location.search).get('visitor') : null
+
   const startSession = async () => {
     if (creating || streaming) return
+    if (frameOriginUnknown) {
+      // 被框住但拿不到宿主来源：不建会话（服务端闸无从判断）。正常路径不会到这里，
+      // 除非宿主页用 no-referrer 剥掉了来源。
+      setError(new Error('无法确认嵌入来源：请在店铺页面内使用本客服（宿主页不要剥离 referrer）'))
+      return
+    }
     setCreating(true)
     setError(null)
     try {
-      const created = await api.createCustomerSession()
+      const widgetHeaders: Record<string, string> = {}
+      if (frameHostOrigin !== null) widgetHeaders['X-Widget-Origin'] = frameHostOrigin
+      if (embedVisitor !== null && embedVisitor !== '') widgetHeaders['X-Visitor-Id'] = embedVisitor
+      const created = await api.createCustomerSession(widgetHeaders)
       setSession({ id: created.session_id, token: created.token })
       resetMessages()
       setFeedbackSent([])
@@ -195,6 +213,14 @@ export default function CustomerPage() {
       setError(err)
     } finally {
       setCreating(false)
+    }
+  }
+
+  // 嵌入形态的「收起」：把关闭意图 postMessage 回宿主（targetOrigin 用宿主来源，
+  // 不用 '*'）；独立访问（未被框住）没有宿主，按钮不渲染。
+  const closeWidget = () => {
+    if (frameHostOrigin !== null) {
+      window.parent.postMessage({ type: 'ecom-ai-widget', action: 'close' }, frameHostOrigin)
     }
   }
 
@@ -280,15 +306,24 @@ export default function CustomerPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col px-4 py-6">
-      {/* 轻页头：不搬操作者壳的导航（spec 工程裁决） */}
-      <header className="mb-4 flex items-center gap-3">
+    <div
+      className={
+        embed || framed
+          ? 'flex h-screen flex-col p-3'
+          : 'mx-auto flex min-h-screen max-w-3xl flex-col px-4 py-6'
+      }
+    >
+      {/* 轻页头：不搬操作者壳的导航（spec 工程裁决）。嵌入模式收窄：iframe 里
+          没有宿主页可退回，取消「新会话」以外的说明文字，右侧加「收起」。 */}
+      <header className={embed || framed ? 'mb-3 flex items-center gap-3' : 'mb-4 flex items-center gap-3'}>
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border border-line-2 bg-white text-ink-2 shadow-sm">
           <ChatCircleDots aria-hidden size={18} />
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-[15px] font-semibold leading-6 text-ink">AI 客服</h1>
-          <p className="text-xs leading-4 text-ink-3">回答只依据已发布资料并附引用；没有证据会拒答并转人工处理。</p>
+          {embed || framed ? null : (
+            <p className="text-xs leading-4 text-ink-3">回答只依据已发布资料并附引用；没有证据会拒答并转人工处理。</p>
+          )}
         </div>
         {session !== null && (
           <button
@@ -302,30 +337,54 @@ export default function CustomerPage() {
             {creating ? '创建中…' : '新会话'}
           </button>
         )}
+        {frameHostOrigin !== null ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm shrink-0"
+            onClick={closeWidget}
+            aria-label="收起客服"
+            title="收起客服"
+          >
+            <X aria-hidden size={14} />
+          </button>
+        ) : null}
       </header>
 
       {error !== null && <ErrorBanner error={error} />}
 
-      <section className="panel flex min-h-0 flex-1 flex-col overflow-hidden" style={{ minHeight: 420 }}>
+      <section
+        className="panel flex min-h-0 flex-1 flex-col overflow-hidden"
+        style={{ minHeight: embed || framed ? 0 : 420 }}
+      >
         {session === null ? (
-          /* 空态在面板内垂直居中：顾客页是产品门面，内容别吊在顶上 */
+          /* 空态在面板内垂直居中：顾客页是产品门面，内容别吊在顶上。
+             被框住却拿不到宿主来源（宿主剥离了 referrer）时不给「开始咨询」——
+             fail-closed，理由写在面上（否则剥掉 referrer 就成了绕过白名单的免费路）。 */
           <div className="flex flex-1 items-center justify-center">
-            <Empty
-              icon={<ChatCircleDots aria-hidden size={26} />}
-              title="开始咨询"
-              hint="无需注册登录：点击开始，服务端为这段对话签发一次性会话身份。"
-              action={
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => void startSession()}
-                  disabled={creating}
-                >
-                  <ChatCircleDots aria-hidden size={14} />
-                  {creating ? '创建中…' : '开始咨询'}
-                </button>
-              }
-            />
+            {frameOriginUnknown ? (
+              <Empty
+                icon={<Prohibit aria-hidden size={26} />}
+                title="无法确认嵌入来源"
+                hint="本客服被嵌在页面里，但宿主页没有提供来源信息（referrer 被剥离）。请让宿主页保留 referrer 后重试，或直接打开客服页。"
+              />
+            ) : (
+              <Empty
+                icon={<ChatCircleDots aria-hidden size={26} />}
+                title="开始咨询"
+                hint="无需注册登录：点击开始，服务端为这段对话签发一次性会话身份。"
+                action={
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => void startSession()}
+                    disabled={creating}
+                  >
+                    <ChatCircleDots aria-hidden size={14} />
+                    {creating ? '创建中…' : '开始咨询'}
+                  </button>
+                }
+              />
+            )}
           </div>
         ) : (
           <>

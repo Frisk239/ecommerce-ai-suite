@@ -4,7 +4,7 @@
 
 上一刀：**第 44 刀退货确认迁移订单状态**（`feat/return-status`，closeout 见 `docs/progress/return-status-closeout.md`）——roadmap v3 第四刀（纸糊#3，无新表无迁移）：立 `ORDER_STATUSES` 合法值集（+「退货中」）为单一来源；`confirm_return` 在同一事务把 `orders.status` 真迁移到「退货中」；加**状态闸**（已退货中/已退款 → 409，且拒绝即不写）；顺手把「确认退货」补成 ConfirmDialog 确认。钉测：确认前已发货 → 确认后退货中 → 进度问句答退货中。第 43 刀操作者仪表、第 42 刀转人工真闭环（ADR 0046 + 迁移 0020）、第 41 刀商品可运营+目录可答（ADR 0045）、第 26–40 刀+审计刀 6/7 均已合并 main。
 
-当前阶段：**第三阶段产品硬ening**（施工权威 `docs/roadmap-product-hardening.md`）。进行中：**第 45 刀拆两刀**——**45a 顾客令牌 TTL 已交付**（`feat/token-ttl`，迁移 0021：签发即 24h、鉴权收敛到单一出处、过期与无效同 401 同文案），**45b 嵌入 widget 待做**（`embed.js` loader + `/widget` 轻页 + origin 白名单 + postMessage + 第一方访客 id + README 的 CSP 清单）；45b 后 → **审计刀 8**（第 45 刀后，按路线图节奏）。
+当前阶段：**第三阶段产品硬ening**（施工权威 `docs/roadmap-product-hardening.md`）。**第 45 刀已走完**（45a 令牌 TTL `feat/token-ttl` + 45b 可嵌入小组件 `feat/embed-widget`，迁移 0021/0022）。下一刀：**审计刀 8**（第 45 刀后，按路线图节奏）——三路并行只读审计 + P0/P1 实修；此后第二梯队余下 46（切片真链路 ffmpeg）/47（可观测最小）/48（CSAT + 反馈闭环）。
 
 ## 怎么切
 
@@ -238,3 +238,13 @@
 ## 第 45 刀（45a 段）：顾客令牌 TTL（已交付，`feat/token-ttl`）——第 45 刀拆两刀走
 
 **路径：** 令牌此前**永不过期**（签发处 docstring 自陈「不做过期/刷新/吊销（本刀 Out）」，审计刀 2 起在案）——泄露即永久可写会话。本刀：①新设置 `customer_token_ttl_seconds`（默认 **24h**，与操作者 cookie 的 7 天分开）；②迁移 **0021** 加 `service_sessions.customer_token_expires_at`，**迁移内回填**存量有令牌会话为 `created_at + 24h`（操作者预览会话保持 NULL）；③鉴权抽成**单一出处** `_authorize_customer_session`（存在 + 恒定时间比对 + 未过期）——三处调用点（发问/反馈/留联系方式）此前各抄一份，现全部收敛；④**过期与无效同 401 同文案同响应头**；⑤`expires_at` 为 NULL 视为不可用（严格，不给静默放行口子）。钉测 7 例（签发带 TTL / 有效可用 / 过期 401 且与无效逐字同文案 / 未来过期仍可用（证明不是一律 401）/ NULL 不可用 / 三处端点一致 / 跨会话越权回归）；迁移回填在演示库实测 38 行全填、0 漏、操作者预览行未误填（CI 空库无法复现该路径，如实记录）。集成 788→795 passed；ruff 全过。**45b 段（嵌入 widget：embed.js + /widget + origin 白名单）待做**，之后审计刀 8。证据见 `docs/progress/token-ttl-closeout.md`。
+
+## 第 45 刀（45b 段）：可嵌入客服小组件（已交付，`feat/embed-widget`）——第 45 刀至此走完
+
+**路径：** 顾客通道此前只能从治理台的 `/customer` 路由进——**商家没有任何办法把它挂到自己店上**。本刀：①`apps/web/public/embed.js` 原生单文件加载器（Shadow DOM 圆形启动钮、首次点按才注入 iframe、postMessage 开关、幂等；零依赖零构建）；②`/widget` 路由复用 `<CustomerPage embed />`（同一份客服逻辑，收窄布局）；③**来源闸** `WIDGET_ALLOWED_ORIGINS`（空=未启用；被嵌入的页面建会话时带宿主来源，**不在白名单一律 403**；闸在限流之前）；④**访客 id** = 宿主域第一方 localStorage uuid → 落 `service_sessions.visitor_id`（迁移 **0022**）→ 操作者客服页显示「访客 xxxxxxxx」；⑤演示宿主页 `apps/web/public/embed-demo.html` + README 的一行嵌入代码与 **CSP 放行清单**（`script-src`/`frame-src`/`style-src unsafe-inline`）。
+
+**评审揪出两个真 P1 并实修**：①「唯一闸」名不副实——原先任何站点直接 iframe `/customer`（不带该头）即可免费嵌入 → 改为**前端把「被框住」(`self!==top`) 作为嵌入判定**（不只看 `/widget`），且宿主 `no-referrer` 剥掉来源时**拒绝建会话**（fail-closed）而非静默降级；②闸序与注释矛盾（放在限流之后）→ 提到限流之前。P2 一并修：独立访问不再收访客头、加载器幂等、README 补 `style-src` 与 no-referrer 注意。
+
+验收（真浏览器端到端）：演示宿主页 → 启动钮 → iframe(`/widget?visitor=…`) → 宿主 localStorage 有 uuid → widget 内「开始咨询」建会话成功 → 问答带引用（500ml · A-0009）→「收起」postMessage 生效；**拒绝路径**：白名单换掉后同路径 403「来源 … 未获授权嵌入」，无输入框。后端钉测 7 例。集成 795→802 passed；ruff 全过；前端 build 绿、lint 7/0。证据见 `docs/progress/embed-widget-closeout.md`。
+
+**第 45 刀（45a+45b）至此走完 → 下一刀按节奏开「审计刀 8」**（第 45 刀后）。

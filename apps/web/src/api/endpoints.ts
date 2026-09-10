@@ -217,8 +217,8 @@ export const api = {
 
   // 顾客通道（ADR 0021/0033）：无登录，Bearer 会话令牌；同一引擎、同事件序，
   // complete 不带 gap_id。顾客无列表/详情/回流端点。
-  createCustomerSession: () =>
-    request<CustomerSessionCreated>('/customer/sessions', { method: 'POST' }),
+  createCustomerSession: (headers?: Record<string, string>) =>
+    request<CustomerSessionCreated>('/customer/sessions', { method: 'POST', headers }),
   askCustomer: (
     sessionId: number,
     token: string,

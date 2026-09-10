@@ -258,6 +258,8 @@ export interface ServiceSessionSummary extends ServiceSession {
   /** 第 42 刀（ADR 0046）：待处理工单数（status=pending）；客服页据此置顶、
    * 徽章与「待处理工单」分段筛选。 */
   pending_ticket_count: number
+  /** 第 45b 刀：嵌入小组件的宿主访客 id（第一方 uuid）；独立访问为 null。 */
+  visitor_id: string | null
 }
 
 /** 引用（CONTEXT 词条：指向一条证据 = 资产 ID + 版本号，检索用当前已发布版）。 */

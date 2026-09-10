@@ -34,6 +34,10 @@ services:
       LLM_MODEL: ${LLM_MODEL:-qwen3.8-flash}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
       CUSTOMER_TRUST_PROXY: ${CUSTOMER_TRUST_PROXY:-}  # 空=直连模式忽略 XFF；反代部署设 true（settings 空串回落默认）
+      # 可嵌入小组件的宿主白名单（第 45b 刀）：逗号分隔 origin，空=未启用嵌入。
+      # 这里放演示宿主页（apps/web/public/embed-demo.html，与 web 同源）以便本地
+      # 端到端验证；生产改成商家站点 origin。
+      WIDGET_ALLOWED_ORIGINS: ${WIDGET_ALLOWED_ORIGINS:-http://localhost:5173}
     ports:
       - "8000:8000"
     volumes:

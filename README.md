@@ -95,6 +95,30 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 | 直连（默认） | 空 / `false` | 只信 TCP 对端地址，**完全忽略 `X-Forwarded-For`**：api 直接暴露（含 compose 现状）时，伪造该请求头换不了 IP 闸 key——不配即最保守（fail-closed） |
 | 反代 | `true` | 信 `X-Forwarded-For` 第一跳：api 只接反向代理流量时用，**部署者必须让反代强制覆盖/清洗该头**，否则顾客自报头即可绕过 IP 闸 |
 
+令牌 TTL（第 45 刀）：签发即 `created_at + 24h`（env `CUSTOMER_TOKEN_TTL_SECONDS`）。**过期与无效同 401 同文案**（不向调用方区分「令牌曾有效」）；过期时刻为 NULL 视为不可用。
+
+## 可嵌入客服小组件（第 45b 刀）
+
+把顾客通道挂到**商家自己的站点**上：宿主页加一行脚本，右下角出现一个圆形客服按钮，点开是一个 iframe 面板。
+
+```html
+<!-- 商家页面里唯一需要加的东西 -->
+<script src="https://<控制台地址>/embed.js" data-label="在线客服"></script>
+```
+
+做三件事：Shadow DOM 里的启动钮（样式与宿主页完全隔离）、首次点按才注入 iframe（`<控制台>/widget`，不给宿主首屏加负担）、postMessage 开关（面板内「收起」发消息回来；宿主也可用 `window.EcomAiWidget.open()/close()`）。访客身份是**宿主域第一方 localStorage 里的 uuid**，随 iframe 传入并落到会话上——操作者在客服页能看到「访客 xxxxxxxx」，商家可用自己那边的标识对账。
+
+**能否嵌入由服务端白名单判定（唯一闸）**：`WIDGET_ALLOWED_ORIGINS` 逗号分隔宿主 origin，**空 = 未启用嵌入**；被嵌入的页面在建会话时会带上宿主来源，**不在白名单一律 403**（本地演示默认放行了 `http://localhost:5173`，即仓库里的演示宿主页 `apps/web/public/embed-demo.html`）。样例与端到端验收就是打开那个页面。
+
+「被嵌入」不只看 `/widget` 这一个路由：**任何被框住的上下文**（`window.self !== window.top`）都会带来源，所以第三方直接 iframe `/customer` 同样过不了闸；宿主若用 `no-referrer` 剥掉来源，客服页会**直接拒绝建会话**（fail-closed），不会静默退回独立访问。
+
+部署注意（CSP 与残留风险）：
+
+- 宿主页若开了 CSP，需放行 `script-src <控制台地址>`（加载 `embed.js`）、`frame-src <控制台地址>`（嵌入 iframe）与 `style-src 'unsafe-inline'`（加载器用一段内联样式做 Shadow DOM 里的按钮外观）；无需放行 `connect-src`（客服请求都发生在 iframe 内部）。
+- 宿主页**不要设 `Referrer-Policy: no-referrer`**：来源取自 `document.referrer`，剥掉它客服会拒绝工作（fail-closed，不是绕过）。
+- 白名单校验用的是我们前端读 `document.referrer` 后带上的 `X-Widget-Origin`。宿主若自己伪造请求头仍可能绕过，**要彻底堵死需在边缘/反代层拦文档请求**（本仓是 dev 栈，没有这层）——这里挡的是「把客服嵌进未授权站点」的正常路径。
+- 同一访客的**会话续接/历史回放**不在 v1（顾客通道没有历史端点）；每次打开是全新会话。
+
 ## MCP 连接层（第 5 刀，ADR 0032）
 
 外部 Agent（Cursor / Claude / 官方 SDK 客户端）经 Streamable HTTP 连同一份中台，端点 `http://localhost:8000/mcp/`。

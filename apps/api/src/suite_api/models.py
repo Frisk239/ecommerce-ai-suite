@@ -206,6 +206,10 @@ class ServiceSession(Base):
     # routes/customer._authorize_customer_session）；NULL 视为不可用（严格——
     # 迁移已回填存量行，NULL 出现即异常，不给静默放行的口子）。
     customer_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 嵌入小组件的访客 id（第 45b 刀，迁移 0022）：宿主页第一方 localStorage 的
+    # uuid，随 X-Visitor-Id 在建会话时落库——商家用自己那边的 id 对账用。独立
+    # 访问（/customer 直开）为 NULL。
+    visitor_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

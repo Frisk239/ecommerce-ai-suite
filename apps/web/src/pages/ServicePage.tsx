@@ -447,6 +447,14 @@ export default function ServicePage() {
                             顾客
                           </span>
                         )}
+                        {s.visitor_id !== null && s.visitor_id !== '' ? (
+                          <span
+                            className="kind-chip"
+                            title={`嵌入小组件的宿主访客 id（商家自己那边的标识）：${s.visitor_id}`}
+                          >
+                            访客 {s.visitor_id.slice(0, 8)}
+                          </span>
+                        ) : null}
                         <span className="ml-auto text-[11px] tabular-nums text-caption">
                           {formatDate(s.created_at)}
                         </span>
