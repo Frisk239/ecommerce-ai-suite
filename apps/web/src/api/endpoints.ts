@@ -69,6 +69,8 @@ export const api = {
   me: () => request<Operator>('/auth/me'),
 
   // 资产
+  // 第 51 刀：`/assets` 支持 `?source_kind=` 服务端过滤（后端有接口式用例钉着）；
+  // 控制台内的来源筛选走客户端（一次拉全量、数据量小），故这里不另开方法。
   listAssets: () => request<AssetListItem[]>('/assets'),
   getAsset: (assetId: number) => request<AssetDetail>(`/assets/${assetId}`),
   registerAsset: (form: FormData) => request<AssetDetail>('/assets/register', { method: 'POST', body: form }),

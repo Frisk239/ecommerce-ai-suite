@@ -71,3 +71,60 @@ def test_patch_does_not_change_source_kind(api: ApiFixture) -> None:
     assert patched.status_code == 200, patched.text
     assert patched.json()["source_kind"] is None  # 多传的字段被忽略
     assert patched.json()["price_cents"] == 1234
+
+
+def test_assets_can_be_filtered_by_source_kind(api: ApiFixture) -> None:
+    """第 51 刀：来源过滤（工作队列首屏被导入货淹掉，运营要能只看某一来源）。
+
+    服务端过滤（`?source_kind=`）+ 未知取值 422（别让拼错的来源静默给空列表）。
+    """
+    client, _ = api
+    _login(client)
+    # 本模块的夹具只建商品，先登记一份资产（register 端点定值 source_kind=upload）
+    registered = client.post(
+        "/api/assets/register",
+        files={"file": ("filter.txt", "筛选用例正文".encode(), "text/plain")},
+        data={"title": "来源筛选用例资产"},
+    )
+    assert registered.status_code == 201
+    all_rows = client.get("/api/assets").json()
+    assert all_rows, "登记后应至少有一条资产"
+    by_source: dict[str, int] = {}
+    for row in all_rows:
+        by_source[row["source_kind"]] = by_source.get(row["source_kind"], 0) + 1
+
+    for source, expected in by_source.items():
+        rows = client.get("/api/assets", params={"source_kind": source}).json()
+        assert len(rows) == expected
+        assert {row["source_kind"] for row in rows} == {source}
+
+    # **真钉子**：合法但当前库里没有的来源必须返回空——若后端忽略该参数，
+    # 这条会拿到全量非空而失败（只用「按现有来源分组比对」是同义反复：
+    # 本模块夹具只建商品，唯一资产就是上面那条 upload）
+    empty = client.get("/api/assets", params={"source_kind": "seed"})
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    bad = client.get("/api/assets", params={"source_kind": "not_a_source"})
+    assert bad.status_code == 422
+    assert "source_kind" in bad.json()["detail"]
+
+
+def test_assets_source_filter_combines_with_status(api: ApiFixture) -> None:
+    """组合过滤：与 status 并存。**自带数据**（不靠前序用例的副产物；否则空库下
+    `all([])` 恒真，删掉过滤也绿）。"""
+    client, _ = api
+    _login(client)
+    registered = client.post(
+        "/api/assets/register",
+        files={"file": ("combo.txt", "组合过滤用例正文".encode(), "text/plain")},
+        data={"title": "组合过滤用例资产"},
+    )
+    assert registered.status_code == 201
+
+    rows = client.get(
+        "/api/assets", params={"source_kind": "upload", "status": "pending_review"}
+    ).json()
+    assert rows, "组合过滤不应为空（本用例刚登记了一条 upload + pending_review）"
+    assert all(row["source_kind"] == "upload" for row in rows)
+    assert all(row["status"] == "pending_review" for row in rows)
