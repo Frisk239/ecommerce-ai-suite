@@ -1,0 +1,7 @@
+golden：scripts\eval\out\golden_large.json（96 条）  检索 top-3
+分布             条数  recall@1  recall@3     拒答率     误拒率    混淆@1
+positive       40     70.0%     75.0%       -    2.5%       -
+paraphrase     25     60.0%     72.0%       -       -       -
+confusion      15     60.0%     80.0%       -       -   60.0%
+refusal        16         -         -  100.0%       -       -
+overall        96     65.0%     75.0%  100.0%    2.5%   60.0%

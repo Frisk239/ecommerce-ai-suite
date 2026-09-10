@@ -29,6 +29,7 @@ import ActionError from '../components/ActionError'
 import Empty from '../components/Empty'
 import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
+import ProductSelect from '../components/ProductSelect'
 import { StatusBadge, TaskStatusBadge } from '../components/StateBadge'
 
 const EMPTY_TASKS = [] as const
@@ -100,20 +101,16 @@ function CreateTaskDrawer({
             <label className="field-label" htmlFor="material-product">
               商品
             </label>
-            <select
-              id="material-product"
-              className="input w-full"
+            <ProductSelect
+              products={products}
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              onChange={setProductId}
               disabled={submitting}
-            >
-              <option value="">选择商品…</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} · {p.category}
-                </option>
-              ))}
-            </select>
+              inputId="material-product"
+              ariaLabel="选择要生成文案的商品"
+              emptyLabel="选择商品…"
+              loading={productsQ.state.phase === 'loading'}
+            />
           </div>
           {error ? <ActionError message={error} /> : null}
         </div>

@@ -18,6 +18,7 @@ import type { CsvImportReport, KnowledgeGap, Product } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { formatAssetId, formatGapId } from '../labels'
 import ActionError from '../components/ActionError'
+import ProductSelect from '../components/ProductSelect'
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
@@ -319,19 +320,16 @@ export default function RegisterAssetDrawer({
 
               <label className="block">
                 <span className="field-label">挂载商品</span>
-                <select
-                  className="input"
+                <ProductSelect
+                  products={products}
                   value={productId}
-                  onChange={(e) => setProductId(e.target.value)}
+                  onChange={setProductId}
                   disabled={submitting}
-                >
-                  <option value="">不挂商品</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={String(p.id)}>
-                      {p.name}（{p.category} · {p.id}）
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel="挂载商品"
+                  emptyLabel="不挂商品"
+                  loading={productsQ.state.phase === 'loading'}
+                  showId
+                />
                 <span className="mt-1.5 block text-[11px] leading-4 text-ink-3">
                   挂了商品的文档，按该商品的规格字段做机洗与发布必填。
                 </span>

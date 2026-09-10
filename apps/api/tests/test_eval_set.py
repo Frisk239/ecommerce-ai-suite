@@ -52,8 +52,8 @@ def _load_cases() -> tuple[list[Any], str | None]:
 
 _CASES, _LOAD_ERROR = _load_cases()
 
-_TOOLS = ("order", "stock")
-_TOOL_NAMES = {"order": "get_order_status", "stock": "get_stock"}
+_TOOLS = ("order", "stock", "catalog")
+_TOOL_NAMES = {"order": "get_order_status", "stock": "get_stock", "catalog": "catalog"}
 
 
 def _case_id(case: Any, index: int) -> str:
@@ -134,7 +134,7 @@ def test_golden_json_covers_spec_spectrum() -> None:
     if _LOAD_ERROR is not None:
         pytest.skip(_LOAD_ERROR)
     by_shape: dict[str, list[str]] = {"cite": [], "refuse": [], "tool": []}
-    order_seen, stock_seen, order_priority = False, False, False
+    order_seen, stock_seen, catalog_seen, order_priority = False, False, False, False
     for case in _CASES:
         if not isinstance(case, dict) or not isinstance(case.get("expect"), dict):
             continue
@@ -148,11 +148,13 @@ def test_golden_json_covers_spec_spectrum() -> None:
             by_shape["tool"].append(case_id)
             order_seen = order_seen or expect["tool"] == "order"
             stock_seen = stock_seen or expect["tool"] == "stock"
+            catalog_seen = catalog_seen or expect["tool"] == "catalog"
             order_priority = order_priority or (expect["tool"] == "order" and "priority" in case_id)
     assert all(by_shape.values()), (
         f"三形状各需用例：{ {k: v or '缺' for k, v in by_shape.items()} }"
     )
     assert order_seen and stock_seen, "订单与库存两类工具用例都要有"
+    assert catalog_seen, "第 41 刀目录回落（catalog 工具式模板）必须有用例"
     assert order_priority, "同含单号+库存词的订单优先 policy edge 必须有用例"
 
 
@@ -225,6 +227,14 @@ def anchors(api: ApiFixture) -> dict[str, int]:
         asset_id = _upload(client, content, title)
         assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
         mapping[title] = asset_id
+
+    # 3) 第 41 刀目录用例的商品（有价、无任何资产提及——报价问题 retrieve 恒空，
+    # 回落确定性命中；种子商品自带演示价，目录列举断言只看工具摘要）
+    priced = client.post(
+        "/api/products",
+        json={"name": "帆布包", "category": "器皿", "price_cents": 5900},
+    )
+    assert priced.status_code == 201, priced.text
     return mapping
 
 

@@ -45,6 +45,11 @@ class Product(Base):
     种子灌（演示店铺语境）——被库存工具与治理台商品列表只读自查（第 30 刀
     裁决：操作者面只读泄漏；不可编辑），不进检索/顾客面/MCP，不是中台对象
     （0002 库存不升格，与 orders 同口径）。
+
+    第 41 刀（ADR 0045）：price_cents 是商品上的单价语义（可空 int，NULL=
+    未定价），currency 是 3 字母币种（缺省 CNY，v1 单币种不结算）——与 stock
+    同口径：商品列直写即时生效（POST/PATCH），机洗/发布写回不碰价格，回落
+    报价读实时行价；演示价按类目基准由种子回填（mock，与 stock 同出处纪律）。
     """
 
     __tablename__ = "products"
@@ -59,6 +64,9 @@ class Product(Base):
         JSONB, server_default=text("'{}'::jsonb"), nullable=False
     )
     stock: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 第 41 刀单价（分）：NULL=未定价；currency 缺省 CNY（迁移 0018 存量回填）。
+    price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default=text("'CNY'"))
 
 
 class Asset(Base):
@@ -128,16 +136,26 @@ class AssetVersion(Base):
 
 
 class AuditLog(Base):
-    """0005/0016：谁/何时/对哪条资产哪一版做了 publish/confirm/rollback。append-only。"""
+    """0005/0016：谁/何时/对哪条资产哪一版做了 publish/confirm/rollback。append-only。
+
+    第 41 刀（ADR 0045）：改价同样留痕——产品档（product_id 非空、
+    asset_id/version_no 为空，action='price_change'）：改价不是资产发布，
+    不记资产 publish。资产留痕行 product_id 保持 NULL，读接口按 asset_id
+    过滤时天然排除改价行。
+    """
 
     __tablename__ = "audit_log"
     __table_args__ = (Index("ix_audit_log_asset_id", "asset_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
-    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
-    version_no: Mapped[int] = mapped_column()
-    action: Mapped[str] = mapped_column(String(20))  # "publish" | "confirm" | "rollback"
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    version_no: Mapped[int | None] = mapped_column()
+    # publish | confirm | rollback | verify | discard_revision | discard_asset
+    # | export | price_change（第 41 刀：改价产品档，asset 侧两列为 NULL）
+    action: Mapped[str] = mapped_column(String(20))
+    # 第 41 刀改价留痕指向的商品（资产留痕行为 NULL）
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

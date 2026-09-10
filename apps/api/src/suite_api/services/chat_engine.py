@@ -64,6 +64,7 @@ from suite_api.services.agent_tools import (
     propose_prompt,
 )
 from suite_api.services.answer import ComposedAnswer, build_refusal_handoff_content, compose_answer
+from suite_api.services.catalog_tools import try_catalog_answer
 from suite_api.services.conversation_memory import PRONOUN_RE, recent_turns, retrieval_query
 from suite_api.services.knowledge_gaps import record_refusal_gap
 from suite_api.services.machine_wash import redact
@@ -104,6 +105,9 @@ ORDER_THINKING_TEXT = "查询订单中…"
 STOCK_THINKING_TEXT = "查询库存中…"
 # 第 40 刀（ADR 0044 §一）：退货资格工具路径的状态行（同口径，按 tool.name 区分）
 RETURN_THINKING_TEXT = "查询退货资格中…"
+# 第 41 刀（ADR 0045）：目录回落路径的状态行（retrieve 无命中后读商品行，
+# 真实动作；工具式模板组装，不调 LLM）
+CATALOG_THINKING_TEXT = "查询商品目录中…"
 # 第 7 刀：检索命中后走厂商模型生成（状态行随最新 thinking 事件更新——降级
 # 路径不发本事件，状态行停在检索，不装作生成过）
 GENERATING_THINKING_TEXT = "正在生成回答…"
@@ -185,6 +189,12 @@ async def run_ask(
     词表命中但商品未命中 -> **进提议步/检索路径**（不是 handoff，不是工具；
     归宿对齐词条：无证据拒答留缺口，0024）——裸「有货吗」不配吞掉检索。
 
+    第 41 刀目录回落（ADR 0045）：步 3 检索返回 [] **且**目录意图（卖什么/
+    有什么/目录/多少钱/价格/多少，纯列举或无规格词的报价）时，读商品行做
+    列举/报价——工具式模板（不调 LLM、citations 恒空、kind=answer；商品行
+    是工具数据源不是引用）。miss（空店/无匹配/无价）沿既有拒答+转人工+
+    缺口（去补=上新/改价，回落读实时行价）；显式要真人不抢（留第 42 刀）。
+
     ``expose_gap_id``（第 27 刀）：与 sse_event_stream 同名白名单闸——顾客
     路由传 False，拒答消息文本不带「缺口：G-xxxx」段（问句摘要两通道都带）；
     操作者默认 True。缺口本身两通道照常落库（0024 语义不动）。
@@ -206,7 +216,7 @@ async def run_ask(
     order_no = find_order_no(question)
     if order_no is not None:
         # 第 40 刀（ADR 0044 §一）：单号+退货发起意图 -> 阶段一资格查询
-        #（同一分派哲学：结构化信号直取工具，零 LLM——「SO-1001 我想退货」
+        # （同一分派哲学：结构化信号直取工具，零 LLM——「SO-1001 我想退货」
         # 的演示路径由此确定性成立；问进度的照旧走订单工具看事件时间轴）
         if has_return_intent(question):
             return _run_return_eligibility_ask(
@@ -263,7 +273,20 @@ async def run_ask(
     # history 附加轮进生成）。
     query_text = retrieval_query(question, history)
     hits = retrieve(db, query_text)
-    answer = compose_answer(hits, assets_meta(db, hits))
+    # 第 41 刀（ADR 0045）：目录回落挂在 compose 空命中拒答分支之前——仅
+    # retrieve==[] 且目录意图时列举/报价（工具式模板：不调 LLM、citations 恒
+    # 空、kind=answer；商品行是工具数据源不是引用）。miss（无匹配/无价/空店）
+    # 返回 None，沿既有拒答+缺口（去补=上新/改价）。忠实度闸与厂商生成跳过
+    # 回落命中（模板即正式产出，非降级，fallback=False）。
+    catalog = try_catalog_answer(db, question, hits)
+    if catalog is not None:
+        is_catalog = True
+        answer = ComposedAnswer(content=catalog.content, citations=[], kind="answer", handoff=False)
+        if tool_record is None:
+            tool_record = catalog.tool
+    else:
+        is_catalog = False
+        answer = compose_answer(hits, assets_meta(db, hits))
     # 第 40 刀（ADR 0044 §二）忠实度闸：问句有效 bigram 与命中块并集的交集
     # 占比过低且证据单薄（≤1 条）时不调模型——覆盖不足时模型大概率编造，
     # 降级证据组装模板（复用既有 fallback 徽章通道；fallback_reason 随
@@ -271,7 +294,8 @@ async def run_ask(
     # 零命中照旧拒答（0018 不动）；评测 runner 直调 retrieve+compose_answer
     # 不经本闸，评测基线不受影响。
     gate_fallback = (
-        answer.kind == "answer"
+        not is_catalog
+        and answer.kind == "answer"
         and len(hits) <= 1
         and (coverage_ratio(query_text, [hit["chunk"] for hit in hits]) < FIDELITY_MIN_COVERAGE)
     )
@@ -285,7 +309,7 @@ async def run_ask(
     # 第 29 刀：本问含代词时带会话历史；0043：工具结果附加轮恒带——记忆只改
     # 生成语言（指代消解），citations/tool 语义不变。
     generated: str | None = None
-    if answer.kind == "answer" and not gate_fallback:
+    if answer.kind == "answer" and not gate_fallback and not is_catalog:
         system_prompt, user_prompt = llm.build_prompts(hits, question)
         gen_history = (history if PRONOUN_RE.search(question) else []) + tool_history
         try:
@@ -299,7 +323,7 @@ async def run_ask(
         except llm.LLMError as exc:
             # 错误细节只进服务端日志（llm.stream_chat 已保证消息不含密钥/端点）
             logger.warning("厂商生成失败，降级证据组装模板: %s", type(exc).__name__)
-    fallback = answer.kind == "answer" and generated is None
+    fallback = answer.kind == "answer" and generated is None and not is_catalog
     content = generated if generated is not None else answer.content
 
     # 落 agent 消息：引用带版本（0007），拒答/转人工显性（0018）。
@@ -339,7 +363,9 @@ async def run_ask(
         generated=generated is not None,
         fallback=fallback,
         tool=tool_record,
-        retrieved_after_tool=tool_record is not None,
+        # 第 41 刀：回落命中的检索发生在工具式模板之前（触发条件即 retrieve
+        # 已执行），不补检索状态行——retrieved_after_tool 只属于提议步混意图。
+        retrieved_after_tool=tool_record is not None and not is_catalog,
         fallback_reason="coverage" if gate_fallback else None,
     )
 
@@ -597,6 +623,8 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
                 "get_stock": STOCK_THINKING_TEXT,
                 # 第 40 刀：退货资格查询（ADR 0044 阶段一，只读）
                 "check_return_eligibility": RETURN_THINKING_TEXT,
+                # 第 41 刀：目录回落（ADR 0045，工具式模板）
+                "catalog": CATALOG_THINKING_TEXT,
             }.get(str(outcome.tool.get("name")), ORDER_THINKING_TEXT)
         yield sse_event("thinking", {"text": thinking_text})
         yield sse_event("tool", outcome.tool)

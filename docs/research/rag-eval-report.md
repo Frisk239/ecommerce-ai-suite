@@ -79,3 +79,28 @@ paraphrase 组 25 条改写问由**同表 16 组轮转生成**——after 提升
 ### 替换式 vs 并集式过程数据（留档）
 
 替换式：overall @1 60.0/-3.7pp、positive @1 65.0/-5pp、confusion @1 46.7/-13.3pp——负收益证据驱动改为并集；并集式全分布非降。
+
+---
+
+## After（第 41 刀商品可运营+目录可答，2026-09-10）
+
+本刀检索侧零改动（`retrieval.py`/`answer.py` 一行未动；目录回落挂在
+`chat_engine.py` 的 retrieve 调用之后、`compose_answer` 空命中分支之前——
+`run_eval.py` 直调 retrieve+compose，不经过回落分支，数学上不可能漂移）。
+同库（演示库，与上节同库）同种子大集跑两遍，stdout diff 为空：
+
+```
+golden：scripts\eval\out\golden_large.json（96 条）  检索 top-3
+分布             条数  recall@1  recall@3     拒答率     误拒率    混淆@1
+positive       40     70.0%     75.0%       -    2.5%       -
+paraphrase     25     60.0%     72.0%       -       -       -
+confusion      15     60.0%     80.0%       -       -   60.0%
+refusal        16         -         -  100.0%       -       -
+overall        96     65.0%     75.0%  100.0%    2.5%   60.0%
+```
+
+**结论：现有分布零漂移**——四个分布每格与第 36 刀 after 逐位一致（正例
+70.0/75.0、同义 60.0/72.0、混淆 60.0/80.0、拒答 100%、总体 65.0/75.0）。
+目录能力由 CI 回归集覆盖（`apps/api/evals/golden.json` 13→16 条：列举/
+报价/miss 拒答，走 `run_ask` 真实引擎路径），不进大集（大集只读已发布，
+目录回落读商品行——两个正交面，各自有集）。

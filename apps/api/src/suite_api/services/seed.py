@@ -6,6 +6,9 @@
   净含量+材质 required）。0019：必填集合运行时从 spec_schema 派生。
   0037：stock 是商品字段（mock 值，只被库存工具读）——保温杯 42（有货演示）、
   瓶装水 0（无货演示）；已存在的行仅当 stock IS NULL 时回填，不覆盖手改值。
+  第 41 刀：price_cents 是商品字段（类目基准演示价：瓶装水 300 分/保温杯
+  12900 分，出处=本文件 DEMO 基准，非真实售价；仅 NULL 回填，不覆盖手改价，
+  currency 缺省 CNY 由迁移 server_default 回填）。
 - 订单 3 单（ADR 0036）：演示店铺 mock 单，只被订单工具读（工具数据源，不是
   中台对象，与商品名无外键关系）。覆盖 已发货/运输中/已签收 三态；固定时间戳
   保证模板组装与工具条摘要确定。
@@ -37,6 +40,9 @@ SEED_PRODUCTS: list[dict] = [
         "spec_schema": {"净含量": {"required": True}, "保质期": {"required": True}},
         # 0037：0 演示「暂时无货」事实回答路径
         "stock": 0,
+        # 第 41 刀：类目基准演示价 300 分（3 元）——出处=本文件 DEMO 基准
+        # （mock 演示数据，非真实售价；与 stock 同口径：仅 NULL 回填）。
+        "price_cents": 300,
     },
     {
         "name": "钛钢保温杯",
@@ -44,6 +50,8 @@ SEED_PRODUCTS: list[dict] = [
         "spec_schema": {"净含量": {"required": True}, "材质": {"required": True}},
         # 0037：42 演示「有货 · 42 件」
         "stock": 42,
+        # 第 41 刀：类目基准演示价 12900 分（129 元）——出处同上。
+        "price_cents": 12900,
     },
 ]
 
@@ -158,10 +166,16 @@ def seed_startup_data(engine: Engine, operator_password: str) -> None:
                     # 仅当 NULL 时写——已有值（含演示中手改成 0/其他）不覆盖
                     existing.stock = spec["stock"]
                     logger.info("种子商品库存已回填: %s=%s", spec["name"], spec["stock"])
+                if existing.price_cents is None and spec.get("price_cents") is not None:
+                    # 第 41 刀回填：同 0037 纪律——迁移只加列（存量行 NULL=
+                    # 未定价），类目基准演示价在这灌；仅当 NULL 时写，已有价
+                    # （含手改价）不覆盖
+                    existing.price_cents = spec["price_cents"]
+                    logger.info("种子商品演示价已回填: %s=%s", spec["name"], spec["price_cents"])
                 if not existing.spec_schema:
-                    existing.spec_schema = schema_for_category(existing.category) or spec[
-                        "spec_schema"
-                    ]
+                    existing.spec_schema = (
+                        schema_for_category(existing.category) or spec["spec_schema"]
+                    )
                     logger.info("种子商品规格模板已回填: %s", spec["name"])
         for spec in SEED_ORDERS:
             if db.scalar(select(Order).where(Order.order_no == spec["order_no"])) is None:

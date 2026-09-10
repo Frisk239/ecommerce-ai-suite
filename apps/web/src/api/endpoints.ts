@@ -22,6 +22,8 @@ import type {
   Operator,
   OpsRun,
   Product,
+  ProductCreate,
+  ProductUpdate,
   QaPair,
   ServiceAnswerComplete,
   ServiceSession,
@@ -115,6 +117,12 @@ export const api = {
   // 商品与留痕
   listProducts: () => request<Product[]>('/products'),
   getProduct: (productId: number) => request<Product>(`/products/${productId}`),
+  // 上新（第 41 刀）：登录操作者在控制台建商品；409 重名、422 校验。
+  createProduct: (payload: ProductCreate) =>
+    request<Product>('/products', { method: 'POST', body: JSON.stringify(payload) }),
+  // 改档/改价（第 41 刀）：商品列直写即时生效；改价记 audit 产品档。
+  updateProduct: (productId: number, payload: ProductUpdate) =>
+    request<Product>(`/products/${productId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   listAudit: (assetId: number) => request<AuditEntry[]>(`/audit?assetId=${assetId}`),
 
   // 知识缺口（只读列表：产生随拒答、解决随发布，无创建/关闭端点）
