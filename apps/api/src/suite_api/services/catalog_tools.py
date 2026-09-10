@@ -7,8 +7,9 @@
 - 证据语义：工具式模板（不调 LLM、citations 恒空、kind=answer）——商品行
   是工具数据源（与 stock/orders 同口径：商品不是中台对象，0002），不是
   引用（不碰 0007 引用锚）。
-- miss 归宿：无匹配/无价/空店返回 None——调用方走既有拒答+转人工+落缺口
-  （去补=上新商品/改价：回落读实时行价，同问可答）。
+- miss 归宿：报价路径无匹配/无价、或空店，返回 None——调用方走既有拒答+转人工+
+  落缺口（去补=上新商品/改价：回落读实时行价，同问可答）。列举路径恒有答案
+  （只列已定价；一件都没定价也如实说「目前都没有公布价格」并请顾客直接问商品名）。
 - 零回归闸（既有拒答用例钉死）：
   - 列举意图须「纯」：去掉意图词与目录语境词后不得剩实质内容——
     「会员日有什么优惠」是优惠问不是目录问，照旧拒答；
@@ -34,8 +35,9 @@ from suite_api.services.stock_tools import match_product
 TOOL_NAME = "catalog"
 # 列举形态的轨迹参数（无商品指向，恒为目录本身）。
 CATALOG_LISTING_ARG = "目录"
-# 列举上限：前 N 件 + 总数（防大店刷屏，N 为工程初值）。
-MAX_LISTED = 20
+# 列举上限：只列**已定价**商品的前 N 件（未定价不再逐条铺——20 行「价格未定」
+# 会把在售规模与可用条目一起淹掉，而顾客真正能接着问的是「这件多少钱」）。
+MAX_LISTED = 8
 
 # 列举意图（长串优先，提纯时按实际命中 span 剔除；口语形态「卖啥/卖啥的/
 # 卖什么的/有目录吗/有哪些啊」——交接审查揪出原表漏掉主打痛点句式）。
@@ -125,16 +127,41 @@ def format_price(price_cents: int | None, currency: str | None) -> str:
 
 
 def render_listing(products: list[Product]) -> str:
-    """列举模板：前 MAX_LISTED 件 + 总数（换行文本，零引用——前端不做商品卡）。"""
+    """列举模板：总数 + 已定价商品前 MAX_LISTED 件（换行文本，零引用——前端不做商品卡）。
+
+    只列已定价：未定价的行对顾客没有可行动信息（既不知价也不好接着问），逐条铺会
+    把在售规模与可用条目淹掉（第 41 刀实测：115 件里前 20 件有 18 行「价格未定」）。
+    未定价商品让顾客直接问商品名——问价走报价回落，读的是实时行价。
+
+    前置：调用方保证 ``products`` 非空（空店由 try_catalog_answer 前置返回 None 走
+    拒答+转人工+落缺口）；这里仍给空店一句人话，不让纯函数吐荒谬文案。
+    收尾行只在真有未定价商品时出现——全店已定价时说「其余未定价」是事实错误。
+    """
     total = len(products)
-    lines = [f"本店在售商品共 {total} 件："]
-    for index, product in enumerate(products[:MAX_LISTED], 1):
+    if total == 0:
+        return "本店还没有上架商品。"
+    priced = [product for product in products if product.price_cents is not None]
+    if not priced:
+        return (
+            f"本店在售商品共 {total} 件，目前都没有公布价格。"
+            "直接问商品名，我帮你查规格与库存。"
+        )
+    if len(priced) == total:
+        lines = [f"本店在售商品共 {total} 件，均已定价："]
+    else:
+        lines = [f"本店在售商品共 {total} 件，其中已定价 {len(priced)} 件："]
+    for index, product in enumerate(priced[:MAX_LISTED], 1):
         lines.append(
             f"{index}. {product.name}（{product.category}）· "
             f"{format_price(product.price_cents, product.currency)}"
         )
-    if total > MAX_LISTED:
-        lines.append(f"（仅列出前 {MAX_LISTED} 件，共 {total} 件）")
+    truncated = len(priced) > MAX_LISTED
+    if truncated:
+        lines.append(f"（仅列出前 {MAX_LISTED} 件已定价商品）")
+    if len(priced) < total:
+        lines.append("其余未定价，直接问商品名。")
+    elif truncated:
+        lines.append("其余商品直接问名字。")
     return "\n".join(lines)
 
 

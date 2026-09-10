@@ -104,3 +104,55 @@ overall        96     65.0%     75.0%  100.0%    2.5%   60.0%
 目录能力由 CI 回归集覆盖（`apps/api/evals/golden.json` 13→16 条：列举/
 报价/miss 拒答，走 `run_ask` 真实引擎路径），不进大集（大集只读已发布，
 目录回落读商品行——两个正交面，各自有集）。
+
+---
+
+## After（UX-A2 目录列举模板改短，2026-09-10）
+
+本刀只改 `catalog_tools.render_listing`（列举回落模板）：不再逐条铺未定价商品，改为
+「总数 + 已定价前 8 件 + 其余未定价请直接问商品名」。检索侧零改动（`retrieval.py`/
+`answer.py` 未动）；`run_eval.py` 直调 retrieve+compose_answer、**不经过**
+`try_catalog_answer` 回落分支（与第 41 刀同一正交面），故大集数学上不可能漂移。
+同库同种子跑 before（main 代码）与 after 两遍，stdout **逐字相同**（`diff` 为空）：
+
+```
+golden：scripts\eval\out\golden_large.json（96 条）  检索 top-3
+分布             条数  recall@1  recall@3     拒答率     误拒率    混淆@1
+positive       40     70.0%     75.0%       -    2.5%       -
+paraphrase     25     60.0%     72.0%       -       -       -
+confusion      15     60.0%     80.0%       -       -   60.0%
+refusal        16         -         -  100.0%       -       -
+overall        96     65.0%     75.0%  100.0%    2.5%   60.0%
+```
+
+**结论：大集零漂移**——四分布每格与第 41 刀逐位一致（工件 `scripts/eval/out/eval-uxa2-{before,after}.txt`）。
+**本刀真实回归保护来自纯函数单测与 DB 集成断言**（`test_product_operable.py`：只列已定价 /
+8 条截断 / 全无价分支 / 全已定价不得谎称未定价；集成用例断言 content 含「已定价」且不含
+「价格未定」）。`apps/api/evals/golden.json` 的 catalog 三例只断言**工具路由与摘要子串**
+（`tool` 名 + `tool_summary_contains`），不比对 `answer.content`——模板回退成旧版也照样
+通过，故**不构成对模板改动的回归网**（此前表述夸大，已订正）。演示库实测模板前后文本：
+
+before（22 行，其中 18 行「价格未定」）：
+
+```
+本店在售商品共 115 件：
+1. 瓶装水（食品）· 3元
+2. 钛钢保温杯（器皿）· 129元
+3. Trifolding phone（智能手机）· 价格未定
+4. Vivo Y300（智能手机）· 价格未定
+…
+（仅列出前 20 件，共 115 件）
+```
+
+after（5 行，只列已定价）：
+
+```
+本店在售商品共 115 件，其中已定价 3 件：
+1. 瓶装水（食品）· 3元
+2. 钛钢保温杯（器皿）· 129元
+3. 不锈钢保温壶（器皿）· 99元
+其余未定价，直接问商品名。
+```
+
+工具式轨迹 `result` 保持「在售 115 件」不变（golden 断言 `tool_summary_contains: "在售"`）；
+一件都没定价时改说「目前都没有公布价格」并请顾客直接问商品名（不再逐条写「价格未定」）。

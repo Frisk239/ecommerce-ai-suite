@@ -114,18 +114,53 @@ def _mem_product(pid: int, name: str, price: int | None) -> Product:
     )
 
 
-def test_render_listing_truncates_at_20_plus_total() -> None:
-    products = [_mem_product(i, f"商品{i:02d}", 100) for i in range(1, 23)]
+def test_render_listing_lists_priced_only_and_truncates_at_8() -> None:
+    """列举只列已定价（前 8 件）：未定价行不逐条铺，避免「价格未定」糊屏（UX-A2）。"""
+    products = [_mem_product(i, f"商品{i:02d}", 100) for i in range(1, 13)]
+    products.append(_mem_product(99, "未定价货", None))
     text = render_listing(products)
-    assert "共 22 件" in text
-    assert "商品20" in text
-    assert "商品21" not in text
-    assert "仅列出前 20 件" in text
+    assert "共 13 件" in text
+    assert "已定价 12 件" in text
+    assert "商品08" in text
+    assert "商品09" not in text  # 超出 MAX_LISTED 的已定价件不列
+    assert "仅列出前 8 件已定价商品" in text
+    assert "未定价货" not in text  # 未定价商品不进清单
+    assert "其余未定价，直接问商品名" in text
 
 
-def test_render_listing_unpriced_shows_undetermined() -> None:
+def test_render_listing_without_prices_invites_asking_by_name() -> None:
+    """一件都没定价：不写「价格未定」，改为报总数并请顾客直接问商品名。"""
     text = render_listing([_mem_product(1, "瓶装水", None)])
-    assert "价格未定" in text
+    assert "共 1 件" in text
+    assert "都没有公布价格" in text
+    assert "价格未定" not in text
+    assert "直接问商品名" in text
+
+
+def test_render_listing_all_priced_never_claims_unpriced_left() -> None:
+    """全店已定价时不得说「其余未定价」（自审揪出的事实错误：店里没有未定价商品）。"""
+    text = render_listing([_mem_product(i, f"商品{i:02d}", 100) for i in range(1, 4)])
+    assert "均已定价" in text
+    assert "共 3 件" in text
+    assert "其余未定价" not in text
+    # 全已定价且超过上限：截断说明保留，收尾改说「直接问名字」，仍不得谎称未定价
+    many = render_listing([_mem_product(i, f"商品{i:02d}", 100) for i in range(1, 13)])
+    assert "仅列出前 8 件已定价商品" in many
+    assert "其余未定价" not in many
+    assert "其余商品直接问名字" in many
+
+
+def test_render_listing_exactly_max_priced_has_no_truncation_note() -> None:
+    """恰好 MAX_LISTED 件已定价：不出现截断说明（边界，防 off-by-one）。"""
+    text = render_listing([_mem_product(i, f"商品{i:02d}", 100) for i in range(1, 9)])
+    assert "商品08" in text
+    assert "仅列出前" not in text
+    assert "其余未定价" not in text
+
+
+def test_render_listing_empty_store_is_sane() -> None:
+    """空店生产路径由调用方挡住（try_catalog_answer 返回 None），纯函数仍给人话。"""
+    assert render_listing([]) == "本店还没有上架商品。"
 
 
 def test_try_catalog_answer_never_fires_on_hits() -> None:
@@ -314,6 +349,9 @@ def test_catalog_listing_answer_shape(api: ApiFixture) -> None:
     assert "钛钢保温杯" in outcome.answer.content
     assert "3元" in outcome.answer.content  # 种子类目基准演示价实时行价
     assert "129元" in outcome.answer.content
+    # UX-A2：只列已定价，不再逐条铺「价格未定」（演示库 115 件仅 3 件已定价）
+    assert "已定价" in outcome.answer.content
+    assert "价格未定" not in outcome.answer.content
 
 
 def test_catalog_quote_answer_shape(api: ApiFixture) -> None:

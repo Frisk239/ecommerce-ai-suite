@@ -4,7 +4,7 @@
 
 2026-09-10 外部复核（两路只读子代理逐条核验代码 + Owner 实测端点/只读查库）：以 file:line 与运行证据为准，正文已订正 9 处事实（Bitext→ABCD、`getVersionText` 可用性、发送钮与冻结线冲突、缺口商品预选、考核列、工作队列信号等），并补 §九。
 
-落地进度：**UX-B 引用只读证据视图已交付**（2026-09-10，`docs/progress/ux-b-evidence-view-closeout.md`；纯前端、后端零改动；含一处对 §四 UX-B Must.4 字面的裁决性偏离——anchor 指向「当前已发布版」也进只读，否则最常见引用点仍看不到正文）。**UX-A1 工作台可扫读已交付**（`docs/progress/ux-a-workbench-closeout.md`；纯前端——工作队列默认视角（谓词=`mcp_registered` 且标题命中 smoke/probe）、列表跨状态搜索、商品按已定价优先排序、空会话「未开始」降噪；演示库未删，根因 `mcp_smoke.py` 留待 Owner 裁决）。下一刀 = UX-A2 目录回答模板（后端 + 评测纪律）。
+落地进度：**UX-B 引用只读证据视图已交付**（2026-09-10，`docs/progress/ux-b-evidence-view-closeout.md`；纯前端、后端零改动；含一处对 §四 UX-B Must.4 字面的裁决性偏离——anchor 指向「当前已发布版」也进只读，否则最常见引用点仍看不到正文）。**UX-A1 工作台可扫读已交付**（`docs/progress/ux-a-workbench-closeout.md`；纯前端——工作队列默认视角（谓词=`mcp_registered` 且标题命中 smoke/probe）、列表跨状态搜索、商品按已定价优先排序、空会话「未开始」降噪；演示库未删，根因 `mcp_smoke.py` 留待 Owner 裁决）。**UX-A2 目录列举模板已交付**（`docs/progress/ux-a-catalog-listing-closeout.md`；后端——只列已定价前 8 件，未定价请直接问商品名；工具 `result` 与三道闸不动，评测零漂移留证）。下一刀 = UX-E 视觉回 v3 去卡（须在 43 刀仪表前）。
 
 施工权威仍是 `docs/roadmap-product-hardening.md`（下一刀=第 42 刀转人工）。本文件是**平行工作流**：只改控制台观感与既有路径的交互，不改领域对象、不抢 42–44 刀号。Owner 可在 hardening 刀之间插入方案包，或在第 44 刀后成批做。
 
@@ -24,7 +24,7 @@
 
 廉价感不是「缺渐变」，是三件事叠在一起：
 
-1. **工作台被测试/灌入数据淹了。** 资产默认「全部」261 条（复核口径：全部 261 / 待人洗 206 / 已发布 55）：`mcp-smoke 保温杯` ×12 与 `evidence probe evidence-unpublished-…` ×4 共 16 条连成片（id 246–259），全属待人洗、来源 `source_kind='mcp_registered'`；`未命名资产` 是 4 条 NULL 标题（id 13/260–262）经前端兜底渲染，且都已发布。商品页保温杯旁边是 `Trifolding phone` / `Malyutka` / `Panavision 3D`（均未定价；全库 115 件仅 3 件已定价）。客服问「你们卖什么」打印 115 件里的前 20 件（`MAX_LISTED=20`，`catalog_tools.py:38`）——其中 18 件「价格未定」。切片混 `WANDS 家具（演示）`（34 条候选里 30 条）。考核题库混英文问句（来源是 ABCD/ASAPP MIT，非 Bitext——全仓无 Bitext）。
+1. **工作台被测试/灌入数据淹了。** 资产默认「全部」261 条（复核口径：全部 261 / 待人洗 206 / 已发布 55）：`mcp-smoke 保温杯` ×12 与 `evidence probe evidence-unpublished-…` ×4 共 16 条连成片（id 246–259），全属待人洗、来源 `source_kind='mcp_registered'`；`未命名资产` 是 4 条 NULL 标题（id 13/260–262）经前端兜底渲染，且都已发布。商品页保温杯旁边是 `Trifolding phone` / `Malyutka` / `Panavision 3D`（均未定价；全库 115 件仅 3 件已定价）。客服问「你们卖什么」打印 115 件里的前 20 件（`MAX_LISTED=20`，`catalog_tools.py:38`）——其中 18 件「价格未定」（**UX-A2 已修**：改为只列已定价前 8 件，未定价请顾客直接问商品名）。切片混 `WANDS 家具（演示）`（34 条候选里 30 条）。考核题库混英文问句（来源是 ABCD/ASAPP MIT，非 Bitext——全仓无 Bitext）。
 2. **产品故事的核（引用可核验）没落地。** 点 `A-0029 · v1`（客服刚用来答退货运费）落到「衣服评论 · 发货速度慢的死…」；主栏无原文（`TranscriptPanel` 只给 `kind=dialogue`，`AssetDetailPage.tsx:1032`）；`?v=N` 不改变主栏内容，只高亮版本列表（`AssetDetailPage.tsx:635-648`）；主按钮是「开修订」。蓝字「引用回放锚定」不是只读证据视图。对照 UX-NOTES §二.7 与 ADR 0007。**（复核：`api.getVersionText` 已存在且对 document 同样可用——后端 `GET /assets/{id}/versions/{n}/text` 走对象存储字节，实测 asset 29 v1、asset 13 v3 均取回正文；见 §九。）**
 3. **v3 扁平语言被加回仪表盘套件。** 画布/面板/主钮渐变、hover 上浮、总览五张等宽卡、资产 tab 再叠三张同样数字的卡、商品空卡片、切片假视频框、发送钮 34px 蓝圆。页头 3–5 行 ADR 说明书。390：tab 溢出、统计卡吃掉首屏、表格 `nowrap` 只露半列。
 
