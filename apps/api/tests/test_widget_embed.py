@@ -150,6 +150,9 @@ def test_visitor_id_persisted_and_visible_to_operator(api: ApiFixture) -> None:
     rows = client.get("/api/service/sessions").json()
     row = next(r for r in rows if r["id"] == session_id)
     assert row["visitor_id"] == "visitor-abc-123"
+    # 第 57 刀：详情同源（深链 ?session=N 进来要看到访客/站点/评分）
+    detail = client.get(f"/api/service/sessions/{session_id}").json()
+    assert detail["visitor_id"] == "visitor-abc-123"
 
 
 def test_visitor_id_too_long_is_truncated() -> None:
@@ -188,9 +191,12 @@ def test_host_origin_persisted_and_visible_to_operator(api: ApiFixture) -> None:
     row = next(r for r in client.get("/api/service/sessions").json() if r["id"] == session_id)
     assert row["host_origin"] == _ALLOWED.rstrip("/").lower()
     # 审计刀 11 P0：**详情也要同源**（此前 SessionDetail 没传该字段 -> 恒回 None，
-    # 与「列表与详情同源」的声称不符）
+    # 与「列表与详情同源」的声称不符）；第 57 刀起访客 id 与评分也在详情里
+    # （深链 ?session=N 进来要看到与列表行同样的上下文）
     detail = client.get(f"/api/service/sessions/{session_id}").json()
     assert detail["host_origin"] == _ALLOWED.rstrip("/").lower()
+    assert detail["visitor_id"] is None  # 本例没带 X-Visitor-Id
+    assert detail["rating"] is None  # 未评分
 
 
 def test_host_origin_is_normalized(api: ApiFixture) -> None:
