@@ -17,7 +17,8 @@
 - 实体亲和重排（第 79 刀，ADR 0048）：打分后乘 per-query 实体乘数
   1+3*title_affinity——问句对候选资产标题的 IDF 加权 bigram 覆盖。字段块
   （品牌：/净含量：…）跨资产同文时词法并列是跨商品混淆的病根（75 刀实测），
-  问句点名的资产由此破开并列；无实体问句乘数恒 1（零漂移）。
+  问句点名的资产由此破开并列；问句与标题无 bigram 交集时乘数恒 1（中性面，
+  标题含字段词/回流首问时纯字段问也有亲和——设计内取舍，见 ADR 0048）。
 - retrieve 只查「当前已发布版本」的 chunks：join assets 的
   current_published_version_id 指针（0006）。待人洗/已接入不出现由 join
   语义保证而非事后过滤（0017：索引=已发布的派生视图，指针前移命中集合
@@ -378,7 +379,7 @@ def is_stale(last_verified_at: datetime | None, *, now: datetime, days: int) -> 
 # 亲和乘数强度（工程标定，实验矩阵定稿 a3：overall@1 66.2->86.2，见
 # scripts/eval/rerank_experiment.py 与 rag-eval-report 第 79 刀节）。
 # per-query 实体信号与 75 刀被拒的全局来源权重的本质区别：乘数只在「问句
-# 点名了某个资产」（标题区分性 bigram 被覆盖）时 >1，无实体问句恒 1（零漂移）。
+# 点名了某个资产」（标题区分性 bigram 被覆盖）时 >1，问句与标题无交集恒 1。
 AFFINITY_ALPHA = 3.0
 
 
@@ -404,8 +405,10 @@ def title_affinity(terms: frozenset[str], title: str | None, idf: dict[str, floa
     """IDF 加权的问句-标题覆盖（纯函数便于单测与实验复算）。
 
     = Σ_{t∈标题bigram∩问句bigram} idf(t) / Σ_{t∈标题bigram} idf(t)：
-    标题的区分性 bigram 被问句覆盖的比例。标题为空/无有效 bigram/全部低 idf
-    时返回 0——无判别力不介入（乘数=1，保持词法原序）。
+    标题的区分性 bigram 被问句覆盖的比例。标题为空/无有效 bigram 时返回
+    0——乘数 1，不因无标题被显式惩罚。注意「问句与标题无 bigram 交集才
+    恒 0」：标题含字段词（如回流资产的标题=首问「保温杯的净含量是多少？」）
+    时纯字段问也得到亲和，这是设计内行为（ADR 0048 已知取舍）。
     """
     if not title:
         return 0.0
@@ -452,7 +455,8 @@ def retrieve(
     实体亲和重排（第 79 刀，ADR 0048）：打分后对每个候选资产乘
     ``1 + AFFINITY_ALPHA * title_affinity``（问句 terms 对该资产标题的 IDF
     加权覆盖）。跨商品同文字段块的并列由此被「问句点名的资产」破开；
-    无实体问句亲和恒 0，乘数 1，排序零漂移。返回的 score 是重排后的名次分。
+    问句与标题无 bigram 交集时乘数恒 1（中性面——标题含字段词/回流首问
+    时纯字段问也有亲和，ADR 0048 已知取舍）。返回的 score 是重排后的名次分。
     """
     # 查询侧同义词扩展（0023 词法口径内的确定性扩展，非向量）：原查询词与
     # 归一后词取并集——只增不删，保证既有命中不丢（after 评测裁决的修正）。
@@ -502,9 +506,10 @@ def retrieve(
     # terms 覆盖的比例（IDF 加权）作为 per-query 乘数 score*(1+3*affinity)。
     # 病根：字段块（品牌：/净含量：…）跨资产同文时词法并列，短块微弱胜出、
     # (asset_id, chunk) 稳定出榜——问「钛钢保温杯的净含量」召回 OFF 他品的
-    # 同文块（75 刀实测）。问句点名的资产亲和>0 被抬上来；无实体问句（纯
-    # 字段问/代词问）亲和恒 0，乘数 1，排序零漂移。与打分/stale/评论闸同在
-    # retrieve 内=引擎双通道/MCP/缺口验证/评测四出口同语义。
+    # 同文块（75 刀实测）。问句点名的资产亲和>0 被抬上来；问句与标题无
+    # bigram 交集时乘数恒 1（中性面；标题含字段词/回流首问时纯字段问也有
+    # 亲和——ADR 0048 已知取舍，混淆组的提升部分正来自此）。与打分/stale/
+    # 评论闸同在 retrieve 内=引擎双通道/MCP/缺口验证/评测四出口同语义。
     titles = {asset_id: title for asset_id, _, _, _, _, title in rows}
     idf = title_idf(list(titles.values()))
     aff_of = {
@@ -517,7 +522,9 @@ def retrieve(
             "chunk": redact(chunk),
             # 过期降权是乘数后处理：打分本体（score_chunk）不动，只有显式验证
             # 过且超过阈值才乘 0.5（null 恒不降——保守裁决见 is_stale docstring）
-            # 实体亲和是第二个乘数（>=1，无实体问句恒 1）——两者正交叠加。
+            # 实体亲和是第二个乘数（>=1，问句与标题无交集恒 1）——与 stale
+            # 正交相乘：过期被点名资产 0.5*(1+3*aff) 最高 2.0 仍可压过新鲜
+            # 未点名资产（stale 是软降权、亲和是强信号，ADR 0048 取舍）。
             "score": score
             * (STALE_MULTIPLIER if is_stale(verified_at, now=now, days=days) else 1.0)
             * (1.0 + AFFINITY_ALPHA * aff_of[asset_id]),
