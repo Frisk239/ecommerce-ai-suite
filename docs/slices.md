@@ -2,7 +2,7 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 74 刀 空 schema 治理激活**（`feat/schema-activation-74`，closeout 见 `docs/progress/schema-activation-closeout.md`）——roadmap 3.1 老债：92 条空 schema 商品（91 wikidata+1 wands，导入脚本 reconcile 修复前的存量）。**演示数据刀无代码**：①92/92 按 `schema_for_category` 类目模板就地回填（与导入脚本同一条规则）——必填闸门/写回在全量真名字上激活；②治理全链在真名字（Vivo Y300）走通：登记挂商品→机洗对品牌/存储容量**弃权**（设计内：FIELD_EXTRACTORS 只有净含量/保质期/材质，0010 弃权不冒充）→人洗确认→发布→**spec_values 写回商品行**（含 {version, asset_id} 溯源）；③顾客问「Vivo Y300 是什么品牌？」→**带引用作答**。披露：一次错参数登出的未挂商品同名资产（id 268）已发布留存（内容正确可检索，无写回语义；正确链路 269）。第 73 刀（PR #106）已合并 main。**下一刀=第 75 刀 来源权重（先测量）**。
+上一刀：**第 75 刀 来源权重——测量与拒绝**（`feat/source-weight-75`，closeout 见 `docs/progress/source-weight-closeout.md`）——动机=审计刀 13 F5（净含量 top1 曾是探针回流资产）。候选=来源加权（权威×1.25/评论×0.85，STALE_MULTIPLIER 同款架构）。**测量在先**：80 条期望 case 的 top-1 变动 **1/80（横移非改善，改善 0 变差 0）**；原观感问题不修复（净含量 top3 不变、「材质」top1 反而 13→9 变差）；金标结构锁死权重空间（19 条期望评论/9 条期望回流）。**结论：拒绝（无提升不留）**——病根是跨商品混淆（confusion 组度量），rerank 级观察项；实验数字留作将来对照基线。检索零改动（70.0/65.0 逐位不变）。**Owner 完善路线 7 项至此全部处理完毕**。第 74 刀（PR #107）已合并 main。**下一刀=审计刀 15**（覆盖第 71–75 刀）。
 
 当前阶段：**第三阶段产品硬ening（第二梯队 46/47/48 已全部走完）**（施工权威 `docs/roadmap-product-hardening.md`）。**审计刀 8 已完成**（三路并行审计 **P0 全零**，P1×5 实修；证据 `docs/progress/audit-8-closeout.md`）。下一刀：**审计刀 9**（按「每五刀一审计」节奏，覆盖第 46–48 刀 + UI/UX 后续；第 49/50 刀若按第三梯队「对标增强」按需开则顺延）。**待 Owner 裁决**：审计刀 8 记债的四条产品面缺口（商品价 3/115、多来源在产品面不可见、工作队列首屏 183 条原始灌入、widget 不落宿主 origin）。
 
@@ -440,3 +440,8 @@
 ## 第 74 刀：空 schema 治理激活（已交付，`feat/schema-activation-74`）
 
 **路径：** roadmap 3.1 老债：92 条空 schema 商品（91 wikidata + 1 wands）上 0010 写回/0019 必填闸门是死的。核因：导入脚本 `_schema_for`+空 schema reconcile **早已实现有测试**——存量是修复前灌的。本刀（**演示数据刀无代码**）：①就地回填 92/92（`schema_for_category` 单一真源，与脚本 reconcile 同规则）；②治理全链真名字走通（Vivo Y300）：登记（productId）→机洗品牌/存储容量双弃权（设计内：无验证抽取器的字段不冒充）→人洗确认（PATCH fields 扁平 body）→发布→**写回 spec_values** `{"品牌":{"value":"vivo","source":{"version":1,"asset_id":269}}}`；③顾客面「Vivo Y300 是什么品牌？」→ answer 带引用。诚实披露：一次错参数（product_id vs productId）登出的未挂商品同名资产 268 已发布留存（内容正确可检索、无写回语义；正确链路 269）；机洗弃权面（品牌/存储容量/作者/容量/屏幕尺寸五键无抽取器）是 0010 设计——扩抽取器是另一刀；回填一次性，重灌走脚本 reconcile。证据见 `docs/progress/schema-activation-{intake,closeout}.md`。
+
+
+## 第 75 刀：来源权重——测量与拒绝（已交付，`feat/source-weight-75`）
+
+**路径：** 动机=审计刀 13 F5（净含量问句 top1 曾是探针回流资产而非规格文档）。候选方案=按来源加权（upload/material/clip ×1.25、session_backflow ×0.9、review_import ×0.85，`STALE_MULTIPLIER` 同款后处理乘数架构）。按 roadmap 3.3 纪律**测量在先**（动检索需评测对照，且金标 19 条期望 review_import、9 条期望 session_backflow——全局降权会翻正例）：80 条有期望 case 的 top-1 变动 **1/80**（pos-010 横移 223→232 期望 228 两边都错；**改善 0、变差 0**）；**原观感问题不被修复**（「净含量」top3=[226,227,227] 不变；「材质」top1 反而从 13→9 变差）；金标结构锁死权重空间。**结论：拒绝改动（「无提升不留」）**——病根是跨商品混淆（净含量问句命中他品 OFF 规格块），词法分×来源先验不够，rerank 级才可能解决（停建清单观察项「没有评测数字不许上」）；本实验数字正是将来 rerank 的对照基线，已落 `rag-eval-report.md` 第 75 刀节。检索本体零改动（70.0/65.0 逐位不变）。**Owner 完善路线 7 项全部处理完毕**。证据见 `docs/progress/source-weight-{intake,closeout}.md`。
