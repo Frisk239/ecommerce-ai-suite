@@ -419,6 +419,12 @@ export default function CoachPage() {
   const recordsQ = useApiData(recordsFetcher)
 
   const questions = questionsQ.state.phase === 'ok' ? questionsQ.state.data : EMPTY_QUESTIONS
+  // 走查方案 P2-3：中文题优先（题库大半是 ABCD/ASAPP 英文源，中文题才是
+  // 本店演示主路径）——稳定排序：中文在前、同组保持接口原序
+  const CJK_RE = /[一-鿿]/
+  const sortedQuestions = [...questions].sort(
+    (a, b) => Number(CJK_RE.test(a.question) ? 0 : 1) - Number(CJK_RE.test(b.question) ? 0 : 1),
+  )
   const records = recordsQ.state.phase === 'ok' ? recordsQ.state.data : EMPTY_RECORDS
 
   const [active, setActive] = useState<CoachQuestion | null>(null)
@@ -470,9 +476,22 @@ export default function CoachPage() {
                   </td>
                 </tr>
               ) : (
-                questions.map((q) => (
-                  <tr key={JSON.stringify(q.key)} className="row-click" onClick={() => setActive(q)}>
-                    <td className="max-w-[30rem]">
+                sortedQuestions.map((q) => (
+                  <tr
+                    key={JSON.stringify(q.key)}
+                    className="row-click"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`开始作答：${q.question}`}
+                    onClick={() => setActive(q)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setActive(q)
+                      }
+                    }}
+                  >
+                    <td className="max-w-[30rem] truncate">
                       <span className="line-clamp-1 text-[13px] leading-5 text-ink" title={q.question}>
                         {q.question}
                       </span>
@@ -498,8 +517,21 @@ export default function CoachPage() {
                       )}
                     </td>
                     <td>
-                      <span className="row-caret flex items-center justify-end text-caption">
-                        <CaretRight aria-hidden size={13} />
+                      <span className="flex items-center items-stretch justify-end gap-1.5">
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setActive(q)
+                          }}
+                          title="开始作答（题面即开场：AI 扮顾客，你作答）"
+                        >
+                          开始作答
+                        </button>
+                        <span className="row-caret flex items-center text-caption">
+                          <CaretRight aria-hidden size={13} />
+                        </span>
                       </span>
                     </td>
                   </tr>
