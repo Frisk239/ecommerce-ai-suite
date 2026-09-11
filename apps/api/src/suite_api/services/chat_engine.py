@@ -217,6 +217,26 @@ _CITE_MARK_RE = re.compile(r"\[\d+\]")
 _SUBSTANTIVE_RE = re.compile(r"[0-9A-Za-z一-鿿]")
 
 
+def merge_own_hits(hits: list[dict[str, Any]], own: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """拼接检索的**本问保底**（审计刀 13 C 轴 P0-1，纯函数便于单测）。
+
+    拼接生效时（问句含代词且会上问），上一问的主题块常占满 top-k，本问真正问的
+    主题（如「材质」）被挤出上下文——「净含量→那它的材质是什么」拒答转人工。
+    本问裸检索的新命中去重后与拼接结果**交错**：prompt 与引用选取都只看前两条
+    （`_MAX_PROMPT_EVIDENCE`/`_MAX_EVIDENCE`=2），追加在尾部等于没并——交错后
+    证据窗是「拼接首位（语境：哪个商品）+ 本问首位（主题：问什么）」。
+    """
+    seen = {(h["asset_id"], h["version_no"], h["chunk"]) for h in hits}
+    fresh = [h for h in own if (h["asset_id"], h["version_no"], h["chunk"]) not in seen][:2]
+    merged: list[dict[str, Any]] = []
+    for index, hit in enumerate(hits):
+        merged.append(hit)
+        if index < len(fresh):
+            merged.append(fresh[index])
+    merged.extend(fresh[len(hits):])
+    return merged
+
+
 def strip_coverage_disclaimers(text: str) -> tuple[str, bool]:
     """按句摘掉覆盖声明句，返回 (剩余正文, 是否**只剩**免责句)。
 
@@ -384,6 +404,14 @@ async def run_ask(
     # history 附加轮进生成）。
     query_text = retrieval_query(question, history)
     hits = retrieve(db, query_text)
+    # 审计刀 13 C 轴 P0-1：拼接检索会让**上一问**的主题块占满 top-k（实测
+    # 「净含量→那它的材质是什么」时「材质：钛钢」全被净含量块挤出，模型上下文
+    # 里确无材质证据，只能诚实拒答——README 演示口径的追问演不出来）。补一条
+    # **本问保底**：拼接生效时再按本问裸检索一次，新命中去重后并入（上限 2 条）——
+    # 上一问给语境（哪个商品），本问给主题（问什么），两边都在上下文里。只影响
+    # 带代词的追问（首问/无代词不触发）；retrieve 打分口径与阈值不动。
+    if query_text != question:
+        hits = merge_own_hits(hits, retrieve(db, question))
     # 第 41 刀（ADR 0045）：目录回落挂在 compose 空命中拒答分支之前——仅
     # retrieve==[] 且目录意图时列举/报价（工具式模板：不调 LLM、citations 恒
     # 空、kind=answer；商品行是工具数据源不是引用）。第 50 刀修订：**报价**

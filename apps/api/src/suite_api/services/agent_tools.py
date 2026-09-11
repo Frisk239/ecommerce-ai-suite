@@ -36,7 +36,6 @@ from sqlalchemy.orm import Session
 from suite_api.services.machine_wash import redact
 from suite_api.services.order_tools import get_order_status
 from suite_api.services.return_tools import check_return_eligibility
-from suite_api.services.stock_tools import query_stock
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +186,31 @@ def _run_get_order_status(db: Session, args: dict[str, str], _question: str) -> 
 
 
 def _run_get_stock(db: Session, args: dict[str, str], question: str) -> dict[str, Any]:
-    return query_stock(db, args.get("product_name") or question)
+    """get_stock 的提议步执行（审计刀 13 B 轴 P2 修订）。
+
+    匹配仍用 LLM 抽取的 ``product_name``（比原问句干净、LCS 更准），但**纯度闸
+    按原问句判**：闸的契约是问句文本，拿干净商品名去判残差必然为空，闸形同虚设
+    ——模型对「保温杯可以刻字吗」提议 get_stock(保温杯) 时，工具条会亮
+    「有货 · 42 件」误导、上下文被污染。命中后回剔原问句，剔不干净就按未找到
+    处理（提议步不硬答，只影响工具条与生成上下文）。
+    """
+    from suite_api.services.stock_tools import query_stock, stock_product_residual, stock_residual
+
+    name = args.get("product_name")
+    if not name:
+        return query_stock(db, question)
+    result = query_stock(db, name)
+    if not result.get("found"):
+        return result
+    matched = str(result.get("product_name") or name)
+    residual = (
+        stock_residual(question, name if name in question else matched)
+        if "category" in result
+        else stock_product_residual(question, matched)
+    )
+    if residual != "":
+        return {"found": False}
+    return result
 
 
 def _run_check_return_eligibility(

@@ -17,6 +17,7 @@ import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { AssetListItem } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
+import { isPublished } from '../workQueue'
 import { formatAssetId, kindLabel } from '../labels'
 import CitationChip from '../components/CitationChip'
 import { ErrorBanner } from '../components/Banner'
@@ -91,11 +92,12 @@ export default function ConnectPage() {
   const { state, reload } = useApiData(fetcher)
   const assets = state.phase === 'ok' ? state.data : EMPTY_ASSETS
 
-  // 可检索口径与治理台「已发布」tab 同源：当前已发布指针非空（含修订中）
+  // 可检索口径与治理台「已发布」tab 同源：isPublished（含修订中）——审计刀 13
+  // 收口手抄副本（workQueue 契约：三态口径禁止各处复制谓词）
   const published = useMemo(
     () =>
       assets
-        .filter((a) => a.current_published_version_no !== null)
+        .filter(isPublished)
         .slice()
         .sort((a, b) => a.id - b.id),
     [assets],
