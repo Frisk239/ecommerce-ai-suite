@@ -383,7 +383,9 @@ export default function ServicePage() {
                 onClick={() => setTicketFilter('all')}
               >
                 全部
-                <span className={ticketFilter === 'all' ? 'text-ink-3' : ''}>{sessions.length}</span>
+                <span className={ticketFilter === 'all' ? 'text-ink-3' : ''}>
+                  {list.state.phase === 'ok' ? sessions.length : '—'}
+                </span>
               </button>
               <button
                 type="button"
@@ -395,7 +397,7 @@ export default function ServicePage() {
               >
                 待处理工单
                 <span className={ticketFilter === 'pending' ? 'text-ink-3' : ''}>
-                  {pendingSessionCount}
+                  {list.state.phase === 'ok' ? pendingSessionCount : '—'}
                 </span>
               </button>
             </div>

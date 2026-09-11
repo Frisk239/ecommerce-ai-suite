@@ -319,11 +319,14 @@ export default function AssetsListPage() {
               >
                 {tab}
                 <span className={activeTab === tab ? 'text-ink-3' : ''}>
-                  {tab === '全部'
-                    ? scoped.length
-                    : tab === '知识缺口'
-                      ? (openGapCount ?? '—')
-                      : counts[TAB_TO_STATUS[tab]]}
+                  {/* 走查 P2-1：加载中显「—」不显 0——首帧 0 会被读成「没有资产」 */}
+                  {state.phase !== 'ok'
+                    ? '—'
+                    : tab === '全部'
+                      ? scoped.length
+                      : tab === '知识缺口'
+                        ? (openGapCount ?? '—')
+                        : counts[TAB_TO_STATUS[tab]]}
                 </span>
               </button>
             ))}
@@ -511,7 +514,9 @@ export default function AssetsListPage() {
                   visibleGaps.map((gap) => (
                   <tr key={gap.id}>
                     <td className="font-mono text-xs text-ink-3">{formatGapId(gap.id)}</td>
-                    <td className="max-w-[28rem] text-[13px] text-ink">{gap.question}</td>
+                    <td className="max-w-[28rem] truncate text-[13px] text-ink" title={gap.question}>
+                      {gap.question}
+                    </td>
                     <td>
                       {/* 第 39 刀热度徽章：N>1 高亮（最常被问=最该先补） */}
                       <span
@@ -651,10 +656,13 @@ export default function AssetsListPage() {
                   onClick={() => navigate(`/platform/assets/${asset.id}`)}
                 >
                   <td className="font-mono text-xs text-ink-3">{formatAssetId(asset.id)}</td>
-                  <td className="max-w-[22rem]">
+                  {/* 走查修复：td 只有 max-w 时 nowrap 内容会溢出压到邻列（同表「失败原因」
+                      列的既有口径是 max-w + truncate）——标题补 truncate + hover 全称 */}
+                  <td className="max-w-[22rem] truncate">
                     <Link
                       to={`/platform/assets/${asset.id}`}
                       className="font-medium text-ink transition-colors duration-150 hover:text-accent-strong"
+                      title={asset.title ?? '未命名资产'}
                       onClick={(e) => e.stopPropagation()}
                     >
                       {asset.title ?? '未命名资产'}
@@ -756,10 +764,11 @@ export default function AssetsListPage() {
                           onClick={() => navigate(`/platform/assets/${asset.id}`)}
                         >
                           <td className="font-mono text-xs text-ink-3">{formatAssetId(asset.id)}</td>
-                          <td className="max-w-[22rem]">
+                          <td className="max-w-[22rem] truncate">
                             <Link
                               to={`/platform/assets/${asset.id}`}
                               className="font-medium text-ink transition-colors duration-150 hover:text-accent-strong"
+                              title={asset.title ?? '未命名资产'}
                               onClick={(e) => e.stopPropagation()}
                             >
                               {asset.title ?? '未命名资产'}

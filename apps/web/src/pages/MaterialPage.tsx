@@ -397,10 +397,11 @@ export default function MaterialPage() {
                     onClick={() => navigate(`/platform/assets/${asset.id}`)}
                   >
                     <td className="font-mono text-xs text-ink-3">{formatAssetId(asset.id)}</td>
-                    <td className="max-w-[28rem]">
+                    <td className="max-w-[28rem] truncate">
                       <Link
                         to={`/platform/assets/${asset.id}`}
                         className="font-medium text-ink transition-colors duration-150 hover:text-accent-strong"
+                        title={asset.title ?? '未命名资产'}
                         onClick={(e) => e.stopPropagation()}
                       >
                         {asset.title ?? '未命名资产'}
