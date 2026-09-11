@@ -341,6 +341,14 @@ def test_stale_multiplier_applied_as_post_factor() -> None:
         # 已知取舍（评审 P2#4，钉住）：「不值得/不推荐」含「值得/推荐」仍豁免——
         # 豁免侧从宽比错杀轻（错杀把可答变拒答；从宽只是退回闸前词法形态）
         ("退货流程不值得吐槽吗", False),
+        # ---- 复审审计 P1（B/C 轴同源）：咋字族与可靠 ----
+        ("物流咋样", False),  # 67 刀把咋字族在报价侧合法化后，观点表不同步会饿死同义问
+        ("快递什么样", False),
+        ("快递可靠吗", False),  # 靠谱的同义词
+        # ---- 复审审计 P2：服务词补齐（当前库零实害，防将来评论语料灌入后同型 P0）----
+        ("包邮吗", True),
+        ("收货地址能改吗", True),
+        ("可以开发票吗", True),
     ],
 )
 def test_excludes_review_evidence_truth_table(query: str, expected: bool) -> None:
