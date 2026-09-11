@@ -61,7 +61,16 @@ const IMPORTED_SOURCE_KINDS: ReadonlySet<string> = new Set([
   'wands',
 ])
 
-/** 是否是「导入货」（工作队列里折叠到队尾的那批）。 */
+/** 是否是「导入货」（按来源词判，不含状态——来源是既成事实）。 */
 export function isImportedSource(asset: AssetListItem): boolean {
   return IMPORTED_SOURCE_KINDS.has(asset.source_kind)
+}
+
+/** 折叠组的口径（第 64 刀，审计刀 12 C-P2）：导入且**未发布**。
+ * 导入货折叠的语义是「待办噪声」（待人洗队列里 180/194 是它们）；已发布的
+ * 导入行是**线上证据**——客服引用它、连接层读它，折进表尾会让「已发布」tab
+ * 凭空少 20 条（published 56 → 可见 36 + 折叠头）。已接入/待人洗的导入行
+ * 照旧折叠（那正是待办）。 */
+export function isFoldedImport(asset: AssetListItem): boolean {
+  return isImportedSource(asset) && !isPublished(asset)
 }
