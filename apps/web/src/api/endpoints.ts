@@ -282,7 +282,7 @@ export const api = {
       headers: { Authorization: `Bearer ${token}` },
     }),
 
-  // 会话评分（第 48 刀，CSAT）：一次评 1–5 星 + 可选留言；一会话一评（重复 409）。
+  // 会话评分（第 48 刀，CSAT）：一次评 1–5 星 + 可选留言；评分可改（重复提交=覆盖式留最新，第 71 刀）。
   rateSession: (sessionId: number, token: string, score: number, comment: string | null) =>
     request<SessionRating>(`/customer/sessions/${sessionId}/rating`, {
       method: 'POST',

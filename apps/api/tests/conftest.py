@@ -55,6 +55,14 @@ def api(tmp_path_factory: Path) -> tuple[TestClient, Path]:
     app = create_app(settings)
     # module 级 TestClient 下各用例多次 _login()，生产闸 10/60s 会误伤整套件
     app.state.login_limiter = SlidingWindowLimiter(10_000, 60.0)
+    # 顾客闸同理（第 71 刀）：csat 套件一个模块 20+ 发 /rating+/messages，生产
+    # 30/60s 的 IP 闸会被模块级共享 client 顶穿——被测的是评分语义不是限流
+    # （限流语义由专门用例自建闸钉，见 test_customer_rate_limit）。
+    from suite_api.services.rate_limit import CustomerRateLimits
+
+    app.state.customer_rate_limits = CustomerRateLimits(
+        session_ask_limit=10_000, ip_ask_limit=10_000, ip_create_limit=10_000
+    )
     with TestClient(app) as client:  # with 触发 lifespan：alembic upgrade head + 幂等种子
         yield client, storage_root
 

@@ -20,9 +20,11 @@
   ADR 0046 §4）：转人工工单留联系方式——闸序同上；name/note 必填、email/
   phone 可选轻校验；工单须属于本会话（统一 404）；顾客回显自己的输入不掩。
 
-- ``POST /api/customer/sessions/{id}/rating``（第 48 刀）：会话级 1–5 星 CSAT——
-  闸序同上；score 越界 422、非 active 409、一会话一评（已评 409）；comment
-  可选（≤500 字）。低分不触发任何写动作（CSAT 是主观分，不是证据语义）。
+- ``POST /api/customer/sessions/{id}/rating``（第 48 刀；第 71 刀评分可改）：会话级
+  1–5 星 CSAT——闸序同上；score 越界 422、非 active 409、已评再提交是**改评**
+  （UPDATE 覆盖式留最新，updated_at 记修改）；comment 可选（≤500 字，整体覆盖，
+  不带即清空）。
+低分不触发任何写动作（CSAT 是主观分，不是证据语义）。
 
 顾客没有 GET/列表/回流端点（0021：回流登记仍是操作者动作，顾客接口不能
 发布；拉历史属本刀 Out）。限流三道闸见 services/rate_limit（ADR 0033）。
@@ -38,7 +40,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -395,6 +397,8 @@ class RatingOut(BaseModel):
     score: int
     comment: str | None
     created_at: datetime
+    # 第 71 刀：最后一次改评时间（None=首评未改）
+    updated_at: datetime | None = None
 
 
 @router.post("/sessions/{session_id}/rating", response_model=RatingOut)
@@ -408,7 +412,9 @@ def rate_session(
     """顾客给这次会话打 1–5 星（第 48 刀，CSAT）。
 
     闸序与发问/反馈一致（IP 闸 -> 401 -> 409 非 active -> 422 分值/留言长度）。
-    **一会话一评**：已评 409（与 thumbs 幂等同口径）；低分不做任何写动作
+    **评分可改**（第 71 刀，Owner 裁决 2026-09-11）：一行仍唯一，改评是 UPDATE
+    **覆盖式留最新**（score/comment 整体覆盖——comment 不带即清空，前端提交时
+    回填当前留言故不自清）；updated_at 记最后一次修改。低分不做任何写动作
     （intake 裁决 9）。comment 库内原文；出口（操作者面/仪表）必掩。
     """
     retry_after = limits.check_ask_ip(client_ip(request))
@@ -434,7 +440,23 @@ def rate_session(
         )
     existing = db.scalar(select(SessionRating).where(SessionRating.session_id == session_id))
     if existing is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该会话已评过分")
+        # 第 71 刀：改评=覆盖式留最新（score/comment 整体覆盖，updated_at 记修改）。
+        # updated_at 取 DB 钟（func.now() 表达式，flush 时求值）——与 created_at 的
+        # server_default 同源；Python 钟/DB 钟混用在 app 与 db 分机部署时会假翻转
+        existing.score = body.score
+        existing.comment = comment
+        existing.updated_at = func.now()
+        db.commit()
+        db.refresh(existing)
+        record_csat_rating(existing.score)
+        logger.info("会话改评: session=%s score=%s", session_id, existing.score)
+        return RatingOut(
+            session_id=existing.session_id,
+            score=existing.score,
+            comment=existing.comment,
+            created_at=existing.created_at,
+            updated_at=existing.updated_at,
+        )
 
     rating = SessionRating(session_id=session_id, score=body.score, comment=comment)
     db.add(rating)
@@ -458,6 +480,7 @@ def rate_session(
         score=rating.score,
         comment=rating.comment,
         created_at=rating.created_at,
+        updated_at=rating.updated_at,  # 首评恒 None（未改过）
     )
 
 

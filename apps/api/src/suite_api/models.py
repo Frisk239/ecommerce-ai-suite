@@ -262,7 +262,9 @@ class SessionRating(Base):
 
     与消息级 ``service_messages.feedback``（thumbs）正交：thumbs 问「这条回答
     有没有帮助」（带证据分诊语义），评分问「这次服务怎么样」（会话级主观分）。
-    ``session_id`` **唯一**——一会话一评，不做多评/改评（v1）。
+    ``session_id`` **唯一**——一行一会话；**评分可改**（第 71 刀，Owner 裁决
+    2026-09-11）：改评是 UPDATE **覆盖式留最新**（score/comment 整体覆盖），
+    ``updated_at`` 记最后一次修改（NULL=首评未改）。
 
     comment 是顾客手打的自由文本：**库内原文、出口必掩**（ADR 0038——操作者面
     展示前过 redact_contact）。低分不触发任何写动作（不撤销验证、不建缺口/工单）：
@@ -278,6 +280,8 @@ class SessionRating(Base):
     score: Mapped[int] = mapped_column(Integer)
     comment: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # 第 71 刀（迁移 0029）：最后一次改评时间；NULL=首评未改
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Order(Base):
