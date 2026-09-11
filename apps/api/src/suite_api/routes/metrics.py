@@ -1,6 +1,6 @@
 """指标端点鉴权（第 47 刀）。
 
-``/metrics`` 本体由 instrumentator 的 ``expose`` 注册（RED 与三个自定义指标同源
+``/metrics`` 本体由 instrumentator 的 ``expose`` 注册（RED 与六个自定义指标同源
 一处暴露，不自搓第二份实现）；本模块只提供挂在那个端点上的**鉴权依赖**。
 
 口径（observability-intake 裁决 7）：`METRICS_TOKEN` 空 = **一律 401**

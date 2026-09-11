@@ -10,8 +10,8 @@
 - **日志**：structlog JSON 渲染，经 ``ProcessorFormatter`` 接管 stdlib——既有
   ``logging.getLogger(__name__).warning(...)`` 调用**一行不改**就变 JSON 行，且
   自动带 ``correlation_id``。留 ``trace_id`` 字段口子（本刀不接 OTel）。
-- **指标**：instrumentator 的 HTTP RED（在 main 装配）+ 本模块的三个自定义。
-  **标签值一律有限集合**（channel/kind/generated/direction/model）——绝不把
+- **指标**：instrumentator 的 HTTP RED（在 main 装配）+ 本模块的六个自定义。
+  **标签值一律有限集合**（channel/kind/generated/direction/model/result/score/reason）——绝不把
   session_id / asset_id / 问题文本打进标签，那是指标基数爆炸的经典自杀方式。
 """
 
@@ -102,7 +102,7 @@ class CorrelationIdMiddleware:
             _correlation_id.reset(id_token)
 
 
-# ---------- 指标（三个自定义；标签值必须有限） ----------
+# ---------- 指标（六个自定义；标签值必须有限） ----------
 
 chat_requests_total = Counter(
     "chat_requests_total",
@@ -141,18 +141,36 @@ csat_ratings_total = Counter(
     ["score"],
 )
 
+# 闸回退（第 63 刀，审计刀 7 起记债、审计刀 12 建议 3）：reason 与引擎
+# `AskOutcome.fallback_reason` 同源——coverage=忠实度闸把生成降级为证据模板
+# （ADR 0044 §二）、no_coverage=模型自述证据未覆盖按拒答收口（第 58 刀）。
+# 普通厂商失败降级为 None（不计数）——那不是闸在回退，是网关/厂商问题，
+# 混进来会污染「闸回退率」。other 是防御位：引擎将来加了新 reason 而
+# 这里没跟上，宁可落 other 也不让陌生值进标签（基数纪律）。
+_FALLBACK_REASONS = ("coverage", "no_coverage")
+chat_fallbacks_total = Counter(
+    "chat_fallbacks_total",
+    "闸回退次数（coverage=忠实度闸降级 / no_coverage=证据未覆盖按拒答收口 / other=未知原因防御位）。",
+    ["channel", "reason"],
+)
+
 
 def record_chat_request(outcome: Any, *, channel: str) -> None:
     """发问结束记一次（channel ∈ customer/operator；kind 取 ComposedAnswer.kind）。
 
     ``generated`` 区分「厂商真生成」与「模板/工具/目录回答」——顺带把模板回退率
-    变成可观测值（此前只能靠日志数行）。
+    变成可观测值（此前只能靠日志数行）。``fallback_reason`` 非空时另记
+    ``chat_fallbacks_total``（闸回退率；None 不计——见该指标的口径注释）。
     """
     kind = getattr(getattr(outcome, "answer", None), "kind", None) or "unknown"
     generated = bool(getattr(outcome, "generated", False))
     chat_requests_total.labels(
         channel=channel, kind=str(kind), generated="true" if generated else "false"
     ).inc()
+    reason = getattr(outcome, "fallback_reason", None)
+    if reason is not None:
+        bounded = reason if reason in _FALLBACK_REASONS else "other"
+        chat_fallbacks_total.labels(channel=channel, reason=bounded).inc()
 
 
 def usage_counts(usage: Any) -> tuple[int, int] | None:
@@ -211,18 +229,25 @@ def record_csat_rating(score: int) -> None:
 
 
 def build_metrics_registry() -> CollectorRegistry:
-    """每个 app 一份 metrics registry（RED 与三个自定义都在里面）。
+    """每个 app 一份 metrics registry（RED 与六个自定义都在里面）。
 
     为什么不用默认全局 registry：instrumentator 在「同名指标已存在」时会**静默
     放弃全部默认 instrumentation**（``metrics.latency`` 捕获 duplicate ValueError
     后返回 None，instrumentations 变空）——同进程建第二个 app（集成测试、
     多实例/多 worker 同进程）就再也记不到 HTTP 指标，且不报错。每 app 一份
-    registry 让这条路不存在；三个自定义 Collector 对象同时挂默认 registry 与
+    registry 让这条路不存在；自定义 Collector 对象同时挂默认 registry 与
     各 app 的 registry（同一对象多 registry 合法，值共享），所以非请求上下文
     里（llm/engine）照常计数。
     """
     registry = CollectorRegistry()
-    for collector in (chat_requests_total, ttft_seconds, llm_tokens_total, clip_cuts_total, csat_ratings_total):
+    for collector in (
+        chat_requests_total,
+        ttft_seconds,
+        llm_tokens_total,
+        clip_cuts_total,
+        csat_ratings_total,
+        chat_fallbacks_total,
+    ):
         registry.register(collector)
     return registry
 
