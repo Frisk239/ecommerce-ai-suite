@@ -1,1010 +1,1010 @@
 [
-  {
-    "id": "pos-001",
-    "distribution": "positive",
-    "question": "Cardiofitmd的品牌是1MD Nutrition吗",
-    "expect": {
-      "cite": {
-        "asset_id": 245,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-002",
-    "distribution": "positive",
-    "question": "保温杯的净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-003",
-    "distribution": "positive",
-    "question": "Chocolate n3的销售国家是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 227,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-004",
-    "distribution": "positive",
-    "question": "Farandole de madeleine的净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 239,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-005",
-    "distribution": "positive",
-    "question": "衣服评论 · 裤子早都到了忘了确认收货 物流很快怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 44,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-006",
-    "distribution": "positive",
-    "question": "Volle yoghurt 规格（OFF）怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 241,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-007",
-    "distribution": "positive",
-    "question": "Graines de Chia的净含量是1kg吗",
-    "expect": {
-      "cite": {
-        "asset_id": 244,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-008",
-    "distribution": "positive",
-    "question": "该商品的退货政策是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 13,
-        "version_no": 4
-      }
-    }
-  },
-  {
-    "id": "pos-009",
-    "distribution": "positive",
-    "question": "M&M white的条码是000000000063吗",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-010",
-    "distribution": "positive",
-    "question": "Paleta gran reserva - Sierra nevada-的品牌是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 228,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-011",
-    "distribution": "positive",
-    "question": "Erdbeeren的条码是00000019吗",
-    "expect": {
-      "cite": {
-        "asset_id": 237,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-012",
-    "distribution": "positive",
-    "question": "Besan chilla with stuffed chciken 规格（OFF）怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 233,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-013",
-    "distribution": "positive",
-    "question": "水果评论 · 买了六次了，每次只买80mm ，每次怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 78,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-014",
-    "distribution": "positive",
-    "question": "水果评论 · 买了3次，第一次1箱，第二次2箱，第怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 76,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-015",
-    "distribution": "positive",
-    "question": "Hershey’s Syrup 规格（OFF）怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 242,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-016",
-    "distribution": "positive",
-    "question": "平板评论 · 在你家买个手机、耳塞都没有、差评怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 47,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-017",
-    "distribution": "positive",
-    "question": "该商品的净含量是500ml吗",
-    "expect": {
-      "cite": {
-        "asset_id": 13,
-        "version_no": 4
-      }
-    }
-  },
-  {
-    "id": "pos-018",
-    "distribution": "positive",
-    "question": "瓶装水：日常补水随身装怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 15,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-019",
-    "distribution": "positive",
-    "question": "Frog Fuel Power Protein的净含量是610 g吗",
-    "expect": {
-      "cite": {
-        "asset_id": 240,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-020",
-    "distribution": "positive",
-    "question": "酒店评论 · 周边环境不好，除了酒店没有别的。一个怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 160,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-021",
-    "distribution": "positive",
-    "question": "衣服评论 · 黄渤:“班尼路，牌子!”哈哈哈哈，很怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 49,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-022",
-    "distribution": "positive",
-    "question": "Erdbeeren的条码是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 237,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-023",
-    "distribution": "positive",
-    "question": "Confiture extra citron de Menton的条码是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 229,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-024",
-    "distribution": "positive",
-    "question": "水果评论 · 水份多，味道甜，没有坏果，物流速度快怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 80,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-025",
-    "distribution": "positive",
-    "question": "account_access/recover_username · Hi! I forogt my username so i怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 225,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-026",
-    "distribution": "positive",
-    "question": "瓶装水：日常补水随身装的保质期是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 15,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-027",
-    "distribution": "positive",
-    "question": "xxx的条码是00000010吗",
-    "expect": {
-      "cite": {
-        "asset_id": 232,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-028",
-    "distribution": "positive",
-    "question": "Chocolate n3 规格（OFF）怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 227,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-029",
-    "distribution": "positive",
-    "question": "洗发水评论 · 还没用，到货后看着很多，不过和我在超怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 172,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-030",
-    "distribution": "positive",
-    "question": "Nesquik moins de sucre的品牌是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 238,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-031",
-    "distribution": "positive",
-    "question": "钛钢保温杯 500ml 316不锈钢 日常饮水随行的净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 10,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-032",
-    "distribution": "positive",
-    "question": "水果评论 · 物流超级快，宝贝收到了就打开来吃了，怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 91,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-033",
-    "distribution": "positive",
-    "question": "我想查询退款状态需要提供什么信息",
-    "expect": {
-      "cite": {
-        "asset_id": 224,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-034",
-    "distribution": "positive",
-    "question": "granola Bio le Chocolaté的品牌是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 230,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-035",
-    "distribution": "positive",
-    "question": "酒店评论 · 没有第一次去舒服怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 184,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-036",
-    "distribution": "positive",
-    "question": "Cardiofitmd的销售国家是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 245,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-037",
-    "distribution": "positive",
-    "question": "What information do you need to resend an order if I never received it",
-    "expect": {
-      "cite": {
-        "asset_id": 223,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-038",
-    "distribution": "positive",
-    "question": "补口径 · 你们几点上班怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 17,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-039",
-    "distribution": "positive",
-    "question": "书籍评论 · 没有塑料包装，也没有同事说的送记单词怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 194,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-040",
-    "distribution": "positive",
-    "question": "洗发水评论 · 用沙宣好多年，这次买到的洗发水和护发怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 43,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-001",
-    "distribution": "paraphrase",
-    "question": "请问Collagen For Her 参数（OFF）值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 236,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-002",
-    "distribution": "paraphrase",
-    "question": "请问洗发水评价 · 第一次给差评，这款产品用完头发特别痒值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 209,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-003",
-    "distribution": "paraphrase",
-    "question": "granola Bio le Chocolaté的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 230,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-004",
-    "distribution": "paraphrase",
-    "question": "Madeleines ChocoLait的条码是00000015，对吧",
-    "expect": {
-      "cite": {
-        "asset_id": 235,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-005",
-    "distribution": "paraphrase",
-    "question": "请问退换政策说明值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 6,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-006",
-    "distribution": "paraphrase",
-    "question": "xytitol pastilles的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 231,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-007",
-    "distribution": "paraphrase",
-    "question": "xxx的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 232,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-008",
-    "distribution": "paraphrase",
-    "question": "请问尺码对照说明值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 7,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-009",
-    "distribution": "paraphrase",
-    "question": "M&M white的配料是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-010",
-    "distribution": "paraphrase",
-    "question": "Paleta gran reserva - Sierra nevada-的销售国家是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 228,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-011",
-    "distribution": "paraphrase",
-    "question": "Madeleines ChocoLait的stabilisant是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 235,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-012",
-    "distribution": "paraphrase",
-    "question": "钛钢保温瓶的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 3,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-013",
-    "distribution": "paraphrase",
-    "question": "请问Lindt Vollmilch Schokolade 参数（OFF）值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 243,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-014",
-    "distribution": "paraphrase",
-    "question": "Nesquik moins de sucre的容量是1080g，对吧",
-    "expect": {
-      "cite": {
-        "asset_id": 238,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-015",
-    "distribution": "paraphrase",
-    "question": "Lindt Vollmilch Schokolade的容量是100g，对吧",
-    "expect": {
-      "cite": {
-        "asset_id": 243,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-016",
-    "distribution": "paraphrase",
-    "question": "If I have waited over a week and still have not received my order, can you resend it，麻烦告知",
-    "expect": {
-      "cite": {
-        "asset_id": 223,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-017",
-    "distribution": "paraphrase",
-    "question": "请问subscription_inquiry/manage_pay_bill · I'm trying to find out about m值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 224,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-018",
-    "distribution": "paraphrase",
-    "question": "钛钢保温瓶的材质有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 3,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-019",
-    "distribution": "paraphrase",
-    "question": "Hershey’s Syrup的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 242,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-020",
-    "distribution": "paraphrase",
-    "question": "请问保温瓶的容量是多少？值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-021",
-    "distribution": "paraphrase",
-    "question": "请问手机评价 · 实际上这个机子就是多浦达700的OE值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 27,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-022",
-    "distribution": "paraphrase",
-    "question": "请问平板评价 · 很一般的产品，常常黑屏，设置显示5分值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 28,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-023",
-    "distribution": "paraphrase",
-    "question": "钛钢保温瓶 500ml 316不锈钢 日常饮水随行的材质有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 10,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-024",
-    "distribution": "paraphrase",
-    "question": "Powdered peanut butter的容量是300g，对吧",
-    "expect": {
-      "cite": {
-        "asset_id": 234,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-025",
-    "distribution": "paraphrase",
-    "question": "Powdered peanut butter的销售国家是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 234,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-001",
-    "distribution": "confusion",
-    "question": "净含怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-002",
-    "distribution": "confusion",
-    "question": "含量怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-003",
-    "distribution": "confusion",
-    "question": "售国怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-004",
-    "distribution": "confusion",
-    "question": "国家怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-005",
-    "distribution": "confusion",
-    "question": "据库怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-006",
-    "distribution": "confusion",
-    "question": "数据怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-007",
-    "distribution": "confusion",
-    "question": "条码怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-008",
-    "distribution": "confusion",
-    "question": "来源怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-009",
-    "distribution": "confusion",
-    "question": "销售怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-010",
-    "distribution": "confusion",
-    "question": "品牌怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-011",
-    "distribution": "confusion",
-    "question": "配料怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 228,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-012",
-    "distribution": "confusion",
-    "question": "客服怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 29,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-013",
-    "distribution": "confusion",
-    "question": "物流怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 78,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-014",
-    "distribution": "confusion",
-    "question": "第一怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 76,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-015",
-    "distribution": "confusion",
-    "question": "一次怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 76,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "ref-001",
-    "distribution": "refusal",
-    "question": "发票可以开电子的吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-002",
-    "distribution": "refusal",
-    "question": "宠物用品区在几楼",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-003",
-    "distribution": "refusal",
-    "question": "机票改签找谁",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-004",
-    "distribution": "refusal",
-    "question": "以旧换新怎么办理",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-005",
-    "distribution": "refusal",
-    "question": "可以货到付款吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-006",
-    "distribution": "refusal",
-    "question": "礼品卡怎么充值",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-007",
-    "distribution": "refusal",
-    "question": "话费充值有优惠吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-008",
-    "distribution": "refusal",
-    "question": "二手回收怎么估价",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-009",
-    "distribution": "refusal",
-    "question": "医疗器械能退吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-010",
-    "distribution": "refusal",
-    "question": "汽车用品有推荐的吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-011",
-    "distribution": "refusal",
-    "question": "你们营业到几点",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-012",
-    "distribution": "refusal",
-    "question": "降价了能补差价吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-013",
-    "distribution": "refusal",
-    "question": "直播间优惠券怎么领",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-014",
-    "distribution": "refusal",
-    "question": "数码相机防水吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-015",
-    "distribution": "refusal",
-    "question": "无人机保修多久",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-016",
-    "distribution": "refusal",
-    "question": "运动鞋有增高款吗",
-    "expect": {
-      "refuse": true
-    }
+ {
+  "id": "pos-001",
+  "distribution": "positive",
+  "question": "Cardiofitmd的品牌是1MD Nutrition吗",
+  "expect": {
+   "cite": {
+    "asset_id": 245,
+    "version_no": 1
+   }
   }
+ },
+ {
+  "id": "pos-002",
+  "distribution": "positive",
+  "question": "保温杯的净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-003",
+  "distribution": "positive",
+  "question": "Chocolate n3的销售国家是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 227,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-004",
+  "distribution": "positive",
+  "question": "Farandole de madeleine的净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 239,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-005",
+  "distribution": "positive",
+  "question": "衣服评论 · 裤子早都到了忘了确认收货 物流很快怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 44,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-006",
+  "distribution": "positive",
+  "question": "Volle yoghurt 规格（OFF）怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 241,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-007",
+  "distribution": "positive",
+  "question": "Graines de Chia的净含量是1kg吗",
+  "expect": {
+   "cite": {
+    "asset_id": 244,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-008",
+  "distribution": "positive",
+  "question": "该商品的退货政策是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 13,
+    "version_no": 4
+   }
+  }
+ },
+ {
+  "id": "pos-009",
+  "distribution": "positive",
+  "question": "M&M white的条码是000000000063吗",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-010",
+  "distribution": "positive",
+  "question": "Paleta gran reserva - Sierra nevada-的品牌是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 228,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-011",
+  "distribution": "positive",
+  "question": "Erdbeeren的条码是00000019吗",
+  "expect": {
+   "cite": {
+    "asset_id": 237,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-012",
+  "distribution": "positive",
+  "question": "Besan chilla with stuffed chciken 规格（OFF）怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 233,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-013",
+  "distribution": "positive",
+  "question": "水果评论 · 买了六次了，每次只买80mm ，每次怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 78,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-014",
+  "distribution": "positive",
+  "question": "水果评论 · 买了3次，第一次1箱，第二次2箱，第怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 76,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-015",
+  "distribution": "positive",
+  "question": "Hershey’s Syrup 规格（OFF）怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 242,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-016",
+  "distribution": "positive",
+  "question": "平板评论 · 在你家买个手机、耳塞都没有、差评怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 47,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-017",
+  "distribution": "positive",
+  "question": "该商品的净含量是500ml吗",
+  "expect": {
+   "cite": {
+    "asset_id": 13,
+    "version_no": 4
+   }
+  }
+ },
+ {
+  "id": "pos-018",
+  "distribution": "positive",
+  "question": "瓶装水：日常补水随身装怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 15,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-019",
+  "distribution": "positive",
+  "question": "Frog Fuel Power Protein的净含量是610 g吗",
+  "expect": {
+   "cite": {
+    "asset_id": 240,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-020",
+  "distribution": "positive",
+  "question": "酒店评论 · 周边环境不好，除了酒店没有别的。一个怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 160,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-021",
+  "distribution": "positive",
+  "question": "衣服评论 · 黄渤:“班尼路，牌子!”哈哈哈哈，很怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 49,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-022",
+  "distribution": "positive",
+  "question": "Erdbeeren的条码是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 237,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-023",
+  "distribution": "positive",
+  "question": "Confiture extra citron de Menton的条码是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 229,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-024",
+  "distribution": "positive",
+  "question": "水果评论 · 水份多，味道甜，没有坏果，物流速度快怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 80,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-025",
+  "distribution": "positive",
+  "question": "account_access/recover_username · Hi! I forogt my username so i怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 225,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-026",
+  "distribution": "positive",
+  "question": "瓶装水：日常补水随身装的保质期是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 15,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-027",
+  "distribution": "positive",
+  "question": "xxx的条码是00000010吗",
+  "expect": {
+   "cite": {
+    "asset_id": 232,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-028",
+  "distribution": "positive",
+  "question": "Chocolate n3 规格（OFF）怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 227,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-029",
+  "distribution": "positive",
+  "question": "洗发水评论 · 还没用，到货后看着很多，不过和我在超怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 172,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-030",
+  "distribution": "positive",
+  "question": "Nesquik moins de sucre的品牌是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 238,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-031",
+  "distribution": "positive",
+  "question": "钛钢保温杯 500ml 316不锈钢 日常饮水随行的净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 10,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-032",
+  "distribution": "positive",
+  "question": "水果评论 · 物流超级快，宝贝收到了就打开来吃了，怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 91,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-033",
+  "distribution": "positive",
+  "question": "我想查询退款状态需要提供什么信息",
+  "expect": {
+   "cite": {
+    "asset_id": 224,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-034",
+  "distribution": "positive",
+  "question": "granola Bio le Chocolaté的品牌是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 230,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-035",
+  "distribution": "positive",
+  "question": "酒店评论 · 没有第一次去舒服怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 184,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-036",
+  "distribution": "positive",
+  "question": "Cardiofitmd的销售国家是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 245,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-037",
+  "distribution": "positive",
+  "question": "What information do you need to resend an order if I never received it",
+  "expect": {
+   "cite": {
+    "asset_id": 223,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-038",
+  "distribution": "positive",
+  "question": "补口径 · 你们几点上班怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 17,
+    "version_no": 2
+   }
+  }
+ },
+ {
+  "id": "pos-039",
+  "distribution": "positive",
+  "question": "书籍评论 · 没有塑料包装，也没有同事说的送记单词怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 194,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-040",
+  "distribution": "positive",
+  "question": "洗发水评论 · 用沙宣好多年，这次买到的洗发水和护发怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 43,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-001",
+  "distribution": "paraphrase",
+  "question": "请问Collagen For Her 参数（OFF）值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 236,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-002",
+  "distribution": "paraphrase",
+  "question": "请问洗发水评价 · 第一次给差评，这款产品用完头发特别痒值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 209,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-003",
+  "distribution": "paraphrase",
+  "question": "granola Bio le Chocolaté的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 230,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-004",
+  "distribution": "paraphrase",
+  "question": "Madeleines ChocoLait的条码是00000015，对吧",
+  "expect": {
+   "cite": {
+    "asset_id": 235,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-005",
+  "distribution": "paraphrase",
+  "question": "请问退换政策说明值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 6,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-006",
+  "distribution": "paraphrase",
+  "question": "xytitol pastilles的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 231,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-007",
+  "distribution": "paraphrase",
+  "question": "xxx的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 232,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-008",
+  "distribution": "paraphrase",
+  "question": "请问尺码对照说明值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 7,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-009",
+  "distribution": "paraphrase",
+  "question": "M&M white的配料是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-010",
+  "distribution": "paraphrase",
+  "question": "Paleta gran reserva - Sierra nevada-的销售国家是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 228,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-011",
+  "distribution": "paraphrase",
+  "question": "Madeleines ChocoLait的stabilisant是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 235,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-012",
+  "distribution": "paraphrase",
+  "question": "钛钢保温瓶的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 3,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-013",
+  "distribution": "paraphrase",
+  "question": "请问Lindt Vollmilch Schokolade 参数（OFF）值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 243,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-014",
+  "distribution": "paraphrase",
+  "question": "Nesquik moins de sucre的容量是1080g，对吧",
+  "expect": {
+   "cite": {
+    "asset_id": 238,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-015",
+  "distribution": "paraphrase",
+  "question": "Lindt Vollmilch Schokolade的容量是100g，对吧",
+  "expect": {
+   "cite": {
+    "asset_id": 243,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-016",
+  "distribution": "paraphrase",
+  "question": "If I have waited over a week and still have not received my order, can you resend it，麻烦告知",
+  "expect": {
+   "cite": {
+    "asset_id": 223,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-017",
+  "distribution": "paraphrase",
+  "question": "请问subscription_inquiry/manage_pay_bill · I'm trying to find out about m值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 224,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-018",
+  "distribution": "paraphrase",
+  "question": "钛钢保温瓶的材质有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 3,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-019",
+  "distribution": "paraphrase",
+  "question": "Hershey’s Syrup的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 242,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-020",
+  "distribution": "paraphrase",
+  "question": "请问保温瓶的容量是多少？值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-021",
+  "distribution": "paraphrase",
+  "question": "请问手机评价 · 实际上这个机子就是多浦达700的OE值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 27,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-022",
+  "distribution": "paraphrase",
+  "question": "请问平板评价 · 很一般的产品，常常黑屏，设置显示5分值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 28,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-023",
+  "distribution": "paraphrase",
+  "question": "钛钢保温瓶 500ml 316不锈钢 日常饮水随行的材质有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 10,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-024",
+  "distribution": "paraphrase",
+  "question": "Powdered peanut butter的容量是300g，对吧",
+  "expect": {
+   "cite": {
+    "asset_id": 234,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-025",
+  "distribution": "paraphrase",
+  "question": "Powdered peanut butter的销售国家是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 234,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-001",
+  "distribution": "confusion",
+  "question": "净含怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-002",
+  "distribution": "confusion",
+  "question": "含量怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-003",
+  "distribution": "confusion",
+  "question": "售国怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-004",
+  "distribution": "confusion",
+  "question": "国家怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-005",
+  "distribution": "confusion",
+  "question": "据库怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-006",
+  "distribution": "confusion",
+  "question": "数据怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-007",
+  "distribution": "confusion",
+  "question": "条码怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-008",
+  "distribution": "confusion",
+  "question": "来源怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-009",
+  "distribution": "confusion",
+  "question": "销售怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-010",
+  "distribution": "confusion",
+  "question": "品牌怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-011",
+  "distribution": "confusion",
+  "question": "配料怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 228,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-012",
+  "distribution": "confusion",
+  "question": "客服怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 29,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-013",
+  "distribution": "confusion",
+  "question": "物流怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 78,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-014",
+  "distribution": "confusion",
+  "question": "第一怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 76,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-015",
+  "distribution": "confusion",
+  "question": "一次怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 76,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "ref-001",
+  "distribution": "refusal",
+  "question": "发票可以开电子的吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-002",
+  "distribution": "refusal",
+  "question": "宠物用品区在几楼",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-003",
+  "distribution": "refusal",
+  "question": "机票改签找谁",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-004",
+  "distribution": "refusal",
+  "question": "以旧换新怎么办理",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-005",
+  "distribution": "refusal",
+  "question": "可以货到付款吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-006",
+  "distribution": "refusal",
+  "question": "礼品卡怎么充值",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-007",
+  "distribution": "refusal",
+  "question": "话费充值有优惠吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-008",
+  "distribution": "refusal",
+  "question": "二手回收怎么估价",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-009",
+  "distribution": "refusal",
+  "question": "医疗器械能退吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-010",
+  "distribution": "refusal",
+  "question": "汽车用品有推荐的吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-011",
+  "distribution": "refusal",
+  "question": "可以开发票吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-012",
+  "distribution": "refusal",
+  "question": "降价了能补差价吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-013",
+  "distribution": "refusal",
+  "question": "直播间优惠券怎么领",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-014",
+  "distribution": "refusal",
+  "question": "数码相机防水吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-015",
+  "distribution": "refusal",
+  "question": "无人机保修多久",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-016",
+  "distribution": "refusal",
+  "question": "运动鞋有增高款吗",
+  "expect": {
+   "refuse": true
+  }
+ }
 ]

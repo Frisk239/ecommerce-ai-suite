@@ -41,7 +41,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_db
@@ -458,29 +458,37 @@ def rate_session(
             updated_at=existing.updated_at,
         )
 
-    rating = SessionRating(session_id=session_id, score=body.score, comment=comment)
-    db.add(rating)
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        # 并发两次提交：唯一约束兜住（与 thumbs 的「非空即已反馈」同口径）。
-        # 只翻译「会话唯一约束」这一种冲突——FK 违约等其它完整性错误照旧上抛，
-        # 别把「会话刚被删」误报成「已评过分」。
-        if "uq_session_ratings_session_id" not in str(exc.orig):
-            raise
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="该会话已评过分"
-        ) from exc
-    db.refresh(rating)
-    record_csat_rating(rating.score)
-    logger.info("会话评分: session=%s score=%s", session_id, rating.score)
+    # 第 71 刀（审计刀 15 B 轴 P2 修订）：首评用**原子 UPSERT**——并发两次提交时，
+    # 败者按唯一约束转入 UPDATE（=改评，覆盖式留最新语义的自然延伸），不再吐
+    # 语义已过时的 409（与 thumbs 的「非空即已反馈」口径分道：评分可改之后，
+    # 「重复提交」不再是冲突而是改评）。
+    stmt = pg_insert(SessionRating).values(
+        session_id=session_id, score=body.score, comment=comment
+    )
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_session_ratings_session_id",
+        set_={
+            "score": stmt.excluded.score,
+            "comment": stmt.excluded.comment,
+            "updated_at": func.now(),
+        },
+    ).returning(
+        SessionRating.session_id,
+        SessionRating.score,
+        SessionRating.comment,
+        SessionRating.created_at,
+        SessionRating.updated_at,
+    )
+    row = db.execute(stmt).one()
+    db.commit()
+    record_csat_rating(row.score)
+    logger.info("会话评分(UPSERT): session=%s score=%s", session_id, row.score)
     return RatingOut(
-        session_id=rating.session_id,
-        score=rating.score,
-        comment=rating.comment,
-        created_at=rating.created_at,
-        updated_at=rating.updated_at,  # 首评恒 None（未改过）
+        session_id=row.session_id,
+        score=row.score,
+        comment=row.comment,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
