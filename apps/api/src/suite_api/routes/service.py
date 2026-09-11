@@ -151,6 +151,9 @@ class SessionDetail(SessionOut):
     # （visitor_id / rating）详情一并给，深链进来（?session=N）才看得到同样的上下文
     visitor_id: str | None = None
     rating: int | None = None
+    # 第 77 刀：改评时间（None=首评未改）——操作者面「改过」标记的数据面
+    rating_updated_at: datetime | None = None
+
     # 第 42 刀（ADR 0046 §5）：本会话工单（一会话一单，无则 null）。操作者面
     # 出口掩电话/邮箱；详情头部据此渲染「结单」动作。联系方式随工单展示。
     ticket: HandoffTicketOut | None = None
@@ -326,7 +329,9 @@ def get_session(
     # 第 42 刀（ADR 0046 §5）：本会话工单（一会话一单）；操作者面掩电话/邮箱
     ticket = db.scalar(select(HandoffTicket).where(HandoffTicket.session_id == session.id))
     # 第 57 刀：评分（一行一会话（第 71 刀起可改，留最新），未评为 None）——详情头部与列表行同口径
-    rating = db.scalar(select(SessionRating.score).where(SessionRating.session_id == session.id))
+    rating_row = db.scalar(select(SessionRating).where(SessionRating.session_id == session.id))
+    rating = rating_row.score if rating_row is not None else None
+    rating_updated_at = rating_row.updated_at if rating_row is not None else None
     return SessionDetail(
         id=session.id,
         status=session.status,
@@ -336,6 +341,7 @@ def get_session(
         # 第 54/57 刀：来源站点与访客（列表行同源）；第 57 刀补评分
         visitor_id=session.visitor_id,
         rating=rating,
+        rating_updated_at=rating_updated_at,
         # 第 54 刀：宿主站点在详情同样要给（审计刀 11 P0：此前详情恒回 None，
         # 与「列表与详情同源」的声称不符——外部消费者会拿到「没有宿主」的错值）
         host_origin=session.host_origin,
