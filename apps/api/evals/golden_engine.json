@@ -1,0 +1,277 @@
+[
+ {
+  "id": "eg-cat-001",
+  "surface": "catalog-price",
+  "question": "笔记本电脑多少钱？",
+  "expect": {
+   "kind": "answer",
+   "tool": "catalog",
+   "tool_arg": "笔记本电脑",
+   "cites": "empty",
+   "content_has": [
+    "共 2 件"
+   ]
+  }
+ },
+ {
+  "id": "eg-cat-002",
+  "surface": "catalog-price",
+  "question": "笔记本多少钱？",
+  "expect": {
+   "kind": "answer",
+   "tool": "catalog",
+   "tool_arg": "笔记本电脑",
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-cat-003",
+  "surface": "catalog-price",
+  "question": "笔记本电脑多少钱一台",
+  "expect": {
+   "kind": "answer",
+   "tool": "catalog",
+   "tool_arg": "笔记本电脑",
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-cat-004",
+  "surface": "catalog-price",
+  "question": "笔记本电脑咋样卖？",
+  "expect": {
+   "kind": "answer",
+   "tool": "catalog",
+   "tool_arg": "笔记本电脑",
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-cat-005",
+  "surface": "catalog-price",
+  "question": "保温杯多少钱？",
+  "expect": {
+   "kind": "answer",
+   "tool": "catalog",
+   "tool_arg": "钛钢保温杯",
+   "cites": "empty",
+   "content_has": [
+    "129"
+   ]
+  }
+ },
+ {
+  "id": "eg-cat-006",
+  "surface": "catalog-price",
+  "question": "保温杯花多少钱",
+  "expect": {
+   "kind": "answer",
+   "tool": "catalog",
+   "tool_arg": "钛钢保温杯",
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-cat-007",
+  "surface": "catalog-purity",
+  "question": "手机壳多少钱？",
+  "expect": {
+   "kind": "refusal",
+   "handoff": true,
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-cat-008",
+  "surface": "catalog-purity",
+  "question": "电脑包多少钱？",
+  "expect": {
+   "kind": "refusal",
+   "handoff": true,
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-cat-009",
+  "surface": "catalog-miss",
+  "question": "洗衣机多少钱？",
+  "expect": {
+   "kind": "refusal",
+   "handoff": true,
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-cat-010",
+  "surface": "catalog-listing",
+  "question": "你们卖什么",
+  "expect": {
+   "kind": "answer",
+   "cites": "empty",
+   "content_has": [
+    "在售商品共"
+   ]
+  }
+ },
+ {
+  "id": "eg-stk-001",
+  "surface": "stock",
+  "question": "你们有笔记本吗？",
+  "expect": {
+   "kind": "answer",
+   "tool": "get_stock",
+   "cites": "empty",
+   "content_has": [
+    "共 2 件"
+   ]
+  }
+ },
+ {
+  "id": "eg-stk-002",
+  "surface": "stock",
+  "question": "保温杯有货吗？",
+  "expect": {
+   "kind": "answer",
+   "tool": "get_stock",
+   "cites": "empty",
+   "content_has": [
+    "42"
+   ]
+  }
+ },
+ {
+  "id": "eg-stk-003",
+  "surface": "stock",
+  "question": "书都卖完了吗？",
+  "expect": {
+   "kind": "answer",
+   "tool": "get_stock",
+   "cites": "empty",
+   "content_has": [
+    "图书共 1 件"
+   ]
+  }
+ },
+ {
+  "id": "eg-stk-004",
+  "surface": "stock",
+  "question": "书还有么",
+  "expect": {
+   "kind": "answer",
+   "tool": "get_stock",
+   "cites": "empty",
+   "content_has": [
+    "图书共 1 件"
+   ]
+  }
+ },
+ {
+  "id": "eg-stk-005",
+  "surface": "stock-purity",
+  "question": "手机壳有货吗？",
+  "expect": {
+   "kind": "refusal",
+   "handoff": true,
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-stk-006",
+  "surface": "stock-purity",
+  "question": "手机膜卖完了吗",
+  "expect": {
+   "kind": "refusal",
+   "handoff": true,
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-ord-001",
+  "surface": "order",
+  "question": "我的订单 SO-1001 到哪了",
+  "expect": {
+   "kind": "answer",
+   "tool": "get_order_status",
+   "cites": "empty",
+   "content_has": [
+    "已发货"
+   ]
+  }
+ },
+ {
+  "id": "eg-ord-002",
+  "surface": "order",
+  "question": "SO-9999 到哪了",
+  "expect": {
+   "kind": "handoff",
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-evd-001",
+  "surface": "evidence-gate",
+  "question": "到货了吗",
+  "expect": {
+   "kind": "refusal",
+   "handoff": true,
+   "cites": "empty"
+  }
+ },
+ {
+  "id": "eg-evd-002",
+  "surface": "evidence-gate",
+  "question": "物流怎么样",
+  "expect": {
+   "kind": "answer",
+   "cites": "nonempty"
+  }
+ },
+ {
+  "id": "eg-evd-003",
+  "surface": "rag",
+  "question": "怎么退货？",
+  "expect": {
+   "kind": "answer",
+   "cites": "nonempty",
+   "content_has": [
+    "7天"
+   ]
+  }
+ },
+ {
+  "id": "eg-evd-004",
+  "surface": "rag",
+  "question": "保温杯的材质是什么？",
+  "expect": {
+   "kind": "answer",
+   "cites": "nonempty",
+   "content_has": [
+    "钛钢"
+   ]
+  }
+ },
+ {
+  "id": "eg-mt-001",
+  "surface": "multi-turn",
+  "turns": [
+   {
+    "question": "保温杯的净含量是多少？",
+    "expect": {
+     "kind": "answer",
+     "cites": "nonempty"
+    }
+   },
+   {
+    "question": "那它的材质是什么",
+    "expect": {
+     "kind": "answer",
+     "cites": "nonempty",
+     "cite_asset": "$SPEC_ASSET",
+     "content_has": [
+      "材质"
+     ]
+    }
+   }
+  ]
+ }
+]
