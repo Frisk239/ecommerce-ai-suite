@@ -518,6 +518,105 @@ def test_stock_router_hit_without_lookup_falls_through() -> None:
     assert result is None
 
 
+# ---------- 第 62 刀：类目聚合的纯度闸（此前只判 token in question） ----------
+
+
+def _stock_db(products: list[Product]) -> Any:
+    """query_stock 的内存 db（只读商品表的 fake）。"""
+    return _FakeDb(scalars_result=products)
+
+
+def _category_products(*spec: tuple[str, str]) -> list[Product]:
+    """(类目, 商品名) -> 内存商品（stock 都给 5）。"""
+    out = []
+    for index, (category, name) in enumerate(spec, 1):
+        product = _product(index, name)
+        product.category = category
+        product.stock = 5
+        out.append(product)
+    return out
+
+
+def test_category_stock_respects_purity_gate() -> None:
+    """第 62 刀 P0：别名词当**修饰语**时不许按类目聚合（配件/家具/箱包）。
+
+    实测（演示库）：「手机壳有货吗」曾答「智能手机共 10 件」、「电视柜有货吗」答
+    电视机、「平板支撑有货吗」答平板电脑、「笔记本电脑包有货吗」答笔记本电脑——
+    把配件/家具/箱包当成类目本身。报价侧有 `price_residual`，库存侧一直裸
+    `token in question`（第 56 刀只把表接了过来，闸没接）。
+    """
+    # 商品名与问句零公共子串：这条钉的是**类目闸**，别让单品 LCS 兜住。
+    # **类目必须种全**：负例问句命中哪个类目就种哪个——只种前三个时
+    # 「平板支撑/书桌/食物中毒」的 target 不在库里，`category_targets` 直接跳过，
+    # 未修复实现照样通过（评审 P1：6 条里 3 条是空断言）。
+    products = _category_products(
+        ("智能手机", "样品一"),
+        ("电视机", "样品二"),
+        ("笔记本电脑", "样品三"),
+        ("平板电脑", "样品四"),
+        ("图书", "样品五"),
+        ("食品", "样品六"),
+    )
+    for question in [
+        "手机壳有货吗？",
+        "电视柜有货吗？",
+        "平板支撑有货吗？",
+        "笔记本电脑包有货吗？",
+        "书桌有货吗？",
+        "食物中毒有没有危险？",
+        "手机店有货吗？",  # 店铺形态：店是「卖这个的店」，不是这个类目（评审 P2 实测）
+        "书店有货吗？",
+    ]:
+        assert stock_tools._category_stock(question, products) is None, question
+        assert stock_tools.query_stock(_stock_db(products), question) == {"found": False}  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "你们有笔记本吗？",
+        "笔记本有货吗？",
+        "笔记本还有货吗？",
+        "笔记本还有现货吗？",
+        "笔记本电脑有没有货",
+        "店里有笔记本卖吗",
+        "你们店里有笔记本吗？",  # 裸「店」不可作虚词，但「店里」可以——这条钉住区分
+        "笔记本没有货吗？",
+    ],
+)
+def test_category_stock_accepts_common_question_forms(question: str) -> None:
+    """问货的常见问法都要过闸（虚词表**长词在前**：手写顺序时「没有货吗」会被
+    「有」先吃掉剩「没…货」残渣）。"""
+    products = _category_products(("笔记本电脑", "样品一"))
+    result = stock_tools._category_stock(question, products)
+    assert result is not None, question
+    assert result["category"] == "笔记本电脑"
+
+
+def test_category_stock_wins_over_single_product_with_category_in_name() -> None:
+    """第 62 刀：类目先于单品（对齐报价侧审计刀 11 P1 的修法）。
+
+    商品名含完整类目名时（「WANDS 家具（演示）」），先走单品会把「你们有家具吗」
+    答成**这一个商品**的库存；类目分支有纯度闸兜底，带具体型号的问句仍走单品。
+    """
+    products = _category_products(("家具", "WANDS 家具（演示）"), ("家具", "实木餐桌"))
+    category = stock_tools.query_stock(_stock_db(products), "你们有家具吗？")  # type: ignore[arg-type]
+    assert category["found"] is True and category["category"] == "家具"
+    assert category["total"] == 2
+    single = stock_tools.query_stock(_stock_db(products), "WANDS 家具（演示）有货吗？")  # type: ignore[arg-type]
+    assert single["product_name"] == "WANDS 家具（演示）"
+    assert "category" not in single
+
+
+def test_stock_residual_is_pure_function() -> None:
+    """残渣口径（纯函数）：只剔命中字面 + 问货虚词，剩下实质词就不聚合。"""
+    assert stock_tools.stock_residual("手机壳有货吗？", "手机") == "壳"
+    assert stock_tools.stock_residual("你们有笔记本吗？", "笔记本") == ""
+    assert stock_tools.stock_residual("笔记本还有现货吗", "笔记本") == ""
+    # 单字残渣也算实质（「柜」不是虚词）
+    assert stock_tools.stock_residual("电视柜有货吗？", "电视") == "柜"
+
+
 def test_category_stock_renders_fact_answer() -> None:
     """第 56 刀：类目聚合结果（无单件 stock 字段）必须走事实模板。
 
