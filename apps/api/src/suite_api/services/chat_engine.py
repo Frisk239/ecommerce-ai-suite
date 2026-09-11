@@ -224,6 +224,19 @@ _SENTENCE_SPLIT_RE = re.compile(r"[^。；！？\n]+[。；！？]?")
 _CITE_MARK_RE = re.compile(r"\[\d+\]")
 _SUBSTANTIVE_RE = re.compile(r"[0-9A-Za-z一-鿿]")
 
+# 裸覆盖标记（审计刀 16 C-P0-1）：模型偶发输出整句只有覆盖类词、不带证据类
+# 主语的退化形态（live 实测「[未覆盖]」带引用作答，~8% 复现）——`_NO_COVERAGE_RE`
+# 的主语闸拦不到它。只认 **fullmatch**（整句去引用标记/空白/标点后恰好是
+# 覆盖词），不认子串：事实否定句「配料信息中不包含任何防腐剂」整串不匹配，
+# 不会被误摘（审计刀 12「误判比漏检贵」的口径不变）。
+_BARE_COVERAGE_RE = re.compile(
+    r"未覆盖|未涉及|未提供|未收录|尚未收录|未说明|未提及|未给出|未列明|未包含|不包含"
+    r"|无法(回答|提供|确认|给出)"
+    r"|没有(提及|提供|说明|相关)"
+    r"|暂无(相关信息|相关答案|信息|答案)?"
+    r"|无(相关|答案|记录)"
+)
+
 
 def merge_own_hits(hits: list[dict[str, Any]], own: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """拼接检索的**本问保底**（审计刀 13 C 轴 P0-1，纯函数便于单测）。
@@ -249,6 +262,8 @@ def strip_coverage_disclaimers(text: str) -> tuple[str, bool]:
     """按句摘掉覆盖声明句，返回 (剩余正文, 是否**只剩**免责句)。
 
     - 逐句判 `_NO_COVERAGE_RE`；留下非免责句（保持原顺序、原标点）。
+    - 裸覆盖标记句（「[未覆盖]」「无法确认。[1]」——整句只剩覆盖类词）同按
+      免责句摘掉（审计刀 16 C-P0-1；fullmatch 判定见 `_BARE_COVERAGE_RE`）。
     - 剩余正文**去掉引用标记后仍有实质字符** -> `(正文, False)`：照常作答。
     - 否则（全被摘光，或只剩 `[1][2]` 这类引用标记）-> `("", True)`：按拒答收口。
       （审计刀 12：只摘掉句子不看残留内容，会把「已发布证据未说明 X。[1][2]」这种
@@ -257,6 +272,9 @@ def strip_coverage_disclaimers(text: str) -> tuple[str, bool]:
     kept: list[str] = []
     for sentence in _SENTENCE_SPLIT_RE.findall(text):
         if _NO_COVERAGE_RE.search(sentence):
+            continue
+        bare = re.sub(r"[\s\W]+", "", _CITE_MARK_RE.sub("", sentence))
+        if bare and _BARE_COVERAGE_RE.fullmatch(bare):
             continue
         kept.append(sentence)
     remaining = "".join(kept).strip()

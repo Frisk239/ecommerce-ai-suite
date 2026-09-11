@@ -193,6 +193,11 @@ class ServiceSession(Base):
     登记）时落值，之后不再改写。
     """
 
+    # 状态的顾客/操作者可读文案（第 80 刀）：裸英文状态值不该出现在任何
+    # 用户可见的 409 文案里——顾客面与操作者面共用这一份映射（贴着模型定义，
+    # 避免 route 之间互相导入）。
+    STATUS_LABELS = {"active": "进行中", "ended": "已结束", "registered": "已回流"}
+
     __tablename__ = "service_sessions"
     __table_args__ = (
         Index("ix_service_sessions_status", "status"),

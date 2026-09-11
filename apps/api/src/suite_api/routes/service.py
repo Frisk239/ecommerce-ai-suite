@@ -24,6 +24,7 @@
   409）。结单不碰知识缺口（工单与缺口独立，0046 §3）。
 """
 
+import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -35,6 +36,8 @@ from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
 from suite_api.models import (
+    Asset,
+    AssetVersion,
     HandoffTicket,
     Operator,
     ServiceMessage,
@@ -54,6 +57,7 @@ from suite_api.services.registration import register_asset
 from suite_platform.storage import ObjectStorage
 
 router = APIRouter(prefix="/api/service", tags=["service"])
+logger = logging.getLogger(__name__)
 
 ACTIVE = "active"
 REGISTERED = "registered"
@@ -373,7 +377,7 @@ async def ask(
     if session.status != ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"只有进行中的会话可以继续发问，当前状态: {session.status}",
+            detail=f"只有进行中的会话可以继续发问，当前状态: {ServiceSession.STATUS_LABELS.get(session.status, session.status)}",
         )
     question = body.content.strip()
     if not question:
@@ -500,8 +504,10 @@ def register_session(
     """回流登记：转写字节先落对象存储（0013 没有字节不能登记）-> 建 kind=dialogue
     资产（已接入）+ v1 版本 -> 机洗=LLM 抽 QA 草稿推进待人洗（未配置模型=弃权
     降级；LLM 失败=停已接入存 last_error，可经重试端点重跑，ADR 0035）-> 会话置
-    registered 并指向新资产。登记骨架与文档登记共享 register_asset（此处不
-    commit，会话状态变更与其并进同一事务）。source_kind 由本端点定值
+    registered 并指向新资产。登记骨架与文档登记共享 register_asset——注意
+    register_asset **内部有自己的 commit**（资产行+版本+字节先落库），会话
+    收口是其后第二个事务（原子条件更新；撞并发时孤儿资产按 0042 废弃收口，
+    审计刀 16）。source_kind 由本端点定值
     session_backflow（0025：服务端定，不让调用方填报）。不写审计（登记不是
     0005 的 publish/confirm/回滚）。
 
@@ -566,8 +572,24 @@ def register_session(
         )
     ).rowcount
     if rowcount == 0:
-        # 窗口内被并发回流/状态迁移——资产已建但会话不再指向它，如实 409
+        # 窗口内被并发回流/状态迁移：会话不再指向本次登记——但 register_asset
+        # 内部已 commit（资产行+版本+对象字节落地，rollback 撤不回），留着就是
+        # 治理队列里的永久孤儿（审计刀 16 B/C 轴 P1 live 复现：并发双回流产出
+        # 201+409 与一份 ingested 孤儿资产+孤儿字节）。按 0042 废弃语义补偿
+        # 收口：置 discarded_at 隐藏 + 删未发布版本字节（版本行留作审计锚；
+        # storage.delete 幂等）。刚登记的资产必未发布，废弃语义合法。
         db.rollback()
+        orphan = db.get(Asset, asset.id)
+        if orphan is not None and orphan.discarded_at is None:
+            orphan.discarded_at = datetime.now(UTC)
+            for version in db.scalars(
+                select(AssetVersion).where(AssetVersion.asset_id == orphan.id)
+            ):
+                storage.delete(version.object_key)
+            db.commit()
+        logger.warning(
+            "回流登记撞并发，孤儿资产已废弃收口: session=%s asset=%s", session_id, asset.id
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="会话在登记期间状态已变化（可能已被回流），请刷新后重试",
