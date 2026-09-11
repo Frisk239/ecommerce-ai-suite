@@ -52,8 +52,14 @@ def _load_cases() -> tuple[list[Any], str | None]:
 
 _CASES, _LOAD_ERROR = _load_cases()
 
-_TOOLS = ("order", "stock", "catalog")
-_TOOL_NAMES = {"order": "get_order_status", "stock": "get_stock", "catalog": "catalog"}
+_TOOLS = ("order", "order-clarify", "stock", "catalog")
+# order-clarify（第 70 刀）：无单号的订单状态问 -> 请求订单号（need_order_no 伪工具）
+_TOOL_NAMES = {
+    "order": "get_order_status",
+    "order-clarify": "need_order_no",
+    "stock": "get_stock",
+    "catalog": "catalog",
+}
 
 
 def _case_id(case: Any, index: int) -> str:

@@ -210,7 +210,7 @@
  {
   "id": "eg-evd-001",
   "surface": "evidence-gate",
-  "question": "到货了吗",
+  "question": "什么时候能收到货",
   "expect": {
    "kind": "refusal",
    "handoff": true,
@@ -282,5 +282,54 @@
    "kind": "answer",
    "cites": "nonempty"
   }
+ },
+ {
+  "id": "eg-ord-003",
+  "surface": "order",
+  "question": "我的订单到哪了",
+  "expect": {
+   "kind": "answer",
+   "tool": "need_order_no",
+   "cites": "empty",
+   "content_has": [
+    "订单号"
+   ]
+  }
+ },
+ {
+  "id": "eg-ord-004",
+  "surface": "order",
+  "question": "到货了吗",
+  "expect": {
+   "kind": "answer",
+   "tool": "need_order_no",
+   "cites": "empty",
+   "content_has": [
+    "订单号"
+   ]
+  }
+ },
+ {
+  "id": "eg-mt-002",
+  "surface": "multi-turn",
+  "turns": [
+   {
+    "question": "到货了吗",
+    "expect": {
+     "kind": "answer",
+     "tool": "need_order_no"
+    }
+   },
+   {
+    "question": "SO-1001",
+    "expect": {
+     "kind": "answer",
+     "tool": "get_order_status",
+     "content_has": [
+      "已发货"
+     ]
+    }
+   }
+  ]
  }
 ]
