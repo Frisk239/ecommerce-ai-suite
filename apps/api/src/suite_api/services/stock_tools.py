@@ -37,7 +37,11 @@ logger = logging.getLogger(__name__)
 # 第 56 刀补「有…吗 / 有没有…」口语形态（「你们有笔记本吗」）——只做**路由器**：
 # 命中后查库存，查到（含类目聚合）就走事实模板，查不到原样落回检索/拒答路径，
 # 所以放宽词表不会误答（「有优惠吗」查不到 -> 照旧走 RAG）。
-STOCK_KEYWORD_PATTERN = re.compile("有货|没货|无货|缺货|有没有|有.{0,12}吗")
+# 第 65 刀补「卖完/卖光」：问的是库存是否售罄。**浏览器验收抓的层间缝**——
+# 虚词表（`_STOCK_FILLER_WORDS`）先补了「卖完/卖光」，但路由词表没补，「书都
+# 卖完了吗」（无「有」字，`有.{0,12}吗` 不命中）根本进不了库存工具，照旧拒答
+# ——直调 `query_stock` 的单测测的是工具层，路由层要单测钉。
+STOCK_KEYWORD_PATTERN = re.compile("有货|没货|无货|缺货|有没有|有.{0,12}吗|卖完|卖光")
 
 # 商品名与问题最长公共子串的最小命中长度（中文字符计）
 _MATCH_MIN_LCS = 2
@@ -61,6 +65,13 @@ _MATCH_MIN_LCS = 2
 # 门店」既挡得住店铺形态，又放过「你们店里有笔记本吗」这种自然的门店问法。
 # 残留的同类边界：「库存书有货吗」仍会聚合到图书（「库存」是必需虚词，见
 # 「有库存吗」）——罕见的定语形态，记为已知边界而非缺陷。
+# 第 65 刀补「卖完/卖光」（原子词）：「书都卖完了吗」是问库存的自然形态，
+# 此前残渣剩「完/光」被闸挡回；评审后同批补裸「没」（「卖光了没」——收「没有」
+# 没收「没」）、裸「全」（「全卖完了吗」——收「都」没收「全」）与量词原子词
+# 一台/一本/…（「书一本都卖完了吗」，与报价侧第 62 刀的量词对称；**必须逐个
+# 枚举**——本表 join 时每个词都过 `re.escape`，写成字符类会被转义成字面量）。
+# 仍**不收**「到货」——「到货了吗/到货了没」问的是**到货时间**，库存工具
+# 答不了时间，照旧回落检索/拒答留缺口。
 _STOCK_FILLER_WORDS = (
     "有没有货",
     "没有货",
@@ -75,7 +86,21 @@ _STOCK_FILLER_WORDS = (
     "库存",
     "还有",
     "还剩",
+    "卖完",
+    "卖光",
     "没有",
+    "没",
+    "全",
+    "一台",
+    "一本",
+    "一部",
+    "一个",
+    "一包",
+    "一盒",
+    "一件",
+    "一套",
+    "一杯",
+    "一双",
     "你们",
     "咱们",
     "本店",
@@ -128,6 +153,24 @@ def stock_residual(question: str, token: str) -> str:
     只是**修饰语**（手机壳/电视柜/笔记本电脑包），照旧回落检索。
     """
     return _STOCK_FILLER_RE.sub("", question.replace(token, "")).strip()
+
+
+def stock_product_residual(question: str, product_name: str) -> str:
+    """单品问货的纯度残渣（纯函数）：剔 **LCS 命中片段** + 问货虚词。
+
+    与 `stock_residual` 的区别在剔除方式，同报价侧 `price_residual` 的取舍：
+    商品名允许**部分名**（「保温杯有货吗」对「钛钢保温杯」——`match_product`
+    按 LCS≥2 命中，闸用同一口径剔除，否则部分名问货会被静默挡回检索）；类目/
+    别名 token 则保证字面出现，直接 replace。残渣非空 = 问句主体不是
+    「商品名 + 问货」（服务/规格/政策问，如「卖完了还能刻字吗」「想退货怎么办」），
+    照旧回落检索——第 65 刀评审实测，缺这道闸时刻字服务问被硬答成「有货 42 件」。
+    """
+    rest = question
+    if product_name:
+        fragment = lcs_fragment(question, product_name)
+        if len(fragment) >= _MATCH_MIN_LCS:
+            rest = question.replace(fragment, "")
+    return _STOCK_FILLER_RE.sub("", rest).strip()
 
 _IN_STOCK_TPL = "{product_name}有货，当前库存 {stock} 件。"
 _OUT_OF_STOCK_TPL = "{product_name}暂时无货。"
@@ -224,6 +267,12 @@ def query_stock(db: Session, question: str) -> dict[str, Any]:
     家具（演示）」含「家具」），单品路径会先命中把「你们有家具吗」答成**这一个
     商品**的库存——报价侧同一缺陷已在审计刀 11 P1 修过（先类目后单品）。类目
     分支自带纯度闸，问句里带具体型号/修饰语（残渣非空）时不会命中，此时才走单品。
+
+    **单品也有纯度闸（第 65 刀评审实修）**：此前闸只装在类目分支，「保温杯卖完
+    了还能刻字吗」被 LCS 命中商品名后**硬答库存**（刻字服务问被答成「有货 42
+    件」）。修法与报价侧 `price_residual` 同构：剔 `lcs_fragment` 命中片段
+    （部分名「保温杯」↔「钛钢保温杯」的容错口径）+ 问货虚词，残渣非空即视为
+    实质问句，回落检索。
     """
     try:
         products = list(db.scalars(select(Product).order_by(Product.id)))
@@ -239,6 +288,8 @@ def query_stock(db: Session, question: str) -> dict[str, Any]:
         return category_hit
     product = match_product(question, products)
     if product is None:
+        return {"found": False}
+    if stock_product_residual(question, product.name) != "":
         return {"found": False}
     return get_stock(db, product)
 

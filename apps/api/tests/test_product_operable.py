@@ -932,6 +932,46 @@ def test_price_filler_covers_polite_measure_and_bare_jia(question: str, expect: 
     assert answer.tool["arg"] == expect, question
 
 
+@pytest.mark.parametrize(
+    "question, expect",
+    [
+        ("手机咋卖", "智能手机"),  # 「怎么卖」认了「咋卖」没认（第 65 刀）
+        ("彩电咋买", "电视机"),
+        ("手机贵吗", "智能手机"),  # 意图表只有「贵不贵」；裸「贵」排在长词后（先匹配贵不贵）
+        ("笔记本电脑贵吗", "笔记本电脑"),
+        ("保温杯贵吗", "钛钢保温杯"),  # 单品路径（price_residual 共用 _PRICE_RE）
+    ],
+)
+def test_price_colloquial_za_and_gui_forms(question: str, expect: str) -> None:
+    """第 65 刀：咋卖/咋买（怎么卖的北方式说法）与「贵吗」是自然问价形态。
+
+    此前是**死意图路径**的两种新面：咋卖压根不进意图（只认「怎么」）；贵吗
+    进不了意图（只有「贵不贵」）。意图层与纯度层（_PRICE_RE 补裸「贵」，排在
+    「贵不贵」后面）成对补齐。
+    """
+    from suite_api.services.catalog_tools import try_price_answer
+
+    products = [_mem_product(1, "钛钢保温杯", 12900)]
+    products[0].category = "器皿"
+    db = _catalog_of([c for c, _ in _DEMO_CATEGORY_PHRASES])
+    if expect == "钛钢保温杯":
+        db = _catalog_db(products)
+    answer = try_price_answer(db, question)
+    assert answer is not None, question
+    assert answer.tool["arg"] == expect, question
+
+
+@pytest.mark.parametrize("question", ["电脑桌贵吗", "二手手机贵吗", "手机膜咋卖", "电视机柜咋卖"])
+def test_za_and_gui_forms_do_not_blank_modifiers(question: str) -> None:
+    """裸「贵」进词表的代价面：别名词当修饰语（桌/二手/膜/柜）必须靠残字挡住；
+    政策问（退货运费）照旧被政策闸挡在意图层之前。"""
+    from suite_api.services.catalog_tools import try_price_answer
+
+    db = _catalog_of([c for c, _ in _DEMO_CATEGORY_PHRASES])
+    assert try_price_answer(db, question) is None
+    assert try_price_answer(db, "退货运费贵吗") is None
+
+
 @pytest.mark.parametrize("question", ["手机下单多少钱", "线下体验多少钱", "电脑下架了吗多少钱"])
 def test_bare_xia_does_not_blank_real_modifiers(question: str) -> None:
     """裸「下」进虚词表的代价面：真修饰语（下单/线下/下架）必须靠**残字**挡住。"""
