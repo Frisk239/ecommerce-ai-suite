@@ -455,12 +455,14 @@ export interface FeedbackResult {
   triaged_asset_ids: number[]
 }
 
-/** 会话评分回执（第 48 刀，CSAT）：一会话一评；comment 回显顾客自己的输入。 */
+/** 会话评分回执（第 48 刀，CSAT）：一行一会话（可改，留最新）；comment 回显顾客自己的输入。 */
 export interface SessionRating {
   session_id: number
   score: number
   comment: string | null
   created_at: string
+  /** 最后一次改评时间（null=首评未改，第 71 刀） */
+  updated_at: string | null
 }
 
 /** 退货确认结果：确认后订单全部物流事件（含新追加的确认事件）。 */

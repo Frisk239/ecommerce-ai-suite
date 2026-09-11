@@ -213,6 +213,7 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
       // 评分态一并归位（第 48 刀）：它是页面级 state，不重置会让新会话继承上一
       // 会话的「已评分」——评分条永不出现（CSAT 静默丢样本），文案还把旧分安到新会话上
       setRated(null)
+      setRatingJustUpdated(0)
       setRatingComment('')
       setRatingSending(false)
       taRef.current?.focus()
@@ -307,13 +308,16 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
     )
   }
 
-  // 会话评分（第 48 刀，CSAT）：页脚一行 1–5 星 + 可选留言，**评过即收**（不弹窗、
-  // 不打断了对话；本仓顾客通道没有「结束会话」事件，故不做「结束时弹出」）。
+  // 会话评分（第 48 刀，CSAT；第 71 刀评分可改）：页脚一行 1–5 星 + 可选留言，
+  // **评过仍可改**（Owner 裁决 2026-09-11：顾客常在后续互动后想改分——覆盖式
+  // 留最新，后端 UPDATE；星星回显当前分、留言框回填当前留言，点星即再提交）。
   // 只在有过至少一条 agent 回答后出现——空会话打 1 分是噪声。
   const [hoverScore, setHoverScore] = useState<number | null>(null)
   const [ratingComment, setRatingComment] = useState('')
   const [ratingSending, setRatingSending] = useState(false)
   const [rated, setRated] = useState<number | null>(null)
+  // 改评提示（第 71 刀）：只在**第二次及以后**提交时亮一下「已更新」
+  const [ratingJustUpdated, setRatingJustUpdated] = useState(0)
   // 闸门=「有过一次 AI 回答（任何 kind）」，不是「答出来过」：只被拒答/转人工的
   // 会话恰恰是最想吐槽的那批人，若把他们排除，CSAT 就成了「只统计满意的人」
   // （审计刀 9 P0）。空会话仍然不打分（没有说话就没有服务可评）。
@@ -326,7 +330,7 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
     try {
       await api.rateSession(session.id, session.token, score, ratingComment.trim() || null)
       setRated(score)
-      setRatingComment('')
+      setRatingJustUpdated((prev) => prev + 1)
     } catch (err) {
       setError(err)
     } finally {
@@ -494,50 +498,51 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
               <div ref={endRef} />
             </div>
 
-            {/* 会话评分条（第 48 刀，CSAT）：有过回答才出现；评过变一行致谢 */}
+            {/* 会话评分条（第 48 刀，CSAT；第 71 刀评过仍可改）：常驻可改——
+                星星回显当前分（hover 预览）、留言框回填当前值、点星即覆盖提交 */}
             {hasReply && (
               <div className="border-t border-line-2 bg-canvas px-3 py-2">
-                {rated !== null ? (
-                  <div className="text-[11px] text-caption" role="status">
-                    谢谢反馈：你给这次服务打了 {rated} 星。
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] text-caption">这次服务怎么样？</span>
-                    <span className="inline-flex items-center gap-0.5" role="radiogroup" aria-label="服务评分">
-                      {[1, 2, 3, 4, 5].map((score) => (
-                        <button
-                          key={score}
-                          type="button"
-                          role="radio"
-                          aria-checked={false}
-                          aria-label={`${score} 星`}
-                          className="star-btn"
-                          disabled={ratingSending}
-                          onMouseEnter={() => setHoverScore(score)}
-                          onMouseLeave={() => setHoverScore(null)}
-                          onClick={() => void submitRating(score)}
-                          title={`${score} 星`}
-                        >
-                          <Star
-                            aria-hidden
-                            size={16}
-                            weight={(hoverScore ?? 0) >= score ? 'fill' : 'regular'}
-                          />
-                        </button>
-                      ))}
-                    </span>
-                    <input
-                      className="input h-7 min-w-40 flex-1 text-[12px]"
-                      placeholder="想补充点什么？（可选）"
-                      value={ratingComment}
-                      maxLength={500}
-                      disabled={ratingSending}
-                      onChange={(e) => setRatingComment(e.target.value)}
-                    />
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] text-caption">这次服务怎么样？</span>
+                  <span className="inline-flex items-center gap-0.5" role="radiogroup" aria-label="服务评分">
+                    {[1, 2, 3, 4, 5].map((score) => (
+                      <button
+                        key={score}
+                        type="button"
+                        role="radio"
+                        aria-checked={rated === score}
+                        aria-label={`${score} 星`}
+                        className="star-btn"
+                        disabled={ratingSending}
+                        onMouseEnter={() => setHoverScore(score)}
+                        onMouseLeave={() => setHoverScore(null)}
+                        onClick={() => void submitRating(score)}
+                        title={`${score} 星`}
+                      >
+                        <Star
+                          aria-hidden
+                          size={16}
+                          weight={(hoverScore ?? rated ?? 0) >= score ? 'fill' : 'regular'}
+                        />
+                      </button>
+                    ))}
+                  </span>
+                  <input
+                    className="input h-7 min-w-40 flex-1 text-[12px]"
+                    placeholder="想补充点什么？（可选）"
+                    value={ratingComment}
+                    maxLength={500}
+                    disabled={ratingSending}
+                    onChange={(e) => setRatingComment(e.target.value)}
+                  />
+                  {rated === null ? (
                     <span className="text-[11px] text-caption">点星星即提交</span>
-                  </div>
-                )}
+                  ) : (
+                    <span className="text-[11px] text-caption" role="status">
+                      已提交 {rated} 星{ratingJustUpdated > 1 ? '，已更新' : ''}，可随时修改
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 

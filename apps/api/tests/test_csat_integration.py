@@ -1,8 +1,8 @@
 """第 48 刀 CSAT + 反馈闭环集成测试（真 PG，见 conftest 的 SUITE_TEST_DATABASE_URL）。
 
 覆盖：
-- 会话评分：无令牌 401 / 分值越界 422 / 留言超长 422 / 非 active 409 / 一会话
-  一评 409 / 成功落库（comment 库内原文）/ 低分不写任何东西。
+- 会话评分：无令牌 401 / 分值越界 422 / 留言超长 422 / 非 active 409 / 第 71 刀起
+  **可改**（覆盖式留最新，一行仍唯一）/ 成功落库（comment 库内原文）/ 低分不写任何东西。
 - thumbs-up（40 刀 422 的反向）：200、`triaged_asset_ids` 空、资产
   `last_verified_at` 不变；thumbs-down 仍分诊（回归）；重复反馈 409。
 - 打回理由：带 reason -> `人工打回：…`；不带 -> `人工打回`；超 200 字 422。
@@ -129,17 +129,59 @@ def test_rating_requires_active_session(api: ApiFixture) -> None:
     assert _rate(client, session_id, "csat-token-closed", 5).status_code == 409
 
 
-def test_rating_is_one_per_session(api: ApiFixture) -> None:
+def test_rating_is_editable_latest_wins(api: ApiFixture) -> None:
+    """第 71 刀（Owner 裁决：评分可改）：一行仍唯一，改评是 UPDATE 覆盖式留最新。
+
+    score/comment 整体覆盖（comment 不带即清空）；updated_at 记最后一次修改、
+    首评恒 None；created_at 不动（首评时间）。
+    """
     client, _ = api
     session_id = _customer_session(client, "csat-token-dup")
-    assert _rate(client, session_id, "csat-token-dup", 5, "很好").status_code == 200
+    first = _rate(client, session_id, "csat-token-dup", 5, "很好")
+    assert first.status_code == 200
+    assert first.json()["updated_at"] is None  # 首评未改
     second = _rate(client, session_id, "csat-token-dup", 1, "改主意了")
-    assert second.status_code == 409
-    # 第一次的评分没被改（v1 不做改评）
+    assert second.status_code == 200
+    assert second.json()["updated_at"] is not None
+    assert second.json()["score"] == 1
     factory = client.app.state.session_factory
     with factory() as db:
+        rows = db.query(SessionRating).filter_by(session_id=session_id).all()
+        assert len(rows) == 1  # 覆盖不新增行（唯一约束语义不变）
+        row = rows[0]
+        assert (row.score, row.comment) == (1, "改主意了")
+        assert row.updated_at is not None and row.created_at is not None
+        assert row.updated_at >= row.created_at
+    # comment 不带（None）= 清空留言（前端提交时回填当前留言，故不自清）
+    third = _rate(client, session_id, "csat-token-dup", 4)
+    assert third.status_code == 200
+    with factory() as db:
         row = db.query(SessionRating).filter_by(session_id=session_id).one()
-        assert (row.score, row.comment) == (5, "很好")
+        assert (row.score, row.comment) == (4, None)
+
+
+def test_rating_edit_validations_and_metric(api: ApiFixture) -> None:
+    """第 71 刀评审 P2-5 补面：改评走同一套校验；指标计每次提交；消费方读最新。"""
+    from prometheus_client import REGISTRY
+
+    client, _ = api
+    session_id = _customer_session(client, "csat-token-edit")
+    assert _rate(client, session_id, "csat-token-edit", 4).status_code == 200
+    # 改评同样 422（越界/超长）——校验在查重之前
+    assert _rate(client, session_id, "csat-token-edit", 6).status_code == 422
+    assert _rate(client, session_id, "csat-token-edit", 5, "好" * 501).status_code == 422
+    # 指标口径：计每次提交（改评也是一次事件）
+    before = REGISTRY.get_sample_value("csat_ratings_total", {"score": "5"}) or 0.0
+    assert _rate(client, session_id, "csat-token-edit", 5).status_code == 200
+    after = REGISTRY.get_sample_value("csat_ratings_total", {"score": "5"}) or 0.0
+    assert after == before + 1
+    # 操作者面（会话详情）读最新值（rating 字段=分数本体，第 57 刀口径）
+    client.post("/api/auth/login", json={"username": "operator", "password": "operator123"})
+    detail = client.get(f"/api/service/sessions/{session_id}").json()
+    assert detail["rating"] == 5
+    # 改评要求 active 的闸与首评同一条（非 active 409 在查重之前，代码路径
+    # 共用——不再多打两发 /rating 把同 IP 限流窗顶穿，见 test_rating_requires_
+    # active_session 与端点闸序）。
 
 
 def test_rating_stores_original_comment_and_low_score_writes_nothing(api: ApiFixture) -> None:

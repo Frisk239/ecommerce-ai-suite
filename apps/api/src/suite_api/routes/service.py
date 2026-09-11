@@ -325,7 +325,7 @@ def get_session(
     session = _get_session_or_404(db, session_id)
     # 第 42 刀（ADR 0046 §5）：本会话工单（一会话一单）；操作者面掩电话/邮箱
     ticket = db.scalar(select(HandoffTicket).where(HandoffTicket.session_id == session.id))
-    # 第 57 刀：评分（一会话一评，未评为 None）——详情头部与列表行同口径
+    # 第 57 刀：评分（一行一会话（第 71 刀起可改，留最新），未评为 None）——详情头部与列表行同口径
     rating = db.scalar(select(SessionRating.score).where(SessionRating.session_id == session.id))
     return SessionDetail(
         id=session.id,
