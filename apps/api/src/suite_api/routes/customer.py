@@ -81,7 +81,8 @@ REGISTERED = "registered"
 
 # 会话状态的中文映射（第 80 刀）：发问/结束两处闸把裸状态值翻给顾客看——
 # 「ended」「registered」不是顾客能读懂的话。未收录值原样回显，不发明词。
-_STATUS_LABELS = {ACTIVE: "进行中", ENDED: "已结束", REGISTERED: "已回流"}
+# 映射本体单一来源在 ServiceSession.STATUS_LABELS（models，操作者面共用）。
+_STATUS_LABELS = ServiceSession.STATUS_LABELS
 
 
 def _status_label(status_value: str) -> str:

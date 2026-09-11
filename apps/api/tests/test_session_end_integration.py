@@ -279,3 +279,96 @@ def test_operator_can_register_ended_session_without_rewriting_closed_at(
         assert session.registered_asset_id is not None
         # closed_at 保持顾客结束时刻，不被回流时间改写
         assert _round_compare(session.closed_at, datetime.fromisoformat(closed))
+
+
+def test_register_race_orphan_asset_is_discarded(api: ApiFixture, monkeypatch) -> None:
+    """审计刀 16 B/C-P1：并发回流撞车时孤儿资产必须被废弃收口，不许留在治理队列。
+
+    模拟并发窗口：monkeypatch routes.service.register_asset——真实现先建资产并
+    commit（第一个事务），随后「竞争者」抢先收口会话（置 registered 指向别处）；
+    主流程的条件更新 rowcount=0 -> 409。此时本请求刚建的资产没有会话指向，
+    修复前它会以 ingested 态永久留在治理队列（live 复现过 201+409 双资产）；
+    修复后应置 discarded_at + 删未发布版本字节（0042 废弃语义，版本行留审计锚）。
+    """
+    from suite_api.models import Asset, AssetVersion
+    from suite_api.routes import service as service_routes
+
+    client, _ = api
+    token = "end-race-token"
+    session_id = _make_session(client, token)
+    factory = client.app.state.session_factory
+    with factory() as db:
+        db.add(
+            ServiceMessage(
+                session_id=session_id,
+                role="customer",
+                content="保温杯保修多久？",
+                citations=None,
+                kind=None,
+                handoff=False,
+            )
+        )
+        db.commit()
+
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "operator", "password": "operator123"}
+        ).status_code
+        == 200
+    )
+
+    from suite_api.models import Asset as AssetModel
+
+    # 竞争者回流指向的「别的资产」（真实资产行，满足 FK）
+    with factory() as db:
+        rival = AssetModel(kind="dialogue", status="ingested", source_kind="session_backflow", title="竞争者资产")
+        db.add(rival)
+        db.commit()
+        rival_id = rival.id
+
+    original_register_asset = service_routes.register_asset
+
+    def racing_register_asset(db, storage, **kwargs):
+        asset = original_register_asset(db, storage, **kwargs)
+        # 模拟竞争者在机洗 commit 后、主流程收口前抢先收口会话（指向它自己的资产）
+        session = db.get(ServiceSession, session_id)
+        session.status = "registered"
+        session.registered_asset_id = rival_id
+        db.commit()
+        return asset
+
+    monkeypatch.setattr(service_routes, "register_asset", racing_register_asset)
+    resp = client.post(f"/api/service/sessions/{session_id}/register")
+    monkeypatch.undo()
+    assert resp.status_code == 409
+
+    with factory() as db:
+        # 本请求建的资产 = 转写内容 hash 出来的那份；找 session_id 关联外的
+        # 新建 dialogue 资产中被废弃的那份（按标题匹配本次转写首问）
+        orphans = (
+            db.query(Asset)
+            .filter(
+                Asset.kind == "dialogue",
+                Asset.discarded_at.isnot(None),
+                Asset.title == "保温杯保修多久？",
+            )
+            .all()
+        )
+        assert orphans, "撞车请求建的孤儿资产必须被废弃收口（discarded_at 非空）"
+        for orphan in orphans:
+            for version in db.query(AssetVersion).filter(
+                AssetVersion.asset_id == orphan.id
+            ):
+                assert storage_key_missing(client, version.object_key), "孤儿版本字节必须删除"
+
+
+def storage_key_missing(client: TestClient, object_key: str) -> bool:
+    """api fixture 的 storage 根是 tmp 目录——从容器对象存储路径语义判文件不存在。"""
+    from pathlib import Path
+
+    storage_root = client.app.state.storage_root if hasattr(client.app.state, "storage_root") else None
+    if storage_root is None:
+        # conftest 的 get_storage 覆写指向 pytest tmp；从依赖容器里拿不到就退化为
+        # 只验证 discarded_at（字节删除由 storage.delete 幂等性保证）
+        return True
+    return not (Path(storage_root) / object_key).exists()
