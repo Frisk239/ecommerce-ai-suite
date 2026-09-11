@@ -87,3 +87,35 @@ def retrieval_query(question: str, history: list[dict[str, str]]) -> str:
     if not prev_questions:
         return question
     return f"{prev_questions[-1]} {question}"
+
+
+def last_tool_subject(
+    db: Session, session_id: int, exclude_message_id: int | None = None
+) -> str | None:
+    """最近一次**已答工具轮**的命中对象（第 73 刀）：供省略追问复用。
+
+    「钛钢保温杯有货吗」→「还有吗」：bare 追问无主语也无代词，检索词拼接
+    （retrieval_query）帮不上——但上一轮 agent 消息的 ``tool`` 列记着
+    ``{name: get_stock, arg: 钛钢保温杯}``，arg 就是现成的对象记录。
+    只认 **kind=answer 的工具轮**（catalog/get_stock）：拒答/转人工轮没有
+    「已答」的对象可复用；``need_order_no`` 的 arg 是 "-"（第 70 刀伪工具），
+    显式跳过。倒序找最近一条，没有则 None。
+    """
+    stmt = select(ServiceMessage).where(
+        ServiceMessage.session_id == session_id,
+        ServiceMessage.role == "agent",
+        ServiceMessage.kind == "answer",
+        ServiceMessage.tool.isnot(None),
+    )
+    if exclude_message_id is not None:
+        stmt = stmt.where(ServiceMessage.id != exclude_message_id)
+    rows = list(
+        db.scalars(stmt.order_by(ServiceMessage.created_at.desc(), ServiceMessage.id.desc()))
+    )
+    for row in rows:
+        tool = row.tool or {}
+        name = str(tool.get("name") or "")
+        arg = tool.get("arg")
+        if name in {"catalog", "get_stock"} and isinstance(arg, str) and arg.strip() not in {"", "-"}:
+            return arg
+    return None

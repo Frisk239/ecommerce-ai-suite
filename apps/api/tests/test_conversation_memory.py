@@ -183,3 +183,35 @@ def test_merge_own_hits_keeps_glued_order_when_all_dupes() -> None:
 
     glued = [{"asset_id": 9, "version_no": 2, "chunk": "净含量"}]
     assert merge_own_hits(glued, list(glued)) == glued
+
+
+# ---------- 第 73 刀：上轮工具对象（bare 追问复用） ----------
+
+
+def test_last_tool_subject_picks_latest_answered_tool_turn(api: object) -> None:
+    """最近一次**已答**工具轮的 arg：catalog/get_stock 认、拒答/澄清轮跳过。"""
+    import asyncio
+
+    from suite_api.models import ServiceSession
+    from suite_api.services.chat_engine import run_ask
+    from suite_api.services.conversation_memory import last_tool_subject
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        session = ServiceSession(status="active")
+        db.add(session)
+        db.commit()
+        sid = session.id
+
+        def ask(q: str):
+            return asyncio.run(run_ask(db, session, q, expose_gap_id=False))
+
+        ask("钛钢保温杯有货吗？")  # get_stock 钛钢保温杯
+        assert last_tool_subject(db, sid) == "钛钢保温杯"
+        ask("瓶装水多少钱")  # catalog 瓶装水（更近；本模块种子只有 食品/器皿 两类）
+        assert last_tool_subject(db, sid) == "瓶装水"
+        ask("你们的售后怎么样")  # RAG/拒答轮（tool=None 或非工具）不改对象
+        assert last_tool_subject(db, sid) == "瓶装水"
+        ask("到货了吗")  # 澄清伪工具 need_order_no（arg="-"）跳过
+        assert last_tool_subject(db, sid) == "瓶装水"

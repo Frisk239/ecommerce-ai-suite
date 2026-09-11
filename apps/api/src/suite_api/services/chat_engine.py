@@ -71,8 +71,13 @@ from suite_api.services.answer import (
     build_refusal_handoff_content,
     compose_answer,
 )
-from suite_api.services.catalog_tools import try_catalog_answer, try_price_answer
-from suite_api.services.conversation_memory import PRONOUN_RE, recent_turns, retrieval_query
+from suite_api.services.catalog_tools import catalog_intent, try_catalog_answer, try_price_answer
+from suite_api.services.conversation_memory import (
+    PRONOUN_RE,
+    last_tool_subject,
+    recent_turns,
+    retrieval_query,
+)
 from suite_api.services.handoff_tickets import (
     ensure_session_ticket,
     render_handoff_receipt,
@@ -375,12 +380,33 @@ async def run_ask(
     # 双前置）。只有商品匹配成功（found）或查询故障（error）才进工具路径；
     # 词表命中但无商品匹配（found=False）沿用 36 刀既有回落=直接检索（零
     # LLM，不进提议步——词表已是明确信号，ADR 0043「提议步只接无信号问句」）。
+    # 第 73 刀：**bare 追问回落到上轮工具对象**——「钛钢保温杯有货吗 → 还有吗」，
+    # 词表命中但无主语（found=False）时，若上一轮已答工具轮有对象记录
+    # （agent 消息 tool.arg），按「上轮对象 + 本问问货」重查一次（只重查一次、
+    # 只认 catalog/get_stock 已答轮——拒答/澄清轮没有可复用的对象）。
     skip_proposal = False
     if STOCK_KEYWORD_PATTERN.search(question):
         stock_result = query_stock(db, question)
+        if not (stock_result.get("found") or stock_result.get("error")):
+            subject = last_tool_subject(db, session.id, exclude_message_id=customer_message.id)
+            if subject is not None and subject not in question:
+                stock_result = query_stock(db, f"{subject}{question}")
         if stock_result.get("found") or stock_result.get("error"):
             return _run_stock_ask(db, session, question, stock_result)
         skip_proposal = True
+
+    # 第 73 刀（续）：**bare 报价追问**同款——「手机多少钱 → 那多少钱 / 多少钱」，
+    # 报价意图成立但无对象（类目/商品都不中）时，回落上轮工具对象重试一次。
+    if (
+        not skip_proposal
+        and catalog_intent(question) == "price"
+        and last_tool_subject(db, session.id, exclude_message_id=customer_message.id) is not None
+    ):
+        subject = last_tool_subject(db, session.id, exclude_message_id=customer_message.id)
+        if subject is not None and subject not in question:
+            priced = try_price_answer(db, f"{subject}{question}")
+            if priced is not None:
+                return _run_catalog_ask(db, session, question, priced)
 
     # 步 2 提议步（第 37 刀，ADR 0043）：模型按工具描述提议，代码校验授权
     # 执行。history 无条件取（提议步需要会话上下文——单号常以代词在上问）；
@@ -889,6 +915,38 @@ def _run_order_ask(db: Session, session: ServiceSession, order_no: str) -> AskOu
         fallback=False,  # 非降级——模板组装是工具路径的正式产出（0036 v1）
         tool=tool_record,
         ticket=ticket,
+    )
+
+
+def _run_catalog_ask(
+    db: Session, session: ServiceSession, question: str, catalog: Any
+) -> AskOutcome:
+    """目录回落出口（第 73 刀）：bare 报价追问命中上轮对象时直接作答。
+
+    与步 3 的目录回落同口径（kind=answer 工具式模板、citations 恒空、
+    **答上即关同问缺口**），但发生在检索之前——省略追问没有可检索的主语，
+    靠上轮工具对象补全（`last_tool_subject`）。
+    """
+    resolve_gap_answered_by_catalog(db, question)
+    agent_message = ServiceMessage(
+        session_id=session.id,
+        role="agent",
+        content=catalog.content,
+        citations=[],
+        kind="answer",
+        handoff=False,
+        tool=catalog.tool,
+    )
+    db.add(agent_message)
+    db.commit()
+    db.refresh(agent_message)
+    return AskOutcome(
+        agent_message=agent_message,
+        answer=ComposedAnswer(content=catalog.content, citations=[], kind="answer", handoff=False),
+        gap=None,
+        generated=False,
+        fallback=False,
+        tool=catalog.tool,
     )
 
 
