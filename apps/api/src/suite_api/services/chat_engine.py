@@ -403,7 +403,9 @@ async def run_ask(
     # +本问拼接（retrieve 打分阈值不变）；工具结果不进检索 query（裁决：作为
     # history 附加轮进生成）。
     query_text = retrieval_query(question, history)
-    hits = retrieve(db, query_text)
+    # 评论适用域闸按**本问**判（第 66 刀评审 P1）：拼接串带上问的观点标记会
+    # 豁免本问的服务态问句（「物流怎么样→它到货了吗」放过 garbage 评论）。
+    hits = retrieve(db, query_text, gate_question=question)
     # 审计刀 13 C 轴 P0-1：拼接检索会让**上一问**的主题块占满 top-k（实测
     # 「净含量→那它的材质是什么」时「材质：钛钢」全被净含量块挤出，模型上下文
     # 里确无材质证据，只能诚实拒答——README 演示口径的追问演不出来）。补一条

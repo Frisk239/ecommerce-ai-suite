@@ -272,8 +272,10 @@ def test_retrieve_candidate_query_orders_by_chunk_id() -> None:
     compiled = str(db.stmt.compile(compile_kwargs={"literal_binds": True}))
     normalized = " ".join(compiled.split())
     assert "ORDER BY retrieval_chunks.id" in normalized
-    # 第 39 刀保鲜：候选 SQL 必须随带 last_verified_at（stale 降权的判据列）
+    # 第 39 刀保鲜：候选 SQL 必须随带 last_verified_at（stale 降权的判据列）；
+    # 第 66 刀评论适用域：随带 source_kind（判据列同款纪律）
     assert "last_verified_at" in normalized
+    assert "source_kind" in normalized
 
 
 # ---------- 保鲜降权（第 39 刀）：is_stale 纯函数 + 候选 SQL 判据列 ----------
@@ -312,3 +314,106 @@ def test_stale_multiplier_applied_as_post_factor() -> None:
     base = score_chunk(terms, "保温杯")
     assert base > 0
     assert base * STALE_MULTIPLIER == pytest.approx(base / 2)
+
+
+# ---------- 评论证据的适用域（第 66 刀，审计刀 13 P0-2） ----------
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("到货了吗", True),  # 审计实测：曾引英文 account_access 评论（「到货后看着很多」）
+        ("什么时候能收到货", True),
+        ("退货运费多少钱", True),  # 曾首引衣服评论（0.447 压过退货政策 0.408）
+        ("我的订单到哪了", True),
+        ("退货政策是什么", True),  # 政策问：该答的是政策文档，不是评论
+        ("物流怎么样", False),  # 观点问：评论正是对的证据（金标 conf-013 期望评论资产）
+        ("洗发水到货后看着很多怎么样", False),  # 金标 pos-029 同款形态
+        ("请问手机评价 这个机子值得入手吗", False),  # 金标 syn-021 同款形态
+        ("保温杯的净含量是多少", False),  # 无服务词：评论闸不触发
+        # ---- 第 66 刀评审补齐（P1#2/P2#3，金标程序化核验零回归）----
+        ("这家的退货体验如何", False),  # 「如何」与「怎么样」同频，漏了会饿死观点问
+        ("发货快吗", False),  # 有服务词的**观点问**——评论正是对的证据
+        ("物流慢不慢", False),
+        ("换货流程怎么走", True),  # 服务词 += 售后/换货/客服/保修
+        ("售后政策", True),
+        ("退货怎么办理", True),  # 程序问（怎么办**理**）：该滤
+        # 已知取舍（评审 P2#4，钉住）：「不值得/不推荐」含「值得/推荐」仍豁免——
+        # 豁免侧从宽比错杀轻（错杀把可答变拒答；从宽只是退回闸前词法形态）
+        ("退货流程不值得吐槽吗", False),
+    ],
+)
+def test_excludes_review_evidence_truth_table(query: str, expected: bool) -> None:
+    """纯函数真值表：服务状态词 × 观点标记豁免。
+
+    豁免是零回归的关键——金标 19 条期望评论资产的 case **全部**带观点标记
+    （怎么样/值得入手吗/评价），实测大集逐位相同（70.0/65.0）。
+    """
+    from suite_api.services.retrieval import excludes_review_evidence
+
+    assert excludes_review_evidence(query) is expected
+
+
+def _seed_published_asset(
+    db: object, title: str, chunks: list[str], source_kind: str
+) -> int:
+    """直接落一行已发布资产 + 版本 + 切块（检索闸只看这三样，不走 API 全流程）。"""
+    from suite_api.models import Asset, AssetVersion, RetrievalChunk
+
+    asset = Asset(kind="document", status="published", source_kind=source_kind, title=title)
+    db.add(asset)
+    db.flush()
+    version = AssetVersion(asset_id=asset.id, version_no=1, object_key="test-key")
+    db.add(version)
+    db.flush()
+    asset.current_published_version_id = version.id
+    for seq, text in enumerate(chunks, 1):
+        db.add(RetrievalChunk(asset_id=asset.id, version_no=1, seq=seq, chunk=text))
+    return asset.id
+
+
+def test_retrieve_drops_review_chunks_for_service_state_query(api: object) -> None:
+    """服务状态问下评论块不算证据（真库）：政策文档照常命中、评论被滤掉。
+
+    分数阈值分不开这个面（实测坏 case 0.4–0.5、金标真命中最低 0.17——短评论块
+    bigram 少分数天然高），分得开的是证据**类别**与问句**意图**。评论块故意
+    写得比政策块**更命中**（多一个 bigram），钉住「不是分数排序问题」。
+    """
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        from suite_api.services.retrieval import retrieve
+
+        review_id = _seed_published_asset(
+            db,
+            "衣服评论 · 发货速度慢",
+            ["等了好久才到货，还要我自己承担运费"],  # 同时撞 到货+运费 bigram
+            source_kind="review_import",
+        )
+        policy_id = _seed_published_asset(
+            db,
+            "退货政策",
+            ["签收后7天内可申请退货，运费商家承担"],
+            source_kind="upload",
+        )
+        db.commit()
+
+        # 状态/政策问：评论被滤（即便它分数更高），政策文档命中
+        hits = retrieve(db, "退货运费多少钱")
+        assert hits, "政策文档仍应命中"
+        assert all(h["asset_id"] != review_id for h in hits), "评论不该再出现"
+        assert hits[0]["asset_id"] == policy_id
+
+        # 纯状态问只剩评论证据：无命中（引擎侧即拒答留缺口）
+        assert retrieve(db, "到货了吗") == []
+
+        # 观点豁免：同一批评论在观点问下照常命中（金标 19 条的形态——服务词
+        # 到货 + 观点标记怎么样，与 pos-029「到货后看着很多怎么样」同构）
+        opinion = retrieve(db, "到货速度怎么样")
+        assert any(h["asset_id"] == review_id for h in opinion)
+
+        # 拼接缝（评审 P1）：闸必须按**本问**判定——上一问的观点标记（怎么样）
+        # 不能豁免本问的服务态问句，否则拼接检索原样放行 garbage 评论
+        glued = "物流怎么样 它到货了吗"
+        assert retrieve(db, glued) != [], "缺省按 query 判（无观点标记的本问场景）"
+        assert retrieve(db, glued, gate_question="它到货了吗") == []
