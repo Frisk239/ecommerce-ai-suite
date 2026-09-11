@@ -273,5 +273,14 @@
     }
    }
   ]
+ },
+ {
+  "id": "eg-evd-005",
+  "surface": "evidence-gate",
+  "question": "客服态度好吗",
+  "expect": {
+   "kind": "answer",
+   "cites": "nonempty"
+  }
  }
 ]
