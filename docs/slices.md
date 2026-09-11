@@ -2,7 +2,7 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 63 刀 `fallback_reason` 进指标**（`feat/fallback-metric-63`，closeout 见 `docs/progress/fallback-metric-closeout.md`）——收审计刀 12 建议 3 与审计刀 7 起记债。**无表无迁移、不动引擎**：`chat_fallbacks_total{channel, reason}`（reason=coverage=忠实度闸降级 / no_coverage=证据未覆盖按拒答收口 / other=防御位——未知值归一不进标签，基数纪律；**None 不计**：普通厂商失败不是闸在回退），记在 `record_chat_request`（两条 ask 路由既有调用点零改动）；README 业务指标五个→六个；真 `/metrics` 端点 presence + 两枚正向钉子 + None 不计 + other 归一 + 标签集合契约。集成 998→1000 passed；ruff 全过；前端未改。第 62 刀（PR #92）、第 61 刀（PR #91）、审计刀 12（PR #90）均已合并 main。
+上一刀：**第 64 刀 导入货折叠语义对齐**（`feat/import-fold-64`，closeout 见 `docs/progress/import-fold-scope-closeout.md`）——收审计刀 12 记债 C-P2（已发布 tab 把 20 条 OFF 规格折进表尾，published 56 → 可见 36）。**纯前端小刀**：`workQueue.isFoldedImport = isImportedSource && !isPublished`（折叠=待办噪声的语义对齐——已发布的导入行是线上证据进主行），折叠头改「数据集导入待办 N 条」；默认视角/总数/次序/自动展开/chips 均不动。浏览器实测：待人洗折叠头仍在（180 条）、**已发布 tab 折叠头 0 个**（OFF 规格行回主行）、全部主行含已发布导入行。前端 lint 7/0、build 绿；后端零改动。第 63 刀（PR #93）、第 62 刀（PR #92）、第 61 刀（PR #91）均已合并 main。
 
 当前阶段：**第三阶段产品硬ening（第二梯队 46/47/48 已全部走完）**（施工权威 `docs/roadmap-product-hardening.md`）。**审计刀 8 已完成**（三路并行审计 **P0 全零**，P1×5 实修；证据 `docs/progress/audit-8-closeout.md`）。下一刀：**审计刀 9**（按「每五刀一审计」节奏，覆盖第 46–48 刀 + UI/UX 后续；第 49/50 刀若按第三梯队「对标增强」按需开则顺延）。**待 Owner 裁决**：审计刀 8 记债的四条产品面缺口（商品价 3/115、多来源在产品面不可见、工作队列首屏 183 条原始灌入、widget 不落宿主 origin）。
 
@@ -370,3 +370,8 @@
 ## 第 63 刀：`fallback_reason` 进指标（已交付，`feat/fallback-metric-63`）——审计刀 12 建议 3 / 审计刀 7 起记债
 
 **路径：** 引擎早有 `AskOutcome.fallback_reason`（两值有界：`coverage` 忠实度闸降级（ADR 0044 §二）、`no_coverage` 证据未覆盖按拒答收口（第 58 刀）；普通厂商失败为 None），但观测面只有 `chat_requests_total` 的 `generated=false`——分不出「闸在回退」与「厂商失败降级」，闸回退率只能日志数行（第 47 刀 closeout 原话；审计刀 7 起记债）。本刀（**无表无迁移、不动引擎**）：①`chat_fallbacks_total{channel, reason}`，`other` 为防御位（引擎将来加新 reason 而指标没跟上，宁可落 other 也不让陌生值进标签——标签值一律有限集合的第 47 刀纪律）；**None 不计**——普通厂商失败不是闸在回退，混进来污染闸回退率；②记在 `record_chat_request`（customer/operator 两条 ask 路由既有调用点，route 层记而非 SSE 懒执行——第 47 刀的既有取舍），引擎零改动；③README 业务指标清单五个→六个并写清取值含义（闸回退率=chat_fallbacks/chat_requests，不是 generated=false 占比）。验收：真 `/metrics` 端点 presence、coverage/no_coverage 两枚正向钉子（customer/operator 各一）、普通回答不进闸回退计数、未知值落 other、标签集合 `{channel, reason}` 契约；集成 998→**1000 passed**；ruff 全过；前端未改。诚实披露：闸回退率无历史数据可对比（指标从本刀起累计）；单测用 `_Outcome` 替身直调记账函数（与第 47 刀同口径，引擎侧 fallback_reason 赋值钉子第 40/58 刀已有）。证据见 `docs/progress/fallback-metric-{intake,closeout}.md`。
+
+
+## 第 64 刀：导入货折叠语义对齐（已交付，`feat/import-fold-64`）——审计刀 12 记债 C-P2
+
+**路径：** 第 59 刀把数据集导入行折叠到表尾时，谓词只有来源词（`isImportedSource`）——折叠组在**所有** tab 生效，于是「已发布」tab 也把 20 条 OpenFoodFacts 规格折进去（published 56 → 可见 36 + 折叠头，审计刀 12 C-P2 记债）。**判据不是观感而是语义**：折叠的动机（第 59 刀）是待人洗队列被待办噪声铺满——折的是**待办**，不是「导入」这个来源；已发布的导入行是**线上证据**（客服引用、连接层读），折进表尾等于让用户去折叠头里翻刚被引用的文档。本刀（**纯前端小刀**）：①`workQueue.isFoldedImport = isImportedSource && !isPublished`（两个既有谓词的合取，不新立口径）；②`AssetsListPage` 的 `importedRows`/`primaryRows` 改用该谓词，折叠头「数据集导入 N 条」→「数据集导入待办 N 条」并注明已发布导入行在主行；③默认视角、总数、次序、自动展开逻辑（搜索只命中未发布导入货时仍自动展开；命中已发布导入货时它们本来就在主行）、来源筛选 chips 全不动。**浏览器实测**（playwright-cli 真栈操作者登录）：待人洗折叠头仍在（「数据集导入待办 180 条」，该 tab 行为不变）；**已发布 tab 折叠头 0 个**，OFF 规格行（A-0245 Cardiofitmd 等 20 条）回到主行；全部 tab 主行含已发布导入行 + 折叠头只收未发布待办。前端 `npm run lint` 7/0（基线）、`npm run build` 绿；后端零改动（集成 1000 基线不动）。诚实披露：「全部」tab 主行变长（不再藏线上证据，语义一致性的自然结果，Owner 若更想折可再收）；折叠计数口径从「全部导入」变「未发布导入」；前端无单测框架（历刀同口径，靠 build/lint + 浏览器点穿）。证据见 `docs/progress/import-fold-scope-{intake,closeout}.md`。

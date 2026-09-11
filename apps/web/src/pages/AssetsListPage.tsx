@@ -31,7 +31,7 @@ import {
 } from '../labels'
 import {
   filterWorkAssets,
-  isImportedSource,
+  isFoldedImport,
   isIngested,
   isPendingWash,
   isPublished,
@@ -236,8 +236,10 @@ export default function AssetsListPage() {
   // 第 59 刀：待人洗队列里导入货占绝大多数（180/194），首屏被铺满。把**数据集导入**
   // 行折叠到表尾（默认收起，带计数），人工/系统产生的行先铺开——不删数据、不改默认
   // 视角、总数与原有次序不变（导入组内保持 filtered 的相对次序）。
-  const importedRows = useMemo(() => filtered.filter(isImportedSource), [filtered])
-  const primaryRows = useMemo(() => filtered.filter((a) => !isImportedSource(a)), [filtered])
+  // 第 64 刀（审计刀 12 C-P2）：折叠口径改成 isFoldedImport（导入且**未发布**）——
+  // 已发布的导入行是线上证据，进主行；折叠组只剩真正的待办，与「待人洗待办」语义对齐。
+  const importedRows = useMemo(() => filtered.filter(isFoldedImport), [filtered])
+  const primaryRows = useMemo(() => filtered.filter((a) => !isFoldedImport(a)), [filtered])
   const [importsOpenManual, setImportsOpen] = useState(false)
   // 自动展开（审计刀 12 P1）：筛选/搜索只命中导入货时（主行 0 条），收起态会让屏幕
   // 只剩一条折叠头——像「没找到」，而用户搜的正是那条导入资产。手动折叠仍可选。
@@ -733,7 +735,7 @@ export default function AssetsListPage() {
                         className="btn btn-ghost btn-sm"
                         aria-expanded={importsOpen}
                         onClick={() => setImportsOpen((prev) => !prev)}
-                        title="数据集批量导入（评论语料 / 开放数据集商品与规格）——不是人工登记的待办，默认收起"
+                        title="数据集批量导入且未发布的待办行（评论语料 / 开放数据集商品与规格）——已发布的导入行是线上证据，在主行正常显示"
                       >
                         {importsOpen ? (
                           <CaretDown aria-hidden size={13} />
@@ -741,10 +743,10 @@ export default function AssetsListPage() {
                           <CaretRight aria-hidden size={13} />
                         )}
                         <span className="text-[13px] font-medium text-ink">
-                          数据集导入 {importedRows.length} 条
+                          数据集导入待办 {importedRows.length} 条
                         </span>
                         <span className="text-xs text-ink-3">
-                          （评论语料 / 开放数据集，非人工登记；点开查看）
+                          （评论语料 / 开放数据集，非人工登记；已发布的导入行在上方主行）
                         </span>
                       </button>
                     </td>
