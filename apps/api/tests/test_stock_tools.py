@@ -601,6 +601,8 @@ def test_category_stock_respects_purity_gate() -> None:
         "笔记本都卖完了吗？",  # 第 65 刀：卖完/卖光是问库存的自然形态（原子词）
         "笔记本卖光了还有吗？",
         "笔记本卖光了没",  # 评审 P2-2：收「没有」没收裸「没」
+        "笔记本还有么",  # 第 67 刀：疑问尾 吗→[吗么呢]（56 刀词面邻缝）
+        "笔记本还有呢",
         "笔记本全卖完了吧",  # 收「都」没收「全」
         "笔记本一台都卖光了吗",  # 量词原子词（与报价侧第 62 刀对称；字符类会被 re.escape 转义成字面量，必须逐个枚举）
     ],
@@ -664,6 +666,20 @@ def test_proposal_get_stock_gates_on_original_question() -> None:
     assert _run_get_stock(db, {"product_name": "手机"}, "手机有货吗")["category"] == "智能手机"
     # 无参提议（裸「有货吗」）按原问句走，行为不变
     assert _run_get_stock(db, {}, "钛钢保温杯有货吗")["product_name"] == "钛钢保温杯"
+
+
+def test_stock_router_widens_question_tail_to_me_ne() -> None:
+    """第 67 刀：`有.{0,12}[吗么呢]`——「书还有么」纯度层能答、此前路由不派。
+
+    路由器语义下放宽安全（查不到照旧回落）；「到货了么」无「有」仍不派
+    （到货时间问句不进库存工具，65 刀的口径不变）。
+    """
+    assert stock_tools.STOCK_KEYWORD_PATTERN.search("书还有么") is not None
+    assert stock_tools.STOCK_KEYWORD_PATTERN.search("手机还有呢") is not None
+    assert stock_tools.STOCK_KEYWORD_PATTERN.search("到货了么") is None
+    products = _category_products(("图书", "样品一"), ("智能手机", "样品二"))
+    assert stock_tools.query_stock(_stock_db(products), "书还有么")["category"] == "图书"  # type: ignore[index]
+    assert stock_tools.query_stock(_stock_db(products), "到货了么") == {"found": False}  # type: ignore[arg-type]
 
 
 def test_single_product_stock_has_purity_gate() -> None:

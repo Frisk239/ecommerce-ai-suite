@@ -1005,6 +1005,42 @@ def test_audit13_price_negative_deposit_still_refuses() -> None:
     assert try_price_answer(db, "保温杯押金多少钱") is None
 
 
+@pytest.mark.parametrize(
+    "question, expect",
+    [
+        ("彩电咋样卖", "电视机"),  # 第 67 刀：咋样卖/咋样买（咋样单独不是价格词）
+        ("手机咋样买", "智能手机"),
+        ("手机咋价", "智能手机"),  # 与啥价对称
+        ("这手机啥价", "智能手机"),  # 裸「这」此前是残字
+        ("那个手机咋卖", "智能手机"),  # 裸「个」同上
+        ("这台笔记本电脑多少钱", "笔记本电脑"),
+    ],
+)
+def test_word_seam_za_forms_and_demonstratives(question: str, expect: str) -> None:
+    """第 67 刀（56 刀词面邻缝收口）：咋样卖/咋价进意图、这/那/个/台进纯度虚词。
+
+    负例（这个咋样=评价问、电脑包咋样卖=修饰语）钉在下一测。
+    """
+    from suite_api.services.catalog_tools import catalog_intent, try_price_answer
+
+    assert catalog_intent(question) == "price", question
+    db = _catalog_of([category for category, _ in _DEMO_CATEGORY_PHRASES])
+    answer = try_price_answer(db, question)
+    assert answer is not None, question
+    assert answer.tool["arg"] == expect, question
+
+
+@pytest.mark.parametrize("question", ["这个咋样", "电脑包咋样卖", "手机膜多少钱"])
+def test_word_seam_negatives_still_refuse(question: str) -> None:
+    """咋样**单独**不是价格词（评价问不进意图）；修饰语靠残字挡。"""
+    from suite_api.services.catalog_tools import catalog_intent, try_price_answer
+
+    db = _catalog_of([category for category, _ in _DEMO_CATEGORY_PHRASES])
+    assert try_price_answer(db, question) is None, question
+    if question == "电脑包咋样卖":
+        assert catalog_intent(question) == "price"  # 进意图但被纯度闸挡（钉的是闸不是意图）
+
+
 @pytest.mark.parametrize("question", ["手机下单多少钱", "线下体验多少钱", "电脑下架了吗多少钱"])
 def test_bare_xia_does_not_blank_real_modifiers(question: str) -> None:
     """裸「下」进虚词表的代价面：真修饰语（下单/线下/下架）必须靠**残字**挡住。"""
