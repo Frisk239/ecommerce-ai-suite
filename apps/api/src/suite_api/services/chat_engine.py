@@ -388,7 +388,7 @@ async def run_ask(
     if STOCK_KEYWORD_PATTERN.search(question):
         stock_result = query_stock(db, question)
         if not (stock_result.get("found") or stock_result.get("error")):
-            subject = last_tool_subject(db, session.id, exclude_message_id=customer_message.id)
+            subject = last_tool_subject(db, session.id)
             if subject is not None and subject not in question:
                 stock_result = query_stock(db, f"{subject}{question}")
         if stock_result.get("found") or stock_result.get("error"):
@@ -397,12 +397,8 @@ async def run_ask(
 
     # 第 73 刀（续）：**bare 报价追问**同款——「手机多少钱 → 那多少钱 / 多少钱」，
     # 报价意图成立但无对象（类目/商品都不中）时，回落上轮工具对象重试一次。
-    if (
-        not skip_proposal
-        and catalog_intent(question) == "price"
-        and last_tool_subject(db, session.id, exclude_message_id=customer_message.id) is not None
-    ):
-        subject = last_tool_subject(db, session.id, exclude_message_id=customer_message.id)
+    if not skip_proposal and catalog_intent(question) == "price":
+        subject = last_tool_subject(db, session.id)
         if subject is not None and subject not in question:
             priced = try_price_answer(db, f"{subject}{question}")
             if priced is not None:

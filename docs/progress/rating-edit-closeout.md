@@ -24,6 +24,11 @@
 created_at 不动）与 `test_rating_edit_validations_and_metric`（改评同套 422 校验、指标计每次
 提交、操作者详情读最新））；前端 lint 7/0、build 绿；检索金标逐位相同（70.0/65.0）。
 
+## 审计刀 15 A 轴补记
+
+- **写副作用补披露**：浏览器验收在演示库落了 session 198（净含量一问）+ session_ratings
+  行（4→5 改评、留言「改分前先留言」、updated_at 非空）——72 刀式的披露当时漏写，补记。
+
 ## 评审处置（两轴评审：P1×1、P2×5、P3 若干，全数实修/订正）
 
 - **P1 文档漂移（实修）**：README「评过即收」、customer.py 模块 docstring「一会话一评（已评

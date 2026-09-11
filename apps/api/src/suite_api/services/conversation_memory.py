@@ -89,10 +89,8 @@ def retrieval_query(question: str, history: list[dict[str, str]]) -> str:
     return f"{prev_questions[-1]} {question}"
 
 
-def last_tool_subject(
-    db: Session, session_id: int, exclude_message_id: int | None = None
-) -> str | None:
-    """最近一次**已答工具轮**的命中对象（第 73 刀）：供省略追问复用。
+def last_tool_subject(db: Session, session_id: int) -> str | None:
+    """最近一次**已答工具轮**的命中对象（第 73 刀）：供省略追问复用。查询限 agent 轮，本轮 customer 消息天然不在其中。
 
     「钛钢保温杯有货吗」→「还有吗」：bare 追问无主语也无代词，检索词拼接
     （retrieval_query）帮不上——但上一轮 agent 消息的 ``tool`` 列记着
@@ -107,8 +105,6 @@ def last_tool_subject(
         ServiceMessage.kind == "answer",
         ServiceMessage.tool.isnot(None),
     )
-    if exclude_message_id is not None:
-        stmt = stmt.where(ServiceMessage.id != exclude_message_id)
     rows = list(
         db.scalars(stmt.order_by(ServiceMessage.created_at.desc(), ServiceMessage.id.desc()))
     )
