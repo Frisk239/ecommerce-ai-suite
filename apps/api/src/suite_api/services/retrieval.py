@@ -34,6 +34,41 @@ from suite_api.services.machine_wash import QA_FIELD, redact
 from suite_api.services.synonyms import apply_synonyms
 from suite_platform.storage import ObjectStorage
 
+# ---------- 评论证据的适用域（第 66 刀，审计刀 13 P0-2） ----------
+# 顾客评论（review_import）是**商品体验**证物，不是**服务状态**的证据：实测
+# 「到货了吗」引用无关评论（演示库实测 asset 172 洗发水评论「到货后看着很多」，
+# 词法撞上；审计刀 13 原报为英文 account_access 评论系归属误差，同型成立）、
+# 「退货运费多少钱」首引衣服评论（「还要我自己承担运费」分数 0.447 压过退货
+# 政策 0.408）——短评论块 bigram 少、分数天然高，**分数阈值分不开**（实测坏
+# case 0.4–0.5，金标真命中最低 0.17），分得开的是证据**类别**与问句**意图**。
+#
+# 判据（金标集实测零回归）：问句命中服务状态词（到货/退货/物流…）且**无**
+# 观点标记（怎么样/值得入手吗/评价…）→ 评论块不作为证据。观点问豁免是关键：
+# 金标 19 条期望评论资产的 case（pos-005/029/032、conf-012..015、syn-002 等）
+# **全部**带观点标记——问的是评价本身，评论正是对的证据。带订单号的问句在
+# 引擎步 1 已被订单工具接走，到不了这里；本闸对 MCP search_published 同样
+# 生效（证据语义全出口一致，ADR 0018 修订）。
+# 词表第 66 刀评审补齐（金标程序化核验零回归）：服务词 += 售后/换货/客服/保修
+# （「换货流程怎么走」曾唯一命中评论「我要求换货」0.707、「售后政策」首引投诉
+# 评论——与退货运费引衣服评论同型）；观点标记 += 如何/体验/快不快/慢不慢/快吗/
+# 慢吗（「发货快吗」「快递包装结实吗」「物流真的很快吗」是有服务词的**观点问**，
+# 评论正是对的证据，漏标记会把它们饿成拒答——评审实测 5 命中→0）。
+# 已知取舍（真值表钉住）：「不值得/不推荐」含「值得/推荐」仍豁免——豁免侧从宽
+# （把评论放进来）比错杀轻：错杀把可答变拒答，从宽退回闸前的词法命中形态。
+_SERVICE_STATE_RE = re.compile("到货|发货|物流|快递|收货|签收|退货|退款|运费|订单|单号|售后|换货|客服|保修")
+_OPINION_RE = re.compile(
+    "怎么样|怎么想|好不好|好不好用|评价|靠谱|值得|推荐|好用吗|好用不|如何|体验|快不快|慢不慢|快吗|慢吗"
+)
+
+
+def excludes_review_evidence(query: str) -> bool:
+    """该问句下评论块是否不作为证据（纯函数便于单测与金标复算）。
+
+    服务状态词在场且无观点标记 = 顾客在问**自己的**订单/物流/售后状态或政策
+    ——评论里别人的体验回答不了它；有观点标记 = 问的是评价本身，评论正是证据。
+    """
+    return bool(_SERVICE_STATE_RE.search(query)) and not _OPINION_RE.search(query)
+
 # 切块数上限：单版本切块超限即截断（防长文档/长转写把索引写爆；截断即丢尾部证据，
 # 属防炸取舍，上传上限 2MB 文本按句切通常远小于此）
 MAX_CHUNKS = 200
@@ -298,7 +333,9 @@ def is_stale(last_verified_at: datetime | None, *, now: datetime, days: int) -> 
 # ---------- 检索（只查当前已发布版本，join 保证） ----------
 
 
-def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]:
+def retrieve(
+    db: Session, query: str, *, top_k: int = 5, gate_question: str | None = None
+) -> list[dict[str, Any]]:
     """检索当前已发布版本的切块，按分数降序返回 [{asset_id, version_no, chunk, score}]。
 
     查询词取「原查询 ∪ 同义词归一后」的**并集**（第 36 刀接线后 after 复跑改并集：
@@ -318,6 +355,10 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
     过期降权（第 39 刀保鲜）：候选 SQL 随带 assets.last_verified_at，打分后
     对「显式验证过且距今 > stale_days() 天」的资产块 score*=STALE_MULTIPLIER
     （后处理乘数，不动 score_chunk 本体；NULL 不降权=保守裁决，见 is_stale）。
+
+    评论适用域（第 66 刀，ADR 0018 修订）：候选 SQL 随带 assets.source_kind，
+    ``gate_question``（缺省即 query）命中服务状态词且无观点标记时 review_import
+    块不进候选——「什么算证据」在此单点定义，引擎/缺口验证/MCP/评测共用。
     """
     # 查询侧同义词扩展（0023 词法口径内的确定性扩展，非向量）：原查询词与
     # 归一后词取并集——只增不删，保证既有命中不丢（after 评测裁决的修正）。
@@ -326,12 +367,20 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
         return []
     now = datetime.now(UTC)
     days = stale_days()
+    # 第 66 刀：source_kind 随候选集一并取回（join 本来就在，零额外查询）——
+    # 评论适用域闸（excludes_review_evidence）在打分前过滤。
+    # 评论适用域闸按 **gate_question（本问）** 判定，缺省即 query：多轮拼接检索
+    # （retrieval_query 拼上一问）会让上一问的观点标记豁免本问的服务态问句——
+    # 「物流怎么样→它到货了吗」拼出「怎么样」，garbage 评论原样放行（评审 P1）。
+    # 引擎拼接时显式传本问；缺口验证/MCP/评测的 query 就是本问，不传即同义。
+    drop_reviews = excludes_review_evidence(gate_question or query)
     rows = db.execute(
         select(
             RetrievalChunk.asset_id,
             RetrievalChunk.version_no,
             RetrievalChunk.chunk,
             Asset.last_verified_at,
+            Asset.source_kind,
         )
         .join(
             AssetVersion,
@@ -364,8 +413,10 @@ def retrieve(db: Session, query: str, *, top_k: int = 5) -> list[dict[str, Any]]
             "score": score
             * (STALE_MULTIPLIER if is_stale(verified_at, now=now, days=days) else 1.0),
         }
-        for asset_id, version_no, chunk, verified_at in rows
+        for asset_id, version_no, chunk, verified_at, source_kind in rows
         if (score := score_chunk(terms, chunk)) > 0.0
+        # 评论适用域（第 66 刀）：服务状态问（无观点标记）下评论块不算证据
+        and not (drop_reviews and source_kind == "review_import")
     ]
     # 去重：文档原文的「字段：值」行与确认字段生成的块可能同文（合法：两路证据），
     # 但回答组装不该复读同一句——按键去重保序
