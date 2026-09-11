@@ -27,11 +27,12 @@ class _FakeDb:
 
     调用方仍给 3 元组 (asset, version, chunk)；第 39 刀起候选 SQL 随带保鲜
     元数据（last_verified_at），第 66 刀再随带 source_kind（评论适用域闸），
-    retrieve 按 5 元组解包——fake 在此统一补 None + "upload"（未验证不降权、
-    非评论不被适用域闸滤），既有用例正文零改动。"""
+    第 79 刀再随带 title（实体亲和重排），retrieve 按 6 元组解包——fake 在此
+    统一补 None + "upload" + None（未验证不降权、非评论不被适用域闸滤、空
+    标题亲和 0=乘数中性），既有用例正文零改动。"""
 
     def __init__(self, rows: list[tuple[int, int, str]]) -> None:
-        self._rows = [(a, v, c, None, "upload") for a, v, c in rows]
+        self._rows = [(a, v, c, None, "upload", None) for a, v, c in rows]
 
     def execute(self, stmt: Any) -> _FakeResult:
         return _FakeResult(self._rows)

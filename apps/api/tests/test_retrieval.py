@@ -459,3 +459,128 @@ def test_retrieve_drops_review_chunks_for_service_state_query(api: object) -> No
         glued = "物流怎么样 它到货了吗"
         assert retrieve(db, glued) != [], "缺省按 query 判（无观点标记的本问场景）"
         assert retrieve(db, glued, gate_question="它到货了吗") == []
+
+
+# ---------- 实体亲和重排（第 79 刀，ADR 0048） ----------
+
+
+def test_title_affinity_full_coverage_is_one() -> None:
+    """问句覆盖标题全部区分性 bigram -> 1.0（问句点名了该资产）。"""
+    from suite_api.services.retrieval import title_affinity, title_idf
+
+    idf = title_idf(["钛钢保温杯 规格", "Erdbeeren 规格"])
+    # 「钛钢保温杯的容量」terms 含标题「钛钢保温杯」的全部 bigram（规格不含）
+    aff = title_affinity(query_terms("钛钢保温杯的容量"), "钛钢保温杯 规格", idf)
+    assert 0.0 < aff < 1.0  # 规格未被覆盖，按 idf 权重折算（部分覆盖）
+    # 全覆盖（问句覆盖标题全部区分性 bigram）-> 恰为 1.0（名实相符）
+    full = title_affinity(query_terms("钛钢保温杯规格是多少"), "钛钢保温杯 规格", idf)
+    assert full == 1.0
+
+
+def test_title_affinity_named_asset_beats_shared_words() -> None:
+    """共享 bigram（规格，两标题都有 -> 低 idf）几乎不贡献亲和，专名主导。"""
+    from suite_api.services.retrieval import title_affinity, title_idf
+
+    idf = title_idf(["M&M white 规格（OFF）", "Erdbeeren 规格（OFF）"])
+    terms = query_terms("Erdbeeren的条码是多少")
+    named = title_affinity(terms, "Erdbeeren 规格（OFF）", idf)
+    other = title_affinity(terms, "M&M white 规格（OFF）", idf)
+    assert named > other == 0.0  # 问句不含共享词（规格）时他品亲和为 0：专名主导
+    # 问句带上共享字段词后他品亲和仍远低于点名资产——idf 对共享词只做温和
+    # 压制（df=N 时下界 log2≈0.69，不是近零），真正的差距来自比值归一里
+    # 点名资产的专名覆盖
+    field_terms = query_terms("Erdbeeren的规格是多少")
+    named2 = title_affinity(field_terms, "Erdbeeren 规格（OFF）", idf)
+    other2 = title_affinity(field_terms, "M&M white 规格（OFF）", idf)
+    assert named2 > other2 > 0.0
+
+
+def test_title_affinity_blank_title_is_zero() -> None:
+    """空标题/纯停用字标题亲和 0（乘数 1=中性，不因无标题被显式惩罚）。"""
+    from suite_api.services.retrieval import title_affinity, title_idf
+
+    idf = title_idf(["退货政策说明", ""])
+    assert title_affinity(query_terms("退货政策是多少"), "", idf) == 0.0
+    assert title_affinity(query_terms("退货政策是多少"), None, idf) == 0.0
+    # 纯停用字标题无有效 bigram -> 0（docstring 声明的面，补钉）
+    assert title_affinity(query_terms("退货政策是多少"), "的了吗", idf) == 0.0
+
+
+def test_retrieve_entity_affinity_breaks_cross_product_tie(api: object) -> None:
+    """真库：同文字段块跨资产并列时，问句点名的资产破开并列（病根正钉）。
+
+    构造复现 75 刀病根形态：A/B 两资产各有一个「净含量：500ml」**同文**块
+    （字段名+值全同 -> 词法分完全并列），且 B 的标题不含问句实体。被点名资产
+    **后建**（id 更大）——baseline 的 (asset_id, chunk) 稳定序会把 B 排第一，
+    只有亲和乘数真正生效时 A 才翻到 top-1（把 AFFINITY_ALPHA 置 0 本用例
+    必红——评审证伪出伪钉后的反转钉法）。两个真库用例用互不相同的商品域
+    （杯/奶粉），切断 module 级共享库下跨用例的同标题并列污染。
+    """
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        other_id = _seed_published_asset(
+            db,
+            "Erdbeeren 规格（OFF）",
+            ["净含量：500ml"],  # 同文块：词法分与 A 完全并列；先建（id 小）
+            source_kind="openfoodfacts",
+        )
+        named_id = _seed_published_asset(
+            db,
+            "钛钢保温杯 规格",
+            ["净含量：500ml"],  # 后建（id 大）：baseline 稳定序下排第二
+            source_kind="upload",
+        )
+        db.commit()
+
+        hits = retrieve(db, "钛钢保温杯的净含量是多少")
+        assert [h["asset_id"] for h in hits[:2]] == [named_id, other_id]
+        assert hits[0]["chunk"] == "净含量：500ml"
+
+        # 问句与两标题均无 bigram 交集（标题不含「净含/含量」字段词）时乘数
+        # 恒 1、零漂移——两块仍按 (asset_id, chunk) 稳定序出榜。这是中性面的
+        # 真实边界（无交集才恒 1）；标题含字段词时纯字段问也有亲和，属设计内
+        # 行为（ADR 0048 已知取舍：混淆组提升正来自「字段词恰入标题」）。
+        plain = retrieve(db, "净含如何")
+        assert plain, "字段词问句仍应命中"
+        assert [h["asset_id"] for h in plain[:2]] == [other_id, named_id]
+
+
+def test_retrieve_entity_affinity_overrides_shorter_rival(api: object) -> None:
+    """近同文且他品块更短（词法分更高）时，点名资产靠亲和翻盘（非并列形态）。
+
+    病根的第二形态（75 刀实测「净含/含量类被拉向块更短更实的资产」）：
+    B 的块字段名相同、值更短 -> sqrt 归一分母更小 -> 词法分微弱胜出。
+    亲和乘数把问句点名的资产抬回 top-1。
+    """
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        other_id = _seed_published_asset(
+            db,
+            "安慕希酸奶 规格",
+            ["净含量：500g"],  # 更短 -> 词法分更高（baseline 下 top-1）；先建
+            source_kind="openfoodfacts",
+        )
+        named_id = _seed_published_asset(
+            db,
+            "雀巢奶粉 规格",
+            ["净含量：500毫升"],  # 值更长 -> 分母更大 -> 词法分更低；后建
+            source_kind="upload",
+        )
+        db.commit()
+
+        # baseline 形态自检：亲和停用（alpha=0）时更短的他品块夺冠——证明本
+        # 用例测的确实是「亲和翻盘」而非稳定序/建序巧合（评审证伪后补的钉）
+        from suite_api.services import retrieval as retrieval_module
+
+        original_alpha = retrieval_module.AFFINITY_ALPHA
+        retrieval_module.AFFINITY_ALPHA = 0.0
+        try:
+            baseline = retrieve(db, "雀巢奶粉的净含量是多少")
+            assert baseline[0]["asset_id"] == other_id, "alpha=0 下更短他品块应夺冠"
+        finally:
+            retrieval_module.AFFINITY_ALPHA = original_alpha
+
+        hits = retrieve(db, "雀巢奶粉的净含量是多少")
+        assert hits[0]["asset_id"] == named_id, "点名资产须靠亲和赢过更短的他品块"

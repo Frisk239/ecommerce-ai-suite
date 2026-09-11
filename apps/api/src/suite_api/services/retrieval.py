@@ -14,6 +14,11 @@
 - 停用词：bigram 含任一纯功能字（的了/是/有/怎么…）即无效。宁缺勿滥
   （0018 无证据不答）：「保温杯的净含量」只留下 保温/温杯/净含/含量 四个
   有效 bigram，跨虚词噪音（杯的/的净）不参与命中。
+- 实体亲和重排（第 79 刀，ADR 0048）：打分后乘 per-query 实体乘数
+  1+3*title_affinity——问句对候选资产标题的 IDF 加权 bigram 覆盖。字段块
+  （品牌：/净含量：…）跨资产同文时词法并列是跨商品混淆的病根（75 刀实测），
+  问句点名的资产由此破开并列；问句与标题无 bigram 交集时乘数恒 1（中性面，
+  标题含字段词/回流首问时纯字段问也有亲和——设计内取舍，见 ADR 0048）。
 - retrieve 只查「当前已发布版本」的 chunks：join assets 的
   current_published_version_id 指针（0006）。待人洗/已接入不出现由 join
   语义保证而非事后过滤（0017：索引=已发布的派生视图，指针前移命中集合
@@ -369,6 +374,54 @@ def is_stale(last_verified_at: datetime | None, *, now: datetime, days: int) -> 
     return now - last_verified_at > timedelta(days=days)
 
 
+# ---------- 实体亲和重排（第 79 刀，ADR 0048；跨商品混淆病根的正解） ----------
+
+# 亲和乘数强度（工程标定，实验矩阵定稿 a3：overall@1 66.2->86.2，见
+# scripts/eval/rerank_experiment.py 与 rag-eval-report 第 79 刀节）。
+# per-query 实体信号与 75 刀被拒的全局来源权重的本质区别：乘数只在「问句
+# 点名了某个资产」（标题区分性 bigram 被覆盖）时 >1，问句与标题无交集恒 1。
+AFFINITY_ALPHA = 3.0
+
+
+def title_idf(titles: list[str]) -> dict[str, float]:
+    """按候选资产标题全集算每个标题 bigram 的 idf（log(1 + N/(1+df))）。
+
+    「规格（OFF）/评论/说明」这类跨资产共享 bigram 天然低 idf，商品名/
+   专名 bigram 天然高 idf——亲和信号由区分性词主导，共享词几乎不贡献。
+    空标题不参与统计（其亲和恒 0=中性，不因无标题被显式惩罚）。
+    """
+    df: dict[str, int] = {}
+    n = 0
+    for title in titles:
+        if not title:
+            continue
+        n += 1
+        for term in query_terms(title):
+            df[term] = df.get(term, 0) + 1
+    return {term: math.log(1 + n / (1 + count)) for term, count in df.items()}
+
+
+def title_affinity(terms: frozenset[str], title: str | None, idf: dict[str, float]) -> float:
+    """IDF 加权的问句-标题覆盖（纯函数便于单测与实验复算）。
+
+    = Σ_{t∈标题bigram∩问句bigram} idf(t) / Σ_{t∈标题bigram} idf(t)：
+    标题的区分性 bigram 被问句覆盖的比例。标题为空/无有效 bigram 时返回
+    0——乘数 1，不因无标题被显式惩罚。注意「问句与标题无 bigram 交集才
+    恒 0」：标题含字段词（如回流资产的标题=首问「保温杯的净含量是多少？」）
+    时纯字段问也得到亲和，这是设计内行为（ADR 0048 已知取舍）。
+    """
+    if not title:
+        return 0.0
+    title_terms = query_terms(title)
+    if not title_terms:
+        return 0.0
+    total = sum(idf.get(term, 0.0) for term in title_terms)
+    if total <= 0.0:
+        return 0.0
+    covered = sum(idf.get(term, 0.0) for term in title_terms & terms)
+    return covered / total
+
+
 # ---------- 检索（只查当前已发布版本，join 保证） ----------
 
 
@@ -398,6 +451,12 @@ def retrieve(
     评论适用域（第 66 刀，ADR 0018 修订）：候选 SQL 随带 assets.source_kind，
     ``gate_question``（缺省即 query）命中服务状态词且无观点标记时 review_import
     块不进候选——「什么算证据」在此单点定义，引擎/缺口验证/MCP/评测共用。
+
+    实体亲和重排（第 79 刀，ADR 0048）：打分后对每个候选资产乘
+    ``1 + AFFINITY_ALPHA * title_affinity``（问句 terms 对该资产标题的 IDF
+    加权覆盖）。跨商品同文字段块的并列由此被「问句点名的资产」破开；
+    问句与标题无 bigram 交集时乘数恒 1（中性面——标题含字段词/回流首问
+    时纯字段问也有亲和，ADR 0048 已知取舍）。返回的 score 是重排后的名次分。
     """
     # 查询侧同义词扩展（0023 词法口径内的确定性扩展，非向量）：原查询词与
     # 归一后词取并集——只增不删，保证既有命中不丢（after 评测裁决的修正）。
@@ -420,6 +479,7 @@ def retrieve(
             RetrievalChunk.chunk,
             Asset.last_verified_at,
             Asset.source_kind,
+            Asset.title,
         )
         .join(
             AssetVersion,
@@ -442,6 +502,19 @@ def retrieve(
     # （同属跨进程边界出口，ADR 0038 修订段「MCP 响应」口径）。打分/去重/排序
     # 全程仍用原文块（score_chunk 吃 comprehension 的 chunk 变量，不动检索
     # 打分）；索引行与版本字节永不回写掩码（不可变锁死，出口只现掩）。
+    # 第 79 刀（ADR 0048）：实体亲和重排——候选资产的标题 bigram 被**本问**
+    # terms 覆盖的比例（IDF 加权）作为 per-query 乘数 score*(1+3*affinity)。
+    # 病根：字段块（品牌：/净含量：…）跨资产同文时词法并列，短块微弱胜出、
+    # (asset_id, chunk) 稳定出榜——问「钛钢保温杯的净含量」召回 OFF 他品的
+    # 同文块（75 刀实测）。问句点名的资产亲和>0 被抬上来；问句与标题无
+    # bigram 交集时乘数恒 1（中性面；标题含字段词/回流首问时纯字段问也有
+    # 亲和——ADR 0048 已知取舍，混淆组的提升部分正来自此）。与打分/stale/
+    # 评论闸同在 retrieve 内=引擎双通道/MCP/缺口验证/评测四出口同语义。
+    titles = {asset_id: title for asset_id, _, _, _, _, title in rows}
+    idf = title_idf(list(titles.values()))
+    aff_of = {
+        asset_id: title_affinity(terms, title, idf) for asset_id, title in titles.items()
+    }
     scored = [
         {
             "asset_id": asset_id,
@@ -449,10 +522,14 @@ def retrieve(
             "chunk": redact(chunk),
             # 过期降权是乘数后处理：打分本体（score_chunk）不动，只有显式验证
             # 过且超过阈值才乘 0.5（null 恒不降——保守裁决见 is_stale docstring）
+            # 实体亲和是第二个乘数（>=1，问句与标题无交集恒 1）——与 stale
+            # 正交相乘：过期被点名资产 0.5*(1+3*aff) 最高 2.0 仍可压过新鲜
+            # 未点名资产（stale 是软降权、亲和是强信号，ADR 0048 取舍）。
             "score": score
-            * (STALE_MULTIPLIER if is_stale(verified_at, now=now, days=days) else 1.0),
+            * (STALE_MULTIPLIER if is_stale(verified_at, now=now, days=days) else 1.0)
+            * (1.0 + AFFINITY_ALPHA * aff_of[asset_id]),
         }
-        for asset_id, version_no, chunk, verified_at, source_kind in rows
+        for asset_id, version_no, chunk, verified_at, source_kind, _title in rows
         if (score := score_chunk(terms, chunk)) > 0.0
         # 评论适用域（第 66 刀）：服务状态问（无观点标记）下评论块不算证据
         and not (drop_reviews and source_kind == "review_import")
