@@ -614,6 +614,58 @@ def test_category_stock_accepts_common_question_forms(question: str) -> None:
     assert result["category"] == "笔记本电脑"
 
 
+# ---------- 审计刀 13（B 轴）：词表与入口的残余缺口 ----------
+
+
+@pytest.mark.parametrize(
+    "question, expect",
+    [
+        ("经济学原理这本书有货吗？", "经济学原理"),  # 「书」是类目别名不能进虚词表，收复合词「本书」
+        ("占卜书那本书有货吗？", "占卜书"),
+        ("笔记本电脑售罄了吗", "笔记本电脑"),  # 售罄/断货：65 刀只补了卖完/卖光
+        ("彩电断货了吗", "电视机"),
+        ("笔记本库存多吗", "笔记本电脑"),
+        ("这个保温杯还有货吗", "钛钢保温杯"),  # 指示词：这/那/个/台（快路径假拒面，审计顺带实测）
+        ("这台笔记本电脑有货吗", "笔记本电脑"),
+    ],
+)
+def test_audit13_wordlist_gaps_answer_now(question: str, expect: str) -> None:
+    """审计刀 13 B 轴词表缺口的正向钉子（修复前全部拒答/回落）。"""
+    products = _category_products(
+        ("图书", "经济学原理"), ("图书", "占卜书"), ("笔记本电脑", "样品一"),
+        ("电视机", "样品二"), ("器皿", "钛钢保温杯"),
+    )
+    result = stock_tools.query_stock(_stock_db(products), question)  # type: ignore[arg-type]
+    got = result.get("product_name") if result.get("found") else None
+    assert got == expect, (question, result)
+
+
+@pytest.mark.parametrize("question", ["电脑桌售罄了吗", "二手手机断货了吗", "那个手机壳有货吗"])
+def test_audit13_wordlist_negatives_still_refuse(question: str) -> None:
+    """新词表的代价面：别名词当修饰语（桌/二手/壳）照旧靠残字挡回。"""
+    products = _category_products(
+        ("智能手机", "样品一"), ("笔记本电脑", "样品二"), ("图书", "样品三")
+    )
+    assert stock_tools.query_stock(_stock_db(products), question) == {"found": False}  # type: ignore[arg-type]
+
+
+def test_proposal_get_stock_gates_on_original_question() -> None:
+    """审计刀 13 B 轴 P2-2：提议步的纯度闸必须按**原问句**判，不能拿 LLM 抽取的
+    干净商品名当问句（残差必然为空，闸形同虚设——刻字问会亮「有货 · 42 件」）。"""
+    from suite_api.services.agent_tools import _run_get_stock
+
+    products = _category_products(("器皿", "钛钢保温杯"), ("智能手机", "样品一"))
+    db = _stock_db(products)
+    # 服务/保养问：匹配用 product_name，闸用原问句 -> 不算查到
+    assert _run_get_stock(db, {"product_name": "保温杯"}, "保温杯可以刻字吗") == {"found": False}
+    assert _run_get_stock(db, {"product_name": "手机"}, "手机怎么保养") == {"found": False}
+    # 真问货照旧查到（含指示词形态）
+    assert _run_get_stock(db, {"product_name": "保温杯"}, "这个保温杯还有货吗")["product_name"] == "钛钢保温杯"
+    assert _run_get_stock(db, {"product_name": "手机"}, "手机有货吗")["category"] == "智能手机"
+    # 无参提议（裸「有货吗」）按原问句走，行为不变
+    assert _run_get_stock(db, {}, "钛钢保温杯有货吗")["product_name"] == "钛钢保温杯"
+
+
 def test_single_product_stock_has_purity_gate() -> None:
     """第 65 刀评审实修：单品路径此前**没有任何闸**——LCS 命中商品名即硬答库存。
 

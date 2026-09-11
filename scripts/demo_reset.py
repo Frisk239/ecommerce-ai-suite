@@ -39,7 +39,8 @@ import os
 import sys
 from typing import Any
 
-# 两个特征判据（与产品口径同源：探针资产判据 = workQueue.isWorkProbe 的服务端镜像）
+# 两个特征判据（与产品口径同源：探针资产判据 = workQueue.isWorkProbe 的服务端镜像；
+# 前端是 /i 大小写不敏感，这里用 PG 的 ~* 对齐——机器标题恒小写，但「同源」要真同源）
 PROBE_TITLE_SQL = r"^(mcp-smoke|evidence probe)"
 
 
@@ -69,7 +70,7 @@ def plan(session: Any) -> dict[str, int]:
         SELECT count(*) FROM assets
         WHERE discarded_at IS NULL
           AND source_kind = 'mcp_registered'
-          AND title ~ :pattern
+          AND title ~* :pattern
         """,
         {"pattern": PROBE_TITLE_SQL},
     )
@@ -110,7 +111,7 @@ def apply_cleanup(session: Any) -> dict[str, int]:
             UPDATE assets SET discarded_at = now()
             WHERE discarded_at IS NULL
               AND source_kind = 'mcp_registered'
-              AND title ~ :pattern
+              AND title ~* :pattern
             """
         ),
         {"pattern": PROBE_TITLE_SQL},
@@ -136,6 +137,12 @@ def main(argv: list[str] | None = None) -> int:
     from suite_api.db import to_sqlalchemy_url
 
     engine = create_engine(to_sqlalchemy_url(args.db))
+    # 审计刀 13 B 轴 P2：回显目标库（掩密码）——--db 默认吃 shell 的 DATABASE_URL，
+    # 本仓 .env 写的是 5432 而演示库在 5433，指错库的清理不可察觉是运维脚枪。
+    import re as _re
+
+    shown = _re.sub(r"(://[^:/@]+:)[^@]+(@)", lambda m: m.group(1) + "***" + m.group(2), args.db)
+    print(f"目标库：{shown}{'（--apply 将写库）' if args.apply else '（dry-run，只读）'}")
     with Session(engine) as session:
         before = plan(session)
         print("探针盘点（dry-run）：")

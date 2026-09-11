@@ -6,7 +6,7 @@
 
 | 件 | 交付 |
 | --- | --- |
-| `scripts/demo_reset.py` | **默认 dry-run**（`--apply` 才写库）：盘点并清理**两类特征行**——①**空会话**（`service_sessions` 里无消息、无工单、无评分、无缺口、无回流锚的行）；②**探针资产**（`source_kind='mcp_registered'` 且标题 `^(mcp-smoke|evidence probe)`，判据与前端 `workQueue.isWorkProbe` 同源）→ **置 discarded**（ADR 0042 语义：列表/检索/导出不再出现），**不删行、不删字节**。幂等（连跑第二次删除/标记数为 0） |
+| `scripts/demo_reset.py` | **默认 dry-run**（`--apply` 才写库）：盘点并清理**两类特征行**——①**空会话**（`service_sessions` 里无消息、无工单、无评分、无缺口、无回流锚的行）；②**探针资产**（`source_kind='mcp_registered'` 且标题 `^(mcp-smoke|evidence probe)`，判据与前端 `workQueue.isWorkProbe` 同判据；**审计刀 13 订正**：初稿称「同源」，实际前端 `/i` 大小写不敏感、脚本原为 PG `~` 区分大小写——已统一为 `~*` 对齐）→ **置 discarded**（ADR 0042 语义：列表/检索/导出不再出现），**不删行、不删字节**。幂等（连跑第二次删除/标记数为 0） |
 | 只报告不清 | 知识缺口、工单、已发布资产、会话消息、评分、审计留痕——一律不动（缺口与工单是「拒答留缺口→去补→再问命中」「转人工闭环」的**演示素材**，删了就演不出来） |
 | README | 「演示前检查」新增探针清理一节：两条命令（先 dry-run 看数、再 `--apply`）+ 清什么/不清什么的口径说明 |
 | 测试 | `apps/api/tests/test_demo_reset_script.py` 3 例（真库）：只数/只清特征行（探针标题+来源两条同时命中才算、已 discarded 不重复计）、有消息/有评分的会话与正常资产**不许误伤**、幂等、CLI 不带 `--apply` 绝不写库 |

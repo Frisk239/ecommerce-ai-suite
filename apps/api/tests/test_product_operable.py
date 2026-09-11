@@ -972,6 +972,39 @@ def test_za_and_gui_forms_do_not_blank_modifiers(question: str) -> None:
     assert try_price_answer(db, "退货运费贵吗") is None
 
 
+@pytest.mark.parametrize(
+    "question, expect",
+    [
+        ("保温杯花多少钱", "钛钢保温杯"),  # 审计刀 13 B 轴 P1：re 择先按最左起始位，「花多少」先吃剩「钱」
+        ("笔记本电脑花多少钱", "笔记本电脑"),
+        ("我想买保温杯多少钱", "钛钢保温杯"),  # 「我想」不在虚词表
+    ],
+)
+def test_audit13_price_filler_leftmost_trap_and_woxiang(question: str, expect: str) -> None:
+    """审计刀 13 B 轴 P1：「花多少钱」是**死意图路径**——意图层认（花多少），
+    纯度层剔不净（最左匹配把「花多少」吃在「多少钱」之前，剩孤字「钱」）。
+    「长词写在短词前面」管不住前缀起始更早的情形，修法是补裸「钱」兜底。"""
+    from suite_api.services.catalog_tools import try_price_answer
+
+    if expect == "钛钢保温杯":  # 单品用例要有真名商品（目录夹具是 商品1..9）
+        cup = _mem_product(1, "钛钢保温杯", 12900)
+        cup.category = "器皿"
+        db = _catalog_db([cup])
+    else:
+        db = _catalog_of([category for category, _ in _DEMO_CATEGORY_PHRASES])
+    answer = try_price_answer(db, question)
+    assert answer is not None, question
+    assert answer.tool["arg"] == expect, question
+
+
+def test_audit13_price_negative_deposit_still_refuses() -> None:
+    """裸「钱」的代价面：「押金多少钱」的「押」/「金」仍是残字，照旧拒答。"""
+    from suite_api.services.catalog_tools import try_price_answer
+
+    db = _catalog_of([category for category, _ in _DEMO_CATEGORY_PHRASES])
+    assert try_price_answer(db, "保温杯押金多少钱") is None
+
+
 @pytest.mark.parametrize("question", ["手机下单多少钱", "线下体验多少钱", "电脑下架了吗多少钱"])
 def test_bare_xia_does_not_blank_real_modifiers(question: str) -> None:
     """裸「下」进虚词表的代价面：真修饰语（下单/线下/下架）必须靠**残字**挡住。"""

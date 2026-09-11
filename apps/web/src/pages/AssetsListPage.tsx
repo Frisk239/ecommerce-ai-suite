@@ -266,10 +266,7 @@ export default function AssetsListPage() {
   const fillGap = (gap: KnowledgeGap) => {
     if (gap.product !== null) {
       const spec = assets.find(
-        (a) =>
-          a.kind === 'document' &&
-          a.product?.id === gap.product?.id &&
-          a.current_published_version_no !== null,
+        (a) => a.kind === 'document' && a.product?.id === gap.product?.id && isPublished(a),
       )
       if (spec !== undefined) {
         setRevisionChoice({ gap, specId: spec.id })

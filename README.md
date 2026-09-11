@@ -186,16 +186,16 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
   ```
 
   （录像本身会留在对象存储里成为孤儿——录像是切片模块自有的输入源，没有删除端点，这是有意的。）
-- **`/metrics` 默认是关的**：不设 `METRICS_TOKEN` 一律 401；要现场演示抓取，先 `printf '%s' "$METRICS_TOKEN" > ops/metrics_token` 再 `--profile metrics up`。
+- **`/metrics` 默认是关的**：不设 `METRICS_TOKEN` 一律 401。要现场演示抓取，三步缺一不可：①把自选令牌写进本机 `.env` 的 `METRICS_TOKEN=`（审计刀 13 C 轴：清单原只写 printf 一步，变量未设时会生成**空** token 文件，Prometheus 全程 401）；②`docker compose up -d --build api` 让容器带上它；③`printf '%s' "$METRICS_TOKEN" > ops/metrics_token`（与 ① 同值）再 `--profile metrics up`。
 - **ffmpeg 必须在**：compose 的 api 镜像已装、CI 显式安装；本机裸跑需自带（缺失时拣选报 422「ffmpeg 无法执行」，不是静默降级）。
-- **探针数据（第 61 刀）**：冒烟、审计与端到端探针会在演示库留下空会话与探针资产（客服页一堆「未开始」、资产列表里 `mcp-smoke` / `evidence probe` 机器行）。演示前清一次：
+- **探针数据（第 61 刀）**：冒烟、审计与端到端探针会在演示库留下空会话与探针资产（客服页一堆「未开始」、资产列表里 `mcp-smoke` / `evidence probe` 机器行）。演示前清一次（命令里的 5433 是本机端口：宿主 5432 被占用时 `.env` 设 `PG_PORT=5433` 覆盖，端口随它走——`.env` 的 `DATABASE_URL` 也要用同一端口，否则脚本/迁移会连错库）：
 
   ```bash
   uv run python scripts/demo_reset.py --db postgresql://suite:suite@localhost:5433/suite            # 只报告（默认 dry-run，不写库）
   uv run python scripts/demo_reset.py --db postgresql://suite:suite@localhost:5433/suite --apply    # 真清
   ```
 
-  它清**两类特征行**（空会话：无消息/工单/评分/缺口/回流锚；探针资产：`mcp_registered` 且标题 `^mcp-smoke|^evidence probe` → 置 discarded 不删行）。**知识缺口与工单只报告不清**——那些是「拒答留缺口 → 去补 → 再问命中」与「转人工闭环」的演示素材。默认 dry-run、必须显式 `--apply`。
+  它清**两类特征行**（空会话：无消息/工单/评分/缺口/回流锚；探针资产：`mcp_registered` 且标题 `^mcp-smoke|^evidence probe`（大小写不敏感，与前端判据对齐）→ 置 discarded 不删行）。**请在演示开始前跑**：顾客刚创建、还没发第一问的会话也符合「空会话」判据，会被一并删掉（其下一问会 401）。**知识缺口与工单只报告不清**——那些是「拒答留缺口 → 去补 → 再问命中」与「转人工闭环」的演示素材。默认 dry-run、必须显式 `--apply`。
 
 ## 数据来源与演示价（第 50 / 55 刀）
 

@@ -143,3 +143,43 @@ def test_pronoun_pattern_matches_spec_lexicon() -> None:
         assert PRONOUN_RE.search(text), text
     for text in ("钛杯的净含量是多少", "材质是什么", "保修政策"):
         assert not PRONOUN_RE.search(text), text
+
+
+# ---------- 审计刀 13 C 轴 P0-1：拼接检索的本问保底 ----------
+
+
+def test_merge_own_hits_appends_fresh_hits_capped_at_two() -> None:
+    """拼接生效时本问裸检索的新命中去重后并入（≤2），已有命中不丢不重。
+
+    复现背景：净含量问 → 「那它的材质是什么」时，拼接 top-5 全是净含量块，
+    「材质：钛钢」被挤出——模型上下文里没有材质证据只能拒答（README 演示口径）。
+    """
+    from suite_api.services.chat_engine import merge_own_hits
+
+    def hit(asset: int, chunk: str) -> dict[str, object]:
+        return {"asset_id": asset, "version_no": 1, "chunk": chunk}
+
+    glued = [hit(9, "净含量：500ml"), hit(226, "净含量：80g")]
+    own = [
+        hit(13, "材质：钛钢"),  # 新命中：并入
+        hit(9, "净含量：500ml"),  # 已在拼接结果里：去重
+        hit(3, "材质：316不锈钢"),  # 新命中：并入
+        hit(10, "材质：316不锈钢"),  # 超上限：截断
+    ]
+    merged = merge_own_hits(glued, own)
+    # **交错**而非追加：prompt/引用只看前两条（_MAX_PROMPT_EVIDENCE=2），
+    # 追加在尾部等于没并——窗口必须是「语境（拼接首位）+ 主题（本问首位）」
+    assert [(h["asset_id"], h["chunk"]) for h in merged] == [
+        (9, "净含量：500ml"),
+        (13, "材质：钛钢"),
+        (226, "净含量：80g"),
+        (3, "材质：316不锈钢"),
+    ]
+
+
+def test_merge_own_hits_keeps_glued_order_when_all_dupes() -> None:
+    """本问命中全部已在拼接结果里：原样返回（不重复、不加塞）。"""
+    from suite_api.services.chat_engine import merge_own_hits
+
+    glued = [{"asset_id": 9, "version_no": 2, "chunk": "净含量"}]
+    assert merge_own_hits(glued, list(glued)) == glued
