@@ -537,6 +537,22 @@ def _category_products(*spec: tuple[str, str]) -> list[Product]:
     return out
 
 
+def test_stock_pattern_routes_sellout_forms() -> None:
+    """第 65 刀（浏览器验收抓的层间缝）：「卖完/卖光」必须进**路由词表**。
+
+    只补虚词表不够——「书都卖完了吗」没有「有」字，`有.{0,12}吗` 不命中，
+    引擎根本不会把问句派给库存工具（浏览器实测照旧拒答，`get_stock` 只在
+    提议步里跑了一次）。词表是路由器不是判据：查不到照旧回落。
+    """
+    for question in ["书都卖完了吗", "杯子卖光了吗", "平板卖完了还有吗"]:
+        assert stock_tools.STOCK_KEYWORD_PATTERN.search(question) is not None, question
+    # 路由放行的同批问句，工具层必须真的查得到（类目聚合）
+    products = _category_products(("图书", "样品一"), ("器皿", "样品二"))
+    assert stock_tools.query_stock(_stock_db(products), "书都卖完了吗")["category"] == "图书"  # type: ignore[index]
+    # 求助/混意图形态：路由命中但闸挡回 -> found False -> 引擎回落检索
+    assert stock_tools.query_stock(_stock_db(products), "书卖完了怎么办") == {"found": False}  # type: ignore[arg-type]
+
+
 def test_category_stock_respects_purity_gate() -> None:
     """第 62 刀 P0：别名词当**修饰语**时不许按类目聚合（配件/家具/箱包）。
 
@@ -582,6 +598,11 @@ def test_category_stock_respects_purity_gate() -> None:
         "店里有笔记本卖吗",
         "你们店里有笔记本吗？",  # 裸「店」不可作虚词，但「店里」可以——这条钉住区分
         "笔记本没有货吗？",
+        "笔记本都卖完了吗？",  # 第 65 刀：卖完/卖光是问库存的自然形态（原子词）
+        "笔记本卖光了还有吗？",
+        "笔记本卖光了没",  # 评审 P2-2：收「没有」没收裸「没」
+        "笔记本全卖完了吧",  # 收「都」没收「全」
+        "笔记本一台都卖光了吗",  # 量词原子词（与报价侧第 62 刀对称；字符类会被 re.escape 转义成字面量，必须逐个枚举）
     ],
 )
 def test_category_stock_accepts_common_question_forms(question: str) -> None:
@@ -591,6 +612,42 @@ def test_category_stock_accepts_common_question_forms(question: str) -> None:
     result = stock_tools._category_stock(question, products)
     assert result is not None, question
     assert result["category"] == "笔记本电脑"
+
+
+def test_single_product_stock_has_purity_gate() -> None:
+    """第 65 刀评审实修：单品路径此前**没有任何闸**——LCS 命中商品名即硬答库存。
+
+    评审实测：「保温杯卖完了还能刻字吗」被答成「钛钢保温杯有货，当前库存 42 件」
+    （刻字服务问）。修法与 `price_residual` 同构：剔 LCS 命中片段 + 问货虚词。
+    """
+    cup = _product(1, "钛钢保温杯")
+    cup.stock = 42
+    db = _stock_db([cup])
+    for question in [
+        "保温杯卖完了还能刻字吗？",
+        "保温杯卖完了我想退货怎么办",
+        "保温杯有货吗能刻字吗",
+    ]:
+        assert stock_tools.query_stock(db, question) == {"found": False}  # type: ignore[arg-type]
+    # 部分名/全名的纯问货照旧作答（LCS 剔除容错，不是字面 replace）
+    for question in ["保温杯有货吗？", "钛钢保温杯有货吗"]:
+        result = stock_tools.query_stock(db, question)  # type: ignore[arg-type]
+        assert result["product_name"] == "钛钢保温杯", question
+
+
+def test_category_stock_blocks_modifier_questions_with_sellout_forms() -> None:
+    """第 65 刀：卖完/卖光进虚词表的代价面——别名词当修饰语仍要靠残字挡住。
+
+    「卖完了怎么办」是求助不是问货；「能退货吗」混意图；配件（膜）不等于类目。
+    """
+    products = _category_products(("智能手机", "样品一"), ("图书", "样品二"))
+    for question in [
+        "手机膜卖完了吗？",
+        "书卖完了怎么办？",
+        "书卖完了能退货吗？",
+    ]:
+        assert stock_tools._category_stock(question, products) is None, question
+        assert stock_tools.query_stock(_stock_db(products), question) == {"found": False}  # type: ignore[arg-type]
 
 
 def test_category_stock_wins_over_single_product_with_category_in_name() -> None:
