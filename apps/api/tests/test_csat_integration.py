@@ -144,6 +144,10 @@ def test_rating_is_editable_latest_wins(api: ApiFixture) -> None:
     assert second.status_code == 200
     assert second.json()["updated_at"] is not None
     assert second.json()["score"] == 1
+    # 操作者详情读最新 + 改过标记数据面（第 77 刀）
+    client.post("/api/auth/login", json={"username": "operator", "password": "operator123"})
+    d = client.get(f"/api/service/sessions/{session_id}").json()
+    assert d["rating"] == 1 and d["rating_updated_at"] is not None
     factory = client.app.state.session_factory
     with factory() as db:
         rows = db.query(SessionRating).filter_by(session_id=session_id).all()
@@ -484,7 +488,11 @@ def test_rating_records_csat_metric(api: ApiFixture) -> None:
 
 
 def test_session_detail_exposes_rating(api: ApiFixture) -> None:
-    """第 57 刀：详情也带评分——深链 `?session=N` 进来要看到与列表行同样的上下文。"""
+    """第 57 刀：详情也带评分——深链 `?session=N` 进来要看到与列表行同样的上下文。
+
+    第 77 刀扩展：详情同时带 rating_updated_at（操作者面「改过」标记的数据面）——
+    首评 None、改评非空、未评分 None。
+    """
     client, _ = api
     token = "csat-detail"
     session_id = _customer_session(client, token)
@@ -493,6 +501,7 @@ def test_session_detail_exposes_rating(api: ApiFixture) -> None:
     _login(client)
     detail = client.get(f"/api/service/sessions/{session_id}").json()
     assert detail["rating"] == 4
+    assert detail["rating_updated_at"] is None  # 首评未改（第 77 刀）
     assert detail["host_origin"] is None  # 独立访问建的会话：没有宿主
 
     # 对照：未评分的会话详情也是 None（不是 0）

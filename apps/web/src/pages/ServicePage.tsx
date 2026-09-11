@@ -86,8 +86,9 @@ export default function ServicePage() {
 
   // 选择模型：null = 尚未选择（跟随最新一条有消息的会话，别落到空会话）；点了哪条就固定在哪条
   const [chosenId, setChosenId] = useState<number | null>(null)
-  // ?session=N 深链（缺口抽屉「来源会话」）：纯派生，不开 effect——显式点选优先于深链
-  const [searchParams] = useSearchParams()
+  // URL 参数：?session=N 深链（缺口抽屉「来源会话」）与 ?q= 会话搜索（第 77 刀）
+  // 共用一份 searchParams——setSearchParams 函数式更新互不抹除
+  const [searchParams, setSearchParams] = useSearchParams()
   const sessionParam = searchParams.get('session')
   const linkedId = sessionParam !== null && /^\d+$/.test(sessionParam) ? Number(sessionParam) : null
   const linkedSession =
@@ -115,13 +116,35 @@ export default function ServicePage() {
     [sessions],
   )
   // 「待处理工单」分段筛选（先例：资产页缺口分段）；计数按会话（有待处理工单的会话数）
-  const visibleSessions = useMemo(
-    () =>
+  // 第 77 刀：会话搜索（?q= 与筛选互不抹除，先例：资产页来源筛选）；命中口径 =
+  // 会话号（#123/123）或首问包含（大小写不敏感）。搜索不改排序（工单置顶口径不动）。
+  const query = (searchParams.get('q') ?? '').trim()
+  const setQuery = (value: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (value.trim() === '') next.delete('q')
+        else next.set('q', value.trim())
+        return next
+      },
+      { replace: true },
+    )
+  }
+  const visibleSessions = useMemo(() => {
+    const filtered =
       ticketFilter === 'pending'
         ? orderedSessions.filter((s) => s.pending_ticket_count > 0)
-        : orderedSessions,
-    [orderedSessions, ticketFilter],
-  )
+        : orderedSessions
+    if (query === '') return filtered
+    // 「#204」与「204」都按会话号精确命中（占位符示例就是 #125——不带 # 反而搜不到）
+    const idNeedle = query.replace(/^#/, '')
+    const needle = query.toLowerCase()
+    return filtered.filter(
+      (s) =>
+        (/^\d+$/.test(idNeedle) && String(s.id) === idNeedle) ||
+        (s.first_question ?? '').toLowerCase().includes(needle),
+    )
+  }, [orderedSessions, ticketFilter, query])
   const pendingSessionCount = useMemo(
     () => sessions.filter((s) => s.pending_ticket_count > 0).length,
     [sessions],
@@ -402,6 +425,33 @@ export default function ServicePage() {
               </button>
             </div>
           </div>
+          {/* 第 77 刀：会话搜索（先例：资产页搜索框）——找演示会话不用翻 119 条 */}
+          <div className="border-b border-line-1 px-3 py-2">
+            <div className="relative">
+              <input
+                className="input h-7 w-full text-[12px]"
+                placeholder="搜索会话：首问或 #号（如 保温杯、#125）"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="搜索会话"
+              />
+              {query !== '' ? (
+                <button
+                  type="button"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-caption hover:text-ink"
+                  onClick={() => setQuery('')}
+                  aria-label="清空搜索"
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
+            {query !== '' ? (
+              <div className="mt-1 text-[11px] text-ink-3">
+                {visibleSessions.length} 条匹配 · 按首问/会话号，清空恢复
+              </div>
+            ) : null}
+          </div>
           {list.state.phase === 'loading' ? (
             <div className="py-8 text-center text-xs text-ink-3">加载中…</div>
           ) : list.state.phase === 'error' ? (
@@ -557,8 +607,16 @@ export default function ServicePage() {
                 </span>
               )}
               {session.rating != null && (
-                <span className="kind-chip" title={`顾客对这次会话的评分：${session.rating} 星`}>
+                <span
+                  className="kind-chip"
+                  title={
+                    session.rating_updated_at != null
+                      ? `顾客对这次会话的评分：${session.rating} 星（改过，第 71 刀评分可改）`
+                      : `顾客对这次会话的评分：${session.rating} 星`
+                  }
+                >
                   ★ {session.rating}
+                  {session.rating_updated_at != null ? ' · 改过' : ''}
                 </span>
               )}
               {session.status === 'registered' && session.registered_asset_id !== null && (

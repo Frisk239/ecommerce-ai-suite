@@ -319,6 +319,8 @@ export interface ServiceSessionDetail extends ServiceSession {
   visitor_id: string | null
   /** 第 57 刀：本会话的顾客评分（1–5；未评为 null）——详情头与列表行同口径。 */
   rating: number | null
+  /** 最后一次改评时间（null=首评未改，第 77 刀） */
+  rating_updated_at: string | null
 }
 
 // ---------- 转人工工单（第 42 刀，ADR 0046） ----------
