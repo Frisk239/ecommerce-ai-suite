@@ -155,7 +155,13 @@ def seeded(api: ApiFixture) -> dict[str, Any]:
             row = db.scalar(select(Product).where(Product.name == name))
             assert row is not None, name
             row.stock = stock
-        review_id = _seed_review_asset(db, ["物流很快，还没用，到货后看着很多，和超市买的一样"])
+        review_id = _seed_review_asset(
+            db,
+            [
+                "物流很快，还没用，到货后看着很多，和超市买的一样",
+                "客服态度很好，有问必答，售后也痛快",  # 第 69 刀：体感问的证据面
+            ],
+        )
         db.commit()
     return {"spec_asset": spec_asset, "review_asset": review_id}
 
