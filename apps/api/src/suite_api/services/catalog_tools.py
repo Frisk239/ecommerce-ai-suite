@@ -21,6 +21,7 @@
 """
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -97,18 +98,59 @@ _TRIVIAL_RE = re.compile(
     "、|，|？|\\?|！|!|。| |　"
 )
 
-# 类目口语别名（第 56 刀）：顾客常说的短称 → 库里的类目名。
-# **保守**：只收无歧义的（「笔记本」→「笔记本电脑」）；像「书」这种会撞「说明书」
-# 的不收——宁可漏认（照旧拒答留缺口），也不要把无关问句吸进类目报价。
-# 纯度闸仍然生效：「手机壳多少钱」剔完「手机」还剩「壳」→ 不回落。
+# 类目口语别名（第 56 刀；第 62 刀扩表到 9/9 类目）：顾客常说的短称 → 库里的类目名。
+# **靠纯度闸兜底，而不是靠短称本身无歧义**：扣掉别名后问句主体必须只剩问价/问货
+# 虚词，所以「手机壳多少钱」「说明书有货吗」「书桌多少钱」这类**别名词当修饰语**
+# 的问句不会命中（残渣「壳」「说明」「桌」非空）。第 56 刀因为「书」撞「说明书」
+# 而不收，第 62 刀实测：闸在，就能收——歧义面由闸承担，不靠字面保守。
+#
+# 仍然**收不了**的两类（不是保守，是能力边界）：
+# - 会把单品问价降级成类目聚合的词：如「保温杯」→器皿——「保温杯多少钱」本该
+#   答钛钢保温杯的行价（更准），收成类目区间是精度倒退。
+# - 别名指向的类目库里不存在时自然跳过（`category_targets` 先过滤），无需在此维护。
 CATEGORY_ALIASES: dict[str, str] = {
+    # 笔记本电脑
     "笔记本": "笔记本电脑",
     "笔电": "笔记本电脑",
     "手提电脑": "笔记本电脑",
+    "电脑": "笔记本电脑",
+    "本本": "笔记本电脑",
+    # 智能手机
     "手机": "智能手机",
+    "智能机": "智能手机",
+    # 平板电脑
     "平板": "平板电脑",
+    # 电视机
     "电视": "电视机",
+    "彩电": "电视机",
+    # 食品
+    "零食": "食品",
+    "吃的": "食品",
+    "食物": "食品",
+    # 图书
+    "书": "图书",
+    "书籍": "图书",
+    "书本": "图书",
+    # 器皿
+    "杯子": "器皿",
+    "水杯": "器皿",
 }
+
+
+def category_targets(categories: Iterable[str]) -> list[tuple[str, str]]:
+    """类目候选表 ``[(问句里要出现的字面, 库里的类目名)]``——**单一真源**。
+
+    序：口语别名在前（按表序）、库内类目名在后（长名优先，免得「电视」先吃掉
+    「电视机」）。报价（`_category_quote`）与库存（`stock_tools._category_stock`）
+    共用本函数：第 56 刀把别名表接进两条路径，却只在报价那条装了纯度闸，库存那条
+    照旧裸 `token in question`——「手机壳有货吗」被答成「智能手机共 10 件」（第 62
+    刀实测 4 例）。**表与排序共用、闸各自装**（问价虚词与问货虚词词表不同，合并
+    会互相放水）。
+    """
+    universe = set(categories)
+    targets = [(alias, target) for alias, target in CATEGORY_ALIASES.items() if target in universe]
+    targets += [(name, name) for name in sorted(universe, key=len, reverse=True)]
+    return targets
 
 CatalogIntent = Literal["listing", "price"]
 
@@ -260,12 +302,33 @@ def try_catalog_answer(
 # 复合词会把原子词的后缀切掉留下残渣（「什么价格」被「什么价」吃掉后剩「格」，
 # 评测集里就有这例）。口语问价靠原子词覆盖——「怎么卖」= 怎么 + 卖，「什么价」
 # = 什么 + 价格。长原子词仍写在短原子词前面（多少钱 → 多少）。
+# 第 62 刀评审补的缺口（当时都是「意图层认、纯度层剔不掉」的死意图路径）：礼貌
+# 开场（你好/您好/想问/麻烦/问下/一下/下——「问一下」收了复合词却没收「一下」，
+# 「请问一下」会剩孤儿；裸「下」放行是因为「想问下/请问下」都要它，而真修饰语
+# 「下单/线下」会剩下「单」「线」照旧挡住）、裸「价」（意图词表有「什么价」，
+# 纯度只收「价格」）、语气「啦」、评价问「怎么样/咋样」、量词
+# 「一+台/本/部/个/包/盒/件/套/杯/双」（「笔记本电脑多少钱一台」「书一本多少钱」
+# 都是自然问价）。
 _PRICE_RE = re.compile(
-    "多少钱|贵不贵|花多少|"
+    "多少钱|贵不贵|花多少|怎么样|咋样|"
     "价格|售价|定价|报价|收费|便宜|请问|问一下|多少|多钱|什么|怎么|怎样|如何|"
+    "你好|您好|想问|麻烦|问下|一下|下|价|"
     "这个|这款|这件|你们|咱们|的|是|要|买|卖|那|款|啥|咋|"
-    r"[的吗呢啊嘛呀吧呗哦噢]|、|，|？|\?|！|!|。| |　"
+    "一[台本部个包盒件套杯双]|"
+    r"[的吗呢啊嘛呀吧呗哦噢啦]|、|，|？|\?|！|!|。| |　"
 )
+
+
+def category_question_residual(question: str, token: str) -> str:
+    """类目问句的纯度残渣：**字面**去掉命中词 + 问价虚词后剩下什么（纯函数）。
+
+    与 `price_residual` 的区别在剔除方式：商品名允许**部分名**（「保温杯多少钱」
+    对「钛钢保温杯」，靠 `lcs_fragment` 容错），所以那边必须走 LCS 且设最小长度；
+    类目/别名 token 由 `token in question` 保证字面出现，直接 replace 更准——
+    还能覆盖**单字别名**（第 62 刀：「书多少钱」走 LCS 时 fragment 长度 1 < 最小
+    长度 2，剔不掉，单字别名全体失效）。
+    """
+    return _PRICE_RE.sub("", question.replace(token, "")).strip()
 
 
 def price_residual(question: str, product_name: str) -> str:
@@ -348,24 +411,21 @@ def _quote_answer(question: str, products: list[Product]) -> CatalogAnswer | Non
 
 
 def _category_quote(question: str, products: list[Product]) -> CatalogAnswer | None:
-    """按类目问价（第 52 刀）：类目名在问句里，且问句主体就是「类目 + 问价」。
+    """按类目问价（第 52 刀）：类目名**或口语别名**（第 56/62 刀）在问句里，
+    且问句主体就是「类目 + 问价」。
 
-    纯度闸同款（`price_residual`：扣掉类目名与问价虚词后必须为空），否则
-    「笔记本电脑刻字怎么收费」这类服务问会被答成类目价。类目无已定价商品 -> None
-    （沿既有拒答 + 缺口口径：去补 = 改价/上新）。
+    纯度闸同款（`category_question_residual`：扣掉命中的字面与问价虚词后必须为空），否则
+    「笔记本电脑刻字怎么收费」这类服务问会被答成类目价，「书桌多少钱」会被
+    答成图书类目价。类目无已定价商品 -> None（沿既有拒答 + 缺口口径：去补 =
+    改价/上新）。
     """
-    categories = sorted({p.category for p in products}, key=len, reverse=True)
-    # 别名先归一到库里类目名：命中别名时用**别名**做纯度剔除（顾客说的是「笔记本」，
-    # 问句里没有「笔记本电脑」这四个字），但聚合按目标类目算（第 56 刀）
-    for alias, target in CATEGORY_ALIASES.items():
-        if target not in categories:
-            continue
-        if alias in question and price_residual(question, alias) == "":
-            return _category_answer(target, products)
-    for category in categories:
-        if category not in question or price_residual(question, category) != "":
-            continue
-        return _category_answer(category, products)
+    # 候选表（别名在前、库内类目名在后）由 `category_targets` 统一给；命中别名时用
+    # **别名**做纯度剔除（顾客说的是「笔记本」，问句里没有「笔记本电脑」这四个字），
+    # 但聚合按目标类目算（第 56 刀）
+    categories = {p.category for p in products}
+    for token, category in category_targets(categories):
+        if token in question and category_question_residual(question, token) == "":
+            return _category_answer(category, products)
     return None
 
 

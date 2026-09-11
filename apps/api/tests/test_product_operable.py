@@ -821,6 +821,160 @@ def test_service_question_is_not_taken_as_price() -> None:
     assert price_residual("笔记本电脑怎么保养？", "笔记本电脑") != ""
 
 
+# ---------- 第 62 刀：别名扩表到 9/9 类目 + 类目问句纯度（共享候选表） ----------
+
+# 演示库 9 个类目的「顾客会怎么说」——一句话即一条覆盖契约（第 62 刀）。
+_DEMO_CATEGORY_PHRASES: list[tuple[str, str]] = [
+    ("笔记本电脑", "笔记本多少钱？"),
+    ("笔记本电脑", "电脑多少钱？"),
+    ("笔记本电脑", "本本多少钱？"),
+    ("智能手机", "手机多少钱？"),
+    ("智能手机", "智能机多少钱？"),
+    ("平板电脑", "平板多少钱？"),
+    ("电视机", "电视多少钱？"),
+    ("电视机", "彩电多少钱？"),
+    ("食品", "零食多少钱？"),
+    ("食品", "吃的多少钱？"),
+    ("食品", "食物多少钱？"),
+    ("图书", "书多少钱？"),
+    ("图书", "书籍多少钱？"),
+    ("图书", "书本多少钱？"),
+    ("洗衣机", "洗衣机多少钱？"),
+    ("器皿", "杯子多少钱？"),
+    ("器皿", "水杯多少钱？"),
+    ("家具", "家具多少钱？"),
+]
+
+
+def _catalog_of(categories: list[str]) -> Any:
+    """每个类目种一件同价商品的内存目录（覆盖契约用，不碰 DB）。"""
+    products = [_mem_product(i, f"商品{i}", 10000) for i in range(1, len(categories) + 1)]
+    for product, category in zip(products, categories, strict=True):
+        product.category = category
+    return _catalog_db(products)
+
+
+def test_category_alias_covers_every_demo_category() -> None:
+    """第 62 刀：9 个类目都要有顾客会说的短称（不再只覆盖 4 个）。
+
+    审计刀 12 C-P2 实测「电脑/书 多少钱？」拒答——别名表只覆盖笔记本/手机/平板/
+    电视。第 56 刀不敢收「书」（撞「说明书」），第 62 刀把歧义面交给纯度闸：
+    `category_question_residual` 剔完命中词后必须为空，所以「说明书多少钱」照旧拒答。
+    """
+    from suite_api.services.catalog_tools import try_price_answer
+
+    db = _catalog_of([category for category, _ in _DEMO_CATEGORY_PHRASES])
+    covered = {category for category, _ in _DEMO_CATEGORY_PHRASES}
+    assert covered == {"笔记本电脑", "智能手机", "平板电脑", "电视机", "食品", "图书", "洗衣机", "器皿", "家具"}
+    for category, phrase in _DEMO_CATEGORY_PHRASES:
+        answer = try_price_answer(db, phrase)
+        assert answer is not None, f"{phrase} 应命中类目价"
+        assert answer.tool["arg"] == category, f"{phrase} 应归到 {category}"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "说明书多少钱？",  # 「书」当后缀
+        "书桌多少钱？",  # 「书」当定语，其实是家具
+        "书签多少钱？",
+        "证书多少钱？",
+        "电脑包多少钱？",  # 「电脑」当定语
+        "手机壳多少钱？",
+        "电视柜多少钱？",
+        "平板支撑多少钱？",
+        "食物保鲜盒多少钱？",
+    ],
+)
+def test_category_alias_near_misses_stay_refused(question: str) -> None:
+    """别名词当**修饰语**（配件/家具/箱包/证书）时不许按类目报价——纯度闸的负例钉子。
+
+    这批用例在「只按 token 命中」的实现下会误答（命中词就在问句里，闸一撤就答），
+    所以它们钉的是**闸**。注意它们抓的是「扩了表却没装闸」这种半回退：若整刀回退到
+    第 62 刀前，「书/电脑」等还不是别名，这批会因「token 不命中」而**照样通过**——
+    整刀回退由 `test_category_alias_covers_every_demo_category` 的正向覆盖抓。
+    """
+    from suite_api.services.catalog_tools import try_price_answer
+
+    db = _catalog_of([category for category, _ in _DEMO_CATEGORY_PHRASES])
+    assert try_price_answer(db, question) is None
+
+
+@pytest.mark.parametrize(
+    "question, expect",
+    [
+        ("请问一下手机多少钱？", "智能手机"),  # 「问一下」收了复合词，「一下」没收到第 62 刀评审
+        ("你好，请问笔记本电脑多少钱", "笔记本电脑"),
+        ("想问下手机多少钱", "智能手机"),  # 裸「下」：想问下/请问下 都要它
+        ("麻烦问下彩电多少钱", "电视机"),
+        ("笔记本电脑多少钱一台", "笔记本电脑"),  # 量词形态
+        ("书一本多少钱", "图书"),
+        ("一本书多少钱", "图书"),
+        ("杯子多少钱一个", "器皿"),
+        ("彩电什么价", "电视机"),  # 意图词表有「什么价」，纯度层原剔不掉裸「价」——死意图路径
+        ("手机啥价", "智能手机"),
+        ("电脑价格怎么样啊", "笔记本电脑"),  # 评价问
+        ("笔记本电脑多少钱啦", "笔记本电脑"),  # 语气「啦」原不在字类
+    ],
+)
+def test_price_filler_covers_polite_measure_and_bare_jia(question: str, expect: str) -> None:
+    """第 62 刀评审（Spec 轴）P2×2：这些问法此前**意图层认、纯度层剔不掉**。
+
+    「意图==price 却在纯度闸前止步」比「意图就不认」更隐蔽——顾客用了自然问法，
+    落到的却是拒答+缺口。修在 `_PRICE_RE`（问价虚词表，`price_residual` 与
+    `category_question_residual` 共用），不在意图层。
+    """
+    from suite_api.services.catalog_tools import try_price_answer
+
+    db = _catalog_of([category for category, _ in _DEMO_CATEGORY_PHRASES])
+    answer = try_price_answer(db, question)
+    assert answer is not None, question
+    assert answer.tool["arg"] == expect, question
+
+
+@pytest.mark.parametrize("question", ["手机下单多少钱", "线下体验多少钱", "电脑下架了吗多少钱"])
+def test_bare_xia_does_not_blank_real_modifiers(question: str) -> None:
+    """裸「下」进虚词表的代价面：真修饰语（下单/线下/下架）必须靠**残字**挡住。"""
+    from suite_api.services.catalog_tools import try_price_answer
+
+    db = _catalog_of([category for category, _ in _DEMO_CATEGORY_PHRASES])
+    assert try_price_answer(db, question) is None
+
+
+def test_category_targets_is_single_source_with_aliases_first() -> None:
+    """共享候选表（第 62 刀）：别名在前、库内类目名在后（长名优先）。
+
+    报价与库存两条路径都从 `category_targets` 取候选——第 56 刀两边各排一遍时
+    库存侧漏装了纯度闸（第 62 刀实测 4 例误答）。这里钉住表序，免得改一处漏一处。
+    """
+    from suite_api.services.catalog_tools import category_targets
+
+    targets = category_targets({"笔记本电脑", "食品"})
+    assert ("笔记本", "笔记本电脑") in targets
+    assert ("食物", "食品") in targets
+    # 别名段结束后才是类目名段；类目名段按长度降序（「笔记本电脑」在「食品」前）
+    alias_part = [pair for pair in targets if pair[0] != pair[1]]
+    name_part = [pair for pair in targets if pair[0] == pair[1]]
+    assert targets[: len(alias_part)] == alias_part
+    assert name_part == [("笔记本电脑", "笔记本电脑"), ("食品", "食品")]
+    # 库里没有的类目不给候选（别名指向的类目不在库里时整条跳过）
+    assert category_targets({"食品"}) == [("零食", "食品"), ("吃的", "食品"), ("食物", "食品"), ("食品", "食品")]
+
+
+def test_single_char_alias_is_stripped_literally() -> None:
+    """单字别名（「书」）必须能剔干净：LCS 剔除有最小长度 2，单字永远剔不掉。
+
+    第 62 刀实测：「书多少钱」走 `price_residual` 时 fragment 长 1 < 最小长度 2，
+    整张单字别名全体失效（`书/书籍/书本` 里只有后两个能用）。
+    """
+    from suite_api.services.catalog_tools import category_question_residual
+
+    assert category_question_residual("书多少钱？", "书") == ""
+    assert category_question_residual("书籍多少钱？", "书籍") == ""
+    assert category_question_residual("红书多少钱？", "书") == "红"
+    assert category_question_residual("书桌多少钱？", "书") == "桌"
+
+
 def test_stock_question_by_category_answers_aggregate(api: ApiFixture) -> None:
     """「你们有笔记本吗？」问的是一类有没有货——第 56 刀起给类目聚合。
 

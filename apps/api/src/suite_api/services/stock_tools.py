@@ -42,6 +42,93 @@ STOCK_KEYWORD_PATTERN = re.compile("有货|没货|无货|缺货|有没有|有.{0
 # 商品名与问题最长公共子串的最小命中长度（中文字符计）
 _MATCH_MIN_LCS = 2
 
+# 问货虚词（第 62 刀）：类目聚合的**纯度闸**。此前 `_category_stock` 只判
+# `token in question`，于是别名/类目名**当修饰语**的问句被整体吸进类目聚合——
+# 实测 4 例：「手机壳有货吗」→「智能手机共 10 件」、「电视柜有货吗」→电视机、
+# 「平板支撑有货吗」→平板电脑、「笔记本电脑包有货吗」→笔记本电脑（配件/家具/
+# 箱包被当成类目本身）。与报价的 `price_residual` 同一精神：扣掉命中字面后必须
+# **只剩问货虚词**，还剩实质词（壳/柜/支撑/包）就不聚合，照旧回落检索。
+#
+# **不复用 `price_residual`**：两份虚词表各有各的语境（问价词 vs 问货词），
+# 并成一张会互相放水（价格侧会去剔「有货」，库存侧会去剔「多少钱」）。
+#
+# 词表**原子词 + 长词在前**（`sorted(key=len, reverse=True)`，同 `_SPEC_WORD_RE`）：
+# 手写顺序踩过一次坑——「没有货吗」被「有」先吃掉会剩「没...货」残渣，「没有货」
+# 必须排在「有」前面。原子词是硬要求：「有货」拆成「有」「货」照样吃残渣。
+#
+# **收「店里」不收裸「店」**（评审 P2 实测）：裸「店」会让「手机店/书店/电脑店
+# 有货吗」残渣为空（店是**卖这个的店**，不是这个类目本身）。收两字的「店里/店铺/
+# 门店」既挡得住店铺形态，又放过「你们店里有笔记本吗」这种自然的门店问法。
+# 残留的同类边界：「库存书有货吗」仍会聚合到图书（「库存」是必需虚词，见
+# 「有库存吗」）——罕见的定语形态，记为已知边界而非缺陷。
+_STOCK_FILLER_WORDS = (
+    "有没有货",
+    "没有货",
+    "有没有",
+    "有货",
+    "没货",
+    "无货",
+    "缺货",
+    "现货",
+    "存货",
+    "备货",
+    "库存",
+    "还有",
+    "还剩",
+    "没有",
+    "你们",
+    "咱们",
+    "本店",
+    "小店",
+    "店铺",
+    "店里",
+    "门店",
+    "请问",
+    "当前",
+    "现在",
+    "目前",
+    "商品",
+    "产品",
+    "这种",
+    "这类",
+    "剩",
+    "有",
+    "货",
+    "一下",
+    "都",
+    "还",
+    "在",
+    "上",
+    "卖",
+    "进",
+    "的",
+    "了",
+    "吗",
+    "么",
+    "呢",
+    "啊",
+    "吧",
+    "、",
+    "，",
+    "？",
+    "?",
+    "！",
+    "!",
+    "。",
+    " ",
+    "　",
+)
+_STOCK_FILLER_RE = re.compile("|".join(re.escape(word) for word in sorted(_STOCK_FILLER_WORDS, key=len, reverse=True)))
+
+
+def stock_residual(question: str, token: str) -> str:
+    """扣掉命中字面（别名/类目名）与问货虚词后剩余的「实质成分」（纯函数）。
+
+    空 = 问句主体就是「类目（或别名）+ 问货」，可以按类目聚合；非空 = 命中的字面
+    只是**修饰语**（手机壳/电视柜/笔记本电脑包），照旧回落检索。
+    """
+    return _STOCK_FILLER_RE.sub("", question.replace(token, "")).strip()
+
 _IN_STOCK_TPL = "{product_name}有货，当前库存 {stock} 件。"
 _OUT_OF_STOCK_TPL = "{product_name}暂时无货。"
 _UNSET_HANDOFF_TPL = "{product_name}库存未设置，已转人工。"
@@ -132,6 +219,11 @@ def query_stock(db: Session, question: str) -> dict[str, Any]:
     →「笔记本电脑」）——「你们有笔记本吗」问的是这一类有没有货，逐件匹配商品名
     必然落空（审计刀 11 C-P1-3）。命中返回 `{found: True, category, total,
     in_stock, stock_sum}`（`product_name` 给类目名，供文案与工具条复用）。
+
+    **类目先于单品（第 62 刀，对齐报价侧）**：商品名里含完整类目名时（「WANDS
+    家具（演示）」含「家具」），单品路径会先命中把「你们有家具吗」答成**这一个
+    商品**的库存——报价侧同一缺陷已在审计刀 11 P1 修过（先类目后单品）。类目
+    分支自带纯度闸，问句里带具体型号/修饰语（残渣非空）时不会命中，此时才走单品。
     """
     try:
         products = list(db.scalars(select(Product).order_by(Product.id)))
@@ -142,9 +234,12 @@ def query_stock(db: Session, question: str) -> dict[str, Any]:
         except SQLAlchemyError:
             logger.exception("库存工具回滚失败（吞异常后会话可能不可用）")
         return {"error": True}
+    category_hit = _category_stock(question, products)
+    if category_hit is not None:
+        return category_hit
     product = match_product(question, products)
     if product is None:
-        return _category_stock(question, products) or {"found": False}
+        return {"found": False}
     return get_stock(db, product)
 
 
@@ -152,16 +247,15 @@ def _category_stock(question: str, products: list[Product]) -> dict[str, Any] | 
     """类目（或口语别名）聚合库存：命中返回聚合结果，否则 None。
 
     只做**计数与合计**（不编造每件明细）：total 类目商品数 / in_stock 有货件数
-    （stock>0）/ stock_sum 已设置库存合计（None=都没设置）。别名表与
-    `catalog_tools.CATEGORY_ALIASES` 同源（函数内导入避开模块环）。
+    （stock>0）/ stock_sum 已设置库存合计（None=都没设置）。候选表与报价侧同源
+    （`catalog_tools.category_targets`，函数内导入避开模块环），但**纯度闸各装各的**
+    （`stock_residual`）：第 62 刀实测，缺闸时「手机壳有货吗」被答成「智能手机共 10 件」。
     """
-    from suite_api.services.catalog_tools import CATEGORY_ALIASES
+    from suite_api.services.catalog_tools import category_targets
 
     categories = {p.category for p in products}
-    targets: list[tuple[str, str]] = list(CATEGORY_ALIASES.items())
-    targets += [(category, category) for category in sorted(categories, key=len, reverse=True)]
-    for token, category in targets:
-        if category not in categories or token not in question:
+    for token, category in category_targets(categories):
+        if token not in question or stock_residual(question, token) != "":
             continue
         members = [p for p in products if p.category == category]
         stocks = [p.stock for p in members if p.stock is not None]
