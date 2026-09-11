@@ -667,7 +667,7 @@ export default function ServicePage() {
                   title="会话登记为对话资产，进入治理队列"
                 >
                   <ArrowUDownLeft aria-hidden size={12} />
-                  结束并回流登记
+                  {isEndedSession ? '回流登记' : '结束并回流登记'}
                 </button>
               )}
             </div>
@@ -772,7 +772,9 @@ export default function ServicePage() {
               </div>
             ) : isEndedSession ? (
               <div className="border-t border-line-2 px-4 py-2.5 text-xs text-ink-3">
-                顾客已结束这次会话，对话流已关闭；可点上方「结束并回流登记」将其回流为对话资产。
+                {canRegister
+                  ? '顾客已结束这次会话，对话流已关闭；可点上方「回流登记」将其回流为对话资产。'
+                  : '顾客已结束这次会话，对话流已关闭。'}
               </div>
             ) : (
               <div className="border-t border-line-2 px-4 py-2.5 text-xs text-ink-3">
@@ -785,7 +787,7 @@ export default function ServicePage() {
 
       <ConfirmDialog
         open={confirmOpen}
-        title="结束并回流登记"
+        title={isEndedSession ? '回流登记（顾客已结束会话）' : '结束并回流登记'}
         confirmLabel="确认回流登记"
         busy={registering}
         onCancel={() => setConfirmOpen(false)}

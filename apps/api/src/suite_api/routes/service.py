@@ -30,7 +30,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
@@ -516,7 +516,7 @@ def register_session(
     if session.status not in (ACTIVE, ENDED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"只有进行中的会话可以回流登记，当前状态: {session.status}",
+            detail="只有进行中或已结束（未回流）的会话可以回流登记",
         )
     messages = _session_messages(db, session.id)
     if not messages:
@@ -546,13 +546,32 @@ def register_session(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
-    session.status = REGISTERED
-    session.registered_asset_id = asset.id
-    # closed_at 取「会话终结」时刻：active -> registered 时此刻即终结，落值；
-    # 第 80 刀起 ended -> registered 是「结束后补回流」，closed_at 已是顾客结束
-    # 时刻，不能重写成回流时间（终结时刻以首次为准，与 end 端点幂等口径一致）。
-    if session.closed_at is None:
-        session.closed_at = datetime.now(UTC)
+    # 收口用原子条件更新（评审 P1）：register_asset 内部有 commit（机洗 LLM
+    # 等待可达 20s），期间顾客可能并发结束会话——读-判-写的旧形态会用窗口前
+    # 的内存旧值覆盖（closed_at 被重写成回流钟、或把 ended 半态留下）。
+    # WHERE 仍限定可回流状态 + COALESCE 保住顾客结束时刻（终结时刻以首次
+    # 为准）；closed_at 统一 DB 钟 func.now()（第 71 刀双钟教训，本刀顺带
+    # 把回流路径的 Python 钟一并收口）。
+    rowcount = db.execute(
+        update(ServiceSession)
+        .where(
+            ServiceSession.id == session_id,
+            ServiceSession.status.in_((ACTIVE, ENDED)),
+            ServiceSession.registered_asset_id.is_(None),
+        )
+        .values(
+            status=REGISTERED,
+            registered_asset_id=asset.id,
+            closed_at=func.coalesce(ServiceSession.closed_at, func.now()),
+        )
+    ).rowcount
+    if rowcount == 0:
+        # 窗口内被并发回流/状态迁移——资产已建但会话不再指向它，如实 409
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="会话在登记期间状态已变化（可能已被回流），请刷新后重试",
+        )
     db.commit()
     db.refresh(asset)
     return to_asset_detail(db, asset)

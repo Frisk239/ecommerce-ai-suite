@@ -21,7 +21,7 @@
   phone 可选轻校验；工单须属于本会话（统一 404）；顾客回显自己的输入不掩。
 
 - ``POST /api/customer/sessions/{id}/rating``（第 48 刀；第 71 刀评分可改）：会话级
-  1–5 星 CSAT——闸序同上；score 越界 422、非 active 409、已评再提交是**改评**
+  1–5 星 CSAT——闸序同上；score 越界 422、非 (active|ended) 409（第 80 刀：结束后可评分）、已评再提交是**改评**
   （UPDATE 覆盖式留最新，updated_at 记修改）；comment 可选（≤500 字，整体覆盖，
   不带即清空）。
 低分不触发任何写动作（CSAT 是主观分，不是证据语义）。
@@ -45,7 +45,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -313,20 +313,27 @@ def end_session(
 
     session = _authorize_customer_session(db, session_id, request)
 
-    if session.status == ENDED:
-        # 幂等：不重写 closed_at（终结时刻以首次结束为准）
-        return EndSessionOut(id=session.id, status=session.status, closed_at=session.closed_at)
-    if session.status != ACTIVE:
+    # 原子条件更新（评审 P1：并发 TOCTOU）：WHERE status='active' 保证只有
+    # 首写者迁移状态并落 closed_at——并发双 end、或 end 与回流登记竞争时，
+    # 后来者 rowcount=0，refresh 后按**库内最终状态**分流（ended=幂等返回
+    # 首写者的 closed_at；registered=409），不会覆盖终结时刻、不会把回流态
+    # 倒回 ended。读-判-写的旧形态在 register_asset 的机洗窗口（内部 commit，
+    # 可达 20s）下会被并发写穿透（评审探针实测 closed_at 被重写）。
+    rowcount = (
+        db.execute(
+            update(ServiceSession)
+            .where(ServiceSession.id == session_id, ServiceSession.status == ACTIVE)
+            .values(status=ENDED, closed_at=func.now())
+        ).rowcount
+    )
+    db.commit()
+    db.refresh(session)
+    if rowcount == 0 and session.status != ENDED:
         # 只剩 registered（状态机无其他分支）：已回流不可再结束
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"会话状态：{_status_label(session.status)}，不能再结束",
         )
-
-    session.status = ENDED
-    session.closed_at = func.now()
-    db.commit()
-    db.refresh(session)
     logger.info("顾客结束会话: session=%s", session_id)
     return EndSessionOut(id=session.id, status=session.status, closed_at=session.closed_at)
 
@@ -408,7 +415,7 @@ def leave_feedback(
     """顾客 thumbs「这条回答有没有帮助」（ADR 0044 §四；第 48 刀放开正反馈）。
 
     闸序与鉴权同发问：IP 闸（先于鉴权省 DB）-> 401（会话不存在与令牌无效
-    统一文案）-> 409（非 active：会话终结后反馈面一并收口）。仅 kind=answer
+    统一文案）-> 409（非 (active|ended)：仅已回流 409——第 80 刀结束后反馈仍开放）。仅 kind=answer
     且 citations 非空的消息可反馈（拒答/转人工无按钮也不收——404/409）；幂等
     =已反馈 409。
 
@@ -427,7 +434,7 @@ def leave_feedback(
     if session.status not in (ACTIVE, ENDED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"只有进行中的会话可以反馈，当前状态: {session.status}",
+            detail=f"会话状态：{_status_label(session.status)}，不能再反馈",
         )
 
     message = db.get(ServiceMessage, message_id)
@@ -486,7 +493,7 @@ def rate_session(
 ) -> RatingOut:
     """顾客给这次会话打 1–5 星（第 48 刀，CSAT）。
 
-    闸序与发问/反馈一致（IP 闸 -> 401 -> 409 非 active -> 422 分值/留言长度）。
+    闸序与发问/反馈一致（IP 闸 -> 401 -> 409 非 (active|ended) -> 422 分值/留言长度）。
     **评分可改**（第 71 刀，Owner 裁决 2026-09-11）：一行仍唯一，改评是 UPDATE
     **覆盖式留最新**（score/comment 整体覆盖——comment 不带即清空，前端提交时
     回填当前留言故不自清）；updated_at 记最后一次修改。低分不做任何写动作
@@ -501,7 +508,7 @@ def rate_session(
     if session.status not in (ACTIVE, ENDED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"只有进行中的会话可以评分，当前状态: {session.status}",
+            detail=f"会话状态：{_status_label(session.status)}，不能再评分",
         )
     if body.score not in RATING_SCORES:
         raise HTTPException(
@@ -604,7 +611,7 @@ def submit_handoff_contact(
     """顾客提交本会话工单的联系方式（ADR 0046 §4）。
 
     闸序与发问/反馈一致：IP 闸（先于鉴权省 DB）-> 401（会话不存在与令牌无效
-    统一文案）-> 会话闸 -> 409（非 active：会话终结后联系方式面一并收口）-> 404
+    统一文案）-> 会话闸 -> 409（非 (active|ended)：仅已回流 409——第 80 刀结束后联系方式仍开放）-> 404
     （工单不存在或不属于本会话——统一 404，不泄露其他会话工单存在性）-> 422
     （name/note 非空、email/phone 轻校验）-> 落库。返回工单号+提交时间的小回执
     （顾客面不需要操作者视图；原文只落库，操作者面出口掩）。
@@ -623,7 +630,7 @@ def submit_handoff_contact(
     if session.status not in (ACTIVE, ENDED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"只有进行中的会话可以提交联系方式，当前状态: {session.status}",
+            detail=f"会话状态：{_status_label(session.status)}，不能再提交联系方式",
         )
 
     ticket = db.get(HandoffTicket, ticket_id)

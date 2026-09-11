@@ -428,8 +428,9 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
           </button>
         )}
         {/* 结束会话（第 80 刀）：只在会话存在且未结束时渲染；流式中禁用，避免与
-            停止输出竞争同一段流。结束后仍可评分反馈（善后通道不关）。 */}
-        {session !== null && !ended && (
+            停止输出竞争同一段流；令牌过期态隐藏（点击必 401 无意义——评审 P2）。
+            结束后仍可评分反馈（善后通道不关）。 */}
+        {session !== null && !ended && !expired && (
           <button
             type="button"
             className="btn btn-secondary btn-sm shrink-0"

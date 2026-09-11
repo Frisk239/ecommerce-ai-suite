@@ -67,7 +67,7 @@ def _end(client: TestClient, session_id: int, token: str):
 
 
 def _round_compare(left: datetime | None, right: datetime | None) -> bool:
-    """PG timestamptz 精度到微秒，比较时忽略更细的表示差异。"""
+    """两侧均为库内回读的 timestamptz（微秒精度），直接相等比较。"""
     return left is not None and right is not None and left == right
 
 
