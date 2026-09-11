@@ -202,11 +202,12 @@ def test_record_llm_usage_skips_when_usage_missing() -> None:
 
 
 class _Outcome:
-    """run_ask 产出的最小替身：只要 answer.kind 与 generated。"""
+    """run_ask 产出的最小替身：answer.kind / generated / fallback_reason。"""
 
-    def __init__(self, kind: str, generated: bool) -> None:
+    def __init__(self, kind: str, generated: bool, fallback_reason: str | None = None) -> None:
         self.answer = type("A", (), {"kind": kind})()
         self.generated = generated
+        self.fallback_reason = fallback_reason
 
 
 def test_record_chat_request_labels_channel_kind_generated() -> None:
@@ -218,11 +219,62 @@ def test_record_chat_request_labels_channel_kind_generated() -> None:
     assert _sample("chat_requests_total", labels) == before + 1
 
 
+def test_record_chat_request_counts_gate_fallbacks() -> None:
+    """第 63 刀（审计刀 7 起记债）：闸回退必须可观测——fallback_reason 非空即计数。
+
+    两种闸各一枚钉子：coverage（忠实度闸降级，ADR 0044 §二）与 no_coverage
+    （模型自述证据未覆盖按拒答收口，第 58 刀）。None 不计——普通厂商失败降级
+    的 fallback_reason 就是 None，那不是闸在回退，混进来污染闸回退率。
+    """
+    from suite_api.observability import record_chat_request
+
+    for channel, reason in (("customer", "no_coverage"), ("operator", "coverage")):
+        labels = {"channel": channel, "reason": reason}
+        before = _sample("chat_fallbacks_total", labels)
+        record_chat_request(_Outcome("refusal", False, fallback_reason=reason), channel=channel)
+        assert _sample("chat_fallbacks_total", labels) == before + 1, (channel, reason)
+
+    # 普通路径（无闸回退）只进 chat_requests_total，不进闸回退计数。
+    # **按指标族全样本求和**才密闭：枚举三个已知 reason 时，「None 被记成
+    # 陌生标签值」的坏实现照样通过；collect() 拿到的是计数器当前全部样本。
+    from suite_api.observability import chat_fallbacks_total as _counter
+
+    def _fallback_family_value() -> float:
+        return sum(sample.value for metric in _counter.collect() for sample in metric.samples)
+
+    plain_before = _fallback_family_value()
+    record_chat_request(_Outcome("answer", True), channel="customer")
+    assert _fallback_family_value() == plain_before
+    # 分母共增：带闸回退的结局也必须把 chat_requests_total 记上一次——
+    # 闸回退率的分母是它，函数里两处计数谁也不能吃掉谁
+    gate_requests_before = _sample(
+        "chat_requests_total", {"channel": "operator", "kind": "refusal", "generated": "false"}
+    )
+    record_chat_request(_Outcome("refusal", False, fallback_reason="no_coverage"), channel="operator")
+    assert (
+        _sample("chat_requests_total", {"channel": "operator", "kind": "refusal", "generated": "false"})
+        == gate_requests_before + 1
+    )
+
+
+def test_unknown_fallback_reason_falls_to_bounded_other() -> None:
+    """基数纪律：引擎将来加了新 reason 而指标没跟上，落 other 而不是进标签。"""
+    from suite_api.observability import record_chat_request
+
+    labels = {"channel": "operator", "reason": "other"}
+    before = _sample("chat_fallbacks_total", labels)
+    record_chat_request(_Outcome("refusal", False, fallback_reason="brand_new"), channel="operator")
+    assert _sample("chat_fallbacks_total", labels) == before + 1
+
+
 def test_custom_metrics_registered_with_bounded_labels() -> None:
     """标签集合是契约的一部分：多一个 id 类标签就是基数风险。"""
     assert set(chat_requests_total._labelnames) == {"channel", "kind", "generated"}
     assert set(llm_tokens_total._labelnames) == {"direction", "model"}
     assert set(ttft_seconds._labelnames) == {"model"}
+    from suite_api.observability import chat_fallbacks_total
+
+    assert set(chat_fallbacks_total._labelnames) == {"channel", "reason"}
 
 
 # ---------- /metrics 闸 ----------
@@ -299,6 +351,8 @@ def test_clip_cut_and_csat_metrics_registered() -> None:
     body = client.get("/metrics", headers={"Authorization": "Bearer tok"}).text
     for name in ("clip_cuts_total", "csat_ratings_total"):
         assert f"# TYPE {name}" in body, name
+    # 第 63 刀：闸回退指标也在 /metrics 上（否则计数了也抓不到）
+    assert "# TYPE chat_fallbacks_total" in body
 
 
 def test_clip_cut_and_csat_counters_increment() -> None:
