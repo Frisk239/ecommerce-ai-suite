@@ -2,7 +2,7 @@
 
 完整产品仍是 `docs/goal.md`：七块共用契约，①④⑦ 加厚主线，②③⑤⑥ 契约证人（不做模型微调，ADR 0028）。当前完成定义是 goal §6.2 面试级。推进方式是 **Slice Owner：一刀一条可验证契约**，关刀看测试/报告再排下一刀。这里只排近几刀，不是八块路线图，也不是一次铺开。
 
-上一刀：**第 73 刀 多轮工具追问**（`feat/tool-followup-73`，closeout 见 `docs/progress/tool-followup-closeout.md`）——收审计刀 13/14 C 轴断点：「钛钢保温杯有货吗→还有吗」bare 追问无主语也无代词（检索词拼接要代词、记忆按设计跳过工具轮）。**无表无迁移**：`last_tool_subject`（最近一次已答工具轮 catalog/get_stock 的 tool.arg——agent 消息 tool 列就是现成对象记录；need_order_no 的 "-" 跳过）+ 引擎两处回落（库存 found=False / 报价对象不中 → 按「上轮对象+本问」重查一次，命中走 `_run_catalog_ask` 同目录口径含答上即关）。live：同会话 Q1 get_stock 钛钢保温杯→Q2「还有吗」get_stock 钛钢保温杯；「手机多少钱→那多少钱呢」→ catalog 智能手机。新会话/无对象照旧拒答。引擎金标 +2（eg-mt-003/004）、对象通道单测 +1；集成 1158→1161 passed；检索金标逐位相同。第 72 刀（PR #105）已合并 main。**下一刀=第 74 刀 空 schema 治理激活**。
+上一刀：**第 74 刀 空 schema 治理激活**（`feat/schema-activation-74`，closeout 见 `docs/progress/schema-activation-closeout.md`）——roadmap 3.1 老债：92 条空 schema 商品（91 wikidata+1 wands，导入脚本 reconcile 修复前的存量）。**演示数据刀无代码**：①92/92 按 `schema_for_category` 类目模板就地回填（与导入脚本同一条规则）——必填闸门/写回在全量真名字上激活；②治理全链在真名字（Vivo Y300）走通：登记挂商品→机洗对品牌/存储容量**弃权**（设计内：FIELD_EXTRACTORS 只有净含量/保质期/材质，0010 弃权不冒充）→人洗确认→发布→**spec_values 写回商品行**（含 {version, asset_id} 溯源）；③顾客问「Vivo Y300 是什么品牌？」→**带引用作答**。披露：一次错参数登出的未挂商品同名资产（id 268）已发布留存（内容正确可检索，无写回语义；正确链路 269）。第 73 刀（PR #106）已合并 main。**下一刀=第 75 刀 来源权重（先测量）**。
 
 当前阶段：**第三阶段产品硬ening（第二梯队 46/47/48 已全部走完）**（施工权威 `docs/roadmap-product-hardening.md`）。**审计刀 8 已完成**（三路并行审计 **P0 全零**，P1×5 实修；证据 `docs/progress/audit-8-closeout.md`）。下一刀：**审计刀 9**（按「每五刀一审计」节奏，覆盖第 46–48 刀 + UI/UX 后续；第 49/50 刀若按第三梯队「对标增强」按需开则顺延）。**待 Owner 裁决**：审计刀 8 记债的四条产品面缺口（商品价 3/115、多来源在产品面不可见、工作队列首屏 183 条原始灌入、widget 不落宿主 origin）。
 
@@ -435,3 +435,8 @@
 ## 第 73 刀：多轮工具追问（已交付，`feat/tool-followup-73`）
 
 **路径：** 审计刀 13/14 C 轴断点：「钛钢保温杯有货吗→还有吗」——bare 追问无主语也无代词，`retrieval_query`（要代词）帮不上，`recent_turns` 又**按第 29 刀 spec 裁决跳过工具轮**。本刀（**无表无迁移**）：①`conversation_memory.last_tool_subject`——倒序找最近一次 **kind=answer 工具轮**（catalog/get_stock）的 `tool.arg`（agent 消息 tool 列就是现成的对象记录；`need_order_no` 伪工具的 "-" 显式跳过；拒答/转人工轮没有「已答」对象）；②引擎步 1 库存回落——词表命中但 found=False（bare 问货无主语）时按「上轮对象+本问」重查一次；③报价回落——报价意图成立但对象不中时同款重查，命中走新 `_run_catalog_ask`（与步 3 目录回落同口径：citations 恒空、**答上即关同问缺口**）。**live**（真栈）：同会话「钛钢保温杯有货吗→还有吗」→ 两轮 get_stock 钛钢保温杯；demo 库另验「手机多少钱→那多少钱呢」→ catalog 智能手机；新会话首问「还有吗」照旧拒答。引擎金标 +2（eg-mt-003 库存复用 / eg-mt-004 报价复用）、对象通道单测 +1（已答轮认/拒答轮不改/澄清伪工具跳过）。集成 1158→**1161 passed**；ruff 全过；前端未改；检索金标逐位相同（70.0/65.0）。诚实披露：对象复用是字符串拼接不进检索词拼接通道（两通道互不干扰）；只复用最近一次（「还是那个吗」歧义不猜）；subject 在问句里不补。证据见 `docs/progress/tool-followup-{intake,closeout}.md`。
+
+
+## 第 74 刀：空 schema 治理激活（已交付，`feat/schema-activation-74`）
+
+**路径：** roadmap 3.1 老债：92 条空 schema 商品（91 wikidata + 1 wands）上 0010 写回/0019 必填闸门是死的。核因：导入脚本 `_schema_for`+空 schema reconcile **早已实现有测试**——存量是修复前灌的。本刀（**演示数据刀无代码**）：①就地回填 92/92（`schema_for_category` 单一真源，与脚本 reconcile 同规则）；②治理全链真名字走通（Vivo Y300）：登记（productId）→机洗品牌/存储容量双弃权（设计内：无验证抽取器的字段不冒充）→人洗确认（PATCH fields 扁平 body）→发布→**写回 spec_values** `{"品牌":{"value":"vivo","source":{"version":1,"asset_id":269}}}`；③顾客面「Vivo Y300 是什么品牌？」→ answer 带引用。诚实披露：一次错参数（product_id vs productId）登出的未挂商品同名资产 268 已发布留存（内容正确可检索、无写回语义；正确链路 269）；机洗弃权面（品牌/存储容量/作者/容量/屏幕尺寸五键无抽取器）是 0010 设计——扩抽取器是另一刀；回填一次性，重灌走脚本 reconcile。证据见 `docs/progress/schema-activation-{intake,closeout}.md`。
