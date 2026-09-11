@@ -1014,6 +1014,7 @@ def test_audit13_price_negative_deposit_still_refuses() -> None:
         ("这手机啥价", "智能手机"),  # 裸「这」此前是残字
         ("那个手机咋卖", "智能手机"),  # 裸「个」同上
         ("这台笔记本电脑多少钱", "笔记本电脑"),
+        ("帮我查下手机多少钱", "智能手机"),  # 第 70 刀评审：礼貌动词 帮/我/查 进虚词表
     ],
 )
 def test_word_seam_za_forms_and_demonstratives(question: str, expect: str) -> None:

@@ -86,6 +86,12 @@ _OPINION_RE = re.compile(
 )
 
 
+def is_opinion_question(query: str) -> bool:
+    """问句是否在问体验/评价（观点尾白名单命中）。供跨模块复用（第 70 刀订单
+    状态问的澄清路径用它放过「物流怎么样」类观点问——评论正是它们的证据）。"""
+    return bool(_OPINION_RE.search(query))
+
+
 def excludes_review_evidence(query: str) -> bool:
     """该问句下评论块是否不作为证据（纯函数便于单测与金标复算）。
 
