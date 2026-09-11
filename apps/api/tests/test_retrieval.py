@@ -369,6 +369,20 @@ def test_stale_multiplier_applied_as_post_factor() -> None:
         ("支持退货吗", True),
         ("收货地址能改吗", True),
         ("可以开发票吗", True),
+        # ---- 审计刀 14 B 轴 P0：裸「如何」误豁免事实问（如何+动词）----
+        ("退货运费如何计算", True),  # 曾引衣服评论 0.447 压过退货政策——66 刀 P0 同义复现
+        ("售后如何处理", True),
+        ("物流信息如何查询", True),
+        ("快递如何查", True),
+        ("物流如何", True),  # 裸「如何」落诚实拒答（便宜的失效方向，主动选择）
+        # 观点复合词保留（体验/服务/态度/速度如何——问的还是评价本身）
+        ("这家的退货体验如何", False),
+        ("客服服务如何", False),
+        ("物流速度如何", False),
+        # 审计刀 14 B 轴 P2：登记实测体感形态
+        ("物流省心吗", False),
+        ("快递准时吗", False),
+        ("物流好评吗", False),
     ],
 )
 def test_excludes_review_evidence_truth_table(query: str, expected: bool) -> None:
