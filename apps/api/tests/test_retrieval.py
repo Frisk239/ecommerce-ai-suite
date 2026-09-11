@@ -459,3 +459,103 @@ def test_retrieve_drops_review_chunks_for_service_state_query(api: object) -> No
         glued = "物流怎么样 它到货了吗"
         assert retrieve(db, glued) != [], "缺省按 query 判（无观点标记的本问场景）"
         assert retrieve(db, glued, gate_question="它到货了吗") == []
+
+
+# ---------- 实体亲和重排（第 79 刀，ADR 0048） ----------
+
+
+def test_title_affinity_full_coverage_is_one() -> None:
+    """问句覆盖标题全部区分性 bigram -> 1.0（问句点名了该资产）。"""
+    from suite_api.services.retrieval import title_affinity, title_idf
+
+    idf = title_idf(["钛钢保温杯 规格", "Erdbeeren 规格"])
+    # 「钛钢保温杯的容量」terms 含标题「钛钢保温杯」的全部 bigram（规格不含）
+    aff = title_affinity(query_terms("钛钢保温杯的容量"), "钛钢保温杯 规格", idf)
+    assert 0.0 < aff < 1.0  # 规格未被覆盖，按 idf 权重折算
+
+
+def test_title_affinity_named_asset_beats_shared_words() -> None:
+    """共享 bigram（规格，两标题都有 -> 低 idf）几乎不贡献亲和，专名主导。"""
+    from suite_api.services.retrieval import title_affinity, title_idf
+
+    idf = title_idf(["M&M white 规格（OFF）", "Erdbeeren 规格（OFF）"])
+    terms = query_terms("Erdbeeren的条码是多少")
+    named = title_affinity(terms, "Erdbeeren 规格（OFF）", idf)
+    other = title_affinity(terms, "M&M white 规格（OFF）", idf)
+    assert named > other == 0.0  # 问句不含共享词（规格）时他品亲和为 0：专名主导
+    # 问句带上共享字段词后他品亲和仍远低于点名资产（idf 把「规格」压到近零）
+    field_terms = query_terms("Erdbeeren的规格是多少")
+    named2 = title_affinity(field_terms, "Erdbeeren 规格（OFF）", idf)
+    other2 = title_affinity(field_terms, "M&M white 规格（OFF）", idf)
+    assert named2 > other2 > 0.0
+
+
+def test_title_affinity_blank_title_is_zero() -> None:
+    """空标题/纯停用字标题亲和 0（乘数 1=中性，不因无标题被显式惩罚）。"""
+    from suite_api.services.retrieval import title_affinity, title_idf
+
+    idf = title_idf(["退货政策说明", ""])
+    assert title_affinity(query_terms("退货政策是多少"), "", idf) == 0.0
+    assert title_affinity(query_terms("退货政策是多少"), None, idf) == 0.0
+
+
+def test_retrieve_entity_affinity_breaks_cross_product_tie(api: object) -> None:
+    """真库：同文字段块跨资产并列时，问句点名的资产破开并列（病根正钉）。
+
+    构造复现 75 刀病根形态：A/B 两资产各有一个「净含量：500ml」**同文**块
+    （字段名+值全同 -> 词法分完全并列），且 B 的标题不含问句实体。baseline
+    下按 (asset_id, chunk) 稳定出榜；实体重排后问句点名的 A 恒在前。
+    """
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        named_id = _seed_published_asset(
+            db,
+            "钛钢保温杯 规格",
+            ["净含量：500ml"],
+            source_kind="upload",
+        )
+        other_id = _seed_published_asset(
+            db,
+            "Erdbeeren 规格（OFF）",
+            ["净含量：500ml"],  # 同文块：词法分与 A 完全并列
+            source_kind="openfoodfacts",
+        )
+        db.commit()
+
+        hits = retrieve(db, "钛钢保温杯的净含量是多少")
+        assert [h["asset_id"] for h in hits[:2]] == [named_id, other_id]
+        assert hits[0]["chunk"] == "净含量：500ml"
+
+        # 无实体问句（纯字段问）：零漂移——乘数恒 1，两块仍并列按
+        # (asset_id, chunk) 稳定序出榜，与重排前行为逐位一致
+        plain = retrieve(db, "净含量是多少")
+        assert [h["asset_id"] for h in plain[:2]] == sorted([named_id, other_id])
+
+
+def test_retrieve_entity_affinity_overrides_shorter_rival(api: object) -> None:
+    """近同文且他品块更短（词法分更高）时，点名资产靠亲和翻盘（非并列形态）。
+
+    病根的第二形态（75 刀实测「净含/含量类被拉向块更短更实的资产」）：
+    B 的块字段名相同、值更短 -> sqrt 归一分母更小 -> 词法分微弱胜出。
+    亲和乘数把问句点名的资产抬回 top-1。
+    """
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        named_id = _seed_published_asset(
+            db,
+            "钛钢保温杯 规格",
+            ["净含量：500毫升"],  # 值更长 -> 分母更大 -> 词法分更低
+            source_kind="upload",
+        )
+        _seed_published_asset(
+            db,
+            "Erdbeeren 规格（OFF）",
+            ["净含量：500ml"],  # 更短 -> 词法分更高（baseline 下 top-1）
+            source_kind="openfoodfacts",
+        )
+        db.commit()
+
+        hits = retrieve(db, "钛钢保温杯的净含量是多少")
+        assert hits[0]["asset_id"] == named_id, "点名资产须靠亲和赢过更短的他品块"
