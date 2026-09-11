@@ -16,6 +16,7 @@ import type {
   ConfirmReturnResult,
   CustomerAnswerComplete,
   CustomerSessionCreated,
+  CustomerSessionEnded,
   CsvImportReport,
   FeedbackResult,
   HandoffTicket,
@@ -246,6 +247,13 @@ export const api = {
   // complete 不带 gap_id。顾客无列表/详情/回流端点。
   createCustomerSession: (headers?: Record<string, string>) =>
     request<CustomerSessionCreated>('/customer/sessions', { method: 'POST', headers }),
+  // 结束会话（第 80 刀）：active -> ended，幂等；结束后发问 409，评分/反馈/
+  // 联系方式仍可用（「关对话流，不关善后通道」）。无 body。
+  endCustomerSession: (sessionId: number, token: string) =>
+    request<CustomerSessionEnded>(`/customer/sessions/${sessionId}/end`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
   askCustomer: (
     sessionId: number,
     token: string,
