@@ -26,6 +26,11 @@
   不带即清空）。
 低分不触发任何写动作（CSAT 是主观分，不是证据语义）。
 
+- ``POST /api/customer/sessions/{id}/end``（第 80 刀）：顾客主动结束会话——
+  active -> ended（幂等、不可逆），落 closed_at；ended 只关「发问」（409），
+  评分/反馈/联系方式等善后通道照常放行；已回流登记（registered）的会话不能
+  再结束（409）。操作者仍可把 ended 会话回流登记为 registered。
+
 顾客没有 GET/列表/回流端点（0021：回流登记仍是操作者动作，顾客接口不能
 发布；拉历史属本刀 Out）。限流三道闸见 services/rate_limit（ADR 0033）。
 """
@@ -70,6 +75,18 @@ _PHONE_RE = re.compile(r"^[0-9+\-() ]{5,20}$")
 
 
 ACTIVE = "active"
+# 第 80 刀：顾客可主动结束会话（active -> ended 不可逆）；ended 仍可回流登记。
+ENDED = "ended"
+REGISTERED = "registered"
+
+# 会话状态的中文映射（第 80 刀）：发问/结束两处闸把裸状态值翻给顾客看——
+# 「ended」「registered」不是顾客能读懂的话。未收录值原样回显，不发明词。
+_STATUS_LABELS = {ACTIVE: "进行中", ENDED: "已结束", REGISTERED: "已回流"}
+
+
+def _status_label(status_value: str) -> str:
+    return _STATUS_LABELS.get(status_value, status_value)
+
 
 # 令牌熵（字节）：token_urlsafe(32) ≈ 256 bit，输出 43 字符，String(64) 容得下
 _TOKEN_BYTES = 32
@@ -78,6 +95,17 @@ _TOKEN_BYTES = 32
 class CustomerSessionCreated(BaseModel):
     session_id: int
     token: str
+
+
+class EndSessionOut(BaseModel):
+    """结束会话回执（第 80 刀）：只回会话 id、终态与终结时刻。
+
+    幂等重复调用返回同一 closed_at（首次结束时刻），故形态与首次一致。
+    """
+
+    id: int
+    status: str
+    closed_at: datetime | None
 
 
 class AskBody(BaseModel):
@@ -258,6 +286,51 @@ def create_session(
     return CustomerSessionCreated(session_id=session.id, token=token)
 
 
+@router.post("/sessions/{session_id}/end", response_model=EndSessionOut)
+def end_session(
+    session_id: int,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)] = None,
+    limits: Annotated[CustomerRateLimits, Depends(get_rate_limits)] = None,
+) -> EndSessionOut:
+    """顾客结束会话（第 80 刀）：``active -> ended``，幂等且不可逆。
+
+    闸序与评分端点完全同款：IP 闸（先于鉴权省 DB——狂刷无论令牌对错都不碰库）
+    -> 401（会话不存在与令牌无效统一文案）-> 状态闸。无 body（结束不需要参数）。
+
+    - ``active``：置 ``ended`` 并落 ``closed_at``；取 **DB 钟** ``func.now()``
+      （第 71 刀教训：Python 钟与 DB 钟混用在 app/db 分机部署时会假翻转），
+      commit 后 refresh 回读真值再返回。
+    - ``ended``：幂等 200，**不重写 closed_at**（终结时刻以首次结束为准）。
+    - ``registered``：409——已回流登记是更后的终态，不能反向结束。
+
+    产品语义：结束=关闭对话流（发问），不关善后通道。故发问闸把 ended 挡在
+    门外，而评分/反馈/联系方式闸放行 ended（见各闸判定与 `_status_label`）。
+    """
+    retry_after = limits.check_ask_ip(client_ip(request))
+    if retry_after is not None:
+        raise _rate_limited(retry_after)
+
+    session = _authorize_customer_session(db, session_id, request)
+
+    if session.status == ENDED:
+        # 幂等：不重写 closed_at（终结时刻以首次结束为准）
+        return EndSessionOut(id=session.id, status=session.status, closed_at=session.closed_at)
+    if session.status != ACTIVE:
+        # 只剩 registered（状态机无其他分支）：已回流不可再结束
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"会话状态：{_status_label(session.status)}，不能再结束",
+        )
+
+    session.status = ENDED
+    session.closed_at = func.now()
+    db.commit()
+    db.refresh(session)
+    logger.info("顾客结束会话: session=%s", session_id)
+    return EndSessionOut(id=session.id, status=session.status, closed_at=session.closed_at)
+
+
 @router.post("/sessions/{session_id}/messages")
 async def ask(
     session_id: int,
@@ -285,9 +358,10 @@ async def ask(
         raise _rate_limited(retry_after)
 
     if session.status != ACTIVE:
+        # 第 80 刀：状态值翻成顾客能读的中文（ended -> 已结束 / registered -> 已回流）
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"只有进行中的会话可以继续发问，当前状态: {session.status}",
+            detail=f"只有进行中的会话可以继续发问，当前状态: {_status_label(session.status)}",
         )
     question = body.content.strip()
     if not question:
@@ -349,7 +423,8 @@ def leave_feedback(
         raise _rate_limited(retry_after)
 
     session = _authorize_customer_session(db, session_id, request)
-    if session.status != ACTIVE:
+    # 第 80 刀：ended 下反馈仍放行（善后通道）；此闸只剩 registered 会触发
+    if session.status not in (ACTIVE, ENDED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"只有进行中的会话可以反馈，当前状态: {session.status}",
@@ -422,7 +497,8 @@ def rate_session(
         raise _rate_limited(retry_after)
 
     session = _authorize_customer_session(db, session_id, request)
-    if session.status != ACTIVE:
+    # 第 80 刀：ended 下评分仍放行（这是本刀的产品点——结束后评分闭环）
+    if session.status not in (ACTIVE, ENDED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"只有进行中的会话可以评分，当前状态: {session.status}",
@@ -543,7 +619,8 @@ def submit_handoff_contact(
     if retry_after is not None:
         raise _rate_limited(retry_after)
 
-    if session.status != ACTIVE:
+    # 第 80 刀：ended 下联系方式仍放行（善后通道）；此闸只剩 registered 会触发
+    if session.status not in (ACTIVE, ENDED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"只有进行中的会话可以提交联系方式，当前状态: {session.status}",

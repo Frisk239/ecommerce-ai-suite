@@ -57,6 +57,8 @@ router = APIRouter(prefix="/api/service", tags=["service"])
 
 ACTIVE = "active"
 REGISTERED = "registered"
+# 第 80 刀：顾客可主动结束会话（customer.py end 端点），ended 仍可回流登记。
+ENDED = "ended"
 
 # 列表首问摘要长度
 _SUMMARY_CHARS = 60
@@ -504,10 +506,14 @@ def register_session(
     0005 的 publish/confirm/回滚）。
 
     顾客会话同样由本端点回流（0021：回流仍是操作者动作，顾客接口不能发布）。
+    第 80 刀起 ended（顾客主动结束）的会话也可回流；仅 active 回流时落
+    closed_at，ended 的 closed_at 保持顾客结束时刻。
     """
     del operator
     session = _get_session_or_404(db, session_id)
-    if session.status != ACTIVE:
+    # 第 80 刀：ended 会话可回流登记（顾客结束只关发问，不关善后/治理通道）；
+    # 仅 registered（已回流）与未知态拒绝。
+    if session.status not in (ACTIVE, ENDED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"只有进行中的会话可以回流登记，当前状态: {session.status}",
@@ -542,7 +548,11 @@ def register_session(
         ) from exc
     session.status = REGISTERED
     session.registered_asset_id = asset.id
-    session.closed_at = datetime.now(UTC)
+    # closed_at 取「会话终结」时刻：active -> registered 时此刻即终结，落值；
+    # 第 80 刀起 ended -> registered 是「结束后补回流」，closed_at 已是顾客结束
+    # 时刻，不能重写成回流时间（终结时刻以首次为准，与 end 端点幂等口径一致）。
+    if session.closed_at is None:
+        session.closed_at = datetime.now(UTC)
     db.commit()
     db.refresh(asset)
     return to_asset_detail(db, asset)

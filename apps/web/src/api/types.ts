@@ -251,8 +251,10 @@ export interface CsvImportReport {
 
 // ---------- 客服会话（routes/service.py 契约） ----------
 
-/** 会话状态：active=进行中（可发问/可回流）；registered=已回流登记（只读）。 */
-export type ServiceSessionStatus = 'active' | 'registered'
+/** 会话状态：active=进行中（可发问/可回流）；ended=已结束（第 80 刀，顾客
+ * 主动结束——不可逆、不可发问，但评分/反馈/联系方式等善后通道仍开）；
+ * registered=已回流登记（只读终态）。 */
+export type ServiceSessionStatus = 'active' | 'ended' | 'registered'
 
 export interface ServiceSession {
   id: number
@@ -627,6 +629,14 @@ export interface OpsRun {
 export interface CustomerSessionCreated {
   session_id: number
   token: string
+}
+
+/** POST /customer/sessions/{id}/end 回执（第 80 刀）：幂等——重复结束返回同一
+ * closed_at（终结时刻以首次为准），故形态与首次一致。 */
+export interface CustomerSessionEnded {
+  id: number
+  status: ServiceSessionStatus
+  closed_at: string | null
 }
 
 /** 顾客版 SSE complete：事件序与操作者版相同，但 gap_id 被服务端载荷白名单

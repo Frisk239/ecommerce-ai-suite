@@ -187,8 +187,10 @@ class RetrievalChunk(Base):
 class ServiceSession(Base):
     """ADR 0023：客服会话=运行态实体，不是第三个中台对象（CONTEXT「会话」Avoid）。
 
-    回流登记后 status=registered 并经 registered_asset_id 指向登记出的
-    kind=dialogue 资产；closed_at 在会话终结（本刀=回流登记）时落值。
+    三态（第 80 刀）：active=进行中；ended=顾客主动结束（对话流关闭，不可逆，
+    善后通道仍开）；registered=已回流登记（终态，经 registered_asset_id 指向
+    登记出的 kind=dialogue 资产）。closed_at 在会话终结（顾客结束或操作者回流
+    登记）时落值，之后不再改写。
     """
 
     __tablename__ = "service_sessions"
@@ -199,7 +201,8 @@ class ServiceSession(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # active -> registered（结束即回流登记，一步完成，无仅结束态）
+    # active -> ended（顾客结束，不可逆）/ active -> registered（操作者回流登记）/
+    # ended -> registered（回流放行，closed_at 保持顾客结束时刻）
     status: Mapped[str] = mapped_column(String(20))
     registered_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
     # 顾客会话令牌（ADR 0021/0033）：secrets.token_urlsafe(32) 存原文（spec 工程

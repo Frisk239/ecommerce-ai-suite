@@ -70,6 +70,11 @@ function SessionStatusBadge({
       </span>
     )
   }
+  // 第 80 刀：ended 必须显式分支在 else 之前——否则会被兜底当「已回流」
+  // （中性灰，衬托可回流的 amber「已回流」）
+  if (status === 'ended') {
+    return <span className="badge badge-ingested">{SERVICE_SESSION_STATUS_LABEL.ended}</span>
+  }
   return <span className="badge badge-review">{SERVICE_SESSION_STATUS_LABEL.registered}</span>
 }
 
@@ -290,6 +295,8 @@ export default function ServicePage() {
   }, [list, detail, resetLive])
 
   const isActiveSession = session !== null && session.status === 'active'
+  // 第 80 刀：顾客已结束（ended）——对话流关，但可回流登记（后端放行 ended）
+  const isEndedSession = session !== null && session.status === 'ended'
   const canAsk = isActiveSession && !streaming
   // 两阶段写阶段二（第 40 刀，ADR 0044 §一）：资格消息工具条里的
   // 「待确认 token=…」即确认卡——本端点验签+资格重查后写订单事件并落
@@ -358,7 +365,7 @@ export default function ServicePage() {
   }
 
   const canRegister =
-    isActiveSession && !streaming && messages.length > 0 && detail.state.phase === 'ok'
+    (isActiveSession || isEndedSession) && !streaming && messages.length > 0 && detail.state.phase === 'ok'
 
   return (
     <div>
@@ -762,6 +769,10 @@ export default function ServicePage() {
                     </button>
                   )}
                 </div>
+              </div>
+            ) : isEndedSession ? (
+              <div className="border-t border-line-2 px-4 py-2.5 text-xs text-ink-3">
+                顾客已结束这次会话，对话流已关闭；可点上方「结束并回流登记」将其回流为对话资产。
               </div>
             ) : (
               <div className="border-t border-line-2 px-4 py-2.5 text-xs text-ink-3">

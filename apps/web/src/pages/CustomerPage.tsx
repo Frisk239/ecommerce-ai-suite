@@ -9,6 +9,8 @@
 // 联系方式」（本地 state，工单级）。
 // 429（0033 限流）与 409（会话已被操作者回流登记）都以后端 detail 文案呈现，
 // 「新会话」随时可重签令牌。
+// 第 80 刀：顾客可点「结束会话」主动收口（active -> ended 不可逆）——结束后
+// 关闭发问，但评分/反馈/联系方式保持可用（关对话流，不关善后通道）。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUp, ChatCircleDots, Prohibit, Star, Stop, ThumbsDown, ThumbsUp, X } from '@phosphor-icons/react'
@@ -135,6 +137,10 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
   // 前台必须给一条出路——否则顾客只会反复撞「会话不存在或令牌无效」，输入框还开着。
   const [expired, setExpired] = useState(false)
   const [creating, setCreating] = useState(false)
+  // 第 80 刀：顾客主动结束会话（active -> ended 不可逆）。ended 只关发问；
+  // 评分/反馈/联系方式等善后通道保持可用。
+  const [ended, setEnded] = useState(false)
+  const [ending, setEnding] = useState(false)
 
   // 第 40 刀（ADR 0044 §四）：「没有帮助」反馈——已反馈的消息 id 集合（本地
   // 表达；幂等服务端钉死：同消息二次反馈 409）。换会话即清空。
@@ -216,6 +222,8 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
       setRatingJustUpdated(0)
       setRatingComment('')
       setRatingSending(false)
+      // 结束态一并归位（第 80 刀）：新会话必须是 active，不能继承上一会话的 ended
+      setEnded(false)
       taRef.current?.focus()
     } catch (err) {
       setError(err)
@@ -233,6 +241,23 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
     await startSession()
   }
 
+  // 结束会话（第 80 刀）：调端点成功后本地置 ended——发问随之锁死，但评分/
+  // 反馈/联系方式继续可用（后端对 ended 放行，这里不隐藏它们）。失败走既有
+  // ErrorBanner 形态（如令牌已过期 401）。
+  const endSession = async () => {
+    if (session === null || ending || streaming) return
+    setError(null)
+    setEnding(true)
+    try {
+      await api.endCustomerSession(session.id, session.token)
+      setEnded(true)
+    } catch (err) {
+      setError(err)
+    } finally {
+      setEnding(false)
+    }
+  }
+
   // 嵌入形态的「收起」：把关闭意图 postMessage 回宿主（targetOrigin 用宿主来源，
   // 不用 '*'）；独立访问（未被框住）没有宿主，按钮不渲染。
   const closeWidget = () => {
@@ -247,7 +272,7 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
   // 重开新会话即可恢复）
   const send = async (text: string) => {
     const question = text.trim()
-    if (question === '' || streaming || session === null) return
+    if (question === '' || streaming || session === null || ended) return
     setInput('')
     if (taRef.current) taRef.current.style.height = 'auto'
     setError(null)
@@ -338,7 +363,9 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
     }
   }
 
-  const canAsk = session !== null && !streaming && !expired
+  // 第 80 刀：ended 关闭发问（composer 与建议问题一并锁）；评分/反馈/composer
+  // 之外的善后控件不受此限。
+  const canAsk = session !== null && !streaming && !expired && !ended
 
   // 转人工工单联系方式提交（第 42 刀，ADR 0046 §4）：成功即把该工单标为已记录
   // （同会话多条 handoff 消息共享同一工单，故按工单 id 记）；失败上抛给表单内联呈现。
@@ -400,6 +427,19 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
             {creating ? '创建中…' : '新会话'}
           </button>
         )}
+        {/* 结束会话（第 80 刀）：只在会话存在且未结束时渲染；流式中禁用，避免与
+            停止输出竞争同一段流。结束后仍可评分反馈（善后通道不关）。 */}
+        {session !== null && !ended && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm shrink-0"
+            onClick={() => void endSession()}
+            disabled={creating || streaming || ending}
+            title="结束这段咨询（结束后仍可评分反馈，但不能再发问）"
+          >
+            {ending ? '结束中…' : '结束会话'}
+          </button>
+        )}
         {frameHostOrigin !== null ? (
           <button
             type="button"
@@ -425,6 +465,21 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
             disabled={creating}
           >
             {creating ? '创建中…' : '重新开始'}
+          </button>
+        </div>
+      ) : null}
+      {/* 结束横幅（第 80 刀）：与过期 banner 同一视觉级（内联状态条，非弹窗）。
+          中性配色而非警告色——结束是顾客主动的正常终态，不是故障。 */}
+      {ended ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2.5 rounded-[8px] border border-line-2 bg-surface px-3.5 py-2.5 text-[13px] leading-5 text-ink-2">
+          <span className="min-w-0 flex-1">会话已结束。感谢咨询，欢迎评分反馈。</span>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm shrink-0"
+            onClick={() => void startSession()}
+            disabled={creating}
+          >
+            {creating ? '创建中…' : '开始新会话'}
           </button>
         </div>
       ) : null}
@@ -553,7 +608,11 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
                   ref={taRef}
                   rows={1}
                   placeholder={
-                    streaming ? 'AI 客服正在回答…（Esc 停止）' : '输入你的问题…（Enter 发送，Shift+Enter 换行）'
+                    ended
+                      ? '会话已结束，如需继续请点「开始新会话」'
+                      : streaming
+                        ? 'AI 客服正在回答…（Esc 停止）'
+                        : '输入你的问题…（Enter 发送，Shift+Enter 换行）'
                   }
                   value={input}
                   disabled={!canAsk}

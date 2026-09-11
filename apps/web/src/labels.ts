@@ -17,9 +17,11 @@ export const ASSET_STATUS_LABEL: Record<AssetStatus, string> = {
   published: '已发布',
 }
 
-/** 会话状态（CONTEXT「会话」词条：结束后由操作者回流登记为资产）。 */
+/** 会话状态（CONTEXT「会话」词条：结束后由操作者回流登记为资产；第 80 刀起
+ * 顾客也可先主动结束）。 */
 export const SERVICE_SESSION_STATUS_LABEL: Record<ServiceSessionStatus, string> = {
   active: '进行中',
+  ended: '已结束',
   registered: '已回流',
 }
 
