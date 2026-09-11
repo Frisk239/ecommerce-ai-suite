@@ -331,5 +331,52 @@
     }
    }
   ]
+ },
+ {
+  "id": "eg-mt-003",
+  "surface": "multi-turn",
+  "turns": [
+   {
+    "question": "保温杯有货吗？",
+    "expect": {
+     "kind": "answer",
+     "tool": "get_stock",
+     "tool_arg": "钛钢保温杯"
+    }
+   },
+   {
+    "question": "还有吗",
+    "expect": {
+     "kind": "answer",
+     "tool": "get_stock",
+     "tool_arg": "钛钢保温杯",
+     "content_has": [
+      "42"
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "id": "eg-mt-004",
+  "surface": "multi-turn",
+  "turns": [
+   {
+    "question": "手机多少钱",
+    "expect": {
+     "kind": "answer",
+     "tool": "catalog",
+     "tool_arg": "智能手机"
+    }
+   },
+   {
+    "question": "那多少钱呢",
+    "expect": {
+     "kind": "answer",
+     "tool": "catalog",
+     "tool_arg": "智能手机"
+    }
+   }
+  ]
  }
 ]
