@@ -90,7 +90,8 @@ def load_candidates(db: Any) -> list[dict[str, Any]]:
             Asset,
             (Asset.id == AssetVersion.asset_id)
             & (Asset.current_published_version_id == AssetVersion.id)
-            & (Asset.status == "published"),
+            & (Asset.status == "published")
+            & (Asset.discarded_at.is_(None)),  # 第 83 刀：与生产 retrieve 同口径
         )
         .order_by(RetrievalChunk.id)
         .limit(10000)

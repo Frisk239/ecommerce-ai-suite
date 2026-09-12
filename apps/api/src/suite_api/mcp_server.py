@@ -209,6 +209,9 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
         """
         with _db_session() as session:
             asset = session.get(Asset, asset_id)
+            if asset is not None and asset.discarded_at is not None:
+                # 第 83 刀：废弃资产（0042 标记隐藏）不出现在证据面——与检索同口径
+                raise ValueError(_UNPUBLISHED_MESSAGE)
             if version is None:
                 pointer = asset.current_published_version_id if asset is not None else None
                 if asset is None or pointer is None:
@@ -299,7 +302,7 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
             rows = session.execute(
                 select(Asset, AssetVersion)
                 .join(AssetVersion, Asset.current_published_version_id == AssetVersion.id)
-                .where(Asset.status == "published")
+                .where(Asset.status == "published", Asset.discarded_at.is_(None))
                 .order_by(Asset.id)
             ).all()
             exported = [
