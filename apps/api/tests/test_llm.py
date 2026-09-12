@@ -25,15 +25,22 @@ def _hit(asset_id: int, version_no: int, chunk: str, score: float = 1.0) -> dict
 
 
 def test_build_prompts_marks_sources_and_includes_field_values() -> None:
-    """证据块各带「来源：A-{id}·v{N}」（0007 版本口径）；确认字段值随命中
-    切块进 prompt（发布事务入索引的「字段：值」块，无第二条取数路径）。"""
+    """证据块各带「来源：A-{id}「资料名」·v{N}」（0007 版本口径；第 81 刀补
+    资料名）；确认字段值随命中切块进 prompt（发布事务入索引的「字段：值」块，
+    无第二条取数路径）。"""
     hits = [
         _hit(3, 1, "净含量：480ml", score=1.4),
         _hit(9, 2, "客服：净含量为480ml。", score=1.1),
     ]
-    system_prompt, user_prompt = llm.build_prompts(hits, "保温杯的净含量是多少？")
-    assert "[来源：A-3·v1] 净含量：480ml" in user_prompt
-    assert "[来源：A-9·v2] 客服：净含量为480ml。" in user_prompt
+    meta = {
+        3: {"kind": "document", "title": "钛钢保温杯 · 规格"},
+        9: {"kind": "dialogue", "title": "保温杯的净含量是多少？"},
+    }
+    system_prompt, user_prompt = llm.build_prompts(hits, "保温杯的净含量是多少？", meta)
+    assert "[来源：A-3「钛钢保温杯 · 规格」·v1] 净含量：480ml" in user_prompt
+    assert "[来源：A-9「保温杯的净含量是多少？」·v2] 客服：净含量为480ml。" in user_prompt
+    # 第 81 刀：系统提示要教模型用资料名核验实体（证据块可能只有字段值）
+    assert "资料名" in system_prompt
     assert "顾客问题：保温杯的净含量是多少？" in user_prompt
     # 系统提示要点（任务锁定）：只依据证据、不编造、简洁；第 40 刀起引用约束
     # 从「不输出引用编号」升级为逐句引用（ADR 0044 §三：标注证据编号）
@@ -41,6 +48,26 @@ def test_build_prompts_marks_sources_and_includes_field_values() -> None:
         assert keyword in system_prompt
     assert "每个事实句末尾标注其依据的证据编号" in system_prompt
     assert "证据未覆盖的内容不得陈述" in system_prompt
+
+
+def test_build_prompts_title_optional_and_redacted() -> None:
+    """第 81 刀：资料名可缺省（无 meta 退化为旧形态）；标题过 redact_contact
+    ——对话资产标题=顾客首问原文，可能含手机号/邮箱（审计刀 8 先例：
+    `_first_question` 同口径；`redact` 对短域邮箱/座机覆盖不足）。"""
+    hits = [_hit(3, 1, "净含量：480ml"), _hit(4, 1, "客服：好的")]
+    # 无 meta：退化为不带资料名的旧形态（向后兼容）
+    _, no_meta = llm.build_prompts(hits, "净含量")
+    assert "[来源：A-3·v1] 净含量：480ml" in no_meta
+    # 有 meta：手机号/邮箱被掩（原样不外送厂商 prompt）
+    meta = {
+        3: {"kind": "document", "title": "补口径 · 有问题打 13800138000"},
+        4: {"kind": "dialogue", "title": "客服：请联系 me@x.co 或 0571-88889999"},
+    }
+    _, masked = llm.build_prompts(hits, "净含量", meta)
+    assert "13800138000" not in masked
+    assert "me@x.co" not in masked
+    assert "0571-88889999" not in masked
+    assert "补口径" in masked  # 非联系方式部分保留（资料名仍可核验实体）
 
 
 def test_build_prompts_caps_evidence_and_never_touches_credentials() -> None:

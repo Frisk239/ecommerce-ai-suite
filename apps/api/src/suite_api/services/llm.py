@@ -44,6 +44,12 @@ _MAX_PROMPT_EVIDENCE = 2
 SYSTEM_PROMPT = (
     "你是商家侧电商 AI 客服，回答顾客关于商品与售后的问题。\n"
     "只依据提供的已发布证据回答；证据里没有的信息不要编造，宁可说明证据未覆盖。\n"
+    # 第 81 刀：证据行方括号内带**所属资料名**（资产标题）——字段块本身常只有
+    # 「条码：值」，商品名只在标题里；不告诉模型归属，它无法确认「这条证据就是
+    # 顾客问的那个商品」，会在忠实性约束下自述「证据未覆盖」→ 被 no_coverage
+    # 闸收成拒答（审计刀 16 C 轴实测「M&M white的条码」6 次 3 拒的真因）。
+    "证据方括号内的资料名是该条证据所属的商品/资料，可用它确认证据与顾客问的是"
+    "同一个对象（证据块本身可能只含字段值）。\n"
     "回答简洁，直接给结论与关键信息，不寒暄不闲聊。\n"
     # 第 40 刀（ADR 0044 §三）逐句引用约束：每个事实句标注依据的证据编号
     # （对应证据块「来源」顺序），证据未覆盖的内容不得陈述——最小版逐句引用
@@ -216,22 +222,38 @@ async def complete_tool_proposal(system_prompt: str, user_prompt: str) -> str:
         raise LLMUnavailable("厂商模型暂时不可用") from exc
 
 
-def build_prompts(hits: list[dict[str, Any]], question: str) -> tuple[str, str]:
-    """组装 (system_prompt, user_prompt)：证据块各带「来源：A-{id}·v{N}」标注。
+def build_prompts(
+    hits: list[dict[str, Any]],
+    question: str,
+    assets_meta: dict[int, dict[str, Any]] | None = None,
+) -> tuple[str, str]:
+    """组装 (system_prompt, user_prompt)：证据块各带「来源：A-{id}「资料名」·v{N}」。
 
-    hits=retrieve() 结果（分数降序）。prompt 只含命中切块文本与顾客问题，
-    不触碰任何凭证（单测钉死：组装结果不含密钥）。
+    hits=retrieve() 结果（分数降序）。prompt 只含命中切块文本、证据所属资料名
+    与顾客问题，不触碰任何凭证（单测钉死：组装结果不含密钥）。
 
     0038 修订（第 21 刀，审计刀 4 P0 簇出口 1）：字节不动、出口必掩——证据
     chunk 已在 retrieve 返回处统一 redact（收口点见 services/retrieval.py，
-    本函数不再对 chunk 重复掩）；此处单独掩顾客问句行：厂商 prompt 是进程
-    边界，顾客手打的手机号/邮箱也不该裸送厂商。函数内导入避开
+    本函数不再对 chunk 重复掩）；此处单独掩顾客问句行与资料名：厂商 prompt 是
+    进程边界，顾客手打的手机号/邮箱也不该裸送厂商。函数内导入避开
     machine_wash↔llm 的模块级循环（machine_wash 顶层 import llm）。
-    """
-    from suite_api.services.machine_wash import redact
 
+    第 81 刀（审计刀 16 C 轴 P0 治本）：证据行补**所属资料名**（资产标题，
+    ``assets_meta`` 缺省或资产无标题时不加）——字段块常只有「条码：值」，
+    商品名只在标题里；不给归属，模型无法确认这条证据就是顾客问的商品，
+    会在忠实性约束下自述「证据未覆盖」（no_coverage 闸随后收成拒答）。
+    资料名走 ``redact_contact``：对话资产标题=顾客首问原文，可能含联系方式
+    （审计刀 8 先例；``redact`` 的覆盖不足，与 ``_first_question`` 同口径）。
+    """
+    from suite_api.services.machine_wash import redact, redact_contact
+
+    meta = assets_meta or {}
     lines = ["已发布证据："]
     for hit in hits[:_MAX_PROMPT_EVIDENCE]:
-        lines.append(f"[来源：A-{hit['asset_id']}·v{hit['version_no']}] {hit['chunk']}")
+        title = redact_contact((meta.get(hit["asset_id"]) or {}).get("title")) or ""
+        label = f"「{title}」" if title else ""
+        lines.append(
+            f"[来源：A-{hit['asset_id']}{label}·v{hit['version_no']}] {hit['chunk']}"
+        )
     lines.append(f"顾客问题：{redact(question)}")
     return SYSTEM_PROMPT, "\n".join(lines)
