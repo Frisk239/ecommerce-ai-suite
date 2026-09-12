@@ -432,11 +432,11 @@ def title_affinity(terms: frozenset[str], title: str | None, idf: dict[str, floa
 OOV_MIN_SPAN = 4
 
 # 语料规模护栏（条）：零出现信号在**小语料**上不可靠——库内文本太少时「零出现」
-# 几乎是必然（测试种子 ~30 chunk 实测误杀 7 例既有用例）。低于此条数不判 OOV、
-# 退回既有路径（39 刀「NULL 不降权」同族的保守裁决：数据条件不足时不启用）。
-# 演示库 483 条、生产单店千级；小店资料不足时本闸静默不生效。测试替身
-# （MagicMock db）的 .all() 不是序列，同一守卫一并挡下（替身不测本闸——本闸的
-# 确定性行为由 golden_engine 的 case 在真库种子上覆盖）。
+# 几乎是必然（评审回退实验实测：护栏置 0 时测试库形态误杀 4 例既有用例）。
+# 低于此条数不判 OOV、退回既有路径（39 刀「NULL 不降权」同族的保守裁决：数据
+# 条件不足时不启用）。演示库符合条件的候选行 ~470 条、生产单店千级；小店资料
+# 不足时本闸静默不生效。测试替身（MagicMock db）的 .all() len 恒 0，同一守卫
+# 挡下（替身不测本闸——本闸行为由 test_oov_gate 的真库种子覆盖）。
 OOV_MIN_CORPUS_ROWS = 100
 
 
@@ -472,11 +472,21 @@ def oov_verdict(db: Session, question: str) -> str | None:
     三条同时成立才判 OOV：宁可漏判走既有路径（拒答/作答），绝不误杀可答问句。
 
     调用方：引擎的 RAG 分支（目录/工具回落之后、LLM 生成之前），用**本问**而非
-    拼接 query（多轮拼接会让上一问的实体参与判定）。MCP/缺口验证不调——它们的
-    语义是「返回证据/验证命中」，不是「作答」。
+    拼接 query（多轮拼接会让上一问的实体参与判定）。返回串当前**只供判真**
+    （拒答文案仍是既有固定模板 + 问句摘要——「点名实体」的文案留作记债）。
+    MCP/缺口验证不调（裁决，见 closeout）：它们的语义是「返回证据/验证命中」，
+    不是「作答」——本闸是作答决策，不是检索排序（与 79 刀 rerank 的四出口同语义
+    不同类；把 OOV 下推到 retrieve 会让 MCP 搜索对「库里没有的实体」也空手而归，
+    那是另一条产品语义，未裁）。
     """
     stripped = _OPINION_RE.sub(" ", question)
     if not _normalize(stripped):
+        return None
+    if not query_terms(stripped):
+        # 早退（评审 P2）：纯停用字/无有效 bigram 的问句在全库查询之前返回。
+        # 注：字段问（「净含量是多少」）仍需查询——「库内字段名词表」要扫 chunk
+        # 才能抽（entity_terms 在其后判断）；本闸每 ask 多一次与 retrieve 同量级
+        # 的全库扫描，合并/缓存优化记债（评审 P2-4，千级语料可辩护）。
         return None
     rows = db.execute(
         select(Asset.title, RetrievalChunk.chunk)
@@ -491,11 +501,13 @@ def oov_verdict(db: Session, question: str) -> str | None:
             & (Asset.current_published_version_id == AssetVersion.id)
             & (Asset.status == "published"),
         )
+        .order_by(RetrievalChunk.id)
         .limit(_MAX_CANDIDATE_ROWS)
     ).all()
-    # 语料规模护栏（见 OOV_MIN_CORPUS_ROWS 注释）：小语料/测试替身不判——
-    # 小库的「零出现」不构成实体不存在的证据。
-    if not isinstance(rows, (list, tuple)) or len(rows) < OOV_MIN_CORPUS_ROWS:
+    # 语料规模护栏（见 OOV_MIN_CORPUS_ROWS 注释）：小语料不判——小库的「零出现」
+    # 不构成实体不存在的证据。测试替身的 .all() len 恒 0，自然走此门（评审 P2：
+    # 不为替身单留 isinstance 分支）。
+    if len(rows) < OOV_MIN_CORPUS_ROWS:
         return None
     corpus: set[str] = set()
     titles: dict[int, str] = {}

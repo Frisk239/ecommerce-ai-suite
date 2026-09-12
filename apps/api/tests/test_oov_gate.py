@@ -134,3 +134,29 @@ def test_oov_gate_leaves_normal_questions_alone(api: ApiFixture, monkeypatch: An
         outcome = asyncio.run(run_ask(db, session, "保温杯的净含量是多少"))
         assert outcome.answer.kind == "answer"
         assert outcome.fallback_reason is None
+
+
+def test_oov_verdict_affinity_condition_is_load_bearing(api: ApiFixture, monkeypatch: Any) -> None:
+    """承重钉子（评审 P1-1 E4 的反转）：**亲和条件**的判别力。
+
+    构造（单条件回退可验证）：问句含两段实体——一段在库（「雀巢咖啡」，标题与
+    chunk 都在）、一段零出现（「星巴克杯子」，连续 5 字）。零出现串条件成立，
+    span 也够；**只有亲和条件**（有资产被点名 -> 不判）把它挡下。删亲和条件
+    本断言必红（回退验证见 closeout）。
+    注：这是判据的**边界形态**（多实体混问只答库内那个），钉的是条件存在性，
+    不是「理想语义」（语义另记债）。
+    """
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        _seed_doc(db, "雀巢咖啡 规格", ["净含量：500ml"])
+        db.commit()
+        _open_corpus(monkeypatch)
+        from suite_api.services.retrieval import oov_verdict
+
+        assert oov_verdict(db, "请问雀巢咖啡和星巴克杯子的配料是什么") is None, (
+            "库内商品被点名（亲和>0）-> 不判 OOV：删亲和条件本断言必红"
+        )
+        # 同一问句去掉库内实体后，零出现串条件独立成立 -> 判 OOV（证明上一条
+        # 的「不判」确实由亲和条件承重，而非零出现串条件本身不成立）
+        assert oov_verdict(db, "请问星巴克杯子的配料是什么") == "星巴克杯子"
