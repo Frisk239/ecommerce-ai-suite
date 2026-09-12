@@ -499,7 +499,11 @@ def oov_verdict(db: Session, question: str) -> str | None:
             Asset,
             (Asset.id == AssetVersion.asset_id)
             & (Asset.current_published_version_id == AssetVersion.id)
-            & (Asset.status == "published"),
+            & (Asset.status == "published")
+            # 第 83 刀：废弃资产（0042 discarded_at）不进检索语料——治理台列表
+            # 过滤了它，但检索此前漏了：**已发布后废弃**的资产照样进候选
+            # （本刀实测「羊绒围巾」引用里出现刚废弃的资产）。
+            & (Asset.discarded_at.is_(None)),
         )
         .order_by(RetrievalChunk.id)
         .limit(_MAX_CANDIDATE_ROWS)
@@ -518,7 +522,9 @@ def oov_verdict(db: Session, question: str) -> str | None:
         chunk_texts.append(chunk)
     for asset_id, title in db.execute(
         select(Asset.id, Asset.title).where(
-            Asset.status == "published", Asset.current_published_version_id.isnot(None)
+            Asset.status == "published",
+            Asset.current_published_version_id.isnot(None),
+            Asset.discarded_at.is_(None),  # 第 83 刀：废弃资产不算「库内有此实体」
         )
     ):
         titles[asset_id] = title or ""
@@ -619,7 +625,10 @@ def retrieve(
             Asset,
             (Asset.id == AssetVersion.asset_id)
             & (Asset.current_published_version_id == AssetVersion.id)
-            & (Asset.status == "published"),
+            & (Asset.status == "published")
+            # 第 83 刀：废弃（0042 discarded_at）不进检索——此前只过滤 status，
+            # 「已发布后废弃」的资产仍在候选里（本刀实测引用里出现废弃资产）。
+            & (Asset.discarded_at.is_(None)),
         )
         .order_by(RetrievalChunk.id)
         .limit(_MAX_CANDIDATE_ROWS)

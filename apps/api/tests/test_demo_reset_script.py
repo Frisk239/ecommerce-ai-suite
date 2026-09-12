@@ -106,6 +106,26 @@ def test_apply_removes_empty_sessions_and_discards_probe_assets(session_factory)
         assert again == {"deleted_empty_sessions": 0, "discarded_probe_assets": 0}
 
 
+def test_plan_reports_published_assets_without_title(session_factory) -> None:
+    """第 83 刀：空标题已发布资产**只报告不清**（可能是 golden 引用的真实资料，
+    如退货政策资产；直接废弃会打掉评测期望——演示者照数去补齐标题）。"""
+    with session_factory() as db:
+        blank = _asset(db, source_kind="upload", title=None)
+        blank.status = "published"
+        titled = _asset(db, source_kind="upload", title="有标题的资产")
+        db.commit()
+
+        plan = demo_reset.plan(db)
+        assert plan["published_without_title"] >= 1
+
+        changed = demo_reset.apply_cleanup(db)
+        assert changed["discarded_probe_assets"] >= 0
+        db.expire_all()
+        # 只报告：空标题资产不被清
+        assert db.get(Asset, blank.id).discarded_at is None
+        assert db.get(Asset, titled.id).discarded_at is None
+
+
 def test_cli_requires_apply_flag(session_factory, capsys) -> None:
     """默认 dry-run：不传 --apply 绝不写库（清理不可逆）。"""
     url = os.environ["SUITE_TEST_DATABASE_URL"]
