@@ -117,7 +117,7 @@ def test_vendor_stream_answer_citations_and_prompts(
 
     # prompt 契约：被调一次；证据块带来源标注与字段值；不含任何密钥形态
     assert len(calls) == 1
-    assert f"[来源：A-{asset_id}·v1] 试饮装容量：520ml" in calls[0]["user"]
+    assert f"[来源：A-{asset_id}「厂商生成验证说明」·v1] 试饮装容量：520ml" in calls[0]["user"]
     assert "顾客问题：试饮装容量是多少？" in calls[0]["user"]
     assert "只依据" in calls[0]["system"]
     assert "sk-" not in calls[0]["user"] + calls[0]["system"]

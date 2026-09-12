@@ -484,6 +484,9 @@ async def run_ask(
         # 而演示库几乎任何问句都有命中，导致「X 多少钱」永远走 RAG 答「证据未
         # 覆盖价格」（行价白补齐了）。只对报价生效：列举仍要空命中闸。
         catalog = try_price_answer(db, question)
+    # 证据所属资料的元数据（标题）：降级模板（compose_answer）与厂商 prompt
+    # （build_prompts，第 81 刀起带资料名）共用同一份，避免重复查询。
+    meta = assets_meta(db, hits)
     if catalog is not None:
         is_catalog = True
         answer = ComposedAnswer(content=catalog.content, citations=[], kind="answer", handoff=False)
@@ -495,7 +498,7 @@ async def run_ask(
         resolve_gap_answered_by_catalog(db, question)
     else:
         is_catalog = False
-        answer = compose_answer(hits, assets_meta(db, hits))
+        answer = compose_answer(hits, meta)
     # 第 40 刀（ADR 0044 §二）忠实度闸：问句有效 bigram 与命中块并集的交集
     # 占比过低且证据单薄（≤1 条）时不调模型——覆盖不足时模型大概率编造，
     # 降级证据组装模板（复用既有 fallback 徽章通道；fallback_reason 随
@@ -519,7 +522,9 @@ async def run_ask(
     # 生成语言（指代消解），citations/tool 语义不变。
     generated: str | None = None
     if answer.kind == "answer" and not gate_fallback and not is_catalog:
-        system_prompt, user_prompt = llm.build_prompts(hits, question)
+        # 第 81 刀：证据行带所属资料名（meta 复用上面的查询）——模型据此确认
+        # 「这条证据属于顾客问的那个商品」，避免实体无法核验时的误拒。
+        system_prompt, user_prompt = llm.build_prompts(hits, question, meta)
         gen_history = (history if PRONOUN_RE.search(question) else []) + tool_history
         try:
             pieces: list[str] = []
