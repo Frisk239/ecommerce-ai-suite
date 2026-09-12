@@ -160,3 +160,26 @@ def test_oov_verdict_affinity_condition_is_load_bearing(api: ApiFixture, monkeyp
         # 同一问句去掉库内实体后，零出现串条件独立成立 -> 判 OOV（证明上一条
         # 的「不判」确实由亲和条件承重，而非零出现串条件本身不成立）
         assert oov_verdict(db, "请问星巴克杯子的配料是什么") == "星巴克杯子"
+
+
+def test_oov_verdict_span_threshold_is_load_bearing(api: ApiFixture, monkeypatch: Any) -> None:
+    """承重钉子（Spec 轴 P1 反转）：**连续串长度阈值**的单条件判别力。
+
+    构造：种子含「手机」bigram（chunk「手机支架通用配件」），使「华为手机的材质
+    是什么」的零出现串只有「华为/为手」= 3 字（阈值 4 挡下）。把 OOV_MIN_SPAN
+    降到 3，同一问句即判出——本测试内含**双向断言**，阈值改动必红。
+    （Spec 轴指出此前的「华为手机 span=3 不判」是双条件兜底、不构成承重实证。）
+    """
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        _seed_doc(db, "数码周边清单", ["手机支架通用配件", "材质：钛钢"])
+        db.commit()
+        _open_corpus(monkeypatch)
+        from suite_api.services import retrieval
+
+        # 阈值 4（生产值）：span=3 -> 不判
+        assert retrieval.oov_verdict(db, "华为手机的材质是什么") is None
+        # 阈值 3：同一问句判出 -> 阈值是唯一差别（单条件承重）
+        monkeypatch.setattr(retrieval, "OOV_MIN_SPAN", 3)
+        assert retrieval.oov_verdict(db, "华为手机的材质是什么") is not None
