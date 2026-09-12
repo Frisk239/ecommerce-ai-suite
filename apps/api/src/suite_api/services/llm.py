@@ -12,7 +12,8 @@
 - prompt 组装（`build_prompts`）：中文系统提示 + 结构化证据块 + 顾客问题。
   证据块 = 检索命中的切块（发布事务入索引的切块已含「字段：值」确认字段块，
   0010：confirmed 才进索引——字段值与切块文本同路，无第二条取数），各带
-  「来源：A-{id}·v{N}」标注（0007 版本口径）；引用最终由服务端从检索命中
+  「来源：A-{id}「资料名」·v{N}」标注（0007 版本口径；资料名为第 81 刀补的
+  归属信号，供模型核验证据实体）；引用最终由服务端从检索命中
   定（模型无引用决定权），系统提示明确要求模型不输出引用编号。
 - 多轮记忆（第 29 刀 feat/multi-turn）：`stream_chat` 增 history 参数——
   会话内最近轮映射为 user/assistant 消息插在 system 与本轮 user 之间；
@@ -21,6 +22,7 @@
 
 import asyncio
 import logging
+import re
 import uuid
 import weakref
 from collections.abc import AsyncIterator
@@ -47,9 +49,11 @@ SYSTEM_PROMPT = (
     # 第 81 刀：证据行方括号内带**所属资料名**（资产标题）——字段块本身常只有
     # 「条码：值」，商品名只在标题里；不告诉模型归属，它无法确认「这条证据就是
     # 顾客问的那个商品」，会在忠实性约束下自述「证据未覆盖」→ 被 no_coverage
-    # 闸收成拒答（审计刀 16 C 轴实测「M&M white的条码」6 次 3 拒的真因）。
-    "证据方括号内的资料名是该条证据所属的商品/资料，可用它确认证据与顾客问的是"
-    "同一个对象（证据块本身可能只含字段值）。\n"
+    # 闸收成拒答（审计刀 16 C 轴实测「M&M white的条码」6 次 3 拒；本刀 live
+    # 5/5 答支持该归因，但 audit-16 未分解生成侧/数据侧，归因属有实测支持的解释
+    # 而非定论——数据侧 title/正文品牌错配（OFF 导入）仍是残留面）。
+    "证据方括号内的资料名是该条证据所属的商品/资料（对话类为其首问摘要），"
+    "可用它确认证据与顾客问的是同一个对象（证据块本身可能只含字段值）。\n"
     "回答简洁，直接给结论与关键信息，不寒暄不闲聊。\n"
     # 第 40 刀（ADR 0044 §三）逐句引用约束：每个事实句标注依据的证据编号
     # （对应证据块「来源」顺序），证据未覆盖的内容不得陈述——最小版逐句引用
@@ -245,15 +249,23 @@ def build_prompts(
     资料名走 ``redact_contact``：对话资产标题=顾客首问原文，可能含联系方式
     （审计刀 8 先例；``redact`` 的覆盖不足，与 ``_first_question`` 同口径）。
     """
-    from suite_api.services.machine_wash import redact, redact_contact
+    from suite_api.services.machine_wash import redact_contact
 
     meta = assets_meta or {}
     lines = ["已发布证据："]
     for hit in hits[:_MAX_PROMPT_EVIDENCE]:
         title = redact_contact((meta.get(hit["asset_id"]) or {}).get("title")) or ""
+        # 标签结构净化（第 81 刀评审 P2）：title 是顾客可影响面（对话资产
+        # title=首问原文）——换行会把证据行裂成两行（「一行一证据」结构被破、
+        # 攻击者可让裸文本落在证据位），引号/方括号会提前闭合标签。折叠空白
+        # + 去标签冲突字符，锚定「一行一证据」不变式。
+        title = re.sub(r"\s+", " ", title).replace("「", "").replace("」", "").replace("[", "").replace("]", "")
         label = f"「{title}」" if title else ""
         lines.append(
             f"[来源：A-{hit['asset_id']}{label}·v{hit['version_no']}] {hit['chunk']}"
         )
-    lines.append(f"顾客问题：{redact(question)}")
+    # 问句行与资料名同口径强掩（评审 P2）：`redact` 对带分隔号码/短域邮箱覆盖
+    # 不足（审计刀 8 判例就在本文件注释里），顾客当轮问句与对话资产标题同为
+    # 顾客手打文本，不该一面强掩一面裸送。
+    lines.append(f"顾客问题：{redact_contact(question)}")
     return SYSTEM_PROMPT, "\n".join(lines)

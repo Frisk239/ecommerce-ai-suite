@@ -70,7 +70,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 
 ## 厂商生成（第 7 刀，ADR 0033）
 
-检索命中已发布证据时，回答由厂商大模型流式生成（OpenAI 兼容 Chat Completions，`openai` 官方包配 `base_url`）；证据块（命中切块含确认字段值，各带「来源：A-{id}·v{N}」标注）与顾客问题进 prompt。三个环境变量只写本机 `.env`（密钥不入库、不进日志/响应）：
+检索命中已发布证据时，回答由厂商大模型流式生成（OpenAI 兼容 Chat Completions，`openai` 官方包配 `base_url`）；证据块（命中切块含确认字段值，各带「来源：A-{id}「资料名」·v{N}」标注——资料名供模型核验证据归属，第 81 刀修「检索命中却被误拒」）与顾客问题进 prompt。三个环境变量只写本机 `.env`（密钥不入库、不进日志/响应）：
 
 | 变量 | 说明 |
 | --- | --- |
