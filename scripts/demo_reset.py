@@ -82,6 +82,14 @@ def plan(session: Any) -> dict[str, int]:
         ),
         "sessions_total": _one(session, "SELECT count(*) FROM service_sessions"),
         "audit_rows": _one(session, "SELECT count(*) FROM audit_log"),
+        # 第 83 刀：空标题**已发布**资产（提示而非自动清）——可能是 golden 引用的
+        # 真实资料（如退货政策资产），补齐标题即可；直接废弃会打掉评测期望。
+        # 演示者照此数去看 assets 页补齐，别指望 demo_reset 清。
+        "published_without_title": _one(
+            session,
+            "SELECT count(*) FROM assets WHERE status = 'published' AND discarded_at IS NULL"
+            " AND (title IS NULL OR btrim(title) = '')",
+        ),
     }
     return {"empty_sessions": empty_sessions, "probe_assets": probe_assets, **report}
 

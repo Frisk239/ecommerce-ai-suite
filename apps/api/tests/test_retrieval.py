@@ -584,3 +584,28 @@ def test_retrieve_entity_affinity_overrides_shorter_rival(api: object) -> None:
 
         hits = retrieve(db, "雀巢奶粉的净含量是多少")
         assert hits[0]["asset_id"] == named_id, "点名资产须靠亲和赢过更短的他品块"
+
+
+def test_retrieve_excludes_discarded_published_asset(api: object) -> None:
+    """第 83 刀：**已发布后废弃**（0042 discarded_at）的资产不进检索候选。
+
+    此前 retrieve 只过滤 status='published'——废弃资产照样进候选（实测
+    「羊绒围巾起球怎么办」的引用里出现刚废弃的资产）。0042 语义是「标记隐藏」，
+    检索面必须同口径。
+    """
+    from suite_api.models import Asset
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        body = "羊绒围巾起球：使用去球器轻剃"
+        kept = _seed_published_asset(db, "羊绒围巾起球处理", [body], "upload")
+        dropped = _seed_published_asset(db, "羊绒围巾起球处理（副本）", [body], "upload")
+        db.commit()
+        db.get(Asset, dropped).discarded_at = datetime.now(UTC)
+        db.commit()
+
+        hits = retrieve(db, "羊绒围巾起球怎么办")
+        ids = [h["asset_id"] for h in hits]
+        assert kept in ids
+        assert dropped not in ids, "废弃资产不得进检索候选"
