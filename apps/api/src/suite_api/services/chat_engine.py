@@ -100,6 +100,7 @@ from suite_api.services.retrieval import (
     FIDELITY_MIN_COVERAGE,
     coverage_ratio,
     is_opinion_question,
+    oov_verdict,
     retrieve,
 )
 from suite_api.services.return_tools import (
@@ -511,6 +512,17 @@ async def run_ask(
         and len(hits) <= 1
         and (coverage_ratio(query_text, [hit["chunk"] for hit in hits]) < FIDELITY_MIN_COVERAGE)
     )
+    # 第 82 刀 实体存在性闸（OOV 收口）：问句点名了**库内不存在**的实体时不调
+    # 模型、也不引他品证据——直接走拒答通道（缺口/工单/文案复用既有出口：这是
+    # 真实的「知识待补」信号）。症状见 oov_verdict docstring（雀巢咖啡→花生酱）。
+    # 用**本问**判定（多轮拼接的上一问实体不参与）；目录/工具路径已在上方 return。
+    oov_entity = (
+        oov_verdict(db, question) if (not is_catalog and answer.kind == "answer") else None
+    )
+    if oov_entity is not None:
+        answer = ComposedAnswer(
+            content=REFUSAL_CONTENT, citations=[], kind="refusal", handoff=True
+        )
     # 结束只读事务：LLM 等待（至多 20s）不得 idle-in-transaction 占连接。
     # 写阶段（agent 消息）autobegin 再取连接。citations 仍以本问检索快照为准。
     db.commit()
@@ -615,7 +627,8 @@ async def run_ask(
         # 已执行），不补检索状态行——retrieved_after_tool 只属于提议步混意图。
         retrieved_after_tool=tool_record is not None and not is_catalog,
         fallback_reason=(
-            "coverage" if gate_fallback else ("no_coverage" if no_coverage else None)
+            "oov" if oov_entity is not None
+            else ("coverage" if gate_fallback else ("no_coverage" if no_coverage else None))
         ),
         ticket=ticket,
     )
