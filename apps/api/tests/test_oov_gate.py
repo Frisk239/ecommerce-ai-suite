@@ -1,0 +1,136 @@
+"""第 82 刀 实体存在性闸（OOV）测试：判据 + 引擎收口 + 语料护栏。
+
+症状（审计刀 16 C 轴）：问「雀巢咖啡的配料是什么」（库内无此商品）会引花生酱/
+雪糕的配料作答——用户看到别人家商品的资料。判据见 retrieval.oov_verdict。
+
+注：`OOV_MIN_CORPUS_ROWS` 护栏（小语料不判，见该常量注释）在测试库里恒触发，
+本文件按需 monkeypatch 放开——测试种子的语料规模由测试自己声明，与生产小店的
+「数据不足不启用」判据是两件事（刀 82 评审记：护栏本身另有钉子）。
+"""
+
+import asyncio
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from fastapi.testclient import TestClient
+
+from suite_api.models import Asset, AssetVersion, KnowledgeGap, RetrievalChunk, ServiceSession
+
+ApiFixture = tuple[TestClient, Any]
+
+
+def _seed_doc(db: Any, title: str, chunks: list[str], source_kind: str = "upload") -> int:
+    asset = Asset(kind="document", status="published", source_kind=source_kind, title=title)
+    db.add(asset)
+    db.flush()
+    version = AssetVersion(asset_id=asset.id, version_no=1, object_key="oov-test-key")
+    db.add(version)
+    db.flush()
+    asset.current_published_version_id = version.id
+    for seq, text in enumerate(chunks, 1):
+        db.add(RetrievalChunk(asset_id=asset.id, version_no=1, seq=seq, chunk=text))
+    return asset.id
+
+
+def _make_session(client: TestClient, token: str) -> tuple[int, ServiceSession]:
+    factory = client.app.state.session_factory
+    with factory() as db:
+        session = ServiceSession(
+            status="active",
+            customer_token=token,
+            customer_token_expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+        db.add(session)
+        db.commit()
+        return session.id, session
+
+
+def _open_corpus(monkeypatch: Any) -> None:
+    """放开语料护栏（测试库种子小，见文件 docstring）。"""
+    from suite_api.services import retrieval
+
+    monkeypatch.setattr(retrieval, "OOV_MIN_CORPUS_ROWS", 0)
+
+
+def test_oov_verdict_flags_absent_entity_only(api: ApiFixture, monkeypatch: Any) -> None:
+    """判据四类真库验证：OOV 判实体串；字段问/正例/同义改写一律 None。"""
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        _seed_doc(db, "保温杯 规格", ["净含量：500ml", "材质：钛钢", "保温效果出色"])
+        _seed_doc(db, "退货政策说明", ["签收后7天内可申请退货"])
+        db.commit()
+        _open_corpus(monkeypatch)
+        from suite_api.services.retrieval import oov_verdict
+
+        # OOV：库内无此实体 -> 返回实体串
+        assert oov_verdict(db, "雀巢咖啡的配料是什么") == "雀巢咖啡"
+        assert oov_verdict(db, "星巴克杯子的价格是多少") == "星巴克杯子"
+        # 纯字段问（无实体）-> 不判（否则字段问全被拒）
+        assert oov_verdict(db, "净含量是多少") is None
+        assert oov_verdict(db, "材质是什么") is None
+        # 库内有该实体 -> 不判
+        assert oov_verdict(db, "保温杯的净含量是多少") is None
+        # 同义改写（零出现串分散、共享单字）-> 不判
+        assert oov_verdict(db, "请问退换政策说明值得入手吗") is None
+
+
+def test_oov_verdict_respects_corpus_guard(api: ApiFixture) -> None:
+    """护栏钉子：不放开语料护栏时，小语料库一律不判（数据不足不启用）。"""
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        _seed_doc(db, "保温杯 规格", ["净含量：500ml"])
+        db.commit()
+        from suite_api.services.retrieval import oov_verdict
+
+        assert oov_verdict(db, "雀巢咖啡的配料是什么") is None
+
+
+def test_oov_gate_refuses_instead_of_citing_other_product(
+    api: ApiFixture, monkeypatch: Any
+) -> None:
+    """引擎收口：问库内不存在的实体 -> 拒答（不引他品证据）+ fallback_reason=oov
+    + 缺口照落（真实的「知识待补」信号）。"""
+    from suite_api.services.chat_engine import run_ask
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        _seed_doc(
+            db,
+            "M&M white 规格（OFF）",
+            ["配料：花生、糖", "净含量：500g"],
+            source_kind="openfoodfacts",
+        )
+        db.commit()
+        session_id, session = _make_session(client, "oov-refuse-token")
+        session = db.get(ServiceSession, session_id)
+        _open_corpus(monkeypatch)
+
+        outcome = asyncio.run(run_ask(db, session, "雀巢咖啡的配料是什么"))
+        # 收口为拒答：不把 M&M white 的配料当作雀巢咖啡的答案
+        assert outcome.answer.kind == "refusal"
+        assert outcome.answer.citations == []
+        assert outcome.answer.handoff is True
+        assert outcome.fallback_reason == "oov"
+        # 缺口照落（知识待补）
+        assert db.query(KnowledgeGap).filter(KnowledgeGap.question == "雀巢咖啡的配料是什么").count() >= 1
+
+
+def test_oov_gate_leaves_normal_questions_alone(api: ApiFixture, monkeypatch: Any) -> None:
+    """反向钉子：库内有该实体时照常作答（OOV 闸不许碰正常问句）。"""
+    from suite_api.services.chat_engine import run_ask
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        _seed_doc(db, "保温杯 规格", ["净含量：500ml"])
+        db.commit()
+        session_id, _ = _make_session(client, "oov-normal-token")
+        session = db.get(ServiceSession, session_id)
+        _open_corpus(monkeypatch)
+
+        outcome = asyncio.run(run_ask(db, session, "保温杯的净含量是多少"))
+        assert outcome.answer.kind == "answer"
+        assert outcome.fallback_reason is None

@@ -422,6 +422,123 @@ def title_affinity(terms: frozenset[str], title: str | None, idf: dict[str, floa
     return covered / total
 
 
+# ---------- 实体存在性闸（OOV 收口，第 82 刀） ----------
+
+# 判据常量（实验矩阵定稿，scripts/eval/oov_criterion.py；见 rag-eval-report §82）：
+# 实体段里「连续零出现串」的最短字数——专名形态（雀巢咖啡/星巴克杯子/戴森吸尘器）。
+# 取 4 是刻意的保守值：3 字会把「你们卖什么」（3 字）与同义改写（syn-005 的
+# 「退换政策说明」零出现串 3 字）卷进来（刀 12 口径：误判比漏检贵）。代价是
+# 「华为手机」（3 字）漏判走既有拒答路径——可接受。
+OOV_MIN_SPAN = 4
+
+# 语料规模护栏（条）：零出现信号在**小语料**上不可靠——库内文本太少时「零出现」
+# 几乎是必然（测试种子 ~30 chunk 实测误杀 7 例既有用例）。低于此条数不判 OOV、
+# 退回既有路径（39 刀「NULL 不降权」同族的保守裁决：数据条件不足时不启用）。
+# 演示库 483 条、生产单店千级；小店资料不足时本闸静默不生效。测试替身
+# （MagicMock db）的 .all() 不是序列，同一守卫一并挡下（替身不测本闸——本闸的
+# 确定性行为由 golden_engine 的 case 在真库种子上覆盖）。
+OOV_MIN_CORPUS_ROWS = 100
+
+
+def _field_name_terms(chunks: list[str]) -> frozenset[str]:
+    """库内字段名词表（数据驱动，免手工维护）：从「字段：值」行块的字段名抽 bigram。
+
+    净含量/条码/品牌/配料… 这些词在库内遍地出现，不该算「实体段」的一部分——
+    问「乐事薯片的净含量是多少」的实体是「乐事薯片」，不是「净含量」。
+    """
+    terms: set[str] = set()
+    for chunk in chunks:
+        match = FIELD_LINE_RE.match(chunk)
+        if match:
+            terms |= query_terms(chunk.split("：")[0].split(":")[0])
+    return frozenset(terms)
+
+
+def oov_verdict(db: Session, question: str) -> str | None:
+    """问句疑似点名了**库内不存在**的实体时返回该实体串（供拒答文案），否则 None。
+
+    症状（审计刀 16 C 轴实测）：问「雀巢咖啡的配料是什么」（库内无此商品）会引
+    花生酱/雪糕的配料作答——用户看到别人家商品的资料；同形态的「乐事薯片」却
+    拒答，归宿随机（取决于模型措辞）。
+
+    判据（实验矩阵定稿，golden 96 条零误杀——命中 10 条全为 refusal 组）：
+    1. 问句剔除观点标记（`_OPINION_RE`）与库内字段名词后取有效 bigram（**实体段**）；
+    2. 实体段存在 ≥ ``OOV_MIN_SPAN`` 字的**连续零出现串**（该串的全部 bigram 不在
+       库内任何已发布文本里）——专名形态；同义改写的零出现串是分散的（「退换政策
+       说明」对库内「退货政策说明」），串长够不到；纯字段问的实体段为空；
+    3. 且实体段对**全部已发布资产标题**的最高亲和（第 79 刀信号）为 0——没有任何
+       资产被点名（真匹配如「保温杯」（aff=1.0）、中间地带如「Erdbeeren 巧克力」
+       （aff=0.75）都被这一条挡下）。
+    三条同时成立才判 OOV：宁可漏判走既有路径（拒答/作答），绝不误杀可答问句。
+
+    调用方：引擎的 RAG 分支（目录/工具回落之后、LLM 生成之前），用**本问**而非
+    拼接 query（多轮拼接会让上一问的实体参与判定）。MCP/缺口验证不调——它们的
+    语义是「返回证据/验证命中」，不是「作答」。
+    """
+    stripped = _OPINION_RE.sub(" ", question)
+    if not _normalize(stripped):
+        return None
+    rows = db.execute(
+        select(Asset.title, RetrievalChunk.chunk)
+        .join(
+            AssetVersion,
+            (AssetVersion.asset_id == RetrievalChunk.asset_id)
+            & (AssetVersion.version_no == RetrievalChunk.version_no),
+        )
+        .join(
+            Asset,
+            (Asset.id == AssetVersion.asset_id)
+            & (Asset.current_published_version_id == AssetVersion.id)
+            & (Asset.status == "published"),
+        )
+        .limit(_MAX_CANDIDATE_ROWS)
+    ).all()
+    # 语料规模护栏（见 OOV_MIN_CORPUS_ROWS 注释）：小语料/测试替身不判——
+    # 小库的「零出现」不构成实体不存在的证据。
+    if not isinstance(rows, (list, tuple)) or len(rows) < OOV_MIN_CORPUS_ROWS:
+        return None
+    corpus: set[str] = set()
+    titles: dict[int, str] = {}
+    chunk_texts: list[str] = []
+    for title, chunk in rows:
+        corpus |= query_terms(title or "")
+        corpus |= query_terms(chunk)
+        chunk_texts.append(chunk)
+    for asset_id, title in db.execute(
+        select(Asset.id, Asset.title).where(
+            Asset.status == "published", Asset.current_published_version_id.isnot(None)
+        )
+    ):
+        titles[asset_id] = title or ""
+
+    entity_terms = query_terms(stripped) - _field_name_terms(chunk_texts)
+    if not entity_terms:
+        return None
+    miss = entity_terms - corpus
+    if not miss:
+        return None
+    # 最长连续零出现串（在归一化串上逐位扫；记起点以便回切实体串）
+    norm = _normalize(stripped)
+    longest = current = 0
+    best_start = 0
+    for i in range(len(norm) - 1):
+        if norm[i : i + 2] in miss:
+            current += 1
+            if current > longest:
+                longest = current
+                best_start = i - current + 1
+        else:
+            current = 0
+    span = longest + 1 if longest else 0
+    if span < OOV_MIN_SPAN:
+        return None
+    idf = title_idf(list(titles.values()))
+    if any(title_affinity(entity_terms, t, idf) > 0.0 for t in titles.values()):
+        return None
+    # 返回实体串（归一化形态，去掉了标点/虚词）供拒答文案点名
+    return norm[best_start : best_start + span]
+
+
 # ---------- 检索（只查当前已发布版本，join 保证） ----------
 
 

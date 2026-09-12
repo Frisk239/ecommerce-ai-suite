@@ -145,14 +145,15 @@ csat_ratings_total = Counter(
 
 # 闸回退（第 63 刀，审计刀 7 起记债、审计刀 12 建议 3）：reason 与引擎
 # `AskOutcome.fallback_reason` 同源——coverage=忠实度闸把生成降级为证据模板
-# （ADR 0044 §二）、no_coverage=模型自述证据未覆盖按拒答收口（第 58 刀）。
+# （ADR 0044 §二）、no_coverage=模型自述证据未覆盖按拒答收口（第 58 刀）、
+# oov=实体存在性闸按拒答收口（第 82 刀：问句点名的实体不在库，不引他品证据）。
 # 普通厂商失败降级为 None（不计数）——那不是闸在回退，是网关/厂商问题，
 # 混进来会污染「闸回退率」。other 是防御位：引擎将来加了新 reason 而
 # 这里没跟上，宁可落 other 也不让陌生值进标签（基数纪律）。
-_FALLBACK_REASONS = ("coverage", "no_coverage")
+_FALLBACK_REASONS = ("coverage", "no_coverage", "oov")
 chat_fallbacks_total = Counter(
     "chat_fallbacks_total",
-    "闸回退次数（coverage=忠实度闸降级 / no_coverage=证据未覆盖按拒答收口 / other=未知原因防御位）。",
+    "闸回退次数（coverage=忠实度闸降级 / no_coverage=证据未覆盖按拒答收口 / oov=实体不在库按拒答收口 / other=未知原因防御位）。",
     ["channel", "reason"],
 )
 
