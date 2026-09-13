@@ -26,7 +26,11 @@ _SUMMARY_MAX_CHARS = 60
 
 
 def build_refusal_handoff_content(
-    question: str, gap_id: int | None = None, *, missing_entity: str | None = None
+    question: str,
+    gap_id: int | None = None,
+    *,
+    missing_entity: str | None = None,
+    known_product: str | None = None,
 ) -> str:
     """拒答落库消息的完整文本（第 27 刀，词条「转人工」：交接带结构化摘要）。
 
@@ -46,13 +50,19 @@ def build_refusal_handoff_content(
     # 第 84 刀：实体存在性闸（OOV）命中时首行点名未收录对象——比「没有能回答
     # 这个问题的证据」精确（「资料里没有『雀巢咖啡』的信息」直接告诉顾客差什么）；
     # 非 OOV 路径首行仍是 REFUSAL_CONTENT 常量原样（既有全等断言不破）。
-    head = (
-        # 实体串过 redact（0038 出口必掩）：_normalize 保留数字，手机号问句可能
-        # 成为 OOV 实体串——同消息摘要行同口径（评审 P1）。
-        f"抱歉，已发布资料里没有与「{redact(missing_entity)}」相关的信息，已记录并转人工处理。"
-        if missing_entity
-        else REFUSAL_CONTENT
-    )
+    # 第 86 刀：OOV 两类分说（实体串过 redact——_normalize 保留数字，手机号问句
+    # 可能成为实体串，0038 出口必掩）：
+    # - 商品在库但资料没上架 -> 「资料还在补充中」（同时落知识缺口）
+    # - 商品不在库 -> 「本店暂时没有这款」（只建工单，不落缺口）
+    if missing_entity:
+        entity = redact(missing_entity)
+        head = (
+            f"「{entity}」的商品资料还在补充中，已记录并转人工处理。"
+            if known_product
+            else f"本店暂时没有「{entity}」这款商品，已记录并转人工处理。"
+        )
+    else:
+        head = REFUSAL_CONTENT
     parts = [head, f"问句摘要：{summary}"]
     if gap_id is not None:
         parts.append(f"缺口：G-{gap_id:04d}")

@@ -100,6 +100,7 @@ from suite_api.services.retrieval import (
     FIDELITY_MIN_COVERAGE,
     coverage_ratio,
     is_opinion_question,
+    oov_product_match,
     oov_verdict,
     retrieve,
 )
@@ -519,7 +520,10 @@ async def run_ask(
     oov_entity = (
         oov_verdict(db, question) if (not is_catalog and answer.kind == "answer") else None
     )
+    oov_product: str | None = None
     if oov_entity is not None:
+        # 第 86 刀：OOV 实体是否对应本店在售商品/类目——决定文案与是否落缺口
+        oov_product = oov_product_match(db, oov_entity)
         answer = ComposedAnswer(
             content=REFUSAL_CONTENT, citations=[], kind="refusal", handoff=True
         )
@@ -604,12 +608,18 @@ async def run_ask(
         # 于是「库存已答」「RAG 已答」的问句仍挂着「待补」（点「去补文档」误人）。
         resolve_gap_answered_by_catalog(db, question)
     if answer.kind == "refusal":
-        # 带上来源会话（走查修复）：操作者能从缺口抽屉跳回这条原始对话
-        gap = record_refusal_gap(db, question, session_id=session.id)
+        # 第 86 刀：**「本店没有这款商品」不落知识缺口**——缺口池语义是「知识待补」
+        # （点「去补文档」能补出来），而「本店不经营」补文档也补不出来；此类只建
+        # 工单（需求信号/销售线索）。商品在库但资料缺（oov_product 非空）照落缺口。
+        gap = None
+        if not (oov_entity is not None and oov_product is None):
+            # 带上来源会话（走查修复）：操作者能从缺口抽屉跳回这条原始对话
+            gap = record_refusal_gap(db, question, session_id=session.id)
         agent_message.content = build_refusal_handoff_content(
             question,
             gap.id if expose_gap_id and gap is not None else None,
             missing_entity=oov_entity,  # 第 84 刀：OOV 首行点名未收录对象
+            known_product=oov_product,  # 第 86 刀：在库=资料待补 / 不在库=本店没有
         )
         # 第 42 刀（ADR 0046 §2）：拒答也建/取工单——前端见 handoff=true 已亮
         # 「已转人工」徽章，必须真有东西接住。同事务 create-or-get；**拒答消息

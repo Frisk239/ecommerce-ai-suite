@@ -35,7 +35,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from suite_api.models import Asset, AssetVersion, RetrievalChunk
+from suite_api.models import Asset, AssetVersion, Product, RetrievalChunk
 from suite_api.services.machine_wash import QA_FIELD, redact
 from suite_api.services.synonyms import apply_synonyms
 from suite_platform.storage import ObjectStorage
@@ -453,6 +453,57 @@ def _field_name_terms(chunks: list[str]) -> frozenset[str]:
         if match:
             terms |= query_terms(chunk.split("：")[0].split(":")[0])
     return frozenset(terms)
+
+
+def oov_product_match(db: Session, entity: str) -> str | None:
+    """OOV 实体串是否对应**本店在售**（商品名双向包含 / 类目名或别名命中）。
+
+    第 86 刀（Owner 裁决）：顾客问到未上架商品是**必然且重要**的（他不知道店里
+    有什么，主动点名商品=最高价值的意图信号）。OOV 收口要区分两种本质不同的事：
+    - 商品在库但资料没上架 -> 「资料还在补充中」+ **落知识缺口**（确实是知识待补）
+    - 商品不在库 -> 「本店暂时没有这款」+ **只建工单不落缺口**（不是知识问题，
+      补文档也补不出来；缺口池语义=知识待补，不该被经营范围问题污染）
+    两种都建工单（42 刀语义：顾客要人）。
+
+    判据（预热测量定稿）：实体串与商品名**双向包含**（「保温杯」⊂「钛钢保温杯」；
+    库外实体 0.00–0.20），或命中类目名/别名（「笔记本电脑」是类目，商品名是具体
+    型号——不补这条会把它误报成「本店无此商品」）。返回命中的商品名/类目名。
+    """
+    from suite_api.services.catalog_tools import CATEGORY_ALIASES  # 延迟导入避循环
+
+    normalized = _normalize(entity)
+    if not normalized:
+        return None
+    products = db.execute(select(Product.name, Product.category)).all()
+    universe = {category for _n, category in products if category}
+    # 只收「真有商品」的类目（评审 P2：零商品的目标类目不该报在库——与
+    # catalog_tools.category_targets 的 `target in universe` 同口径、单一真源）
+    categories = set(universe)
+    categories |= {alias for alias, target in CATEGORY_ALIASES.items() if target in universe}
+    # 两个方向语义不同（预热测量后收紧）：
+    # - 实体串 ⊂ 库内名（顾客用简称：「保温杯」⊂「钛钢保温杯」）——任意长度命中；
+    # - 库内名 ⊂ 实体串（实体里含一个库内名片段）——**要求库内名 ≥3 字**，否则
+    #   短泛词会把库外实体误命中（实测「星巴克杯子」被商品名片段「杯子」命中）。
+    def matched(candidate: str) -> bool:
+        token = _normalize(candidate)
+        if not token:
+            return False
+        # 方向 A：顾客用简称（实体串 ⊂ 库内名，如「保温杯」⊂「钛钢保温杯」）——任意长度
+        if normalized in token:
+            return True
+        # 方向 B：实体串里含库内名片段——要求库内名 ≥3 字**且覆盖率 ≥0.6**
+        # （评审 P1：裸子串会让「小米电视机顶盒」被「电视机」误命中 = 把库外
+        # 实体说成在库，正中本刀要堵的洞；62 刀在报价/库存侧的纯度闸同源）。
+        # 「星巴克杯子」被「杯子」（2 字）误命中由长度闸挡下。
+        return len(token) >= 3 and token in normalized and len(token) / len(normalized) >= 0.6
+
+    for alias in sorted(categories, key=len, reverse=True):
+        if matched(alias):
+            return alias
+    for name, _category in products:
+        if matched(name or ""):
+            return name
+    return None
 
 
 # 语料快照缓存（第 85 刀性能）：模块级单槽（键校验，读到旧值也不会错——摘要不符即重建）。
