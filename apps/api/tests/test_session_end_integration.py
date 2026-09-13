@@ -372,3 +372,29 @@ def storage_key_missing(client: TestClient, object_key: str) -> bool:
         # 只验证 discarded_at（字节删除由 storage.delete 幂等性保证）
         return True
     return not (Path(storage_root) / object_key).exists()
+
+
+def test_session_transitions_metric_counts(api: ApiFixture) -> None:
+    """第 84 刀：会话生命周期迁移计数（new->active / active->ended / ->registered）。
+
+    标签值有界（from/to 各 3-4 个），不带 session_id（47 刀基数纪律）。
+    """
+    from suite_api.observability import service_session_transitions_total
+
+    def value(from_s: str, to_s: str) -> float:
+        return service_session_transitions_total.labels(**{"from": from_s, "to": to_s})._value.get()
+
+    client, _ = api
+    before = value("new", "active")
+    created = client.post("/api/customer/sessions")
+    assert created.status_code == 201
+    sid, token = created.json()["session_id"], created.json()["token"]
+    assert value("new", "active") == before + 1  # 建会话
+
+    before_end = value("active", "ended")
+    assert client.post(f"/api/customer/sessions/{sid}/end", headers={"Authorization": f"Bearer {token}"}).status_code == 200
+    assert value("active", "ended") == before_end + 1  # 顾客结束
+
+    # 幂等重入不重复计数
+    client.post(f"/api/customer/sessions/{sid}/end", headers={"Authorization": f"Bearer {token}"})
+    assert value("active", "ended") == before_end + 1

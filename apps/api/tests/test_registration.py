@@ -207,7 +207,9 @@ def test_retry_machine_wash_releases_transaction_before_llm(
     db = _TxnRecordingDb()
     storage = _MemoryStorage()
     storage.put_bytes("dialogue/x/y.txt", _TRANSCRIPT)
-    asset = SimpleNamespace(kind="dialogue", status="ingested", last_error="旧失败", id=1)
+    asset = SimpleNamespace(
+        kind="dialogue", status="ingested", last_error="旧失败", id=1, discarded_at=None
+    )
     version = SimpleNamespace(asset_id=1, version_no=1, object_key="dialogue/x/y.txt")
     seen: dict[str, Any] = {}
 

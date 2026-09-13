@@ -6,6 +6,7 @@
 _can_discard_asset），模型实例直构即测，无需数据库。
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from suite_api.models import Asset, AssetVersion
@@ -160,3 +161,20 @@ def test_delete_version_bytes_idempotent_on_missing_key(tmp_path: Path) -> None:
     # storage.delete 幂等：键不存在不抛（废弃路径对悬空键安全）
     storage = LocalDirectoryStorage(tmp_path)
     _delete_version_bytes(storage, [_version(object_key="documents/gone/eeeeeeeeeeeeeeee.txt")])
+
+
+def test_can_publish_rejects_discarded_asset() -> None:
+    """第 84 刀：已废弃资产不可再发布（83 刀评审记债）。
+
+    否则「废弃=隐藏」（0042）与「可发新版」冲突——发出去的新版在检索/导出面
+    因 discarded 过滤恒不可见，治理上是黑洞（操作者见发布成功、顾客永查不到）。
+    """
+    from suite_api.routes.assets import _can_publish
+
+    version = _version(published=False)
+    # 已发布资产上的未发布修订：正常可发
+    live = _asset(status="published", pointer=1)
+    assert _can_publish(live, version) is True
+    # 同一形态 + 已废弃 -> 拒绝
+    live.discarded_at = datetime.now(UTC)
+    assert _can_publish(live, version) is False

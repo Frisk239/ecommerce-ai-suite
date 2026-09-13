@@ -25,7 +25,9 @@ _MAX_EVIDENCE = 2  # 多源命中最多引 1-2 条（宁少而准，0018 宁缺�
 _SUMMARY_MAX_CHARS = 60
 
 
-def build_refusal_handoff_content(question: str, gap_id: int | None = None) -> str:
+def build_refusal_handoff_content(
+    question: str, gap_id: int | None = None, *, missing_entity: str | None = None
+) -> str:
     """拒答落库消息的完整文本（第 27 刀，词条「转人工」：交接带结构化摘要）。
 
     结构：REFUSAL_CONTENT（常量原样，既有全等断言不破）+ 换行 +
@@ -41,7 +43,17 @@ def build_refusal_handoff_content(question: str, gap_id: int | None = None) -> s
     """
     masked = redact(question)
     summary = masked[:_SUMMARY_MAX_CHARS] + ("…" if len(masked) > _SUMMARY_MAX_CHARS else "")
-    parts = [REFUSAL_CONTENT, f"问句摘要：{summary}"]
+    # 第 84 刀：实体存在性闸（OOV）命中时首行点名未收录对象——比「没有能回答
+    # 这个问题的证据」精确（「资料里没有『雀巢咖啡』的信息」直接告诉顾客差什么）；
+    # 非 OOV 路径首行仍是 REFUSAL_CONTENT 常量原样（既有全等断言不破）。
+    head = (
+        # 实体串过 redact（0038 出口必掩）：_normalize 保留数字，手机号问句可能
+        # 成为 OOV 实体串——同消息摘要行同口径（评审 P1）。
+        f"抱歉，已发布资料里没有与「{redact(missing_entity)}」相关的信息，已记录并转人工处理。"
+        if missing_entity
+        else REFUSAL_CONTENT
+    )
+    parts = [head, f"问句摘要：{summary}"]
     if gap_id is not None:
         parts.append(f"缺口：G-{gap_id:04d}")
     return "\n".join(parts)

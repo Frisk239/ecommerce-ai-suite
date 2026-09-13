@@ -196,8 +196,15 @@ def _write_back_product(product: Product | None, asset: Asset, version: AssetVer
 
 
 def _can_publish(asset: Asset, version: AssetVersion) -> bool:
-    """待人洗首发，或已发布资产上的未发布修订。"""
+    """待人洗首发，或已发布资产上的未发布修订。
+
+    第 84 刀（83 刀评审记债）：已废弃资产（0042 discarded_at）不可再发布——
+    否则「废弃=隐藏」与「可发新版」冲突（发出去的新版在检索/导出面恒不可见，
+    治理上是个黑洞：操作者看到发布成功、顾客永远查不到）。
+    """
     if version.published_at is not None:
+        return False
+    if asset.discarded_at is not None:
         return False
     return asset.status == PENDING_REVIEW or (
         asset.status == PUBLISHED and asset.current_published_version_id is not None
@@ -209,7 +216,11 @@ def _can_publish(asset: Asset, version: AssetVersion) -> bool:
 
 def _can_replace_version_bytes(asset: Asset, version: AssetVersion) -> bool:
     """换字节闸门（纯谓词）：仅未发布且非当前指针的版本可换（待人洗修订版/
-    新登记版均属此类）；published_at 已非空或指针所指（线上版）恒 False。"""
+    新登记版均属此类）；published_at 已非空或指针所指（线上版）恒 False。
+    第 84 刀：已废弃资产（0042）恒 False——改字节对隐藏资产无意义，且留写口
+    会与「废弃=只读终态」的口径冲突。"""
+    if asset.discarded_at is not None:
+        return False
     return version.published_at is None and version.id != asset.current_published_version_id
 
 
@@ -402,6 +413,14 @@ def retry_machine_wash(
     """
     del operator
     asset = _get_asset_or_404(db, asset_id)
+    # 第 84 刀（评审 P1）：废弃资产不可重试——否则 discarded -> pending_review，
+    # 而此后 publish 拒（新闸）、再 discard 拒（要求 INGESTED）、全仓无 un-discard
+    # = 永久隐藏僵尸；且此形态下 asset_view 的 can_publish 会显示「可发布」。
+    if asset.discarded_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="已废弃的资产不能再重试",
+        )
     if asset.status != INGESTED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
