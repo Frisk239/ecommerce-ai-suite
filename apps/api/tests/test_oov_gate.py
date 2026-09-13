@@ -223,3 +223,41 @@ def test_oov_gate_message_contains_entity(api: ApiFixture, monkeypatch: Any) -> 
             .one()
         )
         assert msg.content.startswith("抱歉，已发布资料里没有与「星巴克杯子」相关的信息")
+
+
+def test_corpus_snapshot_cache_invalidates_on_asset_change(
+    api: ApiFixture, monkeypatch: Any
+) -> None:
+    """第 85 刀：语料快照缓存必须在资产集合/标题/废弃位变化后失效——
+    否则 OOV 判定会拿旧语料（新增商品后仍拒答、废弃后仍当在库）。"""
+    from suite_api.models import Asset
+    from suite_api.services import retrieval
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        _open_corpus(monkeypatch)
+        # 用本文件其它用例未种过的实体（module 共享库，踩过两次顺序依赖）
+        Q = "戴森吸尘器的配料是什么"
+        # ① 初始：库内无该实体 -> 判 OOV
+        assert retrieval.oov_verdict(db, Q) == "戴森吸尘器"
+        # ② 新增标题含该实体的已发布资产 -> 缓存须失效，判定翻转为不判
+        _seed_doc(db, "戴森吸尘器 规格", ["净含量：500ml"])
+        db.commit()
+        assert retrieval.oov_verdict(db, Q) is None, (
+            "新增资产后必须失效：否则下游拿旧语料继续拒答"
+        )
+        # ③ 废弃该资产 -> 缓存再失效，判定恢复 OOV
+        asset = db.query(Asset).filter(Asset.title == "戴森吸尘器 规格").one()
+        asset.discarded_at = datetime.now(UTC)
+        db.commit()
+        assert retrieval.oov_verdict(db, Q) == "戴森吸尘器", (
+            "废弃后必须失效：否则废弃资产仍算「库内有此实体」"
+        )
+        # ④ 治理改标题 -> 也应失效（标题进语料与亲和）
+        asset.discarded_at = None
+        asset.title = "别的商品 规格"
+        db.commit()
+        assert retrieval.oov_verdict(db, Q) == "戴森吸尘器", (
+            "改标题后必须失效：否则旧标题仍在语料里"
+        )
