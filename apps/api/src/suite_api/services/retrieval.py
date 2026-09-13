@@ -25,13 +25,14 @@
   跟着走）。空查询/纯停用词 -> 空。
 """
 
+import hashlib
 import math
 import os
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, RetrievalChunk
@@ -454,6 +455,71 @@ def _field_name_terms(chunks: list[str]) -> frozenset[str]:
     return frozenset(terms)
 
 
+# 语料快照缓存（第 85 刀性能）：模块级单槽（键校验，读到旧值也不会错——摘要不符即重建）。
+# 多 worker 各自缓存；键 = **库身份 + 已发布资产的 (id, 指针, 标题) 序列**摘要：发布/修订/
+# 治理改标题/增删都会变更；**废弃**靠该资产从行集出列使摘要改变。
+_corpus_cache: (
+    tuple[str, tuple[frozenset[str], frozenset[str], dict[int, str], dict[str, float]]] | None
+) = None
+
+
+def _corpus_snapshot(
+    db: Session,
+) -> tuple[frozenset[str], frozenset[str], dict[int, str], dict[str, float]]:
+    """取语料快照 (corpus bigram 集, 字段名词表, titles, 标题 idf)。
+
+    第 85 刀测量：oov_verdict 每次 ask 要 483 行文本 + 全量 bigram 抽取 + idf 重算，
+    11.8ms 比 retrieve 本身还慢。快照只取决于已发布资产集合及其内容 → 按摘要缓存，
+    命中时只剩一笔摘要查询（几十行）。
+    """
+    assets = db.execute(
+        select(Asset.id, Asset.current_published_version_id, Asset.title)
+        .where(
+            Asset.status == "published",
+            Asset.discarded_at.is_(None),
+            Asset.current_published_version_id.isnot(None),
+        )
+        .order_by(Asset.id)
+    ).all()
+    # 键含**库身份**（评审 P1）：同进程多库（测试每 module DROP/CREATE、将来多租户）
+    # 可能 (id,指针,标题) 完全相同而 chunk 不同——不带库名会串库。
+    key = hashlib.sha1(
+        (str(db.get_bind().url) + repr([tuple(row) for row in assets])).encode()
+    ).hexdigest()
+    global _corpus_cache
+    if _corpus_cache is not None and _corpus_cache[0] == key:
+        return _corpus_cache[1]
+    chunks = list(
+        db.scalars(
+            select(RetrievalChunk.chunk)
+            .join(
+                AssetVersion,
+                (AssetVersion.asset_id == RetrievalChunk.asset_id)
+                & (AssetVersion.version_no == RetrievalChunk.version_no),
+            )
+            .join(
+                Asset,
+                (Asset.id == AssetVersion.asset_id)
+                & (Asset.current_published_version_id == AssetVersion.id)
+                & (Asset.status == "published")
+                & (Asset.discarded_at.is_(None)),
+            )
+            .order_by(RetrievalChunk.id)
+            .limit(_MAX_CANDIDATE_ROWS)
+        )
+    )
+    corpus: set[str] = set()
+    titles: dict[int, str] = {}
+    for asset_id, _pointer, title in assets:
+        corpus |= query_terms(title or "")
+        titles[asset_id] = title or ""
+    for chunk in chunks:
+        corpus |= query_terms(chunk)
+    payload = (frozenset(corpus), _field_name_terms(chunks), titles, title_idf(list(titles.values())))
+    _corpus_cache = (key, payload)
+    return payload
+
+
 def oov_verdict(db: Session, question: str) -> str | None:
     """问句疑似点名了**库内不存在**的实体时返回该实体串（供拒答文案），否则 None。
 
@@ -488,8 +554,11 @@ def oov_verdict(db: Session, question: str) -> str | None:
         # 才能抽（entity_terms 在其后判断）；本闸每 ask 多一次与 retrieve 同量级
         # 的全库扫描，合并/缓存优化记债（评审 P2-4，千级语料可辩护）。
         return None
-    rows = db.execute(
-        select(Asset.title, RetrievalChunk.chunk)
+    # 语料规模护栏（见 OOV_MIN_CORPUS_ROWS 注释）：小语料不判——小库的「零出现」
+    # 不构成实体不存在的证据。第 85 刀改为轻量 count（只需行数，不必拉文本）。
+    corpus_size = db.execute(
+        select(func.count())
+        .select_from(RetrievalChunk)
         .join(
             AssetVersion,
             (AssetVersion.asset_id == RetrievalChunk.asset_id)
@@ -500,36 +569,23 @@ def oov_verdict(db: Session, question: str) -> str | None:
             (Asset.id == AssetVersion.asset_id)
             & (Asset.current_published_version_id == AssetVersion.id)
             & (Asset.status == "published")
-            # 第 83 刀：废弃资产（0042 discarded_at）不进检索语料——治理台列表
-            # 过滤了它，但检索此前漏了：**已发布后废弃**的资产照样进候选
-            # （本刀实测「羊绒围巾」引用里出现刚废弃的资产）。
+            # 第 83 刀：废弃资产（0042 discarded_at）不进检索语料。
             & (Asset.discarded_at.is_(None)),
         )
-        .order_by(RetrievalChunk.id)
-        .limit(_MAX_CANDIDATE_ROWS)
-    ).all()
-    # 语料规模护栏（见 OOV_MIN_CORPUS_ROWS 注释）：小语料不判——小库的「零出现」
-    # 不构成实体不存在的证据。测试替身的 .all() len 恒 0，自然走此门（评审 P2：
-    # 不为替身单留 isinstance 分支）。
-    if len(rows) < OOV_MIN_CORPUS_ROWS:
+    ).scalar_one()
+    # 读不到可信计数（替身/异常返回非 int）即**不启用判据**——fail-closed 与
+    # 护栏同方向（语料不足不判），不是「为替身留分支」：真库恒 int。
+    if not isinstance(corpus_size, int) or corpus_size < OOV_MIN_CORPUS_ROWS:
         return None
-    corpus: set[str] = set()
-    titles: dict[int, str] = {}
-    chunk_texts: list[str] = []
-    for title, chunk in rows:
-        corpus |= query_terms(title or "")
-        corpus |= query_terms(chunk)
-        chunk_texts.append(chunk)
-    for asset_id, title in db.execute(
-        select(Asset.id, Asset.title).where(
-            Asset.status == "published",
-            Asset.current_published_version_id.isnot(None),
-            Asset.discarded_at.is_(None),  # 第 83 刀：废弃资产不算「库内有此实体」
-        )
-    ):
-        titles[asset_id] = title or ""
+    # 语料快照（第 85 刀性能）：corpus/字段名词表/titles/idf 只取决于「当前已发布
+    # 资产集合及其内容」，按资产摘要（id+指针+标题+废弃位）缓存——命中时只剩一笔
+    # 轻量摘要查询（几十行），省掉每 ask 的数百行文本传输 + 全量 bigram 抽取 + idf
+    # 重算。失效由摘要保证：发布/修订改指针、治理改标题、废弃、增删资产都变摘要值。
+    corpus, field_terms, titles, idf = _corpus_snapshot(db)
+    if not titles:
+        return None
 
-    entity_terms = query_terms(stripped) - _field_name_terms(chunk_texts)
+    entity_terms = query_terms(stripped) - field_terms
     if not entity_terms:
         return None
     miss = entity_terms - corpus
@@ -550,7 +606,7 @@ def oov_verdict(db: Session, question: str) -> str | None:
     span = longest + 1 if longest else 0
     if span < OOV_MIN_SPAN:
         return None
-    idf = title_idf(list(titles.values()))
+    # 用快照里的 idf（此前这里重算一次并 shadow —— 评审 P2 的死缓存）
     if any(title_affinity(entity_terms, t, idf) > 0.0 for t in titles.values()):
         return None
     # 返回实体串（归一化形态，去掉了标点/虚词）供拒答文案点名
