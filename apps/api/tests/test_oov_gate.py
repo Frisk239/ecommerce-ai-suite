@@ -114,8 +114,10 @@ def test_oov_gate_refuses_instead_of_citing_other_product(
         assert outcome.answer.citations == []
         assert outcome.answer.handoff is True
         assert outcome.fallback_reason == "oov"
-        # 缺口照落（知识待补）
-        assert db.query(KnowledgeGap).filter(KnowledgeGap.question == "雀巢咖啡的配料是什么").count() >= 1
+        # 第 86 刀：雀巢咖啡**不在商品表** -> 只建工单、不落知识缺口（缺口池语义
+        # 收紧；缺口有无由 test_oov_in_catalog_goods_keeps_gap 与
+        # test_oov_not_in_catalog_has_no_gap 两枚钉子覆盖）
+        assert db.query(KnowledgeGap).filter(KnowledgeGap.question == "雀巢咖啡的配料是什么").count() == 0
 
 
 def test_oov_gate_leaves_normal_questions_alone(api: ApiFixture, monkeypatch: Any) -> None:
@@ -194,10 +196,16 @@ def test_oov_refusal_text_names_the_missing_entity(api: ApiFixture, monkeypatch:
     plain = build_refusal_handoff_content("随便问问")
     assert plain.startswith(REFUSAL_CONTENT)
     # OOV：首行点名实体
-    named = build_refusal_handoff_content("雀巢咖啡的配料是什么", missing_entity="雀巢咖啡")
-    assert named.startswith("抱歉，已发布资料里没有与「雀巢咖啡」相关的信息")
-    assert REFUSAL_CONTENT not in named.splitlines()[0]
-    assert "问句摘要：雀巢咖啡的配料是什么" in named
+    # 商品不在库 -> 「本店暂时没有这款」
+    absent = build_refusal_handoff_content("雀巢咖啡的配料是什么", missing_entity="雀巢咖啡")
+    assert absent.startswith("本店暂时没有「雀巢咖啡」这款商品")
+    assert REFUSAL_CONTENT not in absent.splitlines()[0]
+    assert "问句摘要：雀巢咖啡的配料是什么" in absent
+    # 商品在库但资料缺 -> 「资料还在补充中」（第 86 刀两类分说）
+    incat = build_refusal_handoff_content(
+        "乐事薯片的配料是什么", missing_entity="乐事薯片", known_product="乐事薯片"
+    )
+    assert incat.startswith("「乐事薯片」的商品资料还在补充中")
 
 
 def test_oov_gate_message_contains_entity(api: ApiFixture, monkeypatch: Any) -> None:
@@ -222,7 +230,7 @@ def test_oov_gate_message_contains_entity(api: ApiFixture, monkeypatch: Any) -> 
             .filter(ServiceMessage.session_id == session_id, ServiceMessage.role == "agent")
             .one()
         )
-        assert msg.content.startswith("抱歉，已发布资料里没有与「星巴克杯子」相关的信息")
+        assert msg.content.startswith("本店暂时没有「星巴克杯子」这款商品")
 
 
 def test_corpus_snapshot_cache_invalidates_on_asset_change(
@@ -265,3 +273,97 @@ def test_corpus_snapshot_cache_invalidates_on_asset_change(
         assert retrieval.oov_verdict(db, Q) == "戴森吸尘器", (
             "改标题后必须失效：否则旧标题仍在语料里"
         )
+
+
+def test_oov_product_match_criterion(api: ApiFixture) -> None:
+    """第 86 刀判据表：商品名双向包含（方向各有限制）+ 类目名命中。
+
+    库外实体必须为 None（否则会把「本店没有」误说成「资料待补」）。
+    短泛词负例：「星巴克杯子」曾被商品名片段「杯子」误命中（方向 B 的长度限制）。
+    """
+    from suite_api.models import Product
+    from suite_api.services.retrieval import oov_product_match
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        db.add(Product(name="钛钢保温杯", category="器皿"))
+        db.add(Product(name="笔记本电脑", category="笔记本电脑"))
+        db.commit()
+        # 方向 A：顾客用简称（实体 ⊂ 商品名）
+        assert oov_product_match(db, "保温杯") == "钛钢保温杯"
+        # 精确命中
+        assert oov_product_match(db, "钛钢保温杯") == "钛钢保温杯"
+        # 类目名命中（商品名是具体型号，类目是「笔记本电脑」）
+        assert oov_product_match(db, "笔记本电脑") == "笔记本电脑"
+        # 库外实体
+        assert oov_product_match(db, "雀巢咖啡") is None
+        assert oov_product_match(db, "戴森吸尘器") is None
+        # 短泛词负例（方向 B 要求库内名 ≥3 字）
+        db.add(Product(name="杯子", category="器皿"))
+        db.commit()
+        assert oov_product_match(db, "星巴克杯子") is None, (
+            "「杯子」两字泛词不得把库外实体误判成在库"
+        )
+
+
+def test_oov_in_catalog_goods_keeps_gap(api: ApiFixture, monkeypatch: Any) -> None:
+    """第 86 刀：商品**在库但资料没上架** -> 文案「资料还在补充中」+ **落知识缺口**
+    （确实是知识待补，点「去补文档」能补出来）+ 建工单（顾客想买）。"""
+    from suite_api.models import KnowledgeGap, Product, ServiceMessage
+    from suite_api.services.chat_engine import run_ask
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    # 用「乐事薯片」（前例已实测零出现串 4 字）；「测试商品甲」的「商品」二字
+    # 在语料里出现过，零出现串被截到 3 字、判不出 OOV
+    q = "乐事薯片的配料是什么"
+    with factory() as db:
+        db.add(Product(name="乐事薯片", category="食品"))
+        db.commit()
+        session_id, _ = _make_session(client, "oov-incat-token")
+        session = db.get(ServiceSession, session_id)
+        _open_corpus(monkeypatch)
+
+        outcome = asyncio.run(run_ask(db, session, q))
+        assert outcome.answer.kind == "refusal"
+        assert outcome.fallback_reason == "oov"
+        msg = (
+            db.query(ServiceMessage)
+            .filter(ServiceMessage.session_id == session_id, ServiceMessage.role == "agent")
+            .one()
+        )
+        assert msg.content.startswith("「乐事薯片」的商品资料还在补充中")
+        assert msg.handoff is True  # 工单照建（顾客要人）
+        assert (
+            db.query(KnowledgeGap).filter(KnowledgeGap.question == q).count() >= 1
+        ), "在库商品资料缺 = 知识待补，必须落缺口"
+
+
+def test_oov_not_in_catalog_has_no_gap(api: ApiFixture, monkeypatch: Any) -> None:
+    """第 86 刀：商品**不在库** -> 文案「本店暂时没有这款」+ **不落知识缺口**
+    （补文档也补不出来，属经营范围问题）+ 仍建工单（需求信号）。"""
+    from suite_api.models import KnowledgeGap, ServiceMessage
+    from suite_api.services.chat_engine import run_ask
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    q = "戴森吹风机的配料是什么"
+    with factory() as db:
+        session_id, _ = _make_session(client, "oov-nocat-token")
+        session = db.get(ServiceSession, session_id)
+        _open_corpus(monkeypatch)
+
+        outcome = asyncio.run(run_ask(db, session, q))
+        assert outcome.answer.kind == "refusal"
+        assert outcome.fallback_reason == "oov"
+        msg = (
+            db.query(ServiceMessage)
+            .filter(ServiceMessage.session_id == session_id, ServiceMessage.role == "agent")
+            .one()
+        )
+        assert msg.content.startswith("本店暂时没有「戴森吹风机」这款商品")
+        assert msg.handoff is True  # 工单照建（Owner 裁决：需求信号）
+        assert (
+            db.query(KnowledgeGap).filter(KnowledgeGap.question == q).count() == 0
+        ), "本店没有这款商品不是知识缺口（补文档补不出来），不得污染缺口池"
