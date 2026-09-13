@@ -196,8 +196,15 @@ def _write_back_product(product: Product | None, asset: Asset, version: AssetVer
 
 
 def _can_publish(asset: Asset, version: AssetVersion) -> bool:
-    """待人洗首发，或已发布资产上的未发布修订。"""
+    """待人洗首发，或已发布资产上的未发布修订。
+
+    第 84 刀（83 刀评审记债）：已废弃资产（0042 discarded_at）不可再发布——
+    否则「废弃=隐藏」与「可发新版」冲突（发出去的新版在检索/导出面恒不可见，
+    治理上是个黑洞：操作者看到发布成功、顾客永远查不到）。
+    """
     if version.published_at is not None:
+        return False
+    if asset.discarded_at is not None:
         return False
     return asset.status == PENDING_REVIEW or (
         asset.status == PUBLISHED and asset.current_published_version_id is not None

@@ -44,7 +44,7 @@ from suite_api.models import (
     ServiceSession,
     SessionRating,
 )
-from suite_api.observability import record_chat_request
+from suite_api.observability import record_chat_request, record_session_transition
 from suite_api.services import return_tools
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
 from suite_api.services.chat_engine import run_ask, sse_event_stream
@@ -252,6 +252,7 @@ def create_session(
     db.add(session)
     db.commit()
     db.refresh(session)
+    record_session_transition("new", ACTIVE)  # 第 84 刀：生命周期迁移可观测
     return SessionOut(
         id=session.id,
         status=session.status,
@@ -558,6 +559,9 @@ def register_session(
     # WHERE 仍限定可回流状态 + COALESCE 保住顾客结束时刻（终结时刻以首次
     # 为准）；closed_at 统一 DB 钟 func.now()（第 71 刀双钟教训，本刀顺带
     # 把回流路径的 Python 钟一并收口）。
+    # 第 84 刀：from 状态在条件更新**之前**取——update 会把内存对象同步成
+    # registered，收口后再读就成了 registered->registered。
+    register_from = session.status
     rowcount = db.execute(
         update(ServiceSession)
         .where(
@@ -596,4 +600,6 @@ def register_session(
         )
     db.commit()
     db.refresh(asset)
+    # 第 84 刀：只有真发生收口才记（409 冲突路径不记）
+    record_session_transition(register_from, REGISTERED)
     return to_asset_detail(db, asset)

@@ -607,7 +607,9 @@ async def run_ask(
         # 带上来源会话（走查修复）：操作者能从缺口抽屉跳回这条原始对话
         gap = record_refusal_gap(db, question, session_id=session.id)
         agent_message.content = build_refusal_handoff_content(
-            question, gap.id if expose_gap_id and gap is not None else None
+            question,
+            gap.id if expose_gap_id and gap is not None else None,
+            missing_entity=oov_entity,  # 第 84 刀：OOV 首行点名未收录对象
         )
         # 第 42 刀（ADR 0046 §2）：拒答也建/取工单——前端见 handoff=true 已亮
         # 「已转人工」徽章，必须真有东西接住。同事务 create-or-get；**拒答消息

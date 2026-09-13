@@ -57,7 +57,11 @@ from suite_api.models import (
     ServiceSession,
     SessionRating,
 )
-from suite_api.observability import record_chat_request, record_csat_rating
+from suite_api.observability import (
+    record_chat_request,
+    record_csat_rating,
+    record_session_transition,
+)
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.handoff_tickets import submit_contact, ticket_no
 from suite_api.services.rate_limit import CustomerRateLimits
@@ -284,6 +288,7 @@ def create_session(
     db.add(session)
     db.commit()
     db.refresh(session)
+    record_session_transition("new", ACTIVE)  # 第 84 刀：生命周期迁移可观测
     return CustomerSessionCreated(session_id=session.id, token=token)
 
 
@@ -336,6 +341,8 @@ def end_session(
             detail=f"会话状态：{_status_label(session.status)}，不能再结束",
         )
     logger.info("顾客结束会话: session=%s", session_id)
+    if rowcount:  # 只有真发生 active->ended 的迁移才记（幂等重入不记）
+        record_session_transition(ACTIVE, ENDED)
     return EndSessionOut(id=session.id, status=session.status, closed_at=session.closed_at)
 
 

@@ -183,3 +183,43 @@ def test_oov_verdict_span_threshold_is_load_bearing(api: ApiFixture, monkeypatch
         # 阈值 3：同一问句判出 -> 阈值是唯一差别（单条件承重）
         monkeypatch.setattr(retrieval, "OOV_MIN_SPAN", 3)
         assert retrieval.oov_verdict(db, "华为手机的材质是什么") is not None
+
+
+def test_oov_refusal_text_names_the_missing_entity(api: ApiFixture, monkeypatch: Any) -> None:
+    """第 84 刀：OOV 拒答首行**点名未收录对象**（比固定文案精确）；非 OOV 路径
+    首行仍是 REFUSAL_CONTENT 常量原样（既有全等断言不破）。"""
+    from suite_api.services.answer import REFUSAL_CONTENT, build_refusal_handoff_content
+
+    # 非 OOV：首行 = 常量原样
+    plain = build_refusal_handoff_content("随便问问")
+    assert plain.startswith(REFUSAL_CONTENT)
+    # OOV：首行点名实体
+    named = build_refusal_handoff_content("雀巢咖啡的配料是什么", missing_entity="雀巢咖啡")
+    assert named.startswith("抱歉，已发布资料里没有与「雀巢咖啡」相关的信息")
+    assert REFUSAL_CONTENT not in named.splitlines()[0]
+    assert "问句摘要：雀巢咖啡的配料是什么" in named
+
+
+def test_oov_gate_message_contains_entity(api: ApiFixture, monkeypatch: Any) -> None:
+    """引擎级：OOV 收口落库的 agent 消息首行点名实体。"""
+    from suite_api.models import ServiceMessage
+    from suite_api.services.chat_engine import run_ask
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        _seed_doc(db, "M&M white 规格（OFF）", ["配料：花生、糖"], source_kind="openfoodfacts")
+        db.commit()
+        session_id, _ = _make_session(client, "oov-text-token")
+        session = db.get(ServiceSession, session_id)
+        _open_corpus(monkeypatch)
+
+        # 用**本文件其它用例未种过的实体**（module 共享库：前测种过「雀巢咖啡」
+        # 标题会让亲和 > 0 而不再判 OOV——顺序依赖踩过一次）
+        asyncio.run(run_ask(db, session, "星巴克杯子的配料是什么"))
+        msg = (
+            db.query(ServiceMessage)
+            .filter(ServiceMessage.session_id == session_id, ServiceMessage.role == "agent")
+            .one()
+        )
+        assert msg.content.startswith("抱歉，已发布资料里没有与「星巴克杯子」相关的信息")

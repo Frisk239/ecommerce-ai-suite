@@ -150,6 +150,24 @@ csat_ratings_total = Counter(
 # 普通厂商失败降级为 None（不计数）——那不是闸在回退，是网关/厂商问题，
 # 混进来会污染「闸回退率」。other 是防御位：引擎将来加了新 reason 而
 # 这里没跟上，宁可落 other 也不让陌生值进标签（基数纪律）。
+# 会话生命周期迁移（第 84 刀，审计刀 16 B 轴记债）：只记**有界状态值**
+# （new/active/ended/registered 的组合上限 12，实际 4 条路径）——绝不带
+# session_id（47 刀基数纪律）。没有它「结束率/结束→回流转化」只能靠日志数行。
+service_session_transitions_total = Counter(
+    "service_session_transitions_total",
+    "会话状态迁移次数（new->active 建会话 / active->ended 顾客结束 / active->registered 操作者回流 / ended->registered 结束后回流）。",
+    ["from", "to"],
+)
+
+
+def record_session_transition(from_status: str, to_status: str) -> None:
+    """记一次会话状态迁移（调用方保证两端值在有界集合内）。
+
+    标签名保留 Prometheus 惯例的 from/to（`from` 是 Python 保留字，只能展开传）。
+    """
+    service_session_transitions_total.labels(**{"from": from_status, "to": to_status}).inc()
+
+
 _FALLBACK_REASONS = ("coverage", "no_coverage", "oov")
 chat_fallbacks_total = Counter(
     "chat_fallbacks_total",
