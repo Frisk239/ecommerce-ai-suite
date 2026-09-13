@@ -201,6 +201,9 @@ def to_asset_detail(db: Session, asset: Asset) -> AssetDetail:
         latest is not None
         and latest.published_at is None
         and asset.status in {PENDING_REVIEW, PUBLISHED}
+        # 第 84 刀：与 routes/assets.py `_can_publish` 同口径——已废弃不可发布
+        # （此前内联重复闸漏了这条，UI 会显示可发而接口 409）
+        and asset.discarded_at is None
     )
     return AssetDetail(
         **base.model_dump(),

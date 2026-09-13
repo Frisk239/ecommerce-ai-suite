@@ -47,7 +47,9 @@ def build_refusal_handoff_content(
     # 这个问题的证据」精确（「资料里没有『雀巢咖啡』的信息」直接告诉顾客差什么）；
     # 非 OOV 路径首行仍是 REFUSAL_CONTENT 常量原样（既有全等断言不破）。
     head = (
-        f"抱歉，已发布资料里没有与「{missing_entity}」相关的信息，已记录并转人工处理。"
+        # 实体串过 redact（0038 出口必掩）：_normalize 保留数字，手机号问句可能
+        # 成为 OOV 实体串——同消息摘要行同口径（评审 P1）。
+        f"抱歉，已发布资料里没有与「{redact(missing_entity)}」相关的信息，已记录并转人工处理。"
         if missing_entity
         else REFUSAL_CONTENT
     )

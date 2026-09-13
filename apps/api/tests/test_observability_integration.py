@@ -181,3 +181,32 @@ def test_handoff_outcome_is_counted(api: ApiFixture) -> None:
     assert any(e[0] == "complete" for e in events)
 
     assert _sample("chat_requests_total", labels) == before + 1
+
+
+def test_session_transition_metric_is_exposed_on_endpoint(api) -> None:
+    """第 84 刀评审 P0：新指标必须真出现在 `/metrics` 输出里。
+
+    断链形态：collector 自增但 `build_metrics_registry` 未注册 -> 端点永不输出，
+    而直读 `._value` 的钉子测不出（本文件前一条钉子即如此）。此处走**端点**：
+    设 token -> 触发一次迁移 -> 断言输出含指标名与标签。
+    """
+    from fastapi.testclient import TestClient
+
+    from suite_api.observability import service_session_transitions_total
+
+    client, _ = api
+    service_session_transitions_total.labels(**{"from": "new", "to": "active"}).inc()
+    resp = TestClient(client.app).get(
+        "/metrics", headers={"Authorization": f"Bearer {client.app.state.settings.metrics_token}"}
+    )
+    if resp.status_code == 401:
+        # 该 app 未配 METRICS_TOKEN（空= fail-closed）——本钉子退化为注册表断言
+        from suite_api.observability import build_metrics_registry
+
+        registry = build_metrics_registry()
+        # collect() 里的 m.name 是 Prometheus 基名（`_total` 只在文本输出加）
+        names = {m.name for m in registry.collect()}
+        assert "service_session_transitions" in names
+        return
+    assert "service_session_transitions_total" in resp.text
+    assert 'from="new"' in resp.text and 'to="active"' in resp.text

@@ -16,6 +16,13 @@
 - live（rebuild）：OOV 问句「戴森吸尘器的配料是什么」→ 拒答且**落库首行点名实体**（「…没有与「戴森吸尘器」相关的信息」+ 问句摘要 + 缺口 G-0073）。
 - 指标 live 未验证（本机 `.env` 无 `METRICS_TOKEN`，`/metrics` 恒 401 fail-closed 是设计）——由单测钉子覆盖，如实披露。
 
+## 评审实修（单代理双轴）
+
+- **P0 registry 漏注册（最讽刺的一处）**：新指标加进了 `record_*` 但没进 `build_metrics_registry` 的注册元组——**自增了却永不输出**，而我的钉子直读 `._value` 绕过了断链（closeout 原写「metrics live 未验证」恰好盖住此洞）。修：注册；钉子改为走 `registry.collect()` / 端点输出（`m.name` 是 Prometheus 基名，`_total` 只在文本输出加——钉子首版写错后缀，实测暴露）。
+- **P1 废弃影响面又只收一处**（83 刀同类教训重演）：`retry_machine_wash`（discarded→pending_review 僵尸：此后 publish 拒、再 discard 拒、无 un-discard）、`_can_replace_version_bytes`、`asset_view` 的内联 `can_publish` 重复闸——三处一并加废弃判断；`SimpleNamespace` 替身同步补字段（不为替身留生产分支）。
+- **P1 `missing_entity` 未过 redact**：`_normalize` 保留数字，手机号问句可成 OOV 实体串——原文进拒答首行/缺口/工单，而同消息摘要行有 redact（0038 同出口双口径）。修：实体串过 `redact`。
+- P2：README 指标节「六个→七个」+ `from,to` 登记（63 刀纪律）、observability 模块 docstring 标签清单、`register_from` 的 TOCTOU 记债。
+
 ## 记债（本刀未吞）
 
 - 每 ask 三笔全库级查询合并/缓存（单独一刀：动检索主路径，需评测前后各跑）。

@@ -11,7 +11,7 @@
   ``logging.getLogger(__name__).warning(...)`` 调用**一行不改**就变 JSON 行，且
   自动带 ``correlation_id``。留 ``trace_id`` 字段口子（本刀不接 OTel）。
 - **指标**：instrumentator 的 HTTP RED（在 main 装配）+ 本模块的六个自定义。
-  **标签值一律有限集合**（channel/kind/generated/direction/model/result/score/reason）——绝不把
+  **标签值一律有限集合**（channel/kind/generated/direction/model/result/score/reason/from/to）——绝不把
   session_id / asset_id / 问题文本打进标签，那是指标基数爆炸的经典自杀方式。
 """
 
@@ -268,6 +268,7 @@ def build_metrics_registry() -> CollectorRegistry:
         clip_cuts_total,
         csat_ratings_total,
         chat_fallbacks_total,
+        service_session_transitions_total,
     ):
         registry.register(collector)
     return registry
