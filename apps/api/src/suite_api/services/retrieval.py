@@ -456,8 +456,8 @@ def _field_name_terms(chunks: list[str]) -> frozenset[str]:
 
 
 # 语料快照缓存（第 85 刀性能）：模块级单槽（键校验，读到旧值也不会错——摘要不符即重建）。
-# 多 worker 各自缓存；键 = 已发布资产的 (id, 指针, 标题) 序列摘要，发布/修订/治理/
-# 废弃/增删都会变更 → 自动失效。
+# 多 worker 各自缓存；键 = **库身份 + 已发布资产的 (id, 指针, 标题) 序列**摘要：发布/修订/
+# 治理改标题/增删都会变更；**废弃**靠该资产从行集出列使摘要改变。
 _corpus_cache: (
     tuple[str, tuple[frozenset[str], frozenset[str], dict[int, str], dict[str, float]]] | None
 ) = None
@@ -481,7 +481,11 @@ def _corpus_snapshot(
         )
         .order_by(Asset.id)
     ).all()
-    key = hashlib.sha1(repr([tuple(row) for row in assets]).encode()).hexdigest()
+    # 键含**库身份**（评审 P1）：同进程多库（测试每 module DROP/CREATE、将来多租户）
+    # 可能 (id,指针,标题) 完全相同而 chunk 不同——不带库名会串库。
+    key = hashlib.sha1(
+        (str(db.get_bind().url) + repr([tuple(row) for row in assets])).encode()
+    ).hexdigest()
     global _corpus_cache
     if _corpus_cache is not None and _corpus_cache[0] == key:
         return _corpus_cache[1]
@@ -602,7 +606,7 @@ def oov_verdict(db: Session, question: str) -> str | None:
     span = longest + 1 if longest else 0
     if span < OOV_MIN_SPAN:
         return None
-    idf = title_idf(list(titles.values()))
+    # 用快照里的 idf（此前这里重算一次并 shadow —— 评审 P2 的死缓存）
     if any(title_affinity(entity_terms, t, idf) > 0.0 for t in titles.values()):
         return None
     # 返回实体串（归一化形态，去掉了标点/虚词）供拒答文案点名

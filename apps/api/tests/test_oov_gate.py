@@ -237,6 +237,8 @@ def test_corpus_snapshot_cache_invalidates_on_asset_change(
     factory = client.app.state.session_factory
     with factory() as db:
         _open_corpus(monkeypatch)
+        # 自含语料（评审 P2：本钉此前依赖文件序前置用例种语料，单跑即红）
+        _seed_doc(db, "无关占位资料", ["本店经营各类日用百货"])
         # 用本文件其它用例未种过的实体（module 共享库，踩过两次顺序依赖）
         Q = "戴森吸尘器的配料是什么"
         # ① 初始：库内无该实体 -> 判 OOV
@@ -254,7 +256,9 @@ def test_corpus_snapshot_cache_invalidates_on_asset_change(
         assert retrieval.oov_verdict(db, Q) == "戴森吸尘器", (
             "废弃后必须失效：否则废弃资产仍算「库内有此实体」"
         )
-        # ④ 治理改标题 -> 也应失效（标题进语料与亲和）
+        # ④ 恢复在库 + 改标题 -> 摘要再变，判定恢复 OOV（若缓存不失效，
+        #    旧标题「戴森吸尘器 规格」仍在语料里 -> 会判 None -> 本断言红；
+        #    评审 P1 指出此前把 ④ 放在废弃态之后，与 ③ 不可区分、打不红）
         asset.discarded_at = None
         asset.title = "别的商品 规格"
         db.commit()

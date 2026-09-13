@@ -19,12 +19,18 @@
 | 每 ask 合计 | 18.4ms | **9.6ms** |
 | 查询笔数 | 3 | 3（count + 摘要 + retrieve 候选；笔数未减但传输量与 CPU 大降） |
 
-- 集成 **1197 passed / 0 skipped**（1196→1197）；ruff 全过；run_eval 逐位不变 87.5/86.2。
+- 集成 **1197 passed / 0 skipped**（1196→1197）；ruff 全过；run_eval **90.0/86.2 逐位不变**（83 刀数据修复后的当前基线；评审 P2 指出 closeout 误抄 79 刀旧基线 87.5）。
 - 行为零变化：雀巢咖啡/戴森吸尘器仍判 OOV、字段问与正例仍不判。
 
 ## 实现坑（记录）
 
 护栏从 `len(rows)` 改 `scalar_one()` 后，11 个用 MagicMock db 的既有测试抛 `TypeError: '<' not supported between MagicMock and int`——替身下 `len()` 恒 0 自然走护栏，而比较会崩。修法：`not isinstance(corpus_size, int)` 即不启用判据（fail-closed；真库恒 int，这不是「为替身留分支」而是「读不到可信计数就保守放弃」）。
+
+## 评审实修
+
+- **Spec P1 缓存键缺库身份**：同进程多库（测试每 module DROP/CREATE、将来多租户）可能摘要相同而 chunk 不同 → 串库。修：键前置 `str(db.get_bind().url)`。
+- **Spec P1「三向失效」实为两向**：④ 改标题原放在废弃态之后，与 ③ 不可区分（冻在废弃态的旧语料同样不含旧标题）→ 打不红；调整为**未废弃状态下改标题**（不失效会因旧标题仍在语料而判 None → 必红）。
+- P2 全修：注释订正（摘要只有三列、废弃靠行集出列失效）；删 `oov_verdict` 里 shadow 快照 idf 的死缓存；新钉自含语料（原依赖文件序，单跑即红）；基线数字订正。
 
 ## 记债
 
