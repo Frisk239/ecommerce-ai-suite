@@ -475,8 +475,11 @@ def oov_product_match(db: Session, entity: str) -> str | None:
     if not normalized:
         return None
     products = db.execute(select(Product.name, Product.category)).all()
-    categories = {name for _n, name in products if name}
-    categories |= set(CATEGORY_ALIASES) | set(CATEGORY_ALIASES.values())
+    universe = {category for _n, category in products if category}
+    # 只收「真有商品」的类目（评审 P2：零商品的目标类目不该报在库——与
+    # catalog_tools.category_targets 的 `target in universe` 同口径、单一真源）
+    categories = set(universe)
+    categories |= {alias for alias, target in CATEGORY_ALIASES.items() if target in universe}
     # 两个方向语义不同（预热测量后收紧）：
     # - 实体串 ⊂ 库内名（顾客用简称：「保温杯」⊂「钛钢保温杯」）——任意长度命中；
     # - 库内名 ⊂ 实体串（实体里含一个库内名片段）——**要求库内名 ≥3 字**，否则
@@ -488,9 +491,11 @@ def oov_product_match(db: Session, entity: str) -> str | None:
         # 方向 A：顾客用简称（实体串 ⊂ 库内名，如「保温杯」⊂「钛钢保温杯」）——任意长度
         if normalized in token:
             return True
-        # 方向 B：实体串里含库内名片段——要求库内名 ≥3 字（短泛词如「杯子」不算：
-        # 「星巴克杯子」曾被商品名「杯子」误命中）
-        return len(token) >= 3 and token in normalized
+        # 方向 B：实体串里含库内名片段——要求库内名 ≥3 字**且覆盖率 ≥0.6**
+        # （评审 P1：裸子串会让「小米电视机顶盒」被「电视机」误命中 = 把库外
+        # 实体说成在库，正中本刀要堵的洞；62 刀在报价/库存侧的纯度闸同源）。
+        # 「星巴克杯子」被「杯子」（2 字）误命中由长度闸挡下。
+        return len(token) >= 3 and token in normalized and len(token) / len(normalized) >= 0.6
 
     for alias in sorted(categories, key=len, reverse=True):
         if matched(alias):

@@ -14,7 +14,14 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from suite_api.models import Asset, AssetVersion, KnowledgeGap, RetrievalChunk, ServiceSession
+from suite_api.models import (
+    Asset,
+    AssetVersion,
+    HandoffTicket,
+    KnowledgeGap,
+    RetrievalChunk,
+    ServiceSession,
+)
 
 ApiFixture = tuple[TestClient, Any]
 
@@ -292,6 +299,14 @@ def test_oov_product_match_criterion(api: ApiFixture) -> None:
         db.commit()
         # 方向 A：顾客用简称（实体 ⊂ 商品名）
         assert oov_product_match(db, "保温杯") == "钛钢保温杯"
+        # 方向 B 正例：库内名 ⊂ 实体且覆盖率达标（5/7≈0.71 ≥0.6）
+        assert oov_product_match(db, "钛钢保温杯配件") == "钛钢保温杯"
+        # 方向 B 覆盖率负例（评审 P1 绕过例）：库内名只占实体 3/7≈0.43 <0.6
+        db.add(Product(name="电视机", category="电视机"))
+        db.commit()
+        assert oov_product_match(db, "小米电视机顶盒") is None, (
+            "裸子串会让库外实体被库内名片段误命中（把「本店没有」说成「资料待补」）"
+        )
         # 精确命中
         assert oov_product_match(db, "钛钢保温杯") == "钛钢保温杯"
         # 类目名命中（商品名是具体型号，类目是「笔记本电脑」）
@@ -338,6 +353,10 @@ def test_oov_in_catalog_goods_keeps_gap(api: ApiFixture, monkeypatch: Any) -> No
         assert (
             db.query(KnowledgeGap).filter(KnowledgeGap.question == q).count() >= 1
         ), "在库商品资料缺 = 知识待补，必须落缺口"
+        # 42 刀纪律：凡亮「已转人工」徽章必有工单接住（OOV 两分支都要钉行）
+        assert (
+            db.query(HandoffTicket).filter(HandoffTicket.session_id == session_id).count() >= 1
+        )
 
 
 def test_oov_not_in_catalog_has_no_gap(api: ApiFixture, monkeypatch: Any) -> None:
@@ -364,6 +383,9 @@ def test_oov_not_in_catalog_has_no_gap(api: ApiFixture, monkeypatch: Any) -> Non
         )
         assert msg.content.startswith("本店暂时没有「戴森吹风机」这款商品")
         assert msg.handoff is True  # 工单照建（Owner 裁决：需求信号）
+        assert (
+            db.query(HandoffTicket).filter(HandoffTicket.session_id == session_id).count() >= 1
+        ), "42 刀纪律：亮徽章必有工单接住"
         assert (
             db.query(KnowledgeGap).filter(KnowledgeGap.question == q).count() == 0
         ), "本店没有这款商品不是知识缺口（补文档补不出来），不得污染缺口池"
