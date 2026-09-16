@@ -8,11 +8,13 @@
 从未跑全过），失败条目在报告注明。
 
 指标（docs/research/rag-accuracy-engineering.md §3 协议）：
-- recall@1/@3：cite 组（positive/paraphrase/confusion）期望资产进 top-1/top-3；
+- recall@1/@3：cite 组（positive/paraphrase/confusion/oov_syn）期望资产进 top-1/top-3；
 - 拒答率：refusal 组实际拒答比例（kind=refusal）；
 - 误拒率：positive 组被拒答的比例（宁缺勿滥的反面代价，单独成列）；
 - 混淆@1：confusion 组 top-1 恰为期望资产的比例（跨商品共有词是否被词法分
   拉向「证据更短更实」的资产）；
+- 表外同义（第 101 刀第五分布 oov_syn）：同义词表之外的自然改写，期望锚与
+  表内基底同句相同——recall@1 即表外泛化实测，embedding 评估门的裁判列；
 - 忠实度（--judge）：answered 条目中被 judge 判 supported 的比例。
 
 统计全为纯函数（judge_case/aggregate/_supported_verdict/format_table），
@@ -41,7 +43,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_DB = "postgresql://suite:suite@localhost:5433/suite"
 DEFAULT_GOLDEN = SCRIPT_DIR / "out" / "golden_large.json"
 TOP_K = 3
-DISTRIBUTIONS = ("positive", "paraphrase", "confusion", "refusal")
+# 五分布（第 101 刀起）：四原始分布 + oov_syn（表外同义探针——同义词表之外的
+# 自然改写，期望锚与表内同义问句相同；recall 是表外泛化的自由测量值，正是
+# embedding 评估门的裁判列）。
+DISTRIBUTIONS = ("positive", "paraphrase", "confusion", "refusal", "oov_syn")
 JUDGE_ATTEMPTS = 3
 JUDGE_RETRY_WAIT_SECONDS = 2.0
 

@@ -388,6 +388,8 @@ SUITE_TEST_DATABASE_URL=postgresql://suite:suite@localhost:5432/suite_test uv ru
 
 锚定口径是**标题不锚 id**：测试库每个 module 独立自建 `suite_test` 库，资产 id 随发布顺序漂移，只有标题跨运行稳定可复现；runner 在 fixture 内记录 `{标题: asset_id}` 再把 JSON 里的标题解析成 id 断言引用。
 
+另一层是**动态大集**（`scripts/eval/out/golden_large.json`，不进 CI）：208 条五分布（positive 80 / paraphrase 58 / confusion 25 / refusal 30 / **oov_syn 表外同义探针 15**，第 101 刀从 96 条四分布扩容，每条期望实跑核验），runner `scripts/eval/run_eval.py` 直调 retrieve+compose（零 LLM 依赖、可复现），数字入档 `docs/research/rag-eval-report.md`；上游问法回流半自动脚本 `scripts/eval/collect_questions.py`（会话表抽问+去重+预分类提示，期望人审手工定）。
+
 web 构建校验：`cd apps/web && npm run build && npm run lint`
 
 ## 环境变量
