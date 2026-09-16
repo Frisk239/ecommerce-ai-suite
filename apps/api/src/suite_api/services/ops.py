@@ -176,13 +176,19 @@ def fetch_published_refs(db: Session, product_id: int) -> list[dict[str, int]]:
     """compose 的检索：该商品当前已发布的 material/video 资产 -> 冻结版本引用。
 
     已发布口径=当前指针非空（含修订中：线上仍在服务当前已发布版，同
-    routes/assets list status=published 口径）；version_no 取指针版本行的
-    版本号（0007：refs 冻结当时版本，指针前移不漂移）。只读，不碰检索索引。
+    routes/assets list status=published 口径）且未废弃（83 刀：废弃语义落到
+    全部证据出口——常规路径废弃闸挡「先废弃再发布」，这里收的是运维手工
+    SQL 废弃已发布资产的漏网形态）；version_no 取指针版本行的版本号（0007：
+    refs 冻结当时版本，指针前移不漂移）。只读，不碰检索索引。
     """
     rows = db.execute(
         select(Asset.id, AssetVersion.version_no)
         .join(AssetVersion, Asset.current_published_version_id == AssetVersion.id)
-        .where(Asset.product_id == product_id, Asset.kind.in_(REF_KINDS))
+        .where(
+            Asset.product_id == product_id,
+            Asset.kind.in_(REF_KINDS),
+            Asset.discarded_at.is_(None),
+        )
         .order_by(Asset.id)
     ).all()
     return [{"asset_id": asset_id, "version_no": version_no} for asset_id, version_no in rows]

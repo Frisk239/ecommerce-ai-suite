@@ -335,3 +335,56 @@ def test_concurrent_deliver_single_winner(api: ApiFixture) -> None:
     with session_factory() as db:
         row = db.get(OpsRun, run_id)
         assert row.delivered_at is not None  # 只记一次
+
+
+def test_run_refs_exclude_discarded_published_asset(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """第 87 刀（84 刀记债清偿）：已发布后被手工废弃的资产不进 ops refs。
+
+    常规路径造不出「已发布且废弃」（84 刀 _can_publish 废弃闸挡先废弃再
+    发布），唯一入口是运维 SQL——正是 fetch_published_refs 漏过滤的形态。
+    自建商品避免与首个用例发布的保温杯素材互染（module 级共享库）。
+    """
+    import os
+
+    import psycopg
+
+    client, _ = api
+    _login(client)
+    created = client.post(
+        "/api/products",
+        json={"name": "ops 废弃钉子杯", "category": "器皿", "price_cents": 9900},
+    )
+    assert created.status_code == 201
+    product_id = created.json()["id"]
+    # 自带文案（_publish_cup_material 的固定正文只含「钛钢保温杯」，过不了
+    # 「正文必含商品名」质检）——素材全链同款：生成->抽检登记->发布
+    _patch_complete_chat(
+        monkeypatch,
+        result=json.dumps(
+            {
+                "title": "ops 废弃钉子杯：钉住废弃语义",
+                "content": "卖点：ops 废弃钉子杯，已发布后废弃不再被编排引用。\n材质：钛钢",
+            },
+            ensure_ascii=False,
+        ),
+    )
+    task = client.post("/api/material/tasks", json={"product_id": product_id}).json()
+    assert task["status"] == "pending_qc"
+    asset_id = client.post(f"/api/material/tasks/{task['id']}/approve").json()["asset_id"]
+    assert client.post(f"/api/assets/{asset_id}/publish").status_code == 200
+
+    # 建一次 run 确认基准：refs 含该资产（过滤前口径）
+    _patch_complete_chat(monkeypatch, result=_ops_json())
+    before = client.post("/api/ops/runs", json={"product_id": product_id}).json()
+    assert {"asset_id": asset_id, "version_no": 1} in before["output"]["refs"]
+
+    # 运维手工废弃（无 API 通道）后：refs 收空、compose 走兜底正文
+    with psycopg.connect(os.environ["SUITE_TEST_DATABASE_URL"], autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE assets SET discarded_at = now() WHERE id = %s", (asset_id,))
+    after = client.post("/api/ops/runs", json={"product_id": product_id}).json()
+    assert after["output"]["refs"] == []
+    assert after["output"]["body"] != OPS_BODY
+    assert "无已发布素材，正文由商品规格组装" in after["steps"][2]["detail"]
