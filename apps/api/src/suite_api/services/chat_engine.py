@@ -257,6 +257,21 @@ _BARE_COVERAGE_RE = re.compile(
     r"|无(相关|答案|记录)"
 )
 
+# 覆盖动词**开头**的无主语免责句（审计刀 17 记债①）：审计实测「未覆盖保修信息」
+# 「未给出净含量数值」两种形态——没有证据类主语（`_NO_COVERAGE_RE` 收不到），
+# 又拖着宾语不满 fullmatch（`_BARE_COVERAGE_RE` 的刀 16 保守口径也收不到）。
+# 58 刀摘句层对它们**刻意保持不动**（误摘比漏检贵，刀 12 口径——答案文本面
+# 零改动，这类句子照旧原样答给顾客）；只在 auto-close 缺口的判据面认它：
+# 句首就是覆盖动词的句子按免责句对待。句首是主语的事实否定句
+# （「配料信息中不包含任何防腐剂」）不受牵连。
+_BARE_COVERAGE_LEAD_RE = re.compile(
+    r"^(未覆盖|未涉及|未提供|未收录|尚未收录|未说明|未提及|未给出|未列明|未包含|不包含"
+    r"|无法(回答|提供|确认|给出)"
+    r"|没有(提及|提供|说明|相关)"
+    r"|暂无(相关信息|相关答案|信息|答案)?"
+    r"|无(相关|答案|记录))"
+)
+
 
 def merge_own_hits(hits: list[dict[str, Any]], own: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """拼接检索的**本问保底**（审计刀 13 C 轴 P0-1，纯函数便于单测）。
@@ -301,6 +316,33 @@ def strip_coverage_disclaimers(text: str) -> tuple[str, bool]:
     if not _SUBSTANTIVE_RE.search(_CITE_MARK_RE.sub("", remaining)):
         return "", True
     return remaining, False
+
+
+def has_substantive_answer(text: str) -> bool:
+    """回答文本里是否存在**非免责的实质内容**（审计刀 17 记债①的 auto-close 判据）。
+
+    复用 58/69/81 刀族的免责句词表按句判：`_NO_COVERAGE_RE` 命中句、裸覆盖
+    fullmatch 句（刀 16），以及**覆盖动词开头**的无主语形态（刀 17 实测
+    「未覆盖保修信息」「未给出净含量数值」——见 `_BARE_COVERAGE_LEAD_RE`）
+    都算免责句；存在任一既非免责、又含实质字符（字母数字/CJK——光秃秃的
+    引用标记不算）的句子才 True。
+
+    只服务「答上是否关缺口」的判定，**不改答案文本本身**：纯免责句照旧以
+    kind=answer 出给顾客（58 刀摘句层不动），但缺口不关——知识仍缺，下次
+    再答（「答非所答」不等于「已答」）；部分实质+部分免责=照答照关
+    （12 刀「答上即关」对实质回答的语义不回归）。
+    """
+    for sentence in _SENTENCE_SPLIT_RE.findall(text):
+        if _NO_COVERAGE_RE.search(sentence):
+            continue
+        bare = re.sub(r"[\s\W]+", "", _CITE_MARK_RE.sub("", sentence))
+        if bare and (
+            _BARE_COVERAGE_RE.fullmatch(bare) or _BARE_COVERAGE_LEAD_RE.match(bare)
+        ):
+            continue
+        if _SUBSTANTIVE_RE.search(_CITE_MARK_RE.sub("", sentence)):
+            return True
+    return False
 
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
@@ -631,7 +673,12 @@ async def run_ask(
     if answer.kind == "answer":
         # 审计刀 12 P1：**任何答上的出口都关同问 open 缺口**——此前只有目录分支调，
         # 于是「库存已答」「RAG 已答」的问句仍挂着「待补」（点「去补文档」误人）。
-        resolve_gap_answered_by_catalog(db, question)
+        # 审计刀 17 记债①收口：answer 还须**答的是实质内容**——纯免责句
+        # （「未覆盖保修信息」类挂 kind=answer 的「答非所答」）不关缺口，
+        # 知识仍缺、下次再答（has_substantive_answer 按句判；模板/目录/澄清
+        # 路径的固定文案恒过，12 刀「答上即关」语义不回归）。
+        if has_substantive_answer(content):
+            resolve_gap_answered_by_catalog(db, question)
     if answer.kind == "refusal":
         # 第 86 刀：**「本店没有这款商品」不落知识缺口**——缺口池语义是「知识待补」
         # （点「去补文档」能补出来），而「本店不经营」补文档也补不出来；此类只建

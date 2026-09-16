@@ -1,6 +1,7 @@
-// 连接层演示页（第 23 刀/ADR 0001/0005/0032）：把中台接口以 MCP 工具形式暴露给
-// 外部 Agent 的门面。四工具卡（没有 publish——发布只在治理台）+ 检索试玩 +
-// 已发布资产取版预览 + mcp.json 配置复制块。
+// 连接层演示页（第 23 刀/ADR 0001/0005/0032；第 99 刀 ADR 0057 活状态三件）：
+// 把中台接口以 MCP 工具形式暴露给外部 Agent 的门面。七工具卡（知识四件 +
+// 活状态三件；没有 publish——发布只在治理台）+ 检索试玩 + 已发布资产取版预览 +
+// mcp.json 配置复制块。
 // 试玩走操作者面等价查询（listAssets 客户端过滤，不真发 MCP 协议请求；真 MCP
 // 客户端冒烟见 scripts/mcp_smoke.py）。Bearer 只出现占位符，绝不读显真值。
 
@@ -32,22 +33,26 @@ interface ToolDef {
   label: string
   desc: string
   write: boolean
+  // 活状态组标注（99 刀 ADR 0057）：只读 · 与客服同一函数（执行入口就是
+  // 客服 agent loop 的 TOOL_REGISTRY——一致性由复用保证，不是对齐维护）
+  live?: boolean
 }
 
-// 语义与参数摘要对照 README「MCP 连接层」表（0032）；没有 publish（0001/0005）
+// 语义与参数摘要对照 mcp_server.py 工具 docstring 与 README「MCP 连接层」表
+// （0032 知识四件 / 0057 活状态三件）；没有 publish（0001/0005）
 const TOOLS: ToolDef[] = [
   {
     name: 'search_published',
     sig: 'query',
     label: '检索已发布',
-    desc: '按关键词检索当前已发布切块（与客服回答同一索引），返回资产 ID · 版本号与命中摘要。',
+    desc: '检索当前已发布的资产切块（与站内客服同一检索索引，只命中已发布），返回资产 ID · 版本号与命中摘要。',
     write: false,
   },
   {
     name: 'get_asset',
     sig: 'asset_id, version?',
     label: '取资产',
-    desc: '取已发布资产正文快照：不传 version = 当前指针版，传 version = 历史已发布版；待人洗/已接入一律拒绝。',
+    desc: '取已发布资产正文与元数据快照：不传 version = 当前指针版，传 version = 历史已发布版；待人洗/已接入一律拒绝。',
     write: false,
   },
   {
@@ -61,8 +66,32 @@ const TOOLS: ToolDef[] = [
     name: 'export_published',
     sig: '（无参数）',
     label: '导出已发布集',
-    desc: '导出全部当前已发布资产与该版正文全文：是数据包，不是微调集。',
+    desc: '导出全部当前已发布资产与该版正文全文：是数据包，不是微调集；成功导出逐资产留痕。',
     write: false,
+  },
+  {
+    name: 'get_order_status',
+    sig: 'order_no',
+    label: '查订单状态',
+    desc: '查一个订单的当前状态与物流轨迹；返回不含顾客联系方式（items/events 联系字段被剥除、自由文本出口打码）。',
+    write: false,
+    live: true,
+  },
+  {
+    name: 'get_stock',
+    sig: 'product_name',
+    label: '查库存',
+    desc: '查一件商品（或一类商品）的当前库存：部分名容错（「保温杯」命中「钛钢保温杯」），类目名/口语别名返回聚合。',
+    write: false,
+    live: true,
+  },
+  {
+    name: 'get_product',
+    sig: 'name',
+    label: '查商品档案',
+    desc: '按名查一件商品的行档案：价格、库存与已写回规格摘要；先类目聚合后单品，未匹配返回 {found: false}。',
+    write: false,
+    live: true,
   },
 ]
 
@@ -159,11 +188,11 @@ export default function ConnectPage() {
 
       {state.phase === 'error' ? <ErrorBanner error={state.error} onRetry={reload} /> : null}
 
-      {/* 四工具卡 */}
+      {/* 七工具卡：知识四件（0020/0013）+ 活状态三件（0057，第 99 刀） */}
       <div className="mb-4">
         <div className="panel-title">
           <PlugsConnected aria-hidden size={14} />
-          对外工具（4）
+          对外工具（{TOOLS.length}）
         </div>
         <div className="panel overflow-hidden rounded-t-none border-t-0">
           <div className="grid gap-px bg-line-1 md:grid-cols-2">
@@ -174,6 +203,11 @@ export default function ConnectPage() {
                   <span className={`badge ${t.write ? 'badge-review' : 'badge-ingested'}`}>
                     {t.write ? '可写入' : '只读'}
                   </span>
+                  {t.live ? (
+                    <span className="badge badge-ingested" title="执行入口就是客服 agent loop 的 TOOL_REGISTRY——同一份参数校验与执行函数（ADR 0057）">
+                      与客服同一函数
+                    </span>
+                  ) : null}
                 </div>
                 <div className="mt-1 text-[13px] font-medium text-ink">{t.label}</div>
                 <div className="mt-0.5 font-mono text-[11px] leading-5 text-caption">
@@ -332,7 +366,7 @@ export default function ConnectPage() {
 
       <div className="mt-4 flex items-center gap-1.5 text-xs text-caption">
         <PlugsConnected aria-hidden size={13} />
-        新系统接入 = 提示词 + 选这四个工具；内部模块走中台接口互调，不绕连接层。
+        新系统接入 = 提示词 + 选这七个工具（知识四件 + 活状态三件）；内部模块走中台接口互调，不绕连接层。
       </div>
     </div>
   )
