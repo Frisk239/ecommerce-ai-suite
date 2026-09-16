@@ -565,6 +565,40 @@ export interface ClipAsrStatus {
   configured: boolean
 }
 
+/** 洗帧 VLM 配置状态（第 94c 刀 GET /clips/frames/status）：帧打分复用 94a 的
+ * VLM 客户端（同一把 VLM_API_KEY），只回布尔——前端据此禁用「洗帧到素材库」。 */
+export interface ClipFrameStatus {
+  configured: boolean
+}
+
+/** 洗帧候选帧（第 94c 刀 POST /assets/{id}/frame-candidates）：**请求态**——
+ * 不落库、刷新即重算；确认时只回传 at_second，服务器从已发布版字节重新抽帧
+ * （不信任请求里的缩略图）。 */
+export interface FrameCandidate {
+  at_second: number
+  /** mm:ss 展示位（权威是 at_second）。 */
+  at_time: string
+  score: number
+  note: string
+  /** data:image/jpeg;base64,...（VLM 打分用的同一张 ≤480px 缩略图）。 */
+  thumbnail_data_url: string
+}
+
+/** 洗帧候选回执：时长 + 采样数（含被淘汰的，如实）+ 过线候选（≥6 分上限 8）。 */
+export interface FrameCandidatesResult {
+  duration_seconds: number
+  sampled: number
+  candidates: FrameCandidate[]
+}
+
+/** 确认登记回执（第 94c 刀 POST /assets/{id}/frames）：新图片资产
+ * （kind=image、source_kind=clip_frame，待人洗走 94a 描述治理）+ 「切自」锚。 */
+export interface FrameRegisterResult {
+  asset: AssetListItem
+  /** 血缘锚「A-xxxx · vN」：切自哪份视频资产的哪个已发布版。 */
+  cut_from: string
+}
+
 export interface ClipCandidate {
   id: number
   /** 第 93 刀起可空：云转写候选按录像整段生成，句子里没有商品归属（不编造）。 */

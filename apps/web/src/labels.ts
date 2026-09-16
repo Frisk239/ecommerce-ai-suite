@@ -46,6 +46,9 @@ const SOURCE_KIND_LABELS: Record<string, string> = {
   upload: '上传',
   session_backflow: '会话回流',
   clip_pick: '切片拣选',
+  // 第 94c 刀（ADR 0053）：从已发布切片视频确认抽出的一帧（kind=图片）——
+  // 与「切片拣选」同族，来源是「从自己的直播里洗」。
+  clip_frame: '直播洗帧',
   material_generated: '素材生成',
   mcp_registered: '连接层登记',
   seed: '种子',
