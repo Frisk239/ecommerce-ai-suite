@@ -194,6 +194,7 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 | `#148` | **澄清闭环**（第 70 刀）：「我的订单到哪了」→ 请提供订单号 → 补单号 → 订单详情 |
 | `#198` | **评分可改**（第 71 刀）：4 星 → 填留言 → 改 5 星；详情 ★ chip 见「· 改过」（第 77 刀） |
 | `#142` | **拼接追问**（审计刀 13 P0 修复）：净含量 → 「那它的材质是什么」→ 答钛钢带引用 |
+| 数码店（第 92 刀） | **真实使用剧本**：问「显示器有货吗」看类目聚合库存；「能刻字吗」拒答落缺口 → 治理台补《定制刻字服务口径》（A492）→ 同问法再问命中带引用——飞轮整圈实录见 `docs/research/real-usage-log.md`；带必填全链（登记→机洗→人洗→发布）样例 A497 |
 
 **避开**（历史探针的旧形态，行为已被后续刀修掉，展示会误导）：早期「怎么退货」整段拒答的会话、「你们有笔记本吗」旧 handoff、「到货了吗」旧拒答——**避开方法**：演示前跑一次 `scripts/demo_reset.py --apply`（清空会话与探针资产），然后用上表主线会话。「M&M white的条码」类具名 OFF 规格问句**已可稳定作答**（第 81 刀证据行补资料名修复：审计刀 17 C 轴克隆库复测 3/3 答、值正确；此前审计刀 16 实测的 6 次 3 拒是修复前数据）——OFF 导入数据的标题/正文品牌错配残留仍在，遇其他 OFF 商品问句仍偶发不稳，演示跨商品检索首选「保温杯/Erdbeeren」类问句（第 79 刀实体亲和重排对这些稳定命中）。
 
@@ -225,9 +226,9 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 
 | 数据 | 量 | 落在哪 | 产品面显示 |
 | --- | --- | --- | --- |
-| Wikidata 商品（`scripts/realdata/fetch_wikidata_products.py`） | 91 | `products` | 商品卡「Wikidata」 |
+| Wikidata 商品（`scripts/realdata/fetch_wikidata_products.py`，含第 90 刀数码四类） | 155 | `products` | 商品卡「Wikidata」 |
 | OpenFoodFacts（`load_openfoodfacts.py`） | 20 商品 + 20 规格资产 | `products` / `assets` | 商品卡与资产来源「OpenFoodFacts」 |
-| 在线购物评论（`load_reviews.py`） | 200 资产 | `assets` | 资产来源「评论导入」 |
+| 在线购物评论（`load_reviews.py`，第 90 刀起含数码三类目筛选） | 400 资产 | `assets` | 资产来源「评论导入」 |
 | WANDS 家具检索基准（`load_wands_clips.py`） | 30 切片候选 + 1 承载商品 | `clip_candidates` / `products` | 承载商品「WANDS 基准」+ 切片候选卡各自的源录像标签 |
 
 许可与出处见 `scripts/realdata/README.md`；**来源是只读字段**（既成事实，运营改不了——可改就成可造假的溯源）。

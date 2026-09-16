@@ -65,7 +65,7 @@
 | 辅轨视频 | Pexels 主（key 待申请）+ Commons 补充 | 158 / 1,415 实测 |
 | ASR | 云：SiliconFlow 免费→Groq turbo（时间戳）→paraformer-v2（0.288 元/时）；本地：funasr paraformer-zh | CER 2.94 / RTF 17x |
 
-**主轨源录像方案确认**：确认主轨仍为店主自录 3–5 分钟数码产品讲解视频（mp4 ≤200MB），上传后先走本地 funasr（或 SiliconFlow 免费档）转写，Pexels/Commons 仅作辅轨画面素材。
+**主轨源录像方案确认**：确认主轨仍为店主自录 3–5 分钟数码产品讲解视频（mp4 ≤200MB）；云 ASR 主选按 Owner 裁决（带时间戳档：Groq turbo / paraformer-v2），本地 funasr 仅脚本级兜底（见上方裁决段——本句为调研原文保留）。Pexels/Commons 仅作辅轨画面素材。
 
 **Owner 裁决（2026-09-16，本刀 closeout 补注）**：刀 93 的候选聚合需要**句级时间戳**——云 ASR 实现主选因此定为 **Groq turbo（免费层大）或 DashScope paraformer-v2**；SiliconFlow SenseVoiceSmall 无时间戳，降级为「纯 transcript 字段快速兜底」用途，不承载候选聚合。
 
