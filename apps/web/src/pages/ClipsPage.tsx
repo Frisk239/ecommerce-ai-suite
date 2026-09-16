@@ -1,9 +1,11 @@
-// 直播切片（第 18 刀/ADR 0014/0015/0039；第 46 刀真链路）：候选卡片网格 →
-// 勾选拣选 → 批量登记。候选不是资产（0014）：勾选只在前端，点「拣选登记（N 条）」
-// 才把字节登记为种类=视频/来源=切片拣选的中台资产（已接入→待人洗）。
+// 直播切片（第 18 刀/ADR 0014/0015/0039；第 46 刀真链路；第 93 刀云转写）：候选卡片
+// 网格 → 勾选拣选 → 批量登记。候选不是资产（0014）：勾选只在前端，点「拣选登记（N 条）」
+// 才把字节登记为种类=视频/来源=切片拣选的资产（已接入→待人洗）。
 // 第 46 刀：上传 .mp4 源录像（≤200MB，上传即绑「尚无源录像」的待拣候选），
 // 有源录像的候选拣选时真切出 mp4 片段、转写预置为版本字段；无源录像的仍写
 // 时间码转写文本（旧路径）。录像是切片模块自有的输入源，不是中台资产。
+// 第 93 刀：对选中的源录像点「自动转写」——云 ASR 按停顿聚合出候选落 pending
+// （人工拣选闸门保留）；无 key 时按钮禁用并说明（后端也 409，前端只是提前告知）。
 // 单向状态机（0039）：已登记卡不再出勾选框，只给「已登记 A-xxxx」链跳治理台
 // 详情——不可撤销不可重切。交互状态对照原型 Clips.tsx 冻结口径（勾选态/批量
 // 按钮/登记后卡换徽章/单向），视觉照 UX-NOTES §二点七（实色、无 hover 位移）。
@@ -17,6 +19,7 @@ import {
   Square,
   UploadSimple,
   Warning,
+  Waveform,
 } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
@@ -30,6 +33,13 @@ import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
 
 const EMPTY_CLIPS = [] as const
+
+/** 转写来源标注（第 93 刀，只读）：来源是既成事实，UI 只呈现不提供修改。 */
+const TRANSCRIPT_SOURCE_LABELS: Record<string, string> = {
+  cloud: '云转写',
+  local: '本地转写',
+  manual: '人工/导入',
+}
 
 function formatTimecodeRange(c: ClipCandidate): string {
   return `${c.timecode_start}-${c.timecode_end}`
@@ -71,12 +81,33 @@ export default function ClipsPage() {
   const [recordings, setRecordings] = useState<ClipRecording[]>([])
   const [chosenRecordingId, setChosenRecordingId] = useState<number | null>(null)
   const [binding, setBinding] = useState(false)
+  // 第 93 刀：自动转写（选中的源录像 → 云 ASR 候选）与 ASR 配置状态
+  const [transcribing, setTranscribing] = useState(false)
+  const [transcribeNote, setTranscribeNote] = useState<string | null>(null)
+  const [asrConfigured, setAsrConfigured] = useState<boolean | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 单向：勾选只对 pending 有意义；reload 后已登记/被移除的选中项自动出列
   const registrable = clips.filter((c) => c.status === 'pending' && selected.has(c.id))
   const pendingCount = clips.filter((c) => c.status === 'pending').length
   const currentRecording = latestRecording(clips)
+
+  // ASR 配置状态（第 93 刀）：拉不到就按「未知」处理——按钮仍可点，由后端 409
+  // 给准确文案（前端不做假的禁用判断）
+  useEffect(() => {
+    let alive = true
+    void api
+      .getClipAsrStatus()
+      .then((status) => {
+        if (alive) setAsrConfigured(status.configured)
+      })
+      .catch(() => {
+        if (alive) setAsrConfigured(null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   // 录像列表随页加载（一次性）：选择器默认选最新一份；上传后也会重拉（见下）
   useEffect(() => {
@@ -170,6 +201,36 @@ export default function ClipsPage() {
     }
   }
 
+  // 自动转写（第 93 刀）：对选中的源录像跑云 ASR → 停顿聚合候选落 pending。
+  // 回执用后端真值（candidates_created/segments/note），错误文案由 detailText 呈现
+  // （无 key 409/无音轨 422/已有未拣选候选 409 都自带可行动说明）。
+  const transcribe = async () => {
+    if (transcribing || chosenRecordingId === null) return
+    setTranscribing(true)
+    setActionError(null)
+    setTranscribeNote(null)
+    setUploadNote(null)
+    setBindNote(null)
+    setPickNote(null)
+    try {
+      const result = await api.transcribeClipRecording(chosenRecordingId)
+      const label = recordings.find((r) => r.id === chosenRecordingId)?.label ?? '所选录像'
+      const note = result.note === null ? '' : ` ${result.note}`
+      if (result.candidates_created > 0) {
+        setTranscribeNote(
+          `已从《${label}》自动转写出 ${result.candidates_created} 条候选（云 ASR 句级时间戳按停顿聚合，${result.segments} 句；待人拣选）。${note}`,
+        )
+      } else {
+        setTranscribeNote(`《${label}》：${result.note ?? '没有识别到语音'}。`)
+      }
+      reload()
+    } catch (err) {
+      setActionError(detailText(err))
+    } finally {
+      setTranscribing(false)
+    }
+  }
+
   const pick = async () => {
     if (submitting || registrable.length === 0) return
     setSubmitting(true)
@@ -215,6 +276,7 @@ export default function ClipsPage() {
     <div>
       {actionError ? <ActionError message={actionError} variant="prominent" className="mb-4" /> : null}
       {uploadNote ? <SuccessBanner>{uploadNote}</SuccessBanner> : null}
+      {transcribeNote ? <SuccessBanner>{transcribeNote}</SuccessBanner> : null}
       {pickNote ? <SuccessBanner>{pickNote}</SuccessBanner> : null}
       {bindNote ? <SuccessBanner>{bindNote}</SuccessBanner> : null}
 
@@ -265,14 +327,15 @@ export default function ClipsPage() {
             {pendingCount > 0 ? ` · ${pendingCount} 条待拣候选` : ''}
           </div>
           {/* 第 49 刀：改绑——源录像不再是「绑错就锁死」。勾了候选改勾选的，
-              没勾改全部待拣；已登记候选一律不动（后端 409）。 */}
+              没勾改全部待拣；已登记候选一律不动（后端 409）。
+              第 93 刀：同一行给「自动转写」——对选中的这一份录像跑云 ASR。 */}
           {recordings.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2 border-t border-line-1 px-3.5 py-2">
               <span className="text-xs text-ink-3">改绑待拣候选到</span>
               <select
                 className="input h-7 max-w-64 text-[12px]"
                 value={chosenRecordingId ?? ''}
-                disabled={binding || submitting}
+                disabled={binding || submitting || transcribing}
                 onChange={(e) => setChosenRecordingId(Number(e.target.value))}
               >
                 {recordings.map((r) => (
@@ -285,7 +348,7 @@ export default function ClipsPage() {
                 type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={() => void rebind()}
-                disabled={binding || submitting || chosenRecordingId === null}
+                disabled={binding || submitting || transcribing || chosenRecordingId === null}
                 title="把待拣候选的源录像改成这一份；已登记的候选不动"
               >
                 <ArrowUDownLeft aria-hidden size={13} />
@@ -295,6 +358,32 @@ export default function ClipsPage() {
                     ? `改绑勾选的 ${registrable.length} 条`
                     : '改绑全部待拣'}
               </button>
+              <span className="flex-1" />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => void transcribe()}
+                disabled={
+                  transcribing ||
+                  binding ||
+                  submitting ||
+                  asrConfigured === false ||
+                  chosenRecordingId === null
+                }
+                title={
+                  asrConfigured === false
+                    ? '未配置 ASR_API_KEY：自动转写不可用（可人工填写转写，或跑 scripts/transcribe_local.py 本地兜底）'
+                    : '对选中的源录像跑云 ASR，按停顿切句生成待拣候选'
+                }
+              >
+                <Waveform aria-hidden size={13} />
+                {transcribing ? '转写中…' : '自动转写'}
+              </button>
+              {asrConfigured === false ? (
+                <span className="text-xs text-caption">
+                  未配置 ASR_API_KEY：自动转写禁用（后端也 409）
+                </span>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -362,7 +451,14 @@ export default function ClipsPage() {
 
                 <div className="mt-auto flex items-center gap-2">
                   <span className="font-mono text-xs tabular-nums text-caption">
-                    {`P-${String(c.product_id).padStart(4, '0')}`}
+                    {c.product_id === null ? '未归属商品' : `P-${String(c.product_id).padStart(4, '0')}`}
+                  </span>
+                  {/* 转写来源（第 93 刀）：只读标注，来源是既成事实 */}
+                  <span
+                    className="badge badge-ingested"
+                    title={`转写来源：${TRANSCRIPT_SOURCE_LABELS[c.transcript_source] ?? c.transcript_source}（只读，来源是既成事实）`}
+                  >
+                    {TRANSCRIPT_SOURCE_LABELS[c.transcript_source] ?? c.transcript_source}
                   </span>
                   <span className="flex-1" />
                   {registered ? (

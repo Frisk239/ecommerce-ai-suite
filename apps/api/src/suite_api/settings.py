@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://opencode.ai/zen/go/v1"
     llm_model: str = "qwen3.8-flash"
 
+    # 云 ASR（第 93 刀，ADR 0050）：OpenAI 兼容 ``POST {base}/audio/transcriptions``
+    # （``response_format=verbose_json`` 取句级时间戳）。默认 Groq turbo（89 刀定案：
+    # 带时间戳的免费档）；DashScope/本地网关同形可换 base。密钥纪律同 0033/LLM：
+    # 只从 .env 读、不入库、不进日志与异常文案；**空 key = 不建客户端、不发请求**
+    # ——自动转写端点据此 409 诚实拒绝（fail-closed），人工填 transcript 现状不变。
+    asr_api_key: str = ""
+    asr_base_url: str = "https://api.groq.com/openai/v1"
+    asr_model: str = "whisper-large-v3-turbo"
+
     # 连接层 Bearer（ADR 0032）。空则 MCP 全部 401；与操作者会话无关。
     mcp_bearer_token: str = ""
 

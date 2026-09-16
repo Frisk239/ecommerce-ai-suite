@@ -377,17 +377,26 @@ class ClipCandidate(Base):
     录像经 recording_id 指向 clip_recordings（不存资产语义）。
     registered_asset_id 只在 registered 后指向登记出的视频资产（回执锚，
     UI 跳治理台的锚，同 MaterialTask.asset_id 先例）。
+
+    第 93 刀（0030）两处：``transcript_source`` 是候选的**只读通道标注**
+    （cloud=云端点转写 / local=本地兜底脚本 / manual=非 ASR 通道，含种子与
+    WANDS 数据自带）——来源是既成事实，运营改不了；``product_id`` 放开
+    NOT NULL：云转写按录像整段生成，句子里没有商品归属，归属是人/治理动作
+    （不编造），未归属候选在拣选时登记出 product 为空的资产。
     """
 
     __tablename__ = "clip_candidates"
     __table_args__ = (Index("ix_clip_candidates_status", "status"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     status: Mapped[str] = mapped_column(String(16))
     timecode_start: Mapped[str] = mapped_column(String(8))
     timecode_end: Mapped[str] = mapped_column(String(8))
     transcript: Mapped[str] = mapped_column(Text)
+    # 转写来源（第 93 刀）：String(10) 无 CHECK，取值由 services/asr 常量收口；
+    # server_default 让种子/导入等非 ASR 插入自动落 'manual'（0030 存量回填同值）。
+    transcript_source: Mapped[str] = mapped_column(String(10), server_default=text("'manual'"))
     source_video_label: Mapped[str] = mapped_column(String(120))
     # 源录像（第 46 刀）：上传即绑待拣候选；无上传为 NULL=走时间码文本旧路径。
     # 已登记候选的绑定不随新上传改写（回执锚已定，裁决 2）。

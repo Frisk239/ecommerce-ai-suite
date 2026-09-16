@@ -93,7 +93,7 @@ uv run python scripts/realdata/load_wands_clips.py --n 30 --load \
 | 脚本参数 | 说明 |
 |---|---|
 | `fetch_wikidata_products.py --limit/--per-category/--seed/--out` | 总行数上限（默认 200）/每类上限（40）/stock 种子（42）/CSV 路径 |
-| `fetch_wikidata_products.py --digital-only/--timeout` | 只拉数码四类（第 90 刀 QID 常量）/ 单查询超时秒 |
+| `fetch_wikidata_products.py --digital-only/--digital-limit/--timeout` | 只拉数码四类（第 90 刀 QID 常量）/ 数码类独立行数上限（默认 200，与 legacy 六类的 `--limit` 分离——审计 18 P2#3）/ 单查询超时秒 |
 | `publish_digital_specs.py --csv/--api/--user/--pass/--db` | 规格文档治理发布（第 90 刀）：fetch 输出的 products.csv / API 基址 / 操作者凭证 / 演示库 URL（默认 .env/DATABASE_URL） |
 | `load_reviews.py --src/--zip-file/--cache` | zip 下载地址覆盖 / 本地 zip 直读 / 缓存路径 |
 | `load_reviews.py --n/--seed/--import/--publish/--api/--user/--pass/--db/--cats` | 抽样条数（默认 2000）/种子 / 登录批量导入 / 发布 N 条（须与 --import 同跑）/ API 基址（默认 `http://localhost:8000`）/ 操作者凭证（默认 operator/operator123，开发种子）/ 目标库 URL（默认 .env/DATABASE_URL）/ 类目白名单逗号分隔（第 90 刀，空=不过滤） |

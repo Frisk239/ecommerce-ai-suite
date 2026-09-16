@@ -11,6 +11,10 @@ import os
 # 配了真 LLM_API_KEY，厂商生成路径在测试里也自动降级为证据组装模板，不做任何
 # 外网调用（spec 第 7 刀：mock 缺省策略=无凭证 env 走降级，既有 SSE 模板断言不破）。
 os.environ["LLM_API_KEY"] = ""
+# 第 93 刀同口径：测试进程强制空 ASR 凭证——本机 .env 配了真 ASR_API_KEY 时，
+# 自动转写也必须走「未配置 409」（零外网调用）；要测配置态用例自己 monkeypatch
+# services.asr 的 is_configured/transcribe_audio（替身，不打真网）。
+os.environ["ASR_API_KEY"] = ""
 
 from pathlib import Path  # noqa: E402
 from urllib.parse import urlsplit, urlunsplit  # noqa: E402

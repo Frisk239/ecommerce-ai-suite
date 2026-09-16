@@ -22,6 +22,10 @@ query.wikidata.org 按类目 QID 抽样带中文标签的商品条目。只读�
     uv run python scripts/realdata/fetch_wikidata_products.py --digital-only --load \
         --db postgresql://suite:suite@localhost:5433/suite               # 只拉数码四类（第 90 刀）
 
+行数上限（审计 18 P2#3 修）：``--limit`` 只管 legacy 六类、``--digital-limit`` 管
+数码四类（默认各 200）——旧口径共享一个上限，数码行排在 legacy 之后，legacy 填满
+即被静默截掉；现在两组各算各的，合并 CSV 最多 400 行。
+
 逐查询 payload 缓存在 out/wikidata_*.json（查询串校验，参数变即重拉）——
 WDQS 退避中进程被杀后重跑可续接，不重复消耗限速预算。
 
@@ -86,6 +90,11 @@ DIGITAL_PROP_VARS: dict[str, str] = {
 }
 DEFAULT_PER_CATEGORY = 40
 DEFAULT_LIMIT = 200
+# 数码行的独立上限（第 93 刀清审计 18 P2#3）：旧口径是 legacy 六类与数码四类共享
+# 一个 limit——数码行排在 legacy 之后，legacy 一旦填满 200 行，数码行被静默截掉
+# （语料增长时丢行且无提示）。现在两组各算各的上限（都有默认 200），合并后 CSV
+# 可达 400 行：丢行不再无声。
+DEFAULT_DIGITAL_LIMIT = 200
 DEFAULT_SEED = 42
 DEFAULT_TIMEOUT = 120
 DEFAULT_TRIES = 3
@@ -233,22 +242,19 @@ def _binding_value(binding: dict[str, Any], key: str) -> str:
     return str(cell.get("value", "")).strip() if isinstance(cell, dict) else ""
 
 
-def sparql_json_to_rows(
-    payload: dict[str, Any],
-    limit: int = DEFAULT_LIMIT,
-    seed: int = DEFAULT_SEED,
+def rows_from_bindings(
+    bindings: list[dict[str, Any]],
+    *,
+    limit: int,
+    rng: random.Random,
+    seen: set[tuple[str, str]],
 ) -> list[dict[str, Any]]:
-    """SPARQL 结果 JSON → 商品行列表（纯函数：name/category/spec/attrs/stock）。
+    """绑定列表 → 商品行（**共享上限计算的核心**：rng 序列与去重集合由调用方持有）。
 
-    过滤：缺标签或缺类目跳过；label 服务无标签兜底返回 QID 串（与条目 QID 相同）
-    不是可用商品名，跳过。(name, category) 去重；name/category 截断到模型列宽；
-    attrs = 数码属性抽取（行级，随 CSV 走不灌 spec_values——写回是治理发布语义）；
-    stock 用固定种子 rng 取 0-99（演示店铺语境的 mock 库存，可复现）。
+    第 93 刀拆出（审计 18 P2#3）：legacy 组与数码组各带各的 limit，但共用同一个
+    rng（stock 序列可复现，与拆分前逐位一致）与 (name, category) 去重集合。
     """
-    rng = random.Random(seed)
-    seen: set[tuple[str, str]] = set()
     rows: list[dict[str, Any]] = []
-    bindings = (payload.get("results") or {}).get("bindings") or []
     for binding in bindings:
         label = _binding_value(binding, "itemLabel")
         category = _binding_value(binding, "category")
@@ -274,6 +280,29 @@ def sparql_json_to_rows(
         if len(rows) >= limit:
             break
     return rows
+
+
+def sparql_json_to_rows(
+    payload: dict[str, Any],
+    limit: int = DEFAULT_LIMIT,
+    seed: int = DEFAULT_SEED,
+) -> list[dict[str, Any]]:
+    """SPARQL 结果 JSON → 商品行列表（纯函数：name/category/spec/attrs/stock）。
+
+    过滤：缺标签或缺类目跳过；label 服务无标签兜底返回 QID 串（与条目 QID 相同）
+    不是可用商品名，跳过。(name, category) 去重；name/category 截断到模型列宽；
+    attrs = 数码属性抽取（行级，随 CSV 走不灌 spec_values——写回是治理发布语义）；
+    stock 用固定种子 rng 取 0-99（演示店铺语境的 mock 库存，可复现）。
+
+    单 payload 形态保留给测试与单组调用；main 走 ``rows_from_bindings`` 分组
+    各带上限（P2#3）。
+    """
+    return rows_from_bindings(
+        (payload.get("results") or {}).get("bindings") or [],
+        limit=limit,
+        rng=random.Random(seed),
+        seen=set(),
+    )
 
 
 def fetch_sparql(
@@ -454,7 +483,13 @@ def load_products(db_url: str, rows: list[dict[str, Any]]) -> tuple[int, int]:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Wikidata 商品种子拉取（CC0）")
-    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="总行数上限（默认 200）")
+    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="legacy 六类行数上限（默认 200）")
+    parser.add_argument(
+        "--digital-limit",
+        type=int,
+        default=DEFAULT_DIGITAL_LIMIT,
+        help="数码四类行数上限（默认 200；与 --limit 独立——P2#3：不再共享一个上限）",
+    )
     parser.add_argument(
         "--per-category",
         type=int,
@@ -494,29 +529,34 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"SPARQL 拉取：{legacy_names} + {len(DIGITAL_CATEGORIES)} 数码类目（单类逐查，逐查询缓存）……"
     )
-    payloads: list[dict[str, Any]] = []
+    legacy_bindings: list[dict[str, Any]] = []
+    digital_bindings: list[dict[str, Any]] = []
     if not args.digital_only:
-        payloads.append(
-            fetch_sparql_cached(
-                DEFAULT_CACHE_DIR / "wikidata_legacy.json",
-                build_sparql_query(CATEGORIES, args.per_category),
-                timeout=args.timeout,
-            )
+        payload = fetch_sparql_cached(
+            DEFAULT_CACHE_DIR / "wikidata_legacy.json",
+            build_sparql_query(CATEGORIES, args.per_category),
+            timeout=args.timeout,
         )
+        legacy_bindings.extend((payload.get("results") or {}).get("bindings") or [])
     for qid, zh_name, props in DIGITAL_CATEGORIES:
         print(f"  数码类目 {zh_name}（{qid}，属性 {'/'.join(props)}）单类查询 ……")
-        payloads.append(
-            fetch_sparql_cached(
-                DEFAULT_CACHE_DIR / f"wikidata_{qid}.json",
-                build_digital_sparql_query(qid, zh_name, props, args.per_category),
-                timeout=args.timeout,
-            )
+        payload = fetch_sparql_cached(
+            DEFAULT_CACHE_DIR / f"wikidata_{qid}.json",
+            build_digital_sparql_query(qid, zh_name, props, args.per_category),
+            timeout=args.timeout,
         )
-    # 合并 bindings 后一次转换：单 rng 序列 + 跨查询 (name, category) 去重
-    bindings: list[dict[str, Any]] = []
-    for payload in payloads:
-        bindings.extend((payload.get("results") or {}).get("bindings") or [])
-    rows = sparql_json_to_rows({"results": {"bindings": bindings}}, limit=args.limit, seed=args.seed)
+        digital_bindings.extend((payload.get("results") or {}).get("bindings") or [])
+    # 分组转换（P2#3）：legacy 与数码各带各的上限，共享单 rng 序列 + 跨组去重
+    # （与旧单次合并逐位一致：迭代顺序仍是 legacy 组在前、数码组在后）
+    rng = random.Random(args.seed)
+    seen: set[tuple[str, str]] = set()
+    legacy_rows = rows_from_bindings(
+        legacy_bindings, limit=args.limit, rng=rng, seen=seen
+    )
+    digital_rows = rows_from_bindings(
+        digital_bindings, limit=args.digital_limit, rng=rng, seen=seen
+    )
+    rows = legacy_rows + digital_rows
     per_category: dict[str, int] = {}
     for row in rows:
         per_category[row["category"]] = per_category.get(row["category"], 0) + 1
@@ -525,7 +565,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {zh_name}: {per_category.get(zh_name, 0)} 条")
     for _qid, zh_name, _props in DIGITAL_CATEGORIES:
         print(f"  {zh_name}: {per_category.get(zh_name, 0)} 条")
-    print(f"共 {len(rows)} 行（去重后，上限 {args.limit}）")
+    print(
+        f"共 {len(rows)} 行（去重后；legacy 上限 {args.limit} -> {len(legacy_rows)} 行，"
+        f"数码上限 {args.digital_limit} -> {len(digital_rows)} 行）"
+    )
 
     write_products_csv(rows, args.out)
     print(f"已写出：{args.out}")

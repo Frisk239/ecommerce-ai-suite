@@ -528,14 +528,37 @@ export interface ClipBindResult {
   bound_count: number
 }
 
+/** 转写来源（第 93 刀，迁移 0030）：cloud=云 ASR 端点 / local=本地兜底脚本 /
+ * manual=非 ASR 通道（人工填写、种子与 WANDS 数据自带）。**只读标注**——来源
+ * 是既成事实，没有改它的端点。 */
+export type ClipTranscriptSource = 'cloud' | 'local' | 'manual'
+
+/** 自动转写回执（第 93 刀 POST /clips/recordings/{id}/transcribe）：
+ * candidates_created=落库候选条数、segments=ASR 句级段数（聚合前）、
+ * duration_ms=同步耗时、note=上限合并/无语音等如实说明（未触发为 null）。 */
+export interface ClipTranscribeResult {
+  candidates_created: number
+  segments: number
+  duration_ms: number
+  note: string | null
+}
+
+/** ASR 配置状态（第 93 刀 GET /clips/asr/status）：只回布尔——前端据此禁用
+ * 「自动转写」并给提示（后端仍是唯一闸，绕过了也 409）。 */
+export interface ClipAsrStatus {
+  configured: boolean
+}
+
 export interface ClipCandidate {
   id: number
-  product_id: number
+  /** 第 93 刀起可空：云转写候选按录像整段生成，句子里没有商品归属（不编造）。 */
+  product_id: number | null
   product_name: string
   status: ClipCandidateStatus
   timecode_start: string
   timecode_end: string
   transcript: string
+  transcript_source: ClipTranscriptSource
   source_video_label: string
   /** 绑定的源录像；null=无源录像（拣选走时间码文本旧路径）。 */
   recording: ClipRecording | null

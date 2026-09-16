@@ -11,7 +11,7 @@
 打开客服页问「保温杯的净含量是多少」，回答 500ml，带引用芯片 `A-xxxx · v1`——引用=资产 ID+版本号，服务端定，模型没有引用决定权。紧接着问「那它的材质是什么」也接得上：会话内多轮记忆把上一轮问答带给模型做指代消解（拒答轮、工具轮不进记忆），检索词自动补全上一问，但仍然只答有证据的内容。再问一个没有已发布证据的，比如「会员积分怎么兑换？」，直接拒答并转人工：消息文本里带问句摘要和缺口编号 `G-0001`（顾客通道只见摘要，内部缺口 id 不下发，complete 载荷同样不带）。**转人工是有闭环的**（第 42 刀，ADR 0046）：明说「我要转人工」（或 找人工/要人工/人工客服/真人/投诉/举报）走引擎最前置的词表快路径直接落工单——回执给 `H-0001` 与「工作时间 4 小时内回复」的承诺话术（**话术不外发**：不真发短信/邮件），顾客可在下面留联系方式（姓名+留言必填、邮箱/电话可选、整表可跳过）；**一个会话一张工单**，操作者在客服页按「待处理工单」筛选、待处理置顶、回复后结单。订单/库存/退货资格工具查无或提议被拒同样转人工并建单——**新产生的会话凡亮「已转人工」徽章背后都有工单**（演示库里 2026-09-08 的三条历史会话是第 42 刀之前的存量、当时还没有工单表，属历史数据而非当前行为）。工单是「顾客要人」、知识缺口是「知识待补」，两者独立、同一会话可并存；没有坐席队列/分派/SLA。操作者在治理台「知识缺口」待办里点「去补文档」：上传、机洗、人洗、发布，缺口在发布事务内自动解决；同一问法再问就命中引用新资产。**顾客满意度也闭环了**（第 48 刀）：顾客打完分（页脚 1–5 星 + 可选留言，点星即提交，评过可改（覆盖式留最新，第 71 刀））后，操作者在总览「顾客满意度 · 近 7 日」看到均分 / 1–5 分布 / 最近三条**已掩码**留言，客服页会话行也带 ★ 徽章；单条回答另有「有帮助 / 没有帮助」两向反馈（正反馈只记档，负反馈才把引用资料推进复审队列）。整段会话还能回流登记成对话资产再进治理。知识变好靠发布，不靠训练。
 
 **0:45 内容闭环——「同一份已发布权威也喂内容生产」**
-素材中心选「钛钢保温杯」一键生成卖点文案，规则质检过线进待抽检，操作者抽检通过就登记为资产进中台（种类=素材），照常机洗、人洗、发布；直播侧先在切片页上传一份源录像（.mp4，≤200MB；绑错或换录像随时可「改绑」），再把转写片段拣选登记成视频资产——登记字节是 `ffmpeg` 从该源录像切出的**真 mp4 片段**（回执指名切自哪一份），转写作为版本字段供检索，汇入切片页；运营 Agent 读商品事实与已发布素材组装投放文案，操作者确认投放——「投放」和治理台的「发布」是两回事。成品与过程都进中台，可被引用、可被追溯。
+素材中心选「钛钢保温杯」一键生成卖点文案，规则质检过线进待抽检，操作者抽检通过就登记为资产进中台（种类=素材），照常机洗、人洗、发布；直播侧先在切片页上传一份源录像（.mp4，≤200MB；绑错或换录像随时可「改绑」），点「自动转写」由云 ASR 按停顿聚合出待拣候选（无 key 则人工填转写，见「自动转写」节），再把转写片段拣选登记成视频资产——登记字节是 `ffmpeg` 从该源录像切出的**真 mp4 片段**（回执指名切自哪一份），转写作为版本字段供检索，汇入切片页；运营 Agent 读商品事实与已发布素材组装投放文案，操作者确认投放——「投放」和治理台的「发布」是两回事。成品与过程都进中台，可被引用、可被追溯。
 
 **1:30 连接层（MCP）——「外部 Agent 接同一份数据，一天接一个新系统」**
 同一个 FastAPI 挂 `/mcp/`（Streamable HTTP），独立 Bearer 鉴权，不复用登录 cookie。只有四个工具：`search_published` 检索已发布、`get_asset` 取已发布正文（可取历史已发布版）、`register_asset` 带正文登记（来源服务端定值）、`export_published` 全量导出已发布。**没有 publish 这个工具**——发布权只在治理台操作者手里。导出是数据包，不是微调集；本产品不做微调。
@@ -220,6 +220,24 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 
   它清**两类特征行**（空会话：无消息/工单/评分/缺口/回流锚；探针资产：`mcp_registered` 且标题 `^mcp-smoke|^evidence probe`（大小写不敏感，与前端判据对齐）→ 置 discarded 不删行）。**请在演示开始前跑**：顾客刚创建、还没发第一问的会话也符合「空会话」判据，会被一并删掉（其下一问会 401）。**知识缺口与工单只报告不清**——那些是「拒答留缺口 → 去补 → 再问命中」与「转人工闭环」的演示素材。默认 dry-run、必须显式 `--apply`。
 
+- **自动转写要有 ASR key**（第 93 刀）：切片页「自动转写」按钮在后端 `ASR_API_KEY` 为空时禁用（服务端也 409，见「自动转写」节）；演示前把 key 写进本机 `.env` 再 `PG_PORT=5433 docker compose up -d --build api` 带上它。
+
+## 自动转写（第 93 刀，ADR 0050）
+
+切片页选好源录像 → 点「自动转写」：后端 ffmpeg 抽出 16kHz 单声道音轨 → 云 ASR 出**句级时间戳**（OpenAI 兼容 `POST {base}/audio/transcriptions`、`response_format=verbose_json`）→ 按停顿聚合落 `clip_candidates`（**pending，人工拣选闸门保留**）。候选与人工/导入候选同形（时间码 + 转写 + 源录像绑定），多一列**只读**的 `transcript_source` 标注来源（`cloud`/`local`/`manual`）。
+
+| 变量 | 说明 |
+| --- | --- |
+| `ASR_API_KEY` | 云转写密钥；**为空时不建客户端、不发请求**——转写端点 409「ASR 未配置」，人工填写转写与本地兜底脚本的现状不变 |
+| `ASR_BASE_URL` | OpenAI 兼容端点（默认 `https://api.groq.com/openai/v1`；89 刀定案：带时间戳的免费档） |
+| `ASR_MODEL` | 模型名（默认 `whisper-large-v3-turbo`） |
+
+- **聚合口径**（纯函数，`apps/api/src/suite_api/services/asr.py`）：句间静默 ≥1.2s 断段；段累计时长 ≥20s 后下一句强切（长独白不糊成一大段）；单份录像候选 ≤60 段——超出把相邻段按序合并，回执 `note` 如实说明合并过（不静默截断丢句）。
+- **提音轨与切段**：ffmpeg 抽 16kHz 单声道 wav；超过 24MB（Groq 单文件 25MB 上限）按 10 分钟一块切 PCM 上送，时间戳按块偏移合并回源录像时间轴。
+- **端点**：`POST /api/clips/recordings/{id}/transcribe`（操作者登录）。录像不存在 404；`ASR_API_KEY` 为空 409；该录像**已有未拣选的转写候选** 409（回执带现有条数——重跑不是追加，全部拣选/登记后可再生成一批）；录像无音轨 422；云转写失败/没回句级时间戳 502。成功 200 + `{candidates_created, segments, duration_ms, note}`（`segments`=ASR 句级段数）。同步执行，云请求超时 120s。
+- **落库形状**：`status=pending`、`transcript_source='cloud'`、**直接带 `recording_id`**（第 46 刀「上传即绑无源候选」只圈 `recording_id IS NULL`——转写候选不会被后续上传误绑；第 49 刀改绑仍可把它们改走）；`product_id` 缺省为空（句子里没有商品归属——归属是人/治理动作，不编造；请求体可带 `product_id` 显式归属）。
+- **本地兜底（脚本级，不进 api 镜像）**：`uv sync --extra asr-local` 后 `uv run python scripts/transcribe_local.py --db postgresql://suite:suite@localhost:5433/suite --recording-id <N>`——funasr paraformer-zh 本地转写，落 `transcript_source='local'` 的候选（同一套聚合口径）。依赖在 `apps/api` 的可选组 `asr-local`，Dockerfile 的 `uv sync --no-dev` 不带它（torch GB 级，不进运行时）。
+
 ## 数据来源与演示价（第 50 / 55 刀）
 
 演示库里有**四份真实数据集**，它们在产品面上的来源是可见的（资产来源列 / 商品来源 chip）：
@@ -285,7 +303,7 @@ web 构建校验：`cd apps/web && npm run build && npm run lint`
 
 ## 环境变量
 
-见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM 密钥只落到 `.env`。
+见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`（云转写，OpenAI 兼容 `POST {base}/audio/transcriptions`；**空 key = 不建客户端、不发请求**，切片页「自动转写」如实 409——见「自动转写」节）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM/ASR 密钥只落到 `.env`。
 
 ## 仓库布局
 

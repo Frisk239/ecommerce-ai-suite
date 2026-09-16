@@ -41,13 +41,45 @@ TITLE_MAX = 200  # assets.title String(200)
 # 任务书口径：主力类目=耳机/显示器；规格字段顺序与 category_schema 键序一致
 SPEC_CATEGORIES = ("耳机", "显示器")
 FIELD_ORDER = ("品牌", "上市年份", "高度", "宽度")
+# CSV 输入契约（fetch_wikidata_products.py 的产物）：缺列要给出可行动报错，
+# 不让旧版 CSV 在解析处裸 KeyError 半途炸（审计 18 P2#2）
+REQUIRED_CSV_COLUMNS = ("name", "category", "attrs")
+
+
+def _schema_keys(category: str) -> tuple[str, ...]:
+    """该类目 schema 的键（**单一真源** suite_api.services.category_schema）。
+
+    确认字段与正文行都按它收口（审计 18 P2#1）：fetch 侧属性集漂移（多出/改名）
+    时不再把 schema 外字段送进 PATCH（那会让该行 422 永久失败），而是
+    「attrs ∩ 该类目 schema」——schema 是治理闸认的字段集，别的都不算。
+    取不到模板（uv workspace 外裸跑）退回空元组：宁可少送，不送治理闸不认的键。
+    """
+    try:
+        from suite_api.services.category_schema import schema_for_category
+    except ImportError:  # pragma: no cover - uv workspace 外的防御
+        return ()
+    return tuple(schema_for_category(category))
+
+
+def spec_fields(category: str, attrs: dict[str, str]) -> list[str]:
+    """该行要写进正文/确认的字段 = attrs ∩ 类目 schema（品牌恒首位，其余按 KEY 序）。
+
+    两处消费者（正文与 PATCH）共用同一列表：正文写了什么，确认就送什么——
+    不存在「正文有值、确认被 schema 拦下」或反过来的半截状态。
+    """
+    keys = _schema_keys(category)
+    ordered = [field for field in FIELD_ORDER if field in keys and field in attrs]
+    ordered += [
+        field for field in keys if field in attrs and field not in ordered
+    ]
+    return ordered
 
 
 def spec_text(category: str, attrs: dict[str, str]) -> str:
     """attrs → 文档正文（纯函数）。形如「品牌：Sony\\n类目：耳机」；有则附可选字段。"""
     lines = [f"品牌：{attrs['品牌']}"]
-    for field in FIELD_ORDER[1:]:
-        if field in attrs:
+    for field in spec_fields(category, attrs):
+        if field != "品牌":
             lines.append(f"{field}：{attrs[field]}")
     lines.append(f"类目：{category}")
     return "\n".join(lines) + "\n"
@@ -59,21 +91,49 @@ def spec_title(name: str) -> str:
 
 
 def candidate_rows(csv_path: Path) -> list[dict[str, str]]:
-    """products.csv → [{name, category, attrs}]（纯函数）：耳机/显示器且 attrs 含品牌。"""
-    with open(csv_path, encoding="utf-8-sig", newline="") as handle:
-        rows = [
-            {
-                "name": row["name"],
-                "category": row["category"],
-                "attrs": json.loads(row["attrs"] or "{}"),
-            }
-            for row in csv.DictReader(handle)
-        ]
-    return [
+    """products.csv → [{name, category, attrs}]（纯函数）：耳机/显示器且 attrs 含品牌。
+
+    输入契约显式化（审计 18 P2#2）：文件读不到 / 缺列（旧版 CSV）/ attrs 非 JSON /
+    一行候选都没有——都抛带指引的 ValueError（先跑 fetch_wikidata_products.py），
+    不裸抛 KeyError/JSONDecodeError，也不在空输入上「跑完了但什么都没做」。
+    """
+    try:
+        handle = open(csv_path, encoding="utf-8-sig", newline="")
+    except OSError as exc:
+        raise ValueError(
+            f"读不到 {csv_path}：{exc}（先跑 scripts/realdata/fetch_wikidata_products.py 生成）"
+        ) from exc
+    with handle:
+        reader = csv.DictReader(handle)
+        missing = [column for column in REQUIRED_CSV_COLUMNS if column not in (reader.fieldnames or [])]
+        if missing:
+            raise ValueError(
+                f"{csv_path} 缺列 {missing}：不是 fetch_wikidata_products.py 的产物，"
+                "先重跑 `uv run python scripts/realdata/fetch_wikidata_products.py --digital-only`"
+            )
+        rows: list[dict[str, str]] = []
+        for line_no, row in enumerate(reader, start=2):
+            try:
+                attrs = json.loads(row["attrs"] or "{}")
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"{csv_path} 第 {line_no} 行 attrs 不是 JSON（{exc}）："
+                    "CSV 可能被手工改过，先重跑 fetch 重新生成"
+                ) from exc
+            rows.append(
+                {"name": row["name"] or "", "category": row["category"] or "", "attrs": attrs}
+            )
+    candidates = [
         row
         for row in rows
         if row["category"] in SPEC_CATEGORIES and row["attrs"].get("品牌")
     ]
+    if not candidates:
+        raise ValueError(
+            f"{csv_path} 没有可发布的候选（{'/'.join(SPEC_CATEGORIES)} 且有品牌）："
+            "先确认 fetch 拉到了数码行（attrs 列的「品牌」非空），别在空输入上静默跑完"
+        )
+    return candidates
 
 
 # ---------------------------------------------------------------- 网络/IO（测试不吃）
@@ -158,10 +218,17 @@ def confirm_fields(
     asset_id: int,
     version_no: int,
     attrs: dict[str, str],
+    category: str,
 ) -> bool:
-    """人洗确认：品牌+可选字段（值=attrs∩该商品 schema 的键，字符串）。"""
+    """人洗确认：值=**attrs ∩ 该商品类目 schema**（审计 18 P2#1 实修）。
+
+    为什么不按 FIELD_ORDER 硬过滤：fetch 侧属性集漂移（Wikidata 多出/改名一个
+    属性）时，旧写法会把 schema 外字段也送进 PATCH -> 服务端按类目 schema 拒收
+    -> 该行**永久失败**（重跑也救不回）。现在以 ``category_schema.schema_for_category``
+    为唯一真源（治理闸认的就是它），attrs 里不在该类目 schema 的键一律不送。
+    """
     body = json.dumps(
-        {field: attrs[field] for field in FIELD_ORDER if field in attrs}
+        {field: attrs[field] for field in spec_fields(category, attrs)}
     ).encode("utf-8")
     request = urllib.request.Request(
         base_url.rstrip("/") + f"/api/assets/{asset_id}/versions/{version_no}/fields",
@@ -204,7 +271,24 @@ def publish_asset(
 
 
 def fixup_asset_sources(db_url: str) -> int:
-    """登记通道定值 upload → wikidata（第 55 刀拆细口径：数据集专属词，非通用 open_dataset）。"""
+    """登记通道定值 upload → wikidata（第 55 刀拆细口径：数据集专属词，非通用 open_dataset）。
+
+    **边界说明（审计 18 P2#4 补齐）：这里是脚本直写库、绕过 services 层**——
+    与 ``load_reviews.fixup_asset_sources``（同形态先例）一致的口径：
+
+    - 为什么必须绕：``POST /assets/register`` 的 source_kind 是服务端定值
+      ``upload``（来源=登记通道，不由调用方指定）；而迁移 0026/0028 的形态回填
+      只在**已有数据**上跑一次——按 README 复位顺序（先 upgrade head 再灌数据）
+      重新导入时回填早已跑完，这批资产会全部显示「上传」，数据集来源在产品面消失。
+    - 为什么在脚本里做而不是加端点：来源是通道级定值（既成事实），加一个「改来源」
+      端点等于给来源开一个可写口子——那正是「来源只读」纪律要堵的。
+    - 只碰什么：``source_kind = 'upload'`` **且**标题形如「… 规格（Wikidata）」
+      的行（与本脚本 registry 的写入形态同源，判据与迁移同款）；已发布/已废弃
+      状态不参与判据（来源与生命周期正交）；幂等——重跑第二条起的 rowcount 为 0，
+      不产生重复副作用。
+    - 测试：``apps/api/tests/test_realdata_fixup_integration.py``（真 PG，钉「只动
+      圈定行、其它来源原样」）。
+    """
     from sqlalchemy import create_engine, text
 
     from suite_api.db import to_sqlalchemy_url
@@ -269,7 +353,9 @@ def run(base_url: str, username: str, password: str, db_url: str, csv_path: Path
                 if version_no < 1:
                     print(f"  资产 {asset_id} 无可用版本，跳过", file=sys.stderr)
                     continue
-                if not confirm_fields(opener, base_url, asset_id, version_no, row["attrs"]):
+                if not confirm_fields(
+                    opener, base_url, asset_id, version_no, row["attrs"], row["category"]
+                ):
                     continue
                 if publish_asset(opener, base_url, asset_id):
                     published += 1
@@ -314,7 +400,12 @@ def main(argv: list[str] | None = None) -> int:
     if not args.csv.exists():
         print(f"错误：{args.csv} 不存在（先跑 fetch_wikidata_products.py）", file=sys.stderr)
         return 2
-    return run(args.api, args.user, args.password, args.db, args.csv)
+    try:
+        return run(args.api, args.user, args.password, args.db, args.csv)
+    except ValueError as exc:
+        # 输入契约问题（缺列/空/坏 attrs）：给可行动报错，不裸 traceback（P2#2）
+        print(f"错误：{exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

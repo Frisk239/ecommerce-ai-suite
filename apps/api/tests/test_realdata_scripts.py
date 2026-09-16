@@ -16,6 +16,7 @@ parse_import_csv（上传通道批量形态）直接受理。
 import csv
 import io
 import json
+import random
 import sys
 import zipfile
 from pathlib import Path
@@ -631,3 +632,111 @@ def test_off_dump_fixture_cleans_to_complete_rows_only() -> None:
     extracted = extract_document_fields(text, ["净含量", "保质期"])
     assert extracted["净含量"]["value"] == "550ml"
     assert extracted["保质期"].get("abstained") is True
+
+
+# ----------------------------------- 审计 18 P2 清偿（第 93 刀顺手清 1–3）
+
+# P2#1：confirm_fields 送 PATCH 的字段 = attrs ∩ 该类目 schema（不是 FIELD_ORDER
+# 硬过滤）——fetch 属性集漂移时不会送 schema 外字段把该行打死。
+def test_digital_spec_confirm_fields_is_attrs_intersect_schema() -> None:
+    """耳机 schema = {品牌, 上市年份}：attrs 多出的「高度」（漂移）不送 PATCH。"""
+    import suite_api.services.category_schema as cs
+
+    assert set(cs.schema_for_category("耳机")) == {"品牌", "上市年份"}
+    assert pds.spec_fields("耳机", {"品牌": "Sony", "上市年份": "2016", "高度": "18"}) == [
+        "品牌",
+        "上市年份",
+    ]
+    # 显示器 schema = {品牌, 高度, 宽度}：顺序按 schema（品牌恒首位），多余键剔除
+    assert pds.spec_fields("显示器", {"品牌": "Dell", "高度": "46", "宽度": "81", "上市年份": "2020"}) == [
+        "品牌",
+        "高度",
+        "宽度",
+    ]
+    # 正文与确认同一真源：正文里出现的字段必然可确认
+    text = pds.spec_text("显示器", {"品牌": "Dell", "高度": "46", "宽度": "81", "上市年份": "2020"})
+    assert text == "品牌：Dell\n高度：46\n宽度：81\n类目：显示器\n"
+    assert "上市年份" not in text
+
+
+def test_digital_spec_confirm_fields_returns_ok_false_on_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PATCH 失败不抛给整跑（单行失败跳过，幂等锚保证重跑自愈）——顺带钉 P2#1 的请求体。"""
+    import urllib.error
+
+    captured: dict[str, bytes] = {}
+
+    class _Opener:
+        def open(self, request, timeout=0):  # noqa: ANN001, ANN201 - 替身形态
+            captured["body"] = request.data
+            raise urllib.error.HTTPError(request.full_url, 422, "bad", {}, None)  # type: ignore[arg-type]
+
+    assert pds.confirm_fields(_Opener(), "http://x", 1, 1, {"品牌": "Sony", "高度": "18"}, "耳机") is False
+    assert json.loads(captured["body"]) == {"品牌": "Sony"}
+
+
+# P2#2：candidate_rows 的坏输入给可行动报错（先跑 fetch），不裸 traceback、不静默跑完
+def test_spec_candidates_reject_missing_columns_with_actionable_error(tmp_path: Path) -> None:
+    csv_path = tmp_path / "old-products.csv"
+    csv_path.write_text("name,category\n旧CSV,耳机\n", encoding="utf-8-sig")
+    with pytest.raises(ValueError, match="先重跑"):
+        pds.candidate_rows(csv_path)
+
+
+def test_spec_candidates_reject_empty_and_unmatched_csv(tmp_path: Path) -> None:
+    empty = tmp_path / "empty.csv"
+    empty.write_text("", encoding="utf-8-sig")  # 空文件：连表头都没有
+    with pytest.raises(ValueError, match="缺列"):
+        pds.candidate_rows(empty)
+
+    only_header = tmp_path / "header-only.csv"
+    only_header.write_text(",".join(fwp.CSV_COLUMNS) + "\n", encoding="utf-8-sig")
+    with pytest.raises(ValueError, match="没有可发布的候选"):
+        pds.candidate_rows(only_header)
+
+    no_brand = tmp_path / "no-brand.csv"
+    with open(no_brand, "w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(fwp.CSV_COLUMNS)
+        writer.writerow(["某耳机", "耳机", "{}", "{}", "{}", 1])
+    with pytest.raises(ValueError, match="品牌"):
+        pds.candidate_rows(no_brand)
+
+
+def test_spec_candidates_reject_broken_attrs_json(tmp_path: Path) -> None:
+    csv_path = tmp_path / "broken-attrs.csv"
+    with open(csv_path, "w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(fwp.CSV_COLUMNS)
+        writer.writerow(["某耳机", "耳机", "{}", "{}", "{not-json", 1])
+    with pytest.raises(ValueError, match="attrs 不是 JSON"):
+        pds.candidate_rows(csv_path)
+
+
+# P2#3：数码行不再与 legacy 共享 limit——两组各带各的上限，共享 rng 与去重集合
+def test_digital_rows_have_independent_limit() -> None:
+    def _binding(name: str, category: str, index: int) -> dict:
+        return {
+            "category": {"value": category},
+            "item": {"value": f"http://www.wikidata.org/entity/Q{index}"},
+            "itemLabel": {"value": name},
+        }
+
+    legacy = [_binding(f"老商品{i}", "智能手机", i) for i in range(5)]
+    digital = [_binding(f"数码{i}", "耳机", 100 + i) for i in range(5)]
+    rng = random.Random(fwp.DEFAULT_SEED)
+    seen: set[tuple[str, str]] = set()
+    legacy_rows = fwp.rows_from_bindings(legacy, limit=3, rng=rng, seen=seen)
+    digital_rows = fwp.rows_from_bindings(digital, limit=4, rng=rng, seen=seen)
+    assert len(legacy_rows) == 3  # legacy 先吃满自己的上限
+    assert len(digital_rows) == 4  # 数码行**不**被 legacy 的截断带走（旧口径这里会是 0）
+    # 共享去重集合：跨组同名同类不重复
+    again = fwp.rows_from_bindings([_binding("数码0", "耳机", 200)], limit=10, rng=rng, seen=seen)
+    assert again == []
+
+
+def test_digital_only_default_limit_constant_is_200() -> None:
+    assert fwp.DEFAULT_DIGITAL_LIMIT == 200
+    args = fwp.parse_args(["--digital-only"])
+    assert args.digital_limit == 200 and args.limit == fwp.DEFAULT_LIMIT == 200
