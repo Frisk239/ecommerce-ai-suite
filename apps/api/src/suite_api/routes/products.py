@@ -1,6 +1,8 @@
 """商品读写接口：spec_schema（0019 类目模板）与 spec_values（0010 写回值+来源）。
 
-读（GET）：登录操作者可见，stock 只读泄漏（第 30 刀）。
+读（GET）：登录操作者可见，stock 只读泄漏（第 30 刀）。第 94a 刀加
+``GET /api/products/{id}/assets``——商品维度的**素材聚合**（图/视频/文案/文档
+与对话按挂载关系聚合，素材库不另建页），形状复用资产读视图 AssetOut。
 
 写（第 41 刀，ADR 0045）：POST 上新 / PATCH 改价改档——商品列直写即时
 生效（回落报价读实时行价）；机洗/发布写回不碰价格（写回函数只动
@@ -17,7 +19,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db
-from suite_api.models import AuditLog, Operator, Product
+from suite_api.models import Asset, AuditLog, Operator, Product
+from suite_api.services.asset_view import (
+    AssetOut,
+    load_products,
+    published_version_nos,
+    revising_asset_ids,
+    to_asset_out,
+)
 from suite_api.services.category_schema import schema_for_category
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -188,6 +197,40 @@ def get_product(
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="商品不存在")
     return _product_out(product)
+
+
+@router.get("/{product_id}/assets", response_model=list[AssetOut])
+def list_product_assets(
+    product_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> list[AssetOut]:
+    """商品维度的素材聚合（第 94a 刀，ADR 0051）：该商品关联的全部资产。
+
+    「素材库做在商品维度，不建独立页」（roadmap 94a）：此端点只按挂载关系取
+    资产行（含 kind/标题/状态/来源/线上版本号），分组与排序（图/视频/文案…、
+    已发布在上）留给视图层——素材聚合是**派生视图**，不新增中台对象、不落表。
+    形状复用资产读视图 AssetOut（与 /api/assets 同契约，前端同一套类型）。
+
+    - 商品不存在 404（与 GET /{id} 同口径）；未登录 401。
+    - 已废弃资产（0042 discarded_at）不出现在聚合里，与资产列表同口径。
+    - 「已发布」按线上指针（含修订中）判定，与 workQueue.isPublished 同源口径：
+      指针非空即权威；待人洗/已接入是未发布草稿，不构成对外口径。
+    """
+    del operator  # 读接口同样要求登录（CONTEXT.md：控制台=登录后的人机界面）
+    if db.get(Product, product_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="商品不存在")
+    assets = list(
+        db.scalars(
+            select(Asset)
+            .where(Asset.product_id == product_id, Asset.discarded_at.is_(None))
+            .order_by(Asset.id)
+        )
+    )
+    products = load_products(db, assets)
+    version_nos = published_version_nos(db, assets)
+    revising_ids = revising_asset_ids(db, assets)
+    return [to_asset_out(a, products, version_nos, revising_ids) for a in assets]
 
 
 @router.post("", response_model=ProductOut, status_code=status.HTTP_201_CREATED)

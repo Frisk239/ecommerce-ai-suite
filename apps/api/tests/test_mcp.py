@@ -1,6 +1,6 @@
 """MCP 连接层测试（ADR 0032/0001/0020/0013/0017）。
 
-- 单元：read_version_text（正常 / 非 UTF-8 / 对象缺失）。
+- 单元：read_version_text（正常 / 非 UTF-8 / 对象缺失 / video 与 image 回落）。
 - 鉴权：Bearer 闸门 fail-closed——无 header / 错 token / 空 token 配置全 401。
   闸门测试不起 lifespan（401 在 MCP 子应用外层中间件就返回，不碰 DB）。
 - 协议集成（需 SUITE_TEST_DATABASE_URL，独立 suite_mcp_test 库）：官方 SDK
@@ -12,6 +12,7 @@
 """
 
 import asyncio
+import base64
 import json
 import os
 from pathlib import Path
@@ -113,13 +114,63 @@ def test_read_version_text_video_falls_back_to_transcript(tmp_path: Path) -> Non
 
 
 def test_read_version_text_non_video_binary_still_errors(tmp_path: Path) -> None:
-    """回落**只给 video**：别的种类的非 UTF-8 字节仍是真错误（即便碰巧有 transcript
-    字段也不许拿它掩盖坏字节）。"""
+    """回落**只给 video/image**：别的种类的非 UTF-8 字节仍是真错误（即便碰巧有
+    transcript 字段也不许拿它掩盖坏字节）。"""
     storage = LocalDirectoryStorage(tmp_path)
     storage.put_bytes("d1", b"\xff\xfe\x00g\x00b")
     version = AssetVersion(object_key="d1", asset_id=8)
     version.extracted_fields = {"transcript": {"value": "不该被用到", "source": "machine"}}
     document = Asset(id=8, kind="document", status="published", source_kind="upload", title="文档")
+    with pytest.raises(VersionTextError):
+        read_version_text(_SessionStub(document), storage, version)
+
+
+def _image_asset() -> Asset:
+    return Asset(id=9, kind="image", status="published", source_kind="upload", title="商品图")
+
+
+# 1x1 真 PNG：解 UTF-8 必失败——正文只能从「图片描述」字段回落
+_PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="
+)
+
+
+def test_read_version_text_image_falls_back_to_description(tmp_path: Path) -> None:
+    """第 94a 刀（ADR 0051）：图片资产字节是 png/jpeg/webp，正文回落
+    ``图片描述`` 字段（confirmed 优先）。没有这条回落，任何一份已发布图片都会
+    让 MCP 的 get_asset / export_published 整体报错、版本正文端点 409。"""
+    storage = LocalDirectoryStorage(tmp_path)
+    storage.put_bytes("i1", _PNG_BYTES)
+    version = AssetVersion(object_key="i1", asset_id=9)
+    version.extracted_fields = {"图片描述": {"value": "VLM 草稿：一个显示器", "source": "machine"}}
+    version.confirmed_fields = {"图片描述": {"value": "显示器侧面带可调节支架", "source": "human"}}
+    assert (
+        read_version_text(_SessionStub(_image_asset()), storage, version)
+        == "显示器侧面带可调节支架"  # confirmed 优先（人确认的才是权威口径）
+    )
+
+
+def test_read_version_text_image_without_description_still_errors(tmp_path: Path) -> None:
+    """无描述的图片资产取不到正文——诚实报错（409/tool error），**不静默返回
+    空串**：外面看到空正文会以为「这份图没有内容」，而真相是「描述还没人写」。"""
+    storage = LocalDirectoryStorage(tmp_path)
+    storage.put_bytes("i2", _PNG_BYTES)
+    version = AssetVersion(object_key="i2", asset_id=9)
+    version.extracted_fields = {"图片描述": {"abstained": True}}
+    with pytest.raises(VersionTextError) as excinfo:
+        read_version_text(_SessionStub(_image_asset()), storage, version)
+    # 第 94a 刀评审修：文案语义化——说清「描述还没人写」而不是「UTF-8 不合法」
+    assert "图片描述" in str(excinfo.value)
+
+
+def test_read_version_text_image_fallback_does_not_leak_across_kinds(tmp_path: Path) -> None:
+    """回落字段按 kind 分派：文档资产即便有「图片描述」字段也照旧报错
+    （防御 spec_schema 撞名/数据串门，与 qa_pairs 的滤除同口径）。"""
+    storage = LocalDirectoryStorage(tmp_path)
+    storage.put_bytes("d2", b"\xff\xfe\x00g\x00b")
+    version = AssetVersion(object_key="d2", asset_id=10)
+    version.extracted_fields = {"图片描述": {"value": "不该被用到", "source": "machine"}}
+    document = Asset(id=10, kind="document", status="published", source_kind="upload", title="文档")
     with pytest.raises(VersionTextError):
         read_version_text(_SessionStub(document), storage, version)
 

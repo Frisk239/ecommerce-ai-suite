@@ -31,6 +31,8 @@ const KIND_LABELS: Record<string, string> = {
   material: '素材',
   // 第 18 刀/ADR 0039：切片拣选登记出的资产种类（登记字节=带时间码转写文本）
   video: '视频',
+  // 第 94a 刀（ADR 0051）：运营上传的商品图（字节=原图，检索文本面=「图片描述」）
+  image: '图片',
 }
 
 export function kindLabel(kind: string): string {

@@ -64,10 +64,12 @@ from suite_api.services.publishing import (
     publishable_values,
 )
 from suite_api.services.registration import (
+    IMAGE_SUFFIX_BY_MIME,
     INGESTED,
     PENDING_REVIEW,
     PUBLISHED,
     SOURCE_KINDS,
+    image_suffix,
     machine_wash_field_names,
     make_object_key,
     register_asset,
@@ -78,7 +80,13 @@ from suite_platform.storage import ObjectStorage
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
+# 图片上限（第 94a 刀）：文本 2MB 的尺子量不了真实商品图（手机拍一张常 3–5MB），
+# 图片给 10MB——多模态入口的字节是原图，不是正文。
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_CONTENT_TYPES = {"text/plain", "text/markdown"}
+# 图片三种（第 94a 刀 ADR 0051）：content_type 与 MIME 同值，表在 registration
+# （键后缀与 data URL 同源）；入口只按它判种类，字节真相另按魔数验（见下）。
+IMAGE_CONTENT_TYPES = frozenset(IMAGE_SUFFIX_BY_MIME)
 
 _VALID_STATUSES = {INGESTED, PENDING_REVIEW, PUBLISHED}
 
@@ -242,12 +250,21 @@ def _can_discard_asset(asset: Asset, *, has_published_version: bool) -> bool:
 
 
 def _swap_version_bytes(
-    storage: ObjectStorage, kind: str, version: AssetVersion, data: bytes
+    storage: ObjectStorage,
+    kind: str,
+    version: AssetVersion,
+    data: bytes,
+    *,
+    suffix: str | None = None,
 ) -> str:
     """换字节的对象存储侧（0003 键不复用 + 0042 孤儿清理首接线）：新键先写、
     旧键后删（未发布版的旧键从此无引用），版本行改指新键。副作用收口在
-    一个函数里，便于单测钉死「新键写、旧键删」调用序。"""
-    new_key = make_object_key(kind, data)
+    一个函数里，便于单测钉死「新键写、旧键删」调用序。
+
+    suffix（第 94a 刀）：调用方按上传字节的魔数给（png/jpg/webp），键后缀不
+    跟着 kind 兜底——图片换字节时若按兜底走会写出「.png 键装 jpeg」。
+    """
+    new_key = make_object_key(kind, data, suffix=suffix)
     storage.put_bytes(new_key, data)
     storage.delete(version.object_key)
     version.object_key = new_key
@@ -274,11 +291,70 @@ def _delete_version_bytes(storage: ObjectStorage, versions: Sequence[AssetVersio
         storage.delete(v.object_key)
 
 
+def _read_upload(file: UploadFile, kind: str, *, empty_detail: str) -> tuple[bytes, str]:
+    """读上传字节并按 **kind** 校验（登记与换正文共用），返回 (data, 键后缀)。
+
+    判序：空文件 -> 图片魔数 -> 大小。空文件先判（否则空字节会先在魔数闸或
+    大小闸上以更含糊的理由被拒）；图片魔数再判（content_type 可能谎报：浏览器
+    按扩展名猜、改名文件会带错类型，键后缀与后续解码都得跟**字节**走）；大小
+    最后（图片 10MB / 文本 2MB，见两个常量）。
+    """
+    data = file.file.read()
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=empty_detail
+        )
+    suffix = "txt"
+    if kind == "image":
+        sniffed = image_suffix(data)
+        if sniffed is None:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="图片字节不是可识别的 png/jpeg/webp（按魔数判定，与上报类型不符）",
+            )
+        suffix = sniffed
+    max_bytes = MAX_IMAGE_BYTES if kind == "image" else MAX_UPLOAD_BYTES
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"图片超过 {MAX_IMAGE_BYTES // (1024 * 1024)}MB 上限"
+                if kind == "image"
+                else "文档超过 2MB 上限"
+            ),
+        )
+    return data, suffix
+
+
+def _classify_upload(content_type: str | None) -> str | None:
+    """上传 content_type -> kind（document / image）；不在允许集 -> None（415）。
+
+    文本两种（text/plain / text/markdown）-> document；图片三种（png/jpeg/webp，
+    第 94a 刀 ADR 0051）-> image。**对象键后缀不在这里定**——由 ``_read_upload``
+    按字节魔数给（第 46 刀裁决 4「扩展名跟实际字节走」的第 94a 刀延伸）：
+    content_type 只是入口闸，不是真相。
+    """
+    if content_type in IMAGE_SUFFIX_BY_MIME:
+        return "image"
+    if content_type in ALLOWED_CONTENT_TYPES:
+        return "document"
+    return None
+
+
+def _upload_type_error(content_type: str | None = None) -> HTTPException:
+    accepted = " / ".join(sorted(ALLOWED_CONTENT_TYPES | IMAGE_CONTENT_TYPES))
+    received = f"，收到: {content_type}" if content_type else ""
+    return HTTPException(
+        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        detail=f"仅接受 {accepted}{received}",
+    )
+
+
 # ---------- 写接口（全部要求登录，401 未登录） ----------
 
 
 @router.post("/register", response_model=AssetDetail, status_code=status.HTTP_201_CREATED)
-async def register(
+def register(
     file: Annotated[UploadFile, File()],
     productId: Annotated[int | None, Form()] = None,
     title: Annotated[str | None, Form()] = None,
@@ -296,21 +372,22 @@ async def register(
     同一缺口同一时间只挂一份，否则二次登记静默覆盖指向，首份发布时
     resolve_gaps_for_asset 按 resolved_by_asset_id 查不到该缺口，永不解决；
     登记后 resolved_by_asset_id 指向本资产（缺口仍 open，发布事务内才置 resolved）。
+
+    种类按上传类型分派（第 94a 刀）：文本 -> document（机洗跑商品规格正则）；
+    png/jpeg/webp -> **image**（机洗走 VLM 看图出「图片描述」草稿，见 ADR 0051）。
+    图片字节按魔数复验（报 png 传 jpeg 的键不跟着谎报走），上限 10MB（原图比
+    正文大，2MB 的文档尺子量不了手机拍的商品图）。
+
+    **同步 def**（第 94a 刀从 async 改为 sync）：图片机洗会进 VLM 看图（阻塞
+    HTTP，≤20s）。事件循环线程上不许有阻塞调用（同切片真切的纪律），FastAPI
+    丢线程池跑——`file.file.read()` 与既有的 CSV 批量导入同款，multipart 已由
+    框架解析完，同步读不阻塞事件循环。
     """
-    if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"仅接受 {' / '.join(sorted(ALLOWED_CONTENT_TYPES))}，收到: {file.content_type}",
-        )
-    data = await file.read()
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="文档超过 2MB 上限"
-        )
-    if not data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能登记"
-        )
+    classified = _classify_upload(file.content_type)
+    if classified is None:
+        raise _upload_type_error(file.content_type)
+    kind = classified
+    data, suffix = _read_upload(file, kind, empty_detail="空文件不能登记")
 
     # 缺口关联先校验（在字节落库前失败）；预填的标题/商品只是前端便利，后端不强制
     gap = load_attachable_gap(db, knowledgeGapId) if knowledgeGapId is not None else None
@@ -319,12 +396,13 @@ async def register(
         asset = register_asset(
             db,
             storage,
-            kind="document",
+            kind=kind,
             title=title,
             content_bytes=data,
             filename=file.filename,
             product_id=productId,
             source_kind="upload",
+            key_suffix=suffix,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -822,29 +900,34 @@ def replace_version_bytes(
     确认值不逼重存）。上传校验对齐登记（类型/2MB/空文件），**类型闸在 video 闸
     之前**：给视频资产传 mp4 会先吃 415，传文本才 409。
 
-    同步 def（同 CSV/重试先例）：dialogue 重跑机洗含 LLM（asyncio.run，≤20s），
-    必须跑在线程池线程而非事件循环；字节换序在 commit 后、机洗窗口外（P1#2
-    不 idle-in-transaction）。机洗失败不停在半换状态：字节已换是事实，资产按
-    登记同口径停 ingested 存 last_error（修订中资产 status/指针不动，线上
-    继续 v1，可重传或重试）。
+    第 94a 刀：类型闸改成**按资产种类分派**——文档资产只收文本（口径不变），
+    图片资产只收 png/jpeg/webp（换错图上错了可以直接换，重跑 VLM 草稿，人洗
+    确认值保留）；种类不匹配 415。新键后缀仍按魔数走（registration.make_object_key）。
+
+    同步 def（同 CSV/重试先例）：dialogue 重跑机洗含 LLM（asyncio.run，≤20s）、
+    image 重跑含 VLM 看图（阻塞 HTTP ≤20s），必须跑在线程池线程而非事件循环；
+    字节换序在 commit 后、机洗窗口外（P1#2 不 idle-in-transaction）。机洗失败不
+    停在半换状态：字节已换是事实，资产按登记同口径停 ingested 存 last_error
+    （修订中资产 status/指针不动，线上继续 v1，可重传或重试；图片的 VLM 失败
+    恒弃权——不进这条，照常推进待人洗，见 machine_wash）。
     """
     del operator  # 写接口仅要求登录，401 口径同既有写端点
-    if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"仅接受 {' / '.join(sorted(ALLOWED_CONTENT_TYPES))}，收到: {file.content_type}",
-        )
-    data = file.file.read()
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="文档超过 2MB 上限"
-        )
-    if not data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能上传"
-        )
-
     asset = _get_asset_or_404(db, asset_id)
+    if asset.kind == "video":
+        # 第 94a 刀评审修：video 闸**先于类型闸**——否则 _classify_upload 对
+        # mp4 恒 None 会先撞 415「类型不收」，把「不支持换字节」说成「类型白名单」
+        # （文案误导；原第 46 刀的 409 分支成了死代码）。
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="视频资产不支持替换字节（正文由 transcript 字段承载，要别的片段去切片页重拣）",
+        )
+    kind = _classify_upload(file.content_type)
+    if kind is None or kind != asset.kind:
+        # 种类不匹配（文档只收文本 / 图片只收 png|jpeg|webp）与类型不在白名单同码：
+        # 这台端点换的是「同一种字节」，换种类是别的事（重建资产）。
+        raise _upload_type_error(file.content_type)
+    data, suffix = _read_upload(file, kind, empty_detail="空文件不能上传")
+
     version = db.scalar(
         select(AssetVersion).where(
             AssetVersion.asset_id == asset.id, AssetVersion.version_no == version_no
@@ -852,16 +935,6 @@ def replace_version_bytes(
     )
     if version is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产版本不存在")
-    if asset.kind == "video":
-        # 第 46 刀（ADR 0047）：视频资产的正文由 transcript 字段承载、字节是切出的
-        # mp4 片段。换字节在这里有两重坏处：①上传的是文本，而 video 的对象键按
-        # kind 走 .mp4——键与字节不一致；②video 机洗字段集恒空，重算会把预置的
-        # transcript 整体覆盖成空集，检索块静默归零。故直接拒绝（想要别的片段，
-        # 去切片页重拣）。
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="视频资产的正文来自转写字段、字节是切片，不支持换正文；请回切片页重拣",
-        )
     if not _can_replace_version_bytes(asset, version):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -871,7 +944,7 @@ def replace_version_bytes(
     # 字段集在 commit 前算完（读 spec_schema 会 autobegin，别把只读事务
     # 留进机洗窗口）；confirmed 不动——重跑只重算 extracted
     field_names = machine_wash_field_names(asset.kind, product)
-    _swap_version_bytes(storage, asset.kind, version, data)
+    _swap_version_bytes(storage, asset.kind, version, data, suffix=suffix)
     db.commit()  # P1#2：字节换序先落库，机洗（dialogue 含 LLM ≤20s）不持事务
 
     try:

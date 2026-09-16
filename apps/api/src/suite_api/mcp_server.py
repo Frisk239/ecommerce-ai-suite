@@ -30,6 +30,7 @@ from suite_api.deps import ensure_engine, ensure_storage
 from suite_api.models import Asset, AssetVersion, AuditLog, Operator
 from suite_api.services import registration
 from suite_api.services.asset_view import (
+    VersionTextError,
     load_products,
     published_version_nos,
     read_version_text,
@@ -305,19 +306,26 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 .where(Asset.status == "published", Asset.discarded_at.is_(None))
                 .order_by(Asset.id)
             ).all()
-            exported = [
-                {
-                    "asset_id": asset.id,
-                    "version_no": asset_version.version_no,
-                    # 第 26 刀 P1②：title 与正文同过出口掩（三工具统一口径）
-                    "title": _mask_title(asset.title),
-                    "kind": asset.kind,
-                    "source_kind": asset.source_kind,
+            exported = []
+            for asset, asset_version in rows:
+                try:
                     # 0038 修订：出口必掩（见上方 docstring；掩码不回写字节）
-                    "content": redact(read_version_text(session, storage, asset_version)),
-                }
-                for asset, asset_version in rows
-            ]
+                    content = redact(read_version_text(session, storage, asset_version))
+                except VersionTextError as exc:
+                    # 第 94a 刀评审修：单份「图片无描述/视频无转写」不得带崩全量导出
+                    # （46 刀 P0 同形状）——该资产照常出现在列表，正文给可行动的占用位。
+                    content = f"（此版本暂无可读正文：{exc}）"
+                exported.append(
+                    {
+                        "asset_id": asset.id,
+                        "version_no": asset_version.version_no,
+                        # 第 26 刀 P1②：title 与正文同过出口掩（三工具统一口径）
+                        "title": _mask_title(asset.title),
+                        "kind": asset.kind,
+                        "source_kind": asset.source_kind,
+                        "content": content,
+                    }
+                )
             if exported:
                 operator_id = ensure_mcp_operator_id(session)
                 session.add_all(

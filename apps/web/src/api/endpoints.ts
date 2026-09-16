@@ -129,6 +129,10 @@ export const api = {
   // 商品与留痕
   listProducts: () => request<Product[]>('/products'),
   getProduct: (productId: number) => request<Product>(`/products/${productId}`),
+  // 商品维度的素材聚合（第 94a 刀，ADR 0051）：该商品关联的全部资产（图/视频/
+  // 文案/文档…同一 AssetOut 形状）。素材库不另建页，聚合做在商品维度。
+  listProductAssets: (productId: number) =>
+    request<AssetListItem[]>(`/products/${productId}/assets`),
   // 上新（第 41 刀）：登录操作者在控制台建商品；409 重名、422 校验。
   createProduct: (payload: ProductCreate) =>
     request<Product>('/products', { method: 'POST', body: JSON.stringify(payload) }),

@@ -19,6 +19,10 @@
 - 种类=对话 -> 字段集只有一个 ``qa_pairs``：LLM 从转写抽问答对草稿
   （``[{q, a}, ...]`` 结构化值）。分级：未配置模型（空 key）=降级弃权、
   对话照常推进待人洗；已配置但失败/坏输出=机洗失败（停已接入可重试）。
+- 种类=图片（第 94a 刀，ADR 0051）-> 字段集只有一个 ``图片描述``：VLM 看图出
+  描述草稿。**草稿失败恒弃权**（未配置/超时/坏输出都照常推进待人洗，人洗补写
+  兜底）——与对话的「已配置失败=机洗失败」刻意不同级：描述是增值项不是登记的
+  前置（图片资产的字节是二进制，没有可重跑的文本抽取）。
 
 打码步（第 17 刀，ADR 0038 / 审计刀 3 P1#4）：``redact`` 纯函数在三处
 接入——转写送厂商 LLM 前（prompt 输入）、LLM 抽出的每对 q/a 值、文档正则
@@ -28,12 +32,15 @@
 
 import asyncio
 import json
+import logging
 import re
 from collections.abc import Callable, Iterable
 from typing import Any
 
 from suite_api.services import llm
 from suite_platform.storage import ObjectStorage
+
+logger = logging.getLogger(__name__)
 
 
 class MachineWashError(Exception):
@@ -231,6 +238,12 @@ def extract_document_fields(text: str, field_names: Iterable[str]) -> dict[str, 
 QA_FIELD = "qa_pairs"
 QA_FAILURE_MESSAGE = "LLM QA 抽取失败"
 
+# ---------- 图片种类：VLM 描述草稿（第 94a 刀，ADR 0051） ----------
+
+# 图片资产唯一的治理字段：描述即该资产的**检索文本面**（索引只从这里进，
+# 与 video 的 transcript 同构）。定名与 roadmap/CONTEXT 词条一致。
+IMAGE_DESCRIPTION_FIELD = "图片描述"
+
 
 def validate_qa_pairs(value: Any) -> list[dict[str, str]]:
     """qa_pairs 值校验+归一的唯一口径：[{q, a}, ...]，逐项 q/a 非空串（trim）；
@@ -338,8 +351,14 @@ def run_machine_wash(
     qa_pairs）——只有 kind==dialogue 且字段集含 qa_pairs 才走 extract_qa_draft；
     document 即使字段集混入 qa_pairs（如 spec_schema 撞名）也只按未知字段
     弃权，绝不在 async 上传路由的事件循环线程上 asyncio.run。
+
+    图片分支（第 94a 刀，ADR 0051）：字节是二进制（png/jpeg/webp），UTF-8 解码
+    必失败——按 kind 显式分派到 ``extract_image_description``（进 VLM 看图，
+    不读字节当文本），在任何 decode 之前返回。
     """
     data = storage.get_bytes(object_key)  # 键不存在会抛 FileNotFoundError，同样属机洗失败
+    if kind == "image":
+        return {IMAGE_DESCRIPTION_FIELD: extract_image_description(data)}
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -350,3 +369,26 @@ def run_machine_wash(
         result[QA_FIELD] = extract_qa_draft(text)
         return result
     return extract_document_fields(text, names)
+
+
+def extract_image_description(image_bytes: bytes) -> dict:
+    """图片描述草稿：字段入口形状与文档机洗同构（value+source / abstained）。
+
+    - VLMNotConfigured（空 key）= 弃权——无 key 环境上传图片照常推进待人洗，
+      由人洗补写描述（不写 last_error，与 dialogue 无模型同形）；
+    - VLMUnavailable/超时/坏输出/字节不是可识别图片格式 = **也弃权**（第 94a 刀
+      裁决：草稿是增值项不是登记的前置——失败不把资产扣在已接入，人洗兜底；
+      原因只进服务端日志，人洗台看到的是「未出草稿」）；
+    - 成功值先过 ``redact``（ADR 0038 打码步：模型可能把图中可读的号码原样
+      带进描述，落库前统一掩）。
+    """
+    from suite_api.services import vlm  # 延迟导入：vlm 只依赖 settings，避免顶层耦合
+
+    try:
+        draft = vlm.describe_image(image_bytes)
+    except vlm.VLMNotConfigured:
+        return {"abstained": True}
+    except vlm.VLMError as exc:
+        logger.warning("图片描述草稿生成失败（弃权，人洗兜底）: %s", type(exc).__name__)
+        return {"abstained": True}
+    return {"value": redact(draft), "source": "machine"}

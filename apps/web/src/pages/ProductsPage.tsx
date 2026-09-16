@@ -2,13 +2,26 @@
 // 来源芯片 A-{id} · v{N} 指向写回它的那版资产（未写回显示 —，绝不预览未发布数据）。
 // 第 41 刀：上架抽屉（新建+编辑）——名称/类目/单价直写即时生效；规格按模板逐项
 // 展示（新建=待写回预览，编辑=当前值只读，写回只走资产发布）；库存列保持只读。
+// 第 94a 刀：「素材」聚合段（ADR 0051）——该商品挂载的图/视频/文案/文档按组铺开，
+// 素材库做在商品维度不建独立页；**只有已发布是权威**（未发布灰标），懒加载。
 
-import { useCallback, useMemo, useState } from 'react'
-import { CaretDown, CaretRight, Package, PencilSimple, Plus, Warning, X } from '@phosphor-icons/react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import {
+  CaretDown,
+  CaretRight,
+  Images,
+  Package,
+  PencilSimple,
+  Plus,
+  Warning,
+  X,
+} from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
-import type { Product } from '../api/types'
-import { sourceKindLabel } from '../labels'
+import type { AssetListItem, Product } from '../api/types'
+import { kindLabel, sourceKindLabel } from '../labels'
+import { isPublished } from '../workQueue'
 import { useApiData } from '../hooks/useApiData'
 import { useEscapeClose } from '../hooks/useEscapeClose'
 import ActionError from '../components/ActionError'
@@ -66,6 +79,154 @@ function parseYuanToCents(raw: string): { cents: number | null } | { error: stri
   if (trimmed === '') return { cents: null }
   if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return { error: '单价格式非法：非负数，最多两位小数（空=未定价）' }
   return { cents: Math.round(Number(trimmed) * 100) }
+}
+
+// 素材分组（第 94a 刀）：图 / 视频 / 文案（素材生成）是三类主力；其余（文档、
+// 对话）收进「其他」——按挂载关系聚合，不新造种类词。
+const MATERIAL_GROUPS: { key: string; label: string; match: (asset: AssetListItem) => boolean }[] = [
+  { key: 'image', label: '图片', match: (a) => a.kind === 'image' },
+  { key: 'video', label: '视频', match: (a) => a.kind === 'video' },
+  { key: 'copy', label: '文案', match: (a) => a.kind === 'material' },
+  {
+    key: 'other',
+    label: '其他',
+    match: (a) => a.kind !== 'image' && a.kind !== 'video' && a.kind !== 'material',
+  },
+]
+
+/** 商品素材聚合段（第 94a 刀，ADR 0051）：该商品挂载的全部素材，按组铺开。
+
+  懒加载：折叠时不发请求，首次展开拉一次 `GET /api/products/{id}/assets`
+  （商品页是卡片墙，逐卡预取会让首屏请求数 = 商品数）。
+  口径呈现：「只有已发布是权威」——已发布（线上指针非空）排在各组前、正常色；
+  未发布（待人洗/已接入/修订中的草稿）灰标并注明「未发布」。 */
+function ProductMaterials({ productId }: { productId: number }) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<AssetListItem[] | null>(null)
+  const [error, setError] = useState<unknown>(null)
+  const [loading, setLoading] = useState(false)
+  const loaded = useRef(false)
+
+  const load = () => {
+    if (loaded.current) return
+    loaded.current = true
+    setLoading(true)
+    setError(null)
+    api
+      .listProductAssets(productId)
+      .then((data) => setRows(data))
+      .catch((err: unknown) => {
+        loaded.current = false // 失败允许再点重试
+        setError(err)
+      })
+      .finally(() => setLoading(false))
+  }
+
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    if (next) load()
+  }
+
+  // 组内排序：已发布在上（权威），未发布在下；组内按资产 id（登记顺序）。
+  const grouped = useMemo(() => {
+    if (rows === null) return []
+    return MATERIAL_GROUPS.map((group) => ({
+      ...group,
+      rows: rows
+        .filter(group.match)
+        .sort((a, b) => Number(isPublished(b)) - Number(isPublished(a)) || a.id - b.id),
+    })).filter((group) => group.rows.length > 0)
+  }, [rows])
+
+  return (
+    <div className="border-t border-line-2">
+      <button
+        type="button"
+        className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left transition-colors duration-150 hover:bg-hover"
+        aria-expanded={open}
+        onClick={toggle}
+      >
+        <span className="flex items-center text-caption">
+          {open ? <CaretDown aria-hidden size={13} /> : <CaretRight aria-hidden size={13} />}
+        </span>
+        <Images aria-hidden size={13} className="text-ink-3" />
+        <span className="text-[13px] font-medium text-ink">素材</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-ink-3">
+          {rows === null ? '该商品挂载的图 / 视频 / 文案' : `共 ${rows.length} 件`}
+        </span>
+        {error !== null ? <span className="text-xs text-danger">加载失败</span> : null}
+      </button>
+      {open ? (
+        <div className="border-t border-line-1 bg-canvas/40">
+          {loading ? (
+            <div className="px-4 py-3 text-xs text-ink-3">加载素材…</div>
+          ) : error !== null ? (
+            <div className="px-4 py-3 text-xs leading-5 text-danger">
+              素材读取失败：{detailText(error)}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm ml-2"
+                onClick={() => {
+                  loaded.current = false
+                  load()
+                }}
+              >
+                重试
+              </button>
+            </div>
+          ) : rows !== null && rows.length === 0 ? (
+            <div className="px-4 py-3 text-xs leading-5 text-ink-3">
+              还没有挂载素材——登记抽屉里上传商品图或文档时选这个商品即可挂上。
+            </div>
+          ) : (
+            grouped.map((group) => (
+              <div key={group.key}>
+                <div className="flex items-center gap-2 px-4 py-1 text-[11px] font-medium text-ink-3">
+                  {group.label}
+                  <span className="tabular-nums">{group.rows.length}</span>
+                  <span className="flex-1" />
+                  <span className="font-normal">已发布在上（唯一权威口径）</span>
+                </div>
+                {group.rows.map((asset) => {
+                  const published = isPublished(asset)
+                  return (
+                    <Link
+                      key={asset.id}
+                      to={`/platform/assets/${asset.id}`}
+                      className="flex items-center gap-2 border-t border-line-1 px-4 py-2 transition-colors duration-150 hover:bg-hover"
+                      title={published ? '已发布：线上口径，客服会引用' : '未发布：只是草稿，不构成对外口径'}
+                    >
+                      <span className="shrink-0 font-mono text-[11px] text-ink-3">
+                        A-{String(asset.id).padStart(4, '0')}
+                      </span>
+                      <span
+                        className={
+                          published
+                            ? 'min-w-0 flex-1 truncate text-[13px] text-ink'
+                            : 'min-w-0 flex-1 truncate text-[13px] text-ink-3'
+                        }
+                      >
+                        {asset.title ?? `未命名${kindLabel(asset.kind)}`}
+                      </span>
+                      <span className="shrink-0 text-xs text-ink-3">
+                        {sourceKindLabel(asset.source_kind)}
+                      </span>
+                      {published ? (
+                        <span className="badge badge-published shrink-0">已发布</span>
+                      ) : (
+                        <span className="badge badge-ingested shrink-0">未发布</span>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function ProductDrawer({
@@ -446,6 +607,8 @@ export default function ProductsPage() {
             </tbody>
           </table>
         ) : null}
+        {/* 第 94a 刀：商品维度的素材聚合段（懒加载，展开才请求） */}
+        <ProductMaterials productId={product.id} />
       </div>
     )
   }

@@ -639,15 +639,18 @@ def test_off_dump_fixture_cleans_to_complete_rows_only() -> None:
 # P2#1：confirm_fields 送 PATCH 的字段 = attrs ∩ 该类目 schema（不是 FIELD_ORDER
 # 硬过滤）——fetch 属性集漂移时不会送 schema 外字段把该行打死。
 def test_digital_spec_confirm_fields_is_attrs_intersect_schema() -> None:
-    """耳机 schema = {品牌, 上市年份}：attrs 多出的「高度」（漂移）不送 PATCH。"""
+    """耳机 schema = {品牌, 上市年份, 图片, 官网}：attrs 多出的「高度」（漂移）不送 PATCH。
+
+    第 94a 刀（审计 18 归位）：四类各加 图片（P18）/官网（P856）两个可选字段位——
+    attrs 带着它们时进正文与 PATCH（有图商品回填位），不带时行为不变。"""
     import suite_api.services.category_schema as cs
 
-    assert set(cs.schema_for_category("耳机")) == {"品牌", "上市年份"}
+    assert set(cs.schema_for_category("耳机")) == {"品牌", "上市年份", "图片", "官网"}
     assert pds.spec_fields("耳机", {"品牌": "Sony", "上市年份": "2016", "高度": "18"}) == [
         "品牌",
         "上市年份",
     ]
-    # 显示器 schema = {品牌, 高度, 宽度}：顺序按 schema（品牌恒首位），多余键剔除
+    # 显示器 schema = {品牌, 高度, 宽度, 图片, 官网}：顺序按 schema（品牌恒首位），多余键剔除
     assert pds.spec_fields("显示器", {"品牌": "Dell", "高度": "46", "宽度": "81", "上市年份": "2020"}) == [
         "品牌",
         "高度",
@@ -657,6 +660,10 @@ def test_digital_spec_confirm_fields_is_attrs_intersect_schema() -> None:
     text = pds.spec_text("显示器", {"品牌": "Dell", "高度": "46", "宽度": "81", "上市年份": "2020"})
     assert text == "品牌：Dell\n高度：46\n宽度：81\n类目：显示器\n"
     assert "上市年份" not in text
+    # 归位后的新字段位：attrs 带 图片/官网 时进正文（可选字段，不设必填闸）
+    assert pds.spec_text(
+        "耳机", {"品牌": "Sony", "图片": "Sony WH-1000XM3.jpg", "官网": "https://sony.com"}
+    ) == "品牌：Sony\n图片：Sony WH-1000XM3.jpg\n官网：https://sony.com\n类目：耳机\n"
 
 
 def test_digital_spec_confirm_fields_returns_ok_false_on_http_error(
