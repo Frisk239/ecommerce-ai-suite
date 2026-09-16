@@ -16,6 +16,10 @@ import type {
   CoachQuestion,
   CoachQuestionKey,
   CoachRecord,
+  ComposeTask,
+  ComposeTemplate,
+  ComposeTtsStatus,
+  ComposePublishResult,
   ConfirmReturnResult,
   CustomerAnswerComplete,
   CustomerSessionCreated,
@@ -180,6 +184,33 @@ export const api = {
     }),
   retryMaterialTask: (taskId: number) =>
     request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 120_000),
+
+  // 内容成片（第 98b 刀/ADR 0056）：AI 选材+排版出时间线候选+预览成片+剪映
+  // 草稿，人审改后 publish 经双闸复用登记 material 资产。plan 是同步请求
+  // （ffprobe 实测+TTS ≤60s+ffmpeg 合成 ≤120s）——超时给 240s，别在服务端
+  // 还在合成时先断（断了操作者只看到「网络失败」而库里任务照落）。
+  planVideoCompose: (productId: number, template: ComposeTemplate) =>
+    request<ComposeTask>(
+      '/video-compose/plan',
+      { method: 'POST', body: JSON.stringify({ product_id: productId, template }) },
+      240_000,
+    ),
+  listVideoComposeTasks: () => request<ComposeTask[]>('/video-compose/tasks'),
+  getVideoComposeTtsStatus: () => request<ComposeTtsStatus>('/video-compose/tts/status'),
+  videoComposePreviewUrl: (taskId: number) => `/api/video-compose/${taskId}/preview`,
+  videoComposeDraftUrl: (taskId: number) => `/api/video-compose/${taskId}/draft`,
+  videoComposeFinalUrl: (taskId: number) => `/api/video-compose/${taskId}/final`,
+  // publish 人闸门：可选上传剪映导出的成品 mp4（不传=用预览成片）；文案过
+  // 双闸（无 LLM/判定不过 422，任务停在 planned 可改后重发）。
+  publishVideoCompose: (taskId: number, finalVideo: File | null) => {
+    const form = new FormData()
+    if (finalVideo) form.append('final_video', finalVideo)
+    return request<ComposePublishResult>(
+      `/video-compose/${taskId}/publish`,
+      { method: 'POST', body: form },
+      120_000,
+    )
+  },
 
   // 直播切片（第 18 刀/ADR 0014/0039；第 46 刀真链路）：候选不是中台对象；
   // 上传源录像（.mp4，≤200MB；上传即绑「尚无源录像」的 pending 候选）后，pick

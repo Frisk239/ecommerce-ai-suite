@@ -56,6 +56,19 @@ class Settings(BaseSettings):
     vlm_base_url: str = "https://api.openai.com/v1"
     vlm_model: str = "gpt-4o-mini"
 
+    # 云 TTS 口播（第 98b 刀，ADR 0056）：OpenAI 兼容 ``POST {base}/audio/speech``
+    # （``{model, input, voice}`` → 音频字节）。默认硅基流动（CosyVoice2 免费档；
+    # 任意 OpenAI 兼容语音端点换 base 即可）。voice 用厂商**预置音色**（非克隆，
+    # ADR 0056 红线④：数字人/声音克隆 Out）。密钥纪律同 0033/ASR/VLM/IMGGEN：
+    # 只从 .env 读、不入库、不进日志与异常文案；**空 key = 不建客户端、不发请求
+    # **——预览成片无音轨，任务详情诚实标注「TTS 未配置，预览无声」（fail-closed
+    # 不 fail 任务：口播是增值项不是成片本体，同 IMGGEN 的跳过级）。
+    tts_api_key: str = ""
+    tts_base_url: str = "https://api.siliconflow.cn/v1"
+    tts_model: str = "FunAudioLLM/CosyVoice2-0.5B"
+    # 预置音色（厂商公开音色名，非声音克隆）；SiliconFlow 形态 ``{model}:{voice}``
+    tts_voice: str = "FunAudioLLM/CosyVoice2-0.5B:alex"
+
     # 云文生图（第 98 刀，ADR 0055）：OpenAI 兼容 ``POST {base}/images/generations``
     # （``{prompt, model, size, response_format:"b64_json"}`` → ``data[0].b64_json``）。
     # 默认硅基流动（有免费 FLUX 档；任意 OpenAI 兼容图像端点可换 base）。密钥纪律

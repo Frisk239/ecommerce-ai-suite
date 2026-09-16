@@ -542,6 +542,55 @@ export interface MaterialImggenStatus {
   configured: boolean
 }
 
+// ---------- 内容成片（routes/video_compose.py 契约，第 98b 刀/ADR 0056） ----------
+
+/** 成片模板（ADR 0056，v1 两模板不做 DSL）：highlight=高光集锦 /
+ * product_intro=商品介绍。 */
+export type ComposeTemplate = 'highlight' | 'product_intro'
+
+/** 时间线候选项（AI 排版结果，秒制 butt-joint）：type=clip|image|text，
+ * text 项带文案要点行（预览字幕与口播的文本源）。 */
+export interface ComposeTimelineItem {
+  type: 'clip' | 'image' | 'text'
+  asset_id: number
+  start: number
+  dur: number
+  text?: string
+}
+
+/** 成片任务（不是中台对象）：planned=时间线候选+预览+草稿已出（待人审改） /
+ * registered=publish 双闸过线已登记 material 资产（终态）。预览/草稿/成品是
+ * 任务暂存件（compose/ 前缀），不是资产。 */
+export interface ComposeTask {
+  id: number
+  product_id: number
+  product_name: string
+  status: 'planned' | 'registered'
+  template: ComposeTemplate
+  template_name: string
+  timeline: ComposeTimelineItem[]
+  duration_seconds: number
+  /** 预览是否带 TTS 口播（无 key=无声预览，诚实标注）。 */
+  with_tts: boolean
+  note: string | null
+  asset_id: number | null
+  has_final_video: boolean
+  preview_url: string
+  draft_url: string
+  created_at: string
+}
+
+/** TTS 配置状态（GET /api/video-compose/tts/status）：无 key=预览无声提示判据。 */
+export interface ComposeTtsStatus {
+  configured: boolean
+}
+
+/** publish 回执：任务转 registered + 登记出的 material 资产锚。 */
+export interface ComposePublishResult {
+  task: ComposeTask
+  asset_id: number
+}
+
 // ---------- 直播切片候选（routes/clips.py 契约，第 18 刀/ADR 0014/0015/0039；第 46 刀真链路） ----------
 
 /** 候选两态（0039 单向状态机；不是资产三态）：pending=待拣选 /
