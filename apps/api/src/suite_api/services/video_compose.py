@@ -24,7 +24,9 @@
    + LLM 事实性质检（98 刀同函数）不过线=422 不登记；过线登记 material 资产
    （source_kind=upload 服务端定值、标题「{商品} · 内容成片」、挂商品）→
    照常待人洗/发布治理。上传的成品 mp4 只是任务留档字节（compose/ 暂存），
-   不自动资产化（ADR 0056 Debt）。
+   不自动资产化（ADR 0056 Debt）。**CAS 占位**（审计 19）：``planned→
+   registering`` 原子条件更新防并发双登记（后来者 409），失败分支回 planned；
+   登记成功后清理 preview/draft 暂存（final 留任务档，ADR 0056）。
 
 红线四条（ADR 0056）：①AIGC 水印不可配置关闭；②选材白名单=只取**已发布+
 自有来源**资产（本仓资产面天然满足——未发布资产根本不进选材查询，资产也
@@ -46,7 +48,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, ComposeTask, Product
@@ -59,8 +61,11 @@ from suite_platform.storage import ObjectStorage
 
 logger = logging.getLogger(__name__)
 
-# 任务两态（与 material_tasks 词表分立：成片不是文案任务的复用，是独立状态机）
+# 任务三态（与 material_tasks 词表分立：成片不是文案任务的复用，是独立状态机）
 PLANNED = "planned"  # 已出时间线候选+预览+草稿（待人审改）
+# publish 占位瞬态（审计 19，CAS）：CAS 迁移 planned→registering 成功者独占登记
+# （对齐 80 刀 end_session 的原子条件更新先例）；双闸/登记失败回 planned 可重试
+REGISTERING = "registering"
 REGISTERED = "registered"  # publish 双闸过线已登记 material 资产（终态）
 
 # ---------------------------------------------------------------- 排版参数（spec 口径）
@@ -132,6 +137,12 @@ class NoMaterialError(ComposeError):
 
 class RenderError(ComposeError):
     """预览合成失败（ffmpeg 不可用/非 0 退出/无输出/字体缺失）：路由转 502。"""
+
+
+class ComposeConflictError(ComposeError):
+    """并发登记冲突（审计 19，CAS）：publish 的原子占位（planned→registering）
+    被并发写者抢先——后来者 rowcount=0。路由转 409（区别于顺序重复 publish 的
+    422 状态机守卫）。"""
 
 
 # ---------------------------------------------------------------- 选材纯函数（单测钉死）
@@ -1294,6 +1305,54 @@ def timeline_content(timeline: Sequence[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _claim_for_publish(db: Session, task: ComposeTask) -> None:
+    """publish 占位（审计 19，CAS）：``planned → registering`` 的**原子条件更新**。
+
+    对齐 80 刀 ``end_session`` 先例：读 status 后无行锁即双闸+登记的旧形态下，
+    并发双 publish 都过读检查 → 双 ``register_asset`` = 双 material。这里以
+    ``WHERE status='planned'`` 保证只有首写者占位；后来者 rowcount=0 抛
+    ``ComposeConflictError``（路由 409「任务已被确认」）。
+    """
+    rowcount = db.execute(
+        update(ComposeTask)
+        .where(ComposeTask.id == task.id, ComposeTask.status == PLANNED)
+        .values(status=REGISTERING)
+    ).rowcount
+    db.commit()
+    db.refresh(task)
+    if rowcount == 0:
+        raise ComposeConflictError(
+            f"任务已被确认（当前状态: {task.status}），不能重复登记"
+        )
+
+
+def _release_claim(db: Session, task: ComposeTask) -> None:
+    """双闸失败分支的占位回滚：``registering → planned``（条件更新防误覆盖，
+    如终态已由异常路径写入则不动）。回滚后任务可重试 publish。"""
+    db.execute(
+        update(ComposeTask)
+        .where(ComposeTask.id == task.id, ComposeTask.status == REGISTERING)
+        .values(status=PLANNED)
+    )
+    db.commit()
+    db.refresh(task)
+
+
+def _cleanup_staging(storage: ObjectStorage, task: ComposeTask) -> None:
+    """publish 转正后的暂存清理（审计 19）：删 preview/draft 暂存字节。
+
+    - **final 留档**（ADR 0056：成品留任务档，``/{id}/final`` 端点继续可下）；
+      preview/draft 已被登记结果取代（registered 是终态，暂存键不再有读方）；
+    - 删除失败**不 fail**：登记已成功（DB 已 commit），字节清理是尽力而为——
+      只 log warning，孤儿暂存键由存储侧生命周期兜底，不把成功登记翻成报错。
+    """
+    for key in (task.preview_object_key, task.draft_object_key):
+        try:
+            storage.delete(key)
+        except Exception:  # noqa: BLE001 - 清理失败不拖垮已成功的登记
+            logger.warning("成片暂存清理失败（登记不受影响，待存储侧兜底）: %s", key)
+
+
 def publish_compose(
     db: Session,
     storage: ObjectStorage,
@@ -1304,6 +1363,9 @@ def publish_compose(
     """人闸门确认（planned → registered）：文案过双闸（红线③复用）→ 登记
     material 资产；上传的成品 mp4 只是任务留档字节（compose/ 暂存，不资产化）。
 
+    - **CAS 占位**（审计 19）：规则闸后先原子迁移 ``planned → registering``
+      （并发双 publish 只有首写者能登记，后来者 409「任务已被确认」）；双闸/
+      登记失败回滚 ``registering → planned``，任务停在可重试态；
     - 双闸复用 98 刀同函数：规则四条（material.qc_check）不过=ComposeError；
       LLM 事实性质检（material.run_llm_qc）不过/不可用=ComposeError
       fail-closed——publish 是登记闸，闸跑不完不放行（与素材任务同语义）；
@@ -1319,15 +1381,17 @@ def publish_compose(
     errors = material_service.qc_check(title, content, product.name)
     if errors:
         raise ComposeError("规则质检不过线：" + "；".join(errors))
+    _claim_for_publish(db, task)
     # 评审修（事务纪律，material 先例）：LLM 双闸（≤20s）与成品字节 put_bytes
-    # 都是外部调用——先收口事务再跑；expire_on_commit=False 使 product 属性
-    # 驻留，LLM 期间不再重开事务。
-    db.commit()
+    # 都是外部调用——_claim 已收口事务再跑；expire_on_commit=False 使 product
+    # 属性驻留，LLM 期间不再重开事务。
     try:
         passed, issues = material_service.run_llm_qc(title, content, product)
     except material_service.MaterialGenError as exc:
+        _release_claim(db, task)
         raise ComposeError(str(exc)) from exc
     if not passed:
+        _release_claim(db, task)
         raise ComposeError("LLM 事实性质检不过线：" + "；".join(issues)[:300])
 
     if final_video_bytes:
@@ -1347,4 +1411,5 @@ def publish_compose(
     task.asset_id = asset.id
     task.status = REGISTERED
     db.commit()
+    _cleanup_staging(storage, task)
     return asset

@@ -284,7 +284,8 @@ def publish(
       停在 planned 可改后重发；
     - 成品 mp4 可选上传（≤200MB、mp4 魔数校验）：字节留档在任务上（compose/
       暂存，不自动资产化——ADR 0056 Debt）；不传即认可预览成片；
-    - 已登记任务重复 publish=422（状态机守卫）。
+    - 已登记任务重复 publish=422（状态机守卫）；**并发双 publish 的后来者
+      409「任务已被确认」**（审计 19 CAS 占位，只登记一份 material）。
     """
     del operator
     task = _task_or_404(db, task_id)
@@ -307,6 +308,8 @@ def publish(
         final_bytes = payload
     try:
         asset = compose_service.publish_compose(db, storage, task, product, final_bytes)
+    except compose_service.ComposeConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except compose_service.ComposeError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)

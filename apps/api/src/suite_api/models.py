@@ -401,7 +401,8 @@ class ComposeTask(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
-    # planned=已出时间线+预览+草稿（待人审） / registered=已登记 material 资产（终态）
+    # planned=已出时间线+预览+草稿（待人审）/ registering=publish 占位瞬态（审计 19
+    # CAS：防并发双登记；双闸失败回 planned）/ registered=已登记 material 资产（终态）
     status: Mapped[str] = mapped_column(String(16))
     template: Mapped[str] = mapped_column(String(20))
     # 排版时间线候选（services.video_compose 的输出形状，JSONB 留档可回放）

@@ -9,6 +9,7 @@
 - 提音轨真跑 ffmpeg：送给 ASR 的字节是 16kHz 单声道 wav（替身里断言）；
 - 幂等口径：该录像有未拣选 cloud 候选时重跑 409（带现有条数，不追加）；全部
   拣选后可再生成一批；
+- 总预算闸（审计 19）：慢转写穿 300s 预算 → 部分候选先落库 + 502 带已转块数；
 - 46 刀绑定语义不动：转写候选带 recording_id，后续上传**不会**误绑它们。
 
 云请求用替身（monkeypatch ``services.asr.transcribe_audio``）——不打真网；ffmpeg
@@ -349,3 +350,55 @@ def test_upload_after_transcribe_does_not_rebind_cloud_candidates(
     )
     assert bound == [(first,)]  # 转写候选没被后续上传改绑
     assert _fetch("SELECT id FROM clip_candidates WHERE recording_id = %s", (second,)) == []
+
+
+# ---------- 5. 总预算闸（审计 19）：慢转写穿预算 → 部分候选落库 + 502 ----------
+
+
+def test_transcribe_over_budget_saves_partial_candidates_and_502(
+    api: ApiFixture, speech_mp4: bytes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """三块慢转写（假钟每块 +200s）穿 300s 总预算：首块成功后，第二块开转前
+    「累计 200s + 预估 200s」超限即停——**已成功块聚合出的部分候选先落库**，
+    端点 502 带「已转 1/3 块」与保留条数；重跑被既有未拣选 cloud 候选 409 挡住
+    （带条数——幂等口径不因部分失败破例：先拣选，再整段重转或切段上传）。"""
+    client, _ = api
+    _login(client)
+    monkeypatch.setattr(asr_service, "is_configured", lambda: True)
+    # 假钟（审计 19 的时钟缝）：只在假转写里推进——提音轨真跑 ffmpeg 但计时
+    # 走假钟，预算判定确定性可断言，不必真等 300s
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(asr_service, "_now_seconds", lambda: clock["now"])
+
+    def slow_transcribe(audio_bytes: bytes, *, filename: str = "audio.wav") -> list[dict]:
+        del audio_bytes, filename
+        clock["now"] += 200.0  # 每块「耗时」200s：均速预估下第二块必穿预算
+        return [dict(segment) for segment in _FAKE_SEGMENTS]
+
+    monkeypatch.setattr(asr_service, "transcribe_audio", slow_transcribe)
+    monkeypatch.setattr(
+        asr_service,
+        "split_wav_chunks",
+        lambda wav_bytes: [(0.0, b"c1"), (600.0, b"c2"), (1200.0, b"c3")],
+    )
+    recording_id = _upload(client, "asr-budget.mp4", speech_mp4)
+
+    response = client.post(f"/api/clips/recordings/{recording_id}/transcribe")
+    assert response.status_code == 502, response.text
+    detail = response.json()["detail"]
+    assert "转写超总预算" in detail
+    assert "已转 1/3 块" in detail
+    assert "2 条部分候选" in detail
+
+    # 部分成果保留：首块的两条候选已落 pending（cloud、直接绑该录像）
+    rows = _fetch(
+        "SELECT status, transcript_source FROM clip_candidates WHERE recording_id = %s",
+        (recording_id,),
+    )
+    assert len(rows) == 2
+    assert all(row == ("pending", "cloud") for row in rows)
+
+    # 幂等口径自洽：重跑 409 带现有条数（不是追加一批）
+    again = client.post(f"/api/clips/recordings/{recording_id}/transcribe")
+    assert again.status_code == 409
+    assert "2 条未拣选" in again.json()["detail"]

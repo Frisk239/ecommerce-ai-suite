@@ -9,6 +9,8 @@
   商品名）422；LLM 判定不过 422；过线登记 material 资产（kind=material、
   source_kind=upload、标题「{商品} · 内容成片」、挂商品）→ 治理台待人洗；
   成品 mp4 上传留档（final 端点可下）；registered 再 publish 422。
+- publish CAS 占位（审计 19）：双闸失败回 planned 可重试；并发双 publish 的
+  后来者 409「任务已被确认」；登记成功后清 preview/draft 暂存（final 留档）。
 - 全部操作者鉴权（401 未登录）。
 
 TTS/LLM 用替身（monkeypatch services.tts/material 的函数符号）——不打真网；
@@ -57,6 +59,12 @@ def _login(client: TestClient) -> None:
 
 def _url() -> str:
     return os.environ[_URL_ENV]
+
+
+def _fetch(sql: str, params: tuple = ()) -> list[tuple]:
+    with psycopg.connect(_url()) as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchall()
 
 
 def _new_product(client: TestClient, name: str) -> int:
@@ -392,6 +400,127 @@ def test_publish_llm_gate_blocks_contradiction(
     assert denied.status_code == 422
     assert "990ml" in denied.json()["detail"]
     assert client.get(f"/api/video-compose/tasks/{task_id}").json()["status"] == "planned"
+
+
+# ---------- publish CAS 占位 + 暂存清理（审计 19） ----------
+
+
+def test_publish_gate_failure_releases_claim_and_retry_succeeds(
+    api: ApiFixture, rich_product: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """双闸失败分支的占位回滚：LLM 判定不过 → 任务回 planned（不是卡死在
+    registering 瞬态），换一次过线判定即可重试登记成功。"""
+    client, _ = api
+    task_id = client.post(
+        "/api/video-compose/plan", json={"product_id": rich_product}
+    ).json()["id"]
+    _patch_llm_qc(
+        monkeypatch, '{"passed": false, "issues": ["正文与规格矛盾，不放行"]}'
+    )
+    denied = client.post(f"/api/video-compose/{task_id}/publish")
+    assert denied.status_code == 422
+    assert client.get(f"/api/video-compose/tasks/{task_id}").json()["status"] == "planned"
+
+    _patch_llm_qc(monkeypatch, QC_PASS)
+    published = client.post(f"/api/video-compose/{task_id}/publish")
+    assert published.status_code == 200, published.text
+    assert published.json()["task"]["status"] == "registered"
+
+
+def test_concurrent_publish_second_claim_is_409(
+    api: ApiFixture, rich_product: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """并发形态：读检查与 CAS 之间行被并发写者迁走（规则闸替身里用另一连接把
+    行翻成 registered，模拟并发赢家已登记）——后来者条件更新 0 行 → 409
+    「任务已被确认」，且后来者没有登记出任何 material 资产。"""
+    client, _ = api
+    task_id = client.post(
+        "/api/video-compose/plan", json={"product_id": rich_product}
+    ).json()["id"]
+
+    def racing_qc(title: str, content: str, product_name: str) -> list[str]:
+        del title, content, product_name
+        with psycopg.connect(_url()) as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE compose_tasks SET status = 'registered' WHERE id = %s",
+                (task_id,),
+            )
+            conn.commit()
+        return []  # 规则闸放行，让流程走到 CAS
+
+    monkeypatch.setattr(material_module, "qc_check", racing_qc)
+    _patch_llm_qc(monkeypatch, QC_PASS)
+    # 同名资产在早前用例已存在：断言「后来者没有新增登记」，不是「全库没有」
+    assets_before = _fetch(
+        "SELECT id FROM assets WHERE title = %s ORDER BY id", ("矿泉水 · 内容成片",)
+    )
+    loser = client.post(f"/api/video-compose/{task_id}/publish")
+    assert loser.status_code == 409, loser.text
+    assert "已被确认" in loser.json()["detail"]
+    # 后来者零登记：任务没有资产锚、库里没有新增同名 material 资产
+    assert _fetch("SELECT asset_id FROM compose_tasks WHERE id = %s", (task_id,)) == [
+        (None,)
+    ]
+    assert _fetch(
+        "SELECT id FROM assets WHERE title = %s ORDER BY id", ("矿泉水 · 内容成片",)
+    ) == assets_before
+
+
+def test_publish_success_cleans_preview_draft_staging_keeps_final(
+    api: ApiFixture, rich_product: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """转正清理（审计 19）：登记成功后 preview/draft 暂存字节删除（端点 404、
+    存储根下文件消失）；final 留任务档（ADR 0056）继续可下。"""
+    client, storage_root = api
+    task_id = client.post(
+        "/api/video-compose/plan", json={"product_id": rich_product}
+    ).json()["id"]
+    preview_key, draft_key = _fetch(
+        "SELECT preview_object_key, draft_object_key FROM compose_tasks WHERE id = %s",
+        (task_id,),
+    )[0]
+    assert (storage_root / preview_key).is_file()
+    assert (storage_root / draft_key).is_file()
+
+    _patch_llm_qc(monkeypatch, QC_PASS)
+    published = client.post(
+        f"/api/video-compose/{task_id}/publish",
+        files={"final_video": ("final.mp4", _make_mp4(3), "video/mp4")},
+    )
+    assert published.status_code == 200, published.text
+
+    assert not (storage_root / preview_key).exists()
+    assert not (storage_root / draft_key).exists()
+    assert client.get(f"/api/video-compose/{task_id}/preview").status_code == 404
+    assert client.get(f"/api/video-compose/{task_id}/draft").status_code == 404
+    final_key = _fetch(
+        "SELECT final_video_object_key FROM compose_tasks WHERE id = %s", (task_id,)
+    )[0][0]
+    assert final_key and (storage_root / final_key).is_file()
+    assert client.get(f"/api/video-compose/{task_id}/final").status_code == 200
+
+
+def test_publish_succeeds_even_if_staging_cleanup_fails(
+    api: ApiFixture, rich_product: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """清理失败不 fail：storage.delete 抛错时登记已 commit——publish 照常 200、
+    任务终态 registered（孤儿暂存键待存储侧兜底，只 log warning）。"""
+    client, _ = api
+    task_id = client.post(
+        "/api/video-compose/plan", json={"product_id": rich_product}
+    ).json()["id"]
+
+    def broken_delete(self: object, key: str) -> None:
+        del self, key
+        raise OSError("存储下线（模拟清理失败）")
+
+    from suite_platform.storage.local import LocalDirectoryStorage
+
+    monkeypatch.setattr(LocalDirectoryStorage, "delete", broken_delete)
+    _patch_llm_qc(monkeypatch, QC_PASS)
+    published = client.post(f"/api/video-compose/{task_id}/publish")
+    assert published.status_code == 200, published.text
+    assert published.json()["task"]["status"] == "registered"
 
 
 # ---------- TTS 三态 ----------

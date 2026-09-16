@@ -23,6 +23,7 @@ from suite_api.services.asr import (
     ASRNotConfigured,
     ASRUnavailable,
     AudioExtractionError,
+    TranscribeBudgetExceeded,
     TranscribeOutcome,
     _join_texts,
     _segments_of,
@@ -247,3 +248,23 @@ def test_aggregated_segment_is_frozen_value_object() -> None:
     segment = AggregatedSegment(start=0.0, end=1.0, transcript="文本")
     with pytest.raises(dataclasses.FrozenInstanceError):
         segment.start = 2.0  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------- 总预算闸（审计 19）
+
+
+def test_budget_error_carries_chunk_progress_and_saved_count() -> None:
+    """预算超限异常携带 {已转块数}/{总块数} 与保留候选条数（路由 502 detail 的
+    全部事实源）；文案含「已转 X/Y 块」与拣选/切段提示。"""
+    exc = TranscribeBudgetExceeded(transcribed=1, total=3, candidates_saved=2)
+    assert (exc.transcribed_chunks, exc.total_chunks, exc.candidates_saved) == (1, 3, 2)
+    message = str(exc)
+    assert "已转 1/3 块" in message
+    assert "2 条部分候选" in message
+    assert "切段上传" in message
+
+
+def test_budget_constants_frontend_alignment() -> None:
+    """总预算 300s 是服务端硬上限；单块超时 120s 仍是首块预估的取值源。"""
+    assert asr.TRANSCRIBE_TOTAL_BUDGET_SECONDS == 300.0
+    assert asr.TRANSCRIBE_TOTAL_BUDGET_SECONDS > asr.ASR_TIMEOUT_SECONDS
