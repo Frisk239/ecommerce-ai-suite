@@ -19,6 +19,10 @@ os.environ["ASR_API_KEY"] = ""
 # 图片登记的看图草稿也必须走「未配置 = 无草稿弃权」（零外网调用）；要测配置态
 # 用例自己 monkeypatch services.vlm 的 describe_image（替身，不打真网）。
 os.environ["VLM_API_KEY"] = ""
+# 第 98 刀同口径：测试进程强制空文生图凭证——本机 .env 配了真 IMGGEN_API_KEY
+# 时，素材任务的配图步也必须走「未配置 = 诚实跳过」（零外网调用）；要测配置态
+# 用例自己 monkeypatch services.imggen 的 generate_image（替身，不打真网）。
+os.environ["IMGGEN_API_KEY"] = ""
 
 from pathlib import Path  # noqa: E402
 from urllib.parse import urlsplit, urlunsplit  # noqa: E402

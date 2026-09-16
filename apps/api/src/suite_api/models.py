@@ -336,6 +336,16 @@ class MaterialTask(Base):
     （0029）：failed 不登记任何字节，registered 才有 asset_id 指向登记出的
     素材资产。title/content 是生成文案本体（抽检通过前只住本行，不入对象
     存储）；last_error 记规则项/生成失败/人工打回原因，重试时清空。
+
+    第 98 刀（ADR 0055，迁移 0032）四组列：``template`` 内容模板（站内投放/
+    小红书笔记体/短视频口播稿，默认站内——prompt 模板参数非 Agent）；
+    ``qc_llm_passed`` LLM 事实性质检二道闸结果（None=未跑到，与规则闸独立
+    记录）；``image_status`` 配图步状态（none=未请求/requested=请求待生成/
+    pending=已生成待登记/registered=已登记/skipped_no_key=无 key 诚实跳过/
+    failed=生成失败不 fail 任务——requested 兼作建任务的 with_image 请求
+    标志，无独立列）；``image_asset_id`` 抽检通过登记出的配图图片资产（回执
+    锚，同 asset_id 先例）。配图字节抽检前住对象存储的 material/ 暂存键
+    （image_object_key，不是资产——同 clip_recordings 先例），登记时转正。
     """
 
     __tablename__ = "material_tasks"
@@ -350,6 +360,20 @@ class MaterialTask(Base):
     # 抽检通过登记出的资产（kind=material, source_kind=material_generated）；
     # UI 跳转治理台详情的锚，未登记为 NULL
     asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    # 第 98 刀：内容模板（services.material.TEMPLATES 的键，应用层枚举无 CHECK）
+    template: Mapped[str] = mapped_column(
+        String(20), server_default=text("'station'"), nullable=False
+    )
+    # LLM 事实性质检二道闸：None=未跑到（生成/规则闸先失败）、True/False=已判（LLM 失败/坏输出也记 False，last_error 可辨）
+    qc_llm_passed: Mapped[bool | None] = mapped_column(Boolean)
+    # 配图步状态（none/pending/registered/skipped_no_key/failed，取值由服务层收口）
+    image_status: Mapped[str] = mapped_column(
+        String(20), server_default=text("'none'"), nullable=False
+    )
+    # 配图字节的对象存储暂存键（抽检通过前不是资产；登记后删除）
+    image_object_key: Mapped[str | None] = mapped_column(String(500))
+    # 抽检通过登记出的配图资产（kind=image, source_kind=material_generated）
+    image_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

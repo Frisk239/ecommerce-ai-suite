@@ -42,6 +42,12 @@ services:
       VLM_API_KEY: ${VLM_API_KEY:-}
       VLM_BASE_URL: ${VLM_BASE_URL:-https://api.openai.com/v1}
       VLM_MODEL: ${VLM_MODEL:-gpt-4o-mini}
+      # 云文生图（第 98 刀，ADR 0055）：素材任务配图（OpenAI 兼容 images/generations，
+      # 默认硅基流动免费 FLUX 档）。空 key = 不建客户端、不发请求——配图步诚实
+      # 跳过（任务详情如实标注），纯文案套件照常。
+      IMGGEN_API_KEY: ${IMGGEN_API_KEY:-}
+      IMGGEN_BASE_URL: ${IMGGEN_BASE_URL:-https://api.siliconflow.cn/v1}
+      IMGGEN_MODEL: ${IMGGEN_MODEL:-black-forest-labs/FLUX.1-schnell}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
       CUSTOMER_TRUST_PROXY: ${CUSTOMER_TRUST_PROXY:-}  # 空=直连模式忽略 XFF；反代部署设 true（settings 空串回落默认）
       # 可嵌入小组件的宿主白名单（第 45b 刀）：逗号分隔 origin，空=未启用嵌入。

@@ -492,7 +492,7 @@ export interface ConfirmReturnResult {
   events: { at: string; text: string }[]
 }
 
-// ---------- 素材中心任务（routes/material.py 契约，第 17 刀/ADR 0038） ----------
+// ---------- 素材中心任务（routes/material.py 契约，第 17 刀/ADR 0038；第 98 刀内容套件） ----------
 
 /** 任务五态（0038 状态机；不是资产三态，与 middle-plate 无关）：
  * queued=排队 / running=进行中 / pending_qc=待抽检（规则质检过线等人）/
@@ -504,6 +504,21 @@ export type MaterialTaskStatus =
   | 'registered'
   | 'failed'
 
+/** 内容模板（第 98 刀，ADR 0055）：station=站内投放文案（默认，17 刀形态）/
+ * xhs=小红书笔记体 / short_video=短视频口播稿——prompt 模板参数，非 Agent。 */
+export type MaterialTemplate = 'station' | 'xhs' | 'short_video'
+
+/** 配图步六态（第 98 刀）：none=未请求 / requested=请求待生成 /
+ * pending=已生成待登记（暂存字节可预览）/ registered=已登记（image_asset_id
+ * 回执锚）/ skipped_no_key=无 IMGGEN key 诚实跳过 / failed=生成失败（不 fail 任务）。 */
+export type MaterialImageStatus =
+  | 'none'
+  | 'requested'
+  | 'pending'
+  | 'registered'
+  | 'skipped_no_key'
+  | 'failed'
+
 export interface MaterialTask {
   id: number
   product_id: number
@@ -513,7 +528,18 @@ export interface MaterialTask {
   content: string | null
   last_error: string | null
   asset_id: number | null
+  template: MaterialTemplate
+  template_name: string
+  /** LLM 事实性质检二道闸结果（第 98 刀）：null=未跑到（两闸独立记录）。 */
+  qc_llm_passed: boolean | null
+  image_status: MaterialImageStatus
+  image_asset_id: number | null
   created_at: string
+}
+
+/** 文生图配置状态（第 98 刀）：「生成配图」开关禁用判据（GET /api/material/imggen/status）。 */
+export interface MaterialImggenStatus {
+  configured: boolean
 }
 
 // ---------- 直播切片候选（routes/clips.py 契约，第 18 刀/ADR 0014/0015/0039；第 46 刀真链路） ----------

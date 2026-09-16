@@ -30,6 +30,7 @@ import type {
   HandoffTicketResult,
   KnowledgeGap,
   KnowledgeGapStatus,
+  MaterialImggenStatus,
   MaterialTask,
   Operator,
   OpsRun,
@@ -149,20 +150,25 @@ export const api = {
   listKnowledgeGaps: (status: KnowledgeGapStatus = 'open') =>
     request<KnowledgeGap[]>(`/knowledge-gaps?status=${status}`),
 
-  // 素材中心（第 17 刀/ADR 0038）：任务不是中台对象；建任务请求内同步执行
-  // LLM 生成+规则质检（≤20s，同回流机洗的等待面），返回即稳定态。全部操作者鉴权。
-  // 建任务/重试的 LLM 等待面必须宽于默认 15s 超时（LLM 上限 20s + 缓冲）。
-  createMaterialTask: (productId: number) =>
+  // 素材中心（第 17 刀/ADR 0038；第 98 刀内容套件/ADR 0055）：任务不是中台对象；
+  // 建任务请求内同步执行 LLM 生成+双闸质检+配图，返回即稳定态。全部操作者鉴权。
+  // 建任务/重试的等待面必须宽于默认 15s 超时：文案 ≤20s + LLM 质检 ≤20s +
+  // 配图 ≤60s，给 120s（要配图时才用满，纯文案远低于此）。
+  createMaterialTask: (productId: number, template: string = 'station', withImage: boolean = false) =>
     request<MaterialTask>(
       '/material/tasks',
       {
         method: 'POST',
-        body: JSON.stringify({ product_id: productId }),
+        body: JSON.stringify({ product_id: productId, template, with_image: withImage }),
       },
-      30_000,
+      120_000,
     ),
   listMaterialTasks: () => request<MaterialTask[]>('/material/tasks'),
   getMaterialTask: (taskId: number) => request<MaterialTask>(`/material/tasks/${taskId}`),
+  // 文生图配置状态（第 98 刀）：「生成配图」开关禁用判据（无 key 禁用并提示）。
+  getMaterialImggenStatus: () => request<MaterialImggenStatus>('/material/imggen/status'),
+  // 配图暂存字节预览（操作者 cookie 同源直取；抽检通过登记后 404，去治理台看）
+  materialTaskImageUrl: (taskId: number) => `/api/material/tasks/${taskId}/image`,
   approveMaterialTask: (taskId: number) =>
     request<MaterialTask>(`/material/tasks/${taskId}/approve`, { method: 'POST' }),
   // 第 48 刀：打回可带理由（≤200 字）——写进 last_error 的详情段，运营看得见
@@ -173,7 +179,7 @@ export const api = {
       body: JSON.stringify({ reason }),
     }),
   retryMaterialTask: (taskId: number) =>
-    request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 30_000),
+    request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 120_000),
 
   // 直播切片（第 18 刀/ADR 0014/0039；第 46 刀真链路）：候选不是中台对象；
   // 上传源录像（.mp4，≤200MB；上传即绑「尚无源录像」的 pending 候选）后，pick

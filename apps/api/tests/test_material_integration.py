@@ -1,7 +1,8 @@
-"""素材中心集成测试（真 PG；complete_chat 替身不发外网；第 17 刀/ADR 0038）。
+"""素材中心集成测试（真 PG；complete_chat/imggen 替身不发外网；第 17 刀/ADR 0038；
+第 98 刀内容套件/ADR 0055）。
 
 契约：
-- 建任务同步就地执行：返回即稳定态 pending_qc（生成+规则质检都过）；
+- 建任务同步就地执行：返回即稳定态 pending_qc（生成+双闸质检都过）；
 - approve -> registered + 登记出 kind=material / source_kind=material_generated
   资产（机洗按所挂商品规格字段跑正则，登记内已推进待人洗）-> 人洗确认 ->
   发布 -> 顾客问「保温杯有什么卖点」命中素材切块并引用；
@@ -10,6 +11,15 @@
 - 非法转移 409（registered 再 retry / failed 直接 approve）；
 - 打码步（ADR 0038 P1#4）：转写含手机号 -> QA 抽取 prompt 输入已打码、
   落库 qa_pairs 值不留裸号（断言见文件末，与回流链路同路）。
+
+第 98 刀新增契约（ADR 0055）：
+- 三模板：template 入参落库、生成 system prompt 按模板派生、坏值 422；
+- LLM 事实性质检二道闸：构造矛盾文案（净含量 990ml vs 规格 480ml）被拦
+  （failed 不进待抽检、文案保留、qc_llm_passed=False）；
+- 配图：with_image 无 key=诚实跳过（skipped_no_key，任务照常）；替身成功=
+  暂存可预览（GET tasks/{id}/image）+ 抽检通过双资产登记（material+image，
+  image 的图片描述预填文案首句、VLM 无 key 时由预填兜底）+ 暂存键清理；
+- imggen status 端点：configured=false（conftest 强制空 key）。
 """
 
 import json
@@ -20,6 +30,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sse_helpers import parse_sse_events
 
+from suite_api.services import imggen as imggen_module
 from suite_api.services import llm as llm_module
 
 ApiFixture = tuple[TestClient, Path]
@@ -31,6 +42,12 @@ GOOD_CONTENT = (
     "材质：钛钢\n"
     "净含量：480ml"
 )
+
+QC_PASS = '{"passed": true, "issues": []}'
+QC_FAIL_CONTRADICTION = '{"passed": false, "issues": ["正文称净含量 990ml，与规格 480ml 矛盾"]}'
+
+# 最小合法 PNG 字节（魔数即可：暂存键后缀/预览端点 mime/登记嗅探都只看魔数）
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
 
 def _login(client: TestClient) -> None:
@@ -54,20 +71,51 @@ def _cup_id(client: TestClient) -> int:
 
 def _patch_complete_chat(
     monkeypatch: pytest.MonkeyPatch,
+    script: list[Any] | None = None,
     result: str | None = None,
     error: Exception | None = None,
 ) -> list[dict[str, str]]:
-    """替换 llm.complete_chat；返回 prompt 捕获记录（同回流测试先例）。"""
+    """替换 llm.complete_chat；返回 prompt 捕获记录（同回流测试先例）。
+
+    第 98 刀起一次任务有两处 LLM 等待点（生成 + 事实性质检）：``script``
+    按调用序分派（字符串应答或 Exception 实例抛出）；``result`` 单值便捷形态。
+    耗尽再被调即断言失败（意外调用哨兵）。"""
     calls: list[dict[str, str]] = []
+    queue: list[Any] = list(script or [])
+    if result is not None and not queue:
+        queue = [result]
 
     async def fake(system_prompt: str, user_prompt: str) -> Any:
         calls.append({"system": system_prompt, "user": user_prompt})
         if error is not None:
             raise error
+        if not queue:
+            raise AssertionError("意外的额外 LLM 调用（替身脚本已耗尽）")
+        item = queue.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    monkeypatch.setattr(llm_module, "complete_chat", fake)
+    return calls
+
+
+def _patch_imggen(
+    monkeypatch: pytest.MonkeyPatch,
+    result: bytes | None = None,
+    error: Exception | None = None,
+) -> list[dict[str, str]]:
+    """替换 imggen.generate_image：捕获 {prompt, size}；三态由参数分派。"""
+    calls: list[dict[str, str]] = []
+
+    def fake(prompt: str, *, size: str) -> bytes:
+        calls.append({"prompt": prompt, "size": size})
+        if error is not None:
+            raise error
         assert result is not None
         return result
 
-    monkeypatch.setattr(llm_module, "complete_chat", fake)
+    monkeypatch.setattr(imggen_module, "generate_image", fake)
     return calls
 
 
@@ -89,7 +137,7 @@ def test_full_loop_generate_approve_publish_and_retrieval(
     client, _ = api
     _login(client)
     cup_id = _cup_id(client)
-    calls = _patch_complete_chat(monkeypatch, result=_material_json())
+    calls = _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
 
     created = client.post("/api/material/tasks", json={"product_id": cup_id})
     assert created.status_code == 201
@@ -100,9 +148,18 @@ def test_full_loop_generate_approve_publish_and_retrieval(
     assert task["product_name"] == "钛钢保温杯"
     assert task["asset_id"] is None
     assert task["last_error"] is None
-    assert len(calls) == 1  # 建任务请求内同步生成一次
+    # 第 98 刀默认形态：站内模板、无配图请求、双闸都过
+    assert task["template"] == "station"
+    assert task["template_name"] == "站内投放文案"
+    assert task["qc_llm_passed"] is True
+    assert task["image_status"] == "none"
+    assert task["image_asset_id"] is None
+    # 两次 LLM 调用：生成（模板 system prompt + 商品事实面）+ 事实性质检
+    assert len(calls) == 2
     assert "钛钢保温杯" in calls[0]["user"]  # 商品名+规格事实进 prompt
-    assert len(calls) == 1  # 质检是代码规则，不再额外调 LLM
+    assert "站内投放" not in calls[0]["system"] or "字段：值" in calls[0]["system"]
+    assert "480ml" in calls[1]["user"]  # 质检 prompt 带规格事实
+    assert GOOD_TITLE in calls[1]["user"]  # 质检 prompt 带待审文案
 
     # 列表与详情视图一致
     listed = client.get("/api/material/tasks").json()
@@ -115,6 +172,7 @@ def test_full_loop_generate_approve_publish_and_retrieval(
     assert registered["status"] == "registered"
     asset_id = registered["asset_id"]
     assert asset_id is not None
+    assert registered["image_asset_id"] is None  # 未请求配图=单资产回执
 
     # 登记出的素材资产：kind=material、来源=素材生成、挂商品、机洗已弃权/推进
     asset = client.get(f"/api/assets/{asset_id}").json()
@@ -152,7 +210,7 @@ def test_reject_retry_then_approve(api: ApiFixture, monkeypatch: pytest.MonkeyPa
     client, _ = api
     _login(client)
     cup_id = _cup_id(client)
-    _patch_complete_chat(monkeypatch, result=_material_json())
+    _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
     task_id = client.post("/api/material/tasks", json={"product_id": cup_id}).json()["id"]
 
     rejected = client.post(f"/api/material/tasks/{task_id}/reject").json()
@@ -162,6 +220,7 @@ def test_reject_retry_then_approve(api: ApiFixture, monkeypatch: pytest.MonkeyPa
     # failed 不能直接抽检通过（生成侧与抽检侧闸门互斥）
     assert client.post(f"/api/material/tasks/{task_id}/approve").status_code == 409
 
+    _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
     retried = client.post(f"/api/material/tasks/{task_id}/retry")
     assert retried.status_code == 200
     body = retried.json()
@@ -182,7 +241,7 @@ def test_list_tasks_batches_product_names(api: ApiFixture, monkeypatch: pytest.M
     （每行商品名与 /api/products 视图一致）。"""
     client, _ = api
     _login(client)
-    _patch_complete_chat(monkeypatch, result=_material_json())
+    _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
     products = client.get("/api/products").json()
     assert len(products) >= 2
     for p in products[:2]:  # 跨两个商品建任务，批取才有判别力
@@ -248,20 +307,31 @@ def test_gate_and_error_contract(api: ApiFixture, monkeypatch: pytest.MonkeyPatc
     assert client.post("/api/material/tasks", json={}).status_code == 422
     assert client.get("/api/material/tasks/999999").status_code == 404
     assert client.post("/api/material/tasks/999999/approve").status_code == 404
+    # 坏模板 422（第 98 刀：模板键在路由层校验）
+    assert (
+        client.post(
+            "/api/material/tasks", json={"product_id": _cup_id(client), "template": "weibo"}
+        ).status_code
+        == 422
+    )
 
-    _patch_complete_chat(
+    calls = _patch_complete_chat(
         monkeypatch,
         result=_material_json(content="卖点：这款杯子很好用。"),  # 缺商品名
     )
     bad = client.post("/api/material/tasks", json={"product_id": _cup_id(client)}).json()
     assert bad["status"] == "failed"
     assert "商品名" in bad["last_error"]
+    assert bad["qc_llm_passed"] is None  # 规则闸先挡：LLM 闸未跑到
+    assert len(calls) == 1  # 哨兵：规则不过不再调 LLM 质检
     assert client.post(f"/api/material/tasks/{bad['id']}/approve").status_code == 409
 
-    # 未登录 401（素材是操作者动作）
+    # 未登录 401（素材是操作者动作；含 imggen/status 与配图预览）
     client.cookies.clear()
     assert client.get("/api/material/tasks").status_code == 401
     assert client.post("/api/material/tasks", json={"product_id": 1}).status_code == 401
+    assert client.get("/api/material/imggen/status").status_code == 401
+    assert client.get("/api/material/tasks/1/image").status_code == 401
     _login(client)
 
 
@@ -301,3 +371,145 @@ def test_redact_in_reflow_qa_pipeline(api: ApiFixture, monkeypatch: pytest.Monke
     version_text = client.get(f"/api/assets/{asset['id']}/versions/1/text")
     assert version_text.status_code == 200
     assert "13812345678" in version_text.text
+
+
+# ---------- 第 98 刀：三模板 + 配图跳过（无 key 形态） ----------
+
+
+def test_xhs_template_with_image_no_key_skips_honestly(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """小红书模板 + 请求配图，但无 IMGGEN key：任务照常 pending_qc，配图步
+    诚实跳过（skipped_no_key），approve 登记单资产。"""
+    client, _ = api
+    _login(client)
+    calls = _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
+    # 替身抛 ImggenNotConfigured：复现无 key 环境的 client 闸（conftest 已强制
+    # 空 key，真实 generate_image 同样抛——替身只是不让测试依赖 settings 时序）
+    img_calls = _patch_imggen(monkeypatch, error=imggen_module.ImggenNotConfigured("未配置"))
+
+    task = client.post(
+        "/api/material/tasks",
+        json={"product_id": _cup_id(client), "template": "xhs", "with_image": True},
+    ).json()
+    assert task["status"] == "pending_qc"
+    assert task["template"] == "xhs"
+    assert task["template_name"] == "小红书笔记体"
+    assert task["image_status"] == "skipped_no_key"  # 诚实跳过，不 fail 任务
+    assert task["image_asset_id"] is None
+    # 生成 system prompt 按模板派生（小红书风格行）
+    assert "小红书" in calls[0]["system"]
+    # 配图步确实跑到了（调用一次、如实跳过）——不是被入口闸拦掉
+    assert len(img_calls) == 1
+
+    approved = client.post(f"/api/material/tasks/{task['id']}/approve").json()
+    assert approved["status"] == "registered"
+    assert approved["asset_id"] is not None
+    assert approved["image_asset_id"] is None  # 跳过形态=单资产
+
+
+def test_imggen_status_endpoint(api: ApiFixture) -> None:
+    client, _ = api
+    _login(client)
+    body = client.get("/api/material/imggen/status").json()
+    assert body == {"configured": False}  # conftest 强制空 IMGGEN_API_KEY
+
+
+# ---------- 第 98 刀：LLM 事实性质检二道闸 ----------
+
+
+def test_llm_qc_gate_blocks_contradictory_copy(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """构造矛盾文案（净含量 990ml vs 规格 480ml）被二道闸实测拦截：不进
+    待抽检、failed 带具体原因、文案保留预览、可重试。"""
+    client, _ = api
+    _login(client)
+    contradictory = _material_json(content="卖点：钛钢保温杯超大容量。\n材质：钛钢\n净含量：990ml")
+    _patch_complete_chat(monkeypatch, script=[contradictory, QC_FAIL_CONTRADICTION])
+
+    task = client.post("/api/material/tasks", json={"product_id": _cup_id(client)}).json()
+    assert task["status"] == "failed"  # 不进待抽检（roadmap：失败不进待抽检）
+    assert "LLM 事实性质检不过线" in task["last_error"]
+    assert "990ml" in task["last_error"]
+    assert task["qc_llm_passed"] is False
+    assert task["title"] == GOOD_TITLE  # 文案保留预览面
+    assert "990ml" in task["content"]
+    assert task["asset_id"] is None
+    assert client.post(f"/api/material/tasks/{task['id']}/approve").status_code == 409
+
+    # 重试（换正常质检判定）-> 过线进待抽检
+    _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
+    retried = client.post(f"/api/material/tasks/{task['id']}/retry").json()
+    assert retried["status"] == "pending_qc"
+    assert retried["qc_llm_passed"] is True
+
+
+def test_llm_qc_bad_output_fails_closed(api: ApiFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    client, _ = api
+    _login(client)
+    _patch_complete_chat(monkeypatch, script=[_material_json(), "我觉得没问题。"])
+    task = client.post("/api/material/tasks", json={"product_id": _cup_id(client)}).json()
+    assert task["status"] == "failed"
+    assert "LLM 质检输出不可解析" in task["last_error"]
+    assert task["qc_llm_passed"] is False
+
+
+# ---------- 第 98 刀：配图全链（替身成功 -> 预览 -> 双资产登记） ----------
+
+
+def test_image_full_path_staged_preview_and_double_asset(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = api
+    _login(client)
+    _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
+    img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)
+
+    task = client.post(
+        "/api/material/tasks",
+        json={"product_id": _cup_id(client), "template": "short_video", "with_image": True},
+    ).json()
+    assert task["status"] == "pending_qc"
+    assert task["image_status"] == "pending"
+    # 配图 prompt/尺寸按模板派生（口播=竖版背景图 768x1024）
+    assert len(img_calls) == 1
+    assert img_calls[0]["size"] == "768x1024"
+    assert "竖版" in img_calls[0]["prompt"] and "钛钢保温杯" in img_calls[0]["prompt"]
+
+    # 抽检前预览：暂存字节端点（操作者面）直出 png
+    preview = client.get(f"/api/material/tasks/{task['id']}/image")
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/png"
+    assert preview.content == PNG_BYTES
+    # 未请求配图的任务没有可预览的配图（404 同文案）
+    assert client.get("/api/material/tasks/999999/image").status_code == 404
+
+    # 抽检通过：双资产登记（文案 material + 配图 image）
+    approved = client.post(f"/api/material/tasks/{task['id']}/approve").json()
+    assert approved["status"] == "registered"
+    material_id = approved["asset_id"]
+    image_id = approved["image_asset_id"]
+    assert material_id is not None and image_id is not None
+    assert material_id != image_id
+
+    image_asset = client.get(f"/api/assets/{image_id}").json()
+    assert image_asset["kind"] == "image"
+    assert image_asset["source_kind"] == "material_generated"
+    assert image_asset["status"] == "pending_review"  # 走 94a 待人洗治理
+    assert image_asset["product"]["id"] == _cup_id(client)
+    assert image_asset["title"] == "钛钢保温杯 · 短视频口播稿配图"
+    # 图片描述：VLM 无 key（conftest 空 key）→ 文案首句预填兜底（extracted，
+    # 待人洗可改）；键后缀按字节魔数=png
+    extracted = image_asset["versions"][0]["extracted_fields"]
+    assert extracted["图片描述"] == {
+        "value": "卖点一：钛钢保温杯双层真空，持久保温12小时。",
+        "source": "machine",
+    }
+    assert image_asset["versions"][0]["object_key"].endswith(".png")
+
+    # 登记后暂存预览端点 404（预览去治理台资产详情），暂存目录无残留文件
+    # （转正即清；空目录壳与资产键删除同款，不算残留）
+    assert client.get(f"/api/material/tasks/{task['id']}/image").status_code == 404
+    _, storage_root = api
+    assert [p for p in storage_root.glob("material/**/*") if p.is_file()] == []

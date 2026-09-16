@@ -226,7 +226,12 @@ def register_asset(
         else:
             extracted = run_machine_wash(storage, object_key, field_names, kind)
         for name, value in (preset_fields or {}).items():
-            extracted.setdefault(name, {"value": value, "source": "machine"})
+            # 预置字段是**兜底**：字段缺失或机洗弃权时生效；机洗真抽到值则优先
+            # （第 98 刀 image 路径：VLM 看图草稿 > 文案首句预填 > 弃权——图片
+            # 描述只有一个字段，setdefault 会被弃权条目挡住，预填永远进不来）。
+            current = extracted.get(name)
+            if current is None or "value" not in current:
+                extracted[name] = {"value": value, "source": "machine"}
         version.extracted_fields = extracted  # JSONB 整体赋值，确保变更可追踪
         asset.status = PENDING_REVIEW
     except (MachineWashError, FileNotFoundError) as exc:
