@@ -282,3 +282,52 @@ def test_supported_verdict_parsing() -> None:
 def test_build_judge_prompt_contains_parts() -> None:
     prompt = runner.build_judge_prompt("Q", ["证据一", "证据二"], "回答A")
     assert "Q" in prompt and "证据一" in prompt and "证据二" in prompt and "回答A" in prompt
+
+
+def test_judge_with_retry_recovers_within_attempts(monkeypatch) -> None:
+    """第 87 刀韧性：前两次 LLMError、第三次成功 -> 评上（旧实现直接终止整列）。"""
+    from suite_api.services.llm import LLMUnavailable
+
+    calls: list[int] = []
+
+    def fake_judge_one(question: str, chunks, answer: str) -> bool:
+        calls.append(1)
+        if len(calls) < runner.JUDGE_ATTEMPTS:
+            raise LLMUnavailable("网关抖动")
+        return True
+
+    monkeypatch.setattr(runner, "judge_one", fake_judge_one)
+    monkeypatch.setattr(runner.time, "sleep", lambda _s: None)
+    assert runner.judge_with_retry("Q", ["证据"], "回答") is True
+    assert len(calls) == runner.JUDGE_ATTEMPTS
+
+
+def test_judge_with_retry_fail_soft_returns_none(monkeypatch) -> None:
+    """重试尽仍失败 -> None（fail-soft：LLMError 不逃逸，调用方记未评上继续跑）。"""
+    from suite_api.services.llm import LLMUnavailable
+
+    calls: list[int] = []
+
+    def fake_judge_one(question: str, chunks, answer: str) -> bool:
+        calls.append(1)
+        raise LLMUnavailable("网关持续不可用")
+
+    monkeypatch.setattr(runner, "judge_one", fake_judge_one)
+    monkeypatch.setattr(runner.time, "sleep", lambda _s: None)
+    assert runner.judge_with_retry("Q", ["证据"], "回答") is None
+    assert len(calls) == runner.JUDGE_ATTEMPTS
+
+
+def test_judge_with_retry_no_sleep_on_last_attempt(monkeypatch) -> None:
+    """最后一次失败后不再等待（attempts 次 LLMError 只睡 attempts-1 次）。"""
+    from suite_api.services.llm import LLMError
+
+    sleeps: list[float] = []
+
+    def fake_judge_one(question: str, chunks, answer: str) -> bool:
+        raise LLMError("输出不可解析")
+
+    monkeypatch.setattr(runner, "judge_one", fake_judge_one)
+    monkeypatch.setattr(runner.time, "sleep", lambda s: sleeps.append(s))
+    assert runner.judge_with_retry("Q", ["证据"], "回答") is None
+    assert sleeps == [runner.JUDGE_RETRY_WAIT_SECONDS] * (runner.JUDGE_ATTEMPTS - 1)

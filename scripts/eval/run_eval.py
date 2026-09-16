@@ -3,7 +3,9 @@
 不 mock 引擎：与线上完全相同的检索打分（services/retrieval）与降级模板组装
 （services/answer），直接吃 --db 会话；检索层指标零 LLM 依赖（空 key 可复现）。
 可选 --judge 对「有命中且未拒答」的条目调 complete_chat 评 faithfulness
-（回答是否只由命中块支持）——LLMNotConfigured/LLMError 跳过该列并在报告注明。
+（回答是否只由命中块支持）——LLMNotConfigured 跳过该列；LLMError 每条有限
+重试，重试尽该条记未评上并继续（第 87 刀：此前单条失败会终止整列，judge
+从未跑全过），失败条目在报告注明。
 
 指标（docs/research/rag-accuracy-engineering.md §3 协议）：
 - recall@1/@3：cite 组（positive/paraphrase/confusion）期望资产进 top-1/top-3；
@@ -27,6 +29,7 @@ import argparse
 import asyncio
 import json
 import re
+import time
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
@@ -39,6 +42,8 @@ DEFAULT_DB = "postgresql://suite:suite@localhost:5433/suite"
 DEFAULT_GOLDEN = SCRIPT_DIR / "out" / "golden_large.json"
 TOP_K = 3
 DISTRIBUTIONS = ("positive", "paraphrase", "confusion", "refusal")
+JUDGE_ATTEMPTS = 3
+JUDGE_RETRY_WAIT_SECONDS = 2.0
 
 JUDGE_SYSTEM_PROMPT = (
     "你是严格的检索增强问答评审。给定问题、检索证据与回答，逐句评答案忠实度"
@@ -161,7 +166,7 @@ def build_judge_prompt(question: str, chunks: Sequence[str], answer: str) -> str
 
 
 def judge_one(question: str, chunks: Sequence[str], answer: str) -> bool:
-    """单条 faithfulness 评审（走线上同款 complete_chat；LLMError 上抛给主流程）。"""
+    """单条 faithfulness 评审（走线上同款 complete_chat；LLMError 上抛给重试层）。"""
     from suite_api.services.llm import LLMError, complete_chat
 
     async def _run() -> str:
@@ -174,6 +179,26 @@ def judge_one(question: str, chunks: Sequence[str], answer: str) -> bool:
     if verdict is None:
         raise LLMError("judge 输出不可解析") from None
     return verdict
+
+
+def judge_with_retry(
+    question: str, chunks: Sequence[str], answer: str, *, attempts: int = JUDGE_ATTEMPTS
+) -> bool | None:
+    """单条评审 × 有限重试；重试尽仍失败返回 None（fail-soft，不终止整列）。
+
+    线上 llm 契约刻意 20s/0 重试（0018/0033），脚本层的韧性放这里，不动
+    services/llm。None 计入「未评上」，分母只算评上的，失败条目由调用方
+    收集进报告注记。
+    """
+    from suite_api.services.llm import LLMError
+
+    for attempt in range(attempts):
+        try:
+            return judge_one(question, chunks, answer)
+        except LLMError:
+            if attempt < attempts - 1:
+                time.sleep(JUDGE_RETRY_WAIT_SECONDS)
+    return None
 
 
 # ---------------------------------------------------------------- 报告骨架（--report 可选路）
@@ -263,25 +288,26 @@ def main(argv: list[str] | None = None) -> int:
         rows: list[dict[str, Any]] = []
         judge_on = False
         judge_error: str | None = None
+        judge_failed_ids: list[str] = []
         for case in cases:
             hits = retrieve(db, case["question"], top_k=TOP_K)
             composed = compose_answer(hits, meta)
             row = judge_case(case, hits, composed.kind)
             if args.judge and judge_error is None and row["answered"]:
-                from suite_api.services.llm import LLMError
                 from suite_api.settings import get_settings
 
                 if not get_settings().llm_api_key:
                     judge_error = "空 LLM key，judge 列跳过"
                 else:
-                    try:
-                        row["faithful"] = judge_one(
-                            case["question"],
-                            [hit["chunk"] for hit in hits],
-                            composed.content,
-                        )
-                    except LLMError as exc:
-                        judge_error = f"LLMError：{type(exc).__name__}，judge 列停止"
+                    faithful = judge_with_retry(
+                        case["question"],
+                        [hit["chunk"] for hit in hits],
+                        composed.content,
+                    )
+                    if faithful is None:
+                        judge_failed_ids.append(case["id"])
+                    else:
+                        row["faithful"] = faithful
             rows.append(row)
             judge_on = judge_on or row["faithful"] is not None
 
@@ -291,9 +317,22 @@ def main(argv: list[str] | None = None) -> int:
     print(table)
     note = "未启用（未传 --judge）"
     if args.judge:
-        note = judge_error or f"已启用：answered 条目 {agg['overall']['judged']}/{agg['overall']['answered']} 条评上"
+        if judge_error:
+            note = judge_error
+        else:
+            note = (
+                f"已启用：answered 条目 {agg['overall']['judged']}/"
+                f"{agg['overall']['answered']} 条评上"
+            )
+            if judge_failed_ids:
+                note += (
+                    f"，{len(judge_failed_ids)} 条重试后仍失败（{','.join(judge_failed_ids)}）"
+                    "——忠实度分母只含评上条目"
+                )
     if args.judge and judge_error:
         print(f"judge：{judge_error}")
+    elif args.judge and judge_failed_ids:
+        print(f"judge：{len(judge_failed_ids)} 条重试后仍失败：{','.join(judge_failed_ids)}")
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(
