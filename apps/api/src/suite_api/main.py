@@ -142,7 +142,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 限流器挂 app.state（测试可替换为小阈值/假时钟实例）
     app.include_router(customer.router)
     # 微调数据集导出（第 97 刀/ADR 0054）：SFT 形态 JSONL 经治理台，只出已发布
-    # 对话的人确认问答对；不进 MCP（「恰四工具」不动），本产品不做训练
+    # 对话的人确认问答对；不进 MCP（第 99 刀起恰七工具，SFT 导出仍不在其列），
+    # 本产品不做训练
     app.include_router(exports.router)
     # 内容成片（第 98b 刀/ADR 0056）：AI 排版产时间线候选+预览成片+剪映草稿，
     # 人审改后 publish 登记 material 资产；任务不是中台对象，端点全操作者鉴权

@@ -1,4 +1,4 @@
-"""MCP 连接层冒烟脚本（ADR 0032 演示与验收）：官方 SDK client 打 /mcp/。
+"""MCP 连接层冒烟脚本（ADR 0032 演示与验收；第 99 刀 ADR 0057 起恰七工具）。
 
 用法（仓库根，先起 api 与已发布资产）：
 
@@ -11,17 +11,20 @@
 - MCP_URL：默认 http://localhost:8000/mcp/
 - MCP_BEARER_TOKEN：必填（token 只从 env 读，脚本里不硬编码）
 
-流程：initialize -> list_tools（断言四工具且无 publish）-> 依次调用
+流程：initialize -> list_tools（断言七工具且无 publish）-> 依次调用
 search_published / get_asset（当前版与历史版）/ register_asset（演示文本）/
-export_published，打印结构化摘要。任一环节失败以非零码退出。
+export_published / 活状态三件 get_stock / get_order_status / get_product，
+打印结构化摘要。任一环节失败以非零码退出（活状态查无不算失败——如实返回
+{found: False} 正是契约）。
 
 --evidence：在原流程后追加连接层协议证据断言（goal §6.2.5）——
 E0 register 落已接入（工具返回即资产视图，status=ingested/pending_review）；
-E1 工具列表恰四且无 publish；E2 未发布不进检索（登记带独特标记词、不发布，
-search_published 查该标记词必空）；E3 活状态工具不暴露（0021/0036：订单/
-库存走中台接口，活状态不进索引也不进连接层）。每断言一行
-PASS/FAIL <断言名>: <实际值>；任一 FAIL 以非零码退出。脚本级证据，
-不进 CI（pytest 版在 apps/api/apps/api/tests/test_mcp_evidence.py）。
+E1 工具列表恰七且无 publish；E2 未发布不进检索（登记带独特标记词、不发布，
+search_published 查该标记词必空）；E3 活状态工具只读（第 99 刀改口径：
+0021/0036 的「活状态不进连接层」修订为「只读进连接层」——三件活状态工具
+在列，且工具名/描述/schema 不含 create/update/publish 写动作字样）。
+每断言一行 PASS/FAIL <断言名>: <实际值>；任一 FAIL 以非零码退出。脚本级
+证据，不进 CI（pytest 版在 apps/api/apps/api/tests/test_mcp_evidence.py）。
 """
 
 import asyncio
@@ -34,7 +37,25 @@ from typing import Any
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-_EXPECTED_TOOLS = {"search_published", "get_asset", "register_asset", "export_published"}
+# 第 99 刀（ADR 0057）：知识四件 + 活状态只读三件，恰七且无 publish。
+_EXPECTED_TOOLS = {
+    "search_published",
+    "get_asset",
+    "register_asset",
+    "export_published",
+    "get_product",
+    "get_stock",
+    "get_order_status",
+}
+_LIVE_TOOLS = ("get_product", "get_stock", "get_order_status")
+# E3 写动作字样（第 99 刀口径：活状态工具只读）——只判活状态三件，知识四件的
+# 历史 docstring 里如实引用过血缘 action 字面值（如 publish/rollback 集合）。
+_WRITE_VERBS = ("publish", "create", "update", "delete")
+
+# 活状态三件的演示参数（验收实录口径：数码店数据 + 种子单）
+_LIVE_STOCK_QUERY = "显示器"
+_LIVE_ORDER_NO = "SO-1001"
+_LIVE_PRODUCT_QUERY = "保温杯"
 
 _DEMO_CONTENT = (
     "MCP 连接层冒烟登记：本段文本由 scripts/mcp_smoke.py 经 register_asset 工具写入，"
@@ -117,19 +138,33 @@ async def main(argv: list[str]) -> int:
             exported = await session.call_tool("export_published", {})
             _dump("export_published()", _tool_text(exported))
 
-            failures = [r for r in (search, got, got_hist, reg, exported) if r.isError]
+            # 活状态只读三件（第 99 刀）：与客服同一套查询函数；查无 {found:
+            # False} 是契约不是失败，isError 才算失败
+            stock = await session.call_tool("get_stock", {"product_name": _LIVE_STOCK_QUERY})
+            _dump(f"get_stock({_LIVE_STOCK_QUERY!r})", _tool_text(stock))
+            order = await session.call_tool("get_order_status", {"order_no": _LIVE_ORDER_NO})
+            _dump(f"get_order_status({_LIVE_ORDER_NO!r})", _tool_text(order))
+            product = await session.call_tool("get_product", {"name": _LIVE_PRODUCT_QUERY})
+            _dump(f"get_product({_LIVE_PRODUCT_QUERY!r})", _tool_text(product))
+
+            failures = [
+                r for r in (search, got, got_hist, reg, exported, stock, order, product)
+                if r.isError
+            ]
             if failures:
                 print(f"{len(failures)} 个工具返回错误", file=sys.stderr)
                 return 1
 
             if evidence:
-                return await _evidence_checks(session, names, reg)
+                return await _evidence_checks(session, names, tools, reg)
 
-    print("smoke OK：initialize / list_tools / 四工具全部通过")
+    print("smoke OK：initialize / list_tools / 七工具全部通过")
     return 0
 
 
-async def _evidence_checks(session: ClientSession, names: list[str], reg: Any) -> int:
+async def _evidence_checks(
+    session: ClientSession, names: list[str], tools: Any, reg: Any
+) -> int:
     """goal §6.2.5 协议证据：冒烟全链之后追加四条断言，结构化摘要逐行输出。"""
     checks: list[tuple[str, bool, str]] = []
 
@@ -145,11 +180,11 @@ async def _evidence_checks(session: ClientSession, names: list[str], reg: Any) -
         )
     )
 
-    # E1 工具列表恰四且无 publish（集合相等：未来偷加任何工具——包括
-    # publish——都会让集合不等而 FAIL）。
+    # E1 工具列表恰七且无 publish（第 99 刀起：知识四 + 活状态只读三；集合相等：
+    # 未来偷加任何工具——包括 publish——都会让集合不等而 FAIL）。
     checks.append(
         (
-            "E1 tools_exactly_four_no_publish",
+            "E1 tools_exactly_seven_no_publish",
             set(names) == _EXPECTED_TOOLS and "publish" not in names,
             f"工具列表={names}",
         )
@@ -192,18 +227,31 @@ async def _evidence_checks(session: ClientSession, names: list[str], reg: Any) -
             )
         )
 
-    # E3 活状态工具不暴露（0021/0036 口径：订单/库存是活状态，内部走中台接口，
-    # 不进索引也不进连接层）——工具名出现 order/stock 任一字样即 FAIL。
-    forbidden = [n for n in names if "order" in n or "stock" in n]
+    # E3 活状态工具只读（第 99 刀/ADR 0057 改口径：0021/0036 的「活状态不进
+    # 连接层」修订为「只读进连接层，仍无写动作」）——三件活状态工具必须在列，
+    # 且三件的工具名/描述/参数 schema 不含 create/update/publish 写动作字样。
+    # 只判活状态三件：知识四件的历史 docstring 里如实引用过血缘 action 字面值
+    # （如 publish/rollback 集合），不是对外写动作承诺。
+    live_text = {
+        t.name: " ".join([t.name, t.description or "", json.dumps(t.inputSchema)]).lower()
+        for t in tools.tools
+        if t.name in _LIVE_TOOLS
+    }
+    present = sorted(live_text)
+    write_leaks = {
+        name: [verb for verb in _WRITE_VERBS if verb in text]
+        for name, text in live_text.items()
+    }
+    write_leaks = {name: verbs for name, verbs in write_leaks.items() if verbs}
     checks.append(
         (
-            "E3 no_live_state_tools",
-            not forbidden,
-            f"订单/库存字样工具={forbidden if forbidden else '无'}",
+            "E3 live_state_tools_read_only",
+            sorted(_LIVE_TOOLS) == present and not write_leaks,
+            f"活状态工具={present}；写动作字样泄漏={write_leaks if write_leaks else '无'}",
         )
     )
 
-    print("== 协议证据摘要（goal §6.2.5 三断言 + 活状态反向断言） ==")
+    print("== 协议证据摘要（goal §6.2.5 三断言 + 活状态只读断言） ==")
     for name, ok, actual in checks:
         print(f"{'PASS' if ok else 'FAIL'} {name}: {actual}")
     if not all(ok for _, ok, _ in checks):

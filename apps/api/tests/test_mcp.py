@@ -6,8 +6,9 @@
 - 协议集成（需 SUITE_TEST_DATABASE_URL，独立 suite_mcp_test 库）：官方 SDK
   client 经 httpx ASGITransport 直打挂载后的 app（不真起端口）；lifespan 用
   app.router.lifespan_context 手动进（session manager 与请求必须同 loop）。
-  覆盖：恰好四工具且无 publish；检索只命中当前已发布指针版；get 默认当前版/
-  历史已发布版/待人洗与已接入拒绝；register 落治理队列且 source_kind=
+  覆盖：恰好七工具且无 publish（第 99 刀起恰七：知识四 + 活状态只读三，
+  功能钉测在 test_mcp_live_tools.py）；检索只命中当前已发布指针版；get 默认
+  当前版/历史已发布版/待人洗与已接入拒绝；register 落治理队列且 source_kind=
   mcp_registered；export 含正文全文。
 """
 
@@ -350,7 +351,7 @@ def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
             assert rev3.status_code == 201, rev3.text
         out["asset_a"], out["asset_b"] = asset_a, asset_b
 
-        # -- MCP：四工具 --
+        # -- MCP：七工具 --
         async with _mcp_session(app, settings) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -405,8 +406,16 @@ def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
     assert out["health"] in (200, 503)
     assert out["api_assets_anon"] == 401
 
-    # 恰好四工具，无 publish
-    assert out["tools"] == ["export_published", "get_asset", "register_asset", "search_published"]
+    # 恰好七工具，无 publish（第 99 刀/ADR 0057：知识四 + 活状态只读三）
+    assert out["tools"] == [
+        "export_published",
+        "get_asset",
+        "get_order_status",
+        "get_product",
+        "get_stock",
+        "register_asset",
+        "search_published",
+    ]
     assert all("publish" != t for t in out["tools"])
 
     # 检索只命中当前已发布指针版（v2），待人洗 B 与 v1 旧块不出现

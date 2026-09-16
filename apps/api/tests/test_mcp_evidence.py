@@ -1,17 +1,20 @@
-"""MCP 连接层协议证据测试（goal §6.2.5 三断言的 pytest 版，第 38 刀）。
+"""MCP 连接层协议证据测试（goal §6.2.5 三断言的 pytest 版，第 38 刀；第 99 刀改恰七）。
 
 脚本级证据在 scripts/mcp_smoke.py --evidence（smoke 级，不进 CI）；本文件是
 同一组断言的 TestClient 级版本，CI 可跑（DB 依赖走既有 skip 模式）：
 
-- E1 工具列表恰四且无 publish——集合相等，未来偷加任何工具（包括 publish）即红。
+- E1 工具列表恰七且无 publish（第 99 刀/ADR 0057：知识四件 + 活状态只读三件
+  get_product/get_stock/get_order_status）——集合相等，未来偷加任何工具
+  （包括 publish）即红。
 - E2 未发布不进检索：register_asset 登记带独特标记词的文本（不发布）→
   search_published 查该标记词在登记前后零变化、探针资产与完整标记词永不
   出现（登记前取基线，对冲分词把标记词拆开后命中其它已发布内容的噪音）；
   登记返回即资产视图，status 落已接入/待人洗（均未发布）、
   current_published_version_no 为空；治理台 HTTP GET /api/assets 能看到这条
   mcp_registered 登记（spec Must 1 的治理台视角）。
-- E3 活状态工具不暴露（反向断言，0021/0036 口径：订单/库存是活状态，内部
-  走中台接口，活状态不进索引也不进连接层）——工具名出现 order/stock 字样即红。
+- E3 活状态工具只读（第 99 刀改口径：0021/0036 的「活状态不进连接层」修订为
+  「活状态只读进连接层，仍无写动作」）——三件活状态工具必须在列，且工具
+  名/描述/schema 不含 create/update/publish 写动作字样。
 
 先例与设施（session manager 单跑/手动 lifespan/ASGITransport）同
 tests/test_mcp.py；每个测试重建 app 实例（同库同存储根）。
@@ -38,8 +41,20 @@ _TOKEN = "test-mcp-bearer"
 _BASE = "http://localhost:8000"
 _ENDPOINT = f"{_BASE}/mcp/"
 
-_EXPECTED_TOOLS = {"search_published", "get_asset", "register_asset", "export_published"}
-_FORBIDDEN_SUBSTRINGS = ("order", "stock")  # 0021/0036：活状态（订单/库存）不进连接层
+# 第 99 刀（ADR 0057）：知识四件 + 活状态只读三件，恰七且无 publish。
+_EXPECTED_TOOLS = {
+    "search_published",
+    "get_asset",
+    "register_asset",
+    "export_published",
+    "get_product",
+    "get_stock",
+    "get_order_status",
+}
+_LIVE_TOOLS = ("get_product", "get_stock", "get_order_status")
+# E3 写动作字样（第 99 刀口径：活状态工具只读）——只判活状态三件：知识四件
+# 的历史 docstring 里如实引用过血缘 action 字面值（如 publish/rollback 集合）。
+_WRITE_VERBS = ("publish", "create", "update", "delete")
 
 
 def _payload(result: object) -> object:
@@ -134,8 +149,9 @@ async def _list_tool_names(session: ClientSession) -> list[str]:
     return sorted(t.name for t in tools.tools)
 
 
-def test_evidence_e1_tools_exactly_four_no_publish(evidence_env) -> None:
-    """E1：工具列表集合恰等于四工具、且不含 publish——多一个偷加的工具即红。"""
+def test_evidence_e1_tools_exactly_seven_no_publish(evidence_env) -> None:
+    """E1：工具列表集合恰等于七工具（知识四 + 活状态三）、且不含 publish——
+    多一个偷加的工具即红（第 99 刀/ADR 0057 起恰七）。"""
     app = _fresh_app(evidence_env)
 
     async def scenario() -> list[str]:
@@ -146,7 +162,7 @@ def test_evidence_e1_tools_exactly_four_no_publish(evidence_env) -> None:
 
     names = _run_with_lifespan(app, scenario)
     assert set(names) == _EXPECTED_TOOLS
-    assert len(names) == 4
+    assert len(names) == 7
     assert "publish" not in names
 
 
@@ -220,23 +236,41 @@ def test_evidence_e2_unpublished_search_empty(evidence_env) -> None:
     assert out["governance"][0]["source_kind"] == "mcp_registered"
 
 
-def test_evidence_e3_no_live_state_tools(evidence_env) -> None:
-    """E3 反向断言（0021/0036 口径）：活状态（订单/库存）不进连接层。
+def test_evidence_e3_live_state_tools_read_only(evidence_env) -> None:
+    """E3（第 99 刀/ADR 0057 改口径）：活状态只读三件在列且无写动作。
 
-    MCP 无订单/库存工具——goal 口径「活状态不进连接层」：工具列表不得出现
-    get_order_status / get_stock / 任何含 order、stock 字样的工具名；订单/
-    库存只读查询属客服引擎内部走中台接口（services/order_tools.py、
-    services/stock_tools.py），与连接层四工具互斥。"""
+    原 38 刀断言是「活状态不进连接层」（order/stock 字样即红）；99 刀起修订为
+    「活状态**只读**进连接层」——get_product / get_stock / get_order_status
+    三件必须在工具列表，且三件的工具名、描述与参数 schema 不得含
+    publish/create/update/delete 写动作字样（写权威仍只在站内，连接层零写
+    动作）。活状态查询复用客服同一套函数（services/agent_tools.TOOL_REGISTRY），
+    功能级钉测（查有/查无/类目聚合/脱敏）在 tests/test_mcp_live_tools.py。"""
     settings, _storage_root = evidence_env
     app = _fresh_app(evidence_env)
 
-    async def scenario() -> list[str]:
+    async def scenario() -> dict:
         async with _mcp_session(app, settings) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                return await _list_tool_names(session)
+                tools = await session.list_tools()
+                return {
+                    "names": sorted(t.name for t in tools.tools),
+                    # 活状态三件的完整对外形状：名+描述+参数 schema 序列化
+                    "live_text": {
+                        t.name: " ".join(
+                            [t.name, t.description or "", json.dumps(t.inputSchema)]
+                        )
+                        for t in tools.tools
+                        if t.name in _LIVE_TOOLS
+                    },
+                }
 
-    names = _run_with_lifespan(app, scenario)
-    leaked = [n for n in names if any(s in n for s in _FORBIDDEN_SUBSTRINGS)]
-    assert leaked == []
-    assert set(names) == _EXPECTED_TOOLS  # 恰四：search/get/register/export，无订单库存
+    out = _run_with_lifespan(app, scenario)
+    assert set(out["names"]) == _EXPECTED_TOOLS  # 恰七：知识四 + 活状态三
+    assert set(_LIVE_TOOLS) <= set(out["names"])
+    leaked = {
+        name: [verb for verb in _WRITE_VERBS if verb in text.lower()]
+        for name, text in out["live_text"].items()
+    }
+    leaked = {name: verbs for name, verbs in leaked.items() if verbs}
+    assert leaked == {}  # 活状态工具对外形状里无任何写动作字样

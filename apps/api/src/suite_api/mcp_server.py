@@ -1,4 +1,4 @@
-"""MCP 连接层（ADR 0032/0001/0020/0013/0017）：官方 SDK 挂同一 FastAPI。
+"""MCP 连接层（ADR 0032/0001/0020/0013/0017；第 99 刀 ADR 0057 活状态只读）。
 
 - 用官方 MCP Python SDK 内置的高层服务类（``mcp.server.fastmcp.FastMCP``，
   官方 SDK 自带的那个，不是 jlowin/fastmcp 第三方库）产 Streamable HTTP
@@ -7,11 +7,15 @@
   子应用外层的纯 ASGI 中间件；token 未配置/为空或不匹配一律 401。不读操作者
   会话 cookie——连接层与控制台会话彻底隔离（挂载路径外的一切请求根本
   不进这层中间件，/api/* 与 /health 行为零变化）。
-- 四工具（0020：只读已发布；0013：登记必须带正文；无 publish——发布只属于
-  操作者治理台动作，ADR 0005）：search_published / get_asset /
-  register_asset / export_published，全部复用 services 层与客服同一套
-  检索索引（0017）。工具运行时凭 host app 引用走 deps 的同一惰性装配。
-- stateless + json_response：本刀无通知/订阅需求，每请求独立会话对四工具
+- 七工具（0020：只读已发布；0013：登记必须带正文；无 publish——发布只属于
+  操作者治理台动作，ADR 0005）：知识四件 search_published / get_asset /
+  register_asset / export_published 复用 services 层与客服同一套检索索引
+  （0017）；活状态三件 get_product / get_stock / get_order_status（0057，
+  第 99 刀）**执行入口就是客服 agent loop 的 TOOL_REGISTRY**——同一份参数
+  白名单校验与执行函数，一致性由复用保证而非对齐维护。活状态三件只读
+  （无写动作），订单结果出口过 ``_egress_order_result`` 脱敏（0057）。
+  工具运行时凭 host app 引用走 deps 的同一惰性装配。
+- stateless + json_response：本刀无通知/订阅需求，每请求独立会话对七工具
   只读场景最简（也免去外部客户端的会话粘性）。
 """
 
@@ -27,8 +31,9 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from suite_api.deps import ensure_engine, ensure_storage
-from suite_api.models import Asset, AssetVersion, AuditLog, Operator
+from suite_api.models import Asset, AssetVersion, AuditLog, Operator, Product
 from suite_api.services import registration
+from suite_api.services.agent_tools import TOOL_REGISTRY, _validate_args
 from suite_api.services.asset_view import (
     VersionTextError,
     load_products,
@@ -36,8 +41,10 @@ from suite_api.services.asset_view import (
     read_version_text,
     to_asset_out,
 )
+from suite_api.services.catalog_tools import category_targets
 from suite_api.services.machine_wash import QA_FIELD, redact
 from suite_api.services.retrieval import retrieve
+from suite_api.services.stock_tools import match_product
 
 # get_asset 对「取不到已发布版本」统一口径：不区分资产不存在/存在但未发布/
 # 版本存在但从未发布——知道 ID 也探不出哪些是待人洗（ADR 0020 的闸门语义）。
@@ -117,6 +124,79 @@ def _mask_fields_map(fields: dict) -> dict:
     return masked
 
 
+# ---------- 活状态只读三工具（第 99 刀，ADR 0057）----------
+
+# 订单 items/events 是 JSONB 自由形状：真实部署里快递/客服回执常把顾客电话/
+# 邮箱直接塞进事件文本或条目键。当前 mock 单无 PII（seed 只有商品名与轨迹
+# 文案），但 MCP 出口是跨进程边界——出口剥联系方式键 + 自由文本过 redact
+#（0038「出口必掩」同纪律，幂等无害）。键名按小写比较（剥除是结构动作，
+# 不是掩码：联系方式不该以任何形态出连接层，ADR 0057 升级路径见该 ADR）。
+_ORDER_CONTACT_KEYS = frozenset(
+    {"phone", "tel", "mobile", "email", "contact", "contact_phone", "contact_email"}
+)
+
+
+def _egress_order_entry(entry: object) -> object:
+    """订单 items/events 单条出口形状：剥联系方式键、剩余字符串值过 redact。
+
+    防御不改写形状：非 dict 条目原样走（0038 同精神——掩码出口不重排结构，
+    外部 Agent 拿到的是与站内客服同构的数据，只少联系字段）。"""
+    if not isinstance(entry, dict):
+        return entry
+    kept = {k: v for k, v in entry.items() if str(k).lower() not in _ORDER_CONTACT_KEYS}
+    return {k: redact(v) if isinstance(v, str) else v for k, v in kept.items()}
+
+
+def _egress_order_result(result: dict) -> dict:
+    """get_order_status 的 MCP 出口脱敏（0057）：查无/故障形状原样走；命中单
+    剥顶层与 items/events 内的联系方式键，自由文本（事件轨迹/商品名）过
+    redact——顾客联系方式不出连接层。客服站内路径不走这层（操作者面另有
+    出口掩口径），这里是连接层出口的边界收口。"""
+    if not result.get("found") or result.get("error"):
+        return result
+    top = _egress_order_entry(result)
+    if not isinstance(top, dict):  # pragma: no cover - 顶层恒为 dict，防御分支
+        return result
+    return {
+        **top,
+        "items": [_egress_order_entry(i) for i in result.get("items", [])],
+        "events": [_egress_order_entry(e) for e in result.get("events", [])],
+    }
+
+
+def _spec_summary(product: Product) -> dict:
+    """spec_values 出口摘要：``{字段: 值}``（丢来源/时间等治理元数据，外部
+    Agent 只要事实值）；字符串值过 redact（0038：写回值可能混人工填的
+    联系方式，出口必掩；幂等，净值原样通过）。"""
+    summary: dict = {}
+    for field, entry in dict(product.spec_values).items():
+        if isinstance(entry, dict) and entry.get("value") is not None:
+            value = entry["value"]
+            summary[str(field)] = redact(value) if isinstance(value, str) else value
+    return summary
+
+
+def _category_product_summary(category: str, products: list[Product]) -> dict:
+    """类目聚合视图（get_product 按类目名/别名查时）：件数、有货件数、已定价
+    件数与价格区间。混币种不出区间（与 catalog_tools 类目报价同口径：跨币种
+    比大小无意义，宁可少给也不给假区间）。"""
+    members = [p for p in products if p.category == category]
+    priced = [p for p in members if p.price_cents is not None]
+    summary: dict = {
+        "found": True,
+        "category": category,
+        "total": len(members),
+        "in_stock": sum(1 for p in members if (p.stock or 0) > 0),
+        "priced": len(priced),
+    }
+    currencies = {p.currency for p in priced}
+    if priced and len(currencies) == 1:
+        summary["currency"] = sorted(currencies)[0]
+        summary["price_from_cents"] = min(p.price_cents for p in priced)
+        summary["price_to_cents"] = max(p.price_cents for p in priced)
+    return summary
+
+
 class BearerGateMiddleware:
     """MCP 子应用外层的 Bearer 闸门（ADR 0032）。
 
@@ -165,6 +245,8 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
         instructions=(
             "电商中台对外连接层。只读「当前已发布」与「曾经发布过的历史版本」，"
             "可登记新文档（落为已接入，等待治理台人洗与发布），不能发布。"
+            "另有三件活状态只读工具（商品/库存/订单）——与站内客服同一套查询"
+            "函数，同样只读：能查商品行价、库存与订单物流，不能改任何数据。"
         ),
         streamable_http_path="/",
         stateless_http=True,
@@ -174,6 +256,18 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
     def _db_session():
         ensure_engine(host)
         return host.state.session_factory()
+
+    def _run_registry_tool(name: str, args: dict[str, str], question: str) -> dict:
+        """活状态工具执行入口：客服 agent loop 的 TOOL_REGISTRY 同一条目——
+        同一份参数白名单校验（``_validate_args``：白名单外键/坏格式一律拒绝）
+        加同一个执行函数（get_stock 的纯度闸、订单号归一全在注册表侧，连接层
+        不自建第二套校验——0057：一致性由复用保证）。参数不合法时以工具错误
+        文案拒绝，与 register_asset 的 HTTP 语义转文案同精神。"""
+        cleaned, reason = _validate_args(TOOL_REGISTRY[name], args)
+        if reason is not None:
+            raise ValueError(reason)
+        with _db_session() as session:
+            return TOOL_REGISTRY[name].run(session, cleaned, question)
 
     @mcp.tool()
     def search_published(query: str) -> list[dict]:
@@ -339,6 +433,75 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 )
                 session.commit()
             return exported
+
+    # ---- 活状态只读三工具（第 99 刀，ADR 0057；客服同一套函数，无写动作）----
+    # get_order_status / get_stock 执行入口=客服 TOOL_REGISTRY 的同名条目
+    # （services/agent_tools._run_get_order_status / _run_get_stock）；get_product
+    # 匹配复用客服目录同款 stock_tools.match_product + catalog_tools.
+    # category_targets（LCS 部分名/类目与口语别名）。商品/订单是工具数据源
+    # 不是中台对象（0002）：三工具读的是商品行与订单行的活状态，不经检索
+    # 索引、不进治理台，与站内客服查到的是同一份数据同一套口径。
+
+    @mcp.tool()
+    def get_order_status(order_no: str) -> dict:
+        """查一个订单的当前状态与物流轨迹（活状态只读，与站内客服同一查询）。
+
+        order_no 格式 SO-数字（如 SO-1001，大小写不敏感自动归一）。命中返回
+        {found, order_no, status, items, events}；查无 {found: False}。返回
+        不含顾客联系方式：items/events 里的联系字段被剥除、自由文本过出口
+        打码（ADR 0057 脱敏边界）。本工具只读。
+        """
+        result = _run_registry_tool("get_order_status", {"order_no": order_no}, "")
+        return _egress_order_result(result)
+
+    @mcp.tool()
+    def get_stock(product_name: str) -> dict:
+        """查一件商品（或一类商品）的当前库存（活状态只读，与站内客服同一查询）。
+
+        product_name 是商品名（允许部分名，如「保温杯」命中「钛钢保温杯」）；
+        传类目名或口语别名（如「笔记本电脑」「手机」）返回该类目聚合。命中
+        单品 {found, product_name, stock}（stock=null 即未设置）；类目聚合
+        {found, category, total, in_stock, stock_sum}；未匹配 {found: False}。
+        本工具只读。
+        """
+        return _run_registry_tool("get_stock", {"product_name": product_name}, product_name)
+
+    @mcp.tool()
+    def get_product(name: str) -> dict:
+        """按名查一件商品的行档案：价格、库存与已写回规格摘要（活状态只读）。
+
+        匹配与站内客服目录同款：先类目（类目名或口语别名，如「笔记本电脑」
+        「手机」，返回类目聚合 {found, category, total, in_stock, priced,
+        price_from_cents, price_to_cents, currency}），后单品（部分名容错，
+        「保温杯」命中「钛钢保温杯」，返回 {found, id, name, category,
+        price_cents, currency, stock, spec_values}；spec_values 是 {字段: 值}
+        摘要）。价格是商品行事实（可能为 null=未定价）。未匹配 {found:
+        False}。本工具只读。
+        """
+        cleaned = (name or "").strip()
+        if not cleaned:
+            return {"found": False}
+        with _db_session() as session:
+            products = list(session.scalars(select(Product).order_by(Product.id)))
+            # 先类目后单品（与客服目录报价/库存路径同序：商品名里含完整类目名
+            # 时先走聚合，不被单件吞掉——审计刀 11 P1 的口径）。工具参数是裸
+            # 名不是问句，无纯度闸：类目命中取精确等值（别名/类目名字面）。
+            for token, category in category_targets({p.category for p in products}):
+                if cleaned == token:
+                    return _category_product_summary(category, products)
+            product = match_product(cleaned, products)
+            if product is None:
+                return {"found": False}
+            return {
+                "found": True,
+                "id": product.id,
+                "name": product.name,
+                "category": product.category,
+                "price_cents": product.price_cents,
+                "currency": product.currency,
+                "stock": product.stock,
+                "spec_values": _spec_summary(product),
+            }
 
     streamable_app = mcp.streamable_http_app()
     # SDK 挂载约定：mounted 子应用 lifespan 不执行，session manager 交 host 代跑
