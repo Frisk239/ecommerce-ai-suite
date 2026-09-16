@@ -301,6 +301,14 @@ def test_oov_product_match_criterion(api: ApiFixture) -> None:
         assert oov_product_match(db, "保温杯") == "钛钢保温杯"
         # 方向 B 正例：库内名 ⊂ 实体且覆盖率达标（5/7≈0.71 ≥0.6）
         assert oov_product_match(db, "钛钢保温杯配件") == "钛钢保温杯"
+        # 方向 B 覆盖率**恰好 0.6**（审计刀 17 B-P1-2：`>=` 含等于的语义边界
+        # 此前无钉——阈值改成 > 或 0.55/0.65 时这条会率先报警）。用独立商品名
+        # 避免与上方「电视机」等已有商品对同一实体的多命中竞争返回序。
+        db.add(Product(name="电饭煲", category="厨房电器"))
+        db.commit()
+        assert oov_product_match(db, "电饭煲内盖") == "电饭煲", (
+            "3/5=0.6 恰好达标——判据是 ≥0.6 不是 >0.6（浮点上 3/5 == 0.6 成立）"
+        )
         # 方向 B 覆盖率负例（评审 P1 绕过例）：库内名只占实体 3/7≈0.43 <0.6
         db.add(Product(name="电视机", category="电视机"))
         db.commit()
@@ -350,9 +358,14 @@ def test_oov_in_catalog_goods_keeps_gap(api: ApiFixture, monkeypatch: Any) -> No
         )
         assert msg.content.startswith("「乐事薯片」的商品资料还在补充中")
         assert msg.handoff is True  # 工单照建（顾客要人）
+        gap_row = db.query(KnowledgeGap).filter(KnowledgeGap.question == q).one()
         assert (
             db.query(KnowledgeGap).filter(KnowledgeGap.question == q).count() >= 1
         ), "在库商品资料缺 = 知识待补，必须落缺口"
+        # 审计刀 17 A-P1-4：在库资料缺的缺口**挂商品**（oov_product_match 可靠归属）
+        assert gap_row.product_id == db.query(Product.id).filter(
+            Product.name == "乐事薯片"
+        ).scalar(), "去补文档要直达商品，缺口不挂 product 是治理断链"
         # 42 刀纪律：凡亮「已转人工」徽章必有工单接住（OOV 两分支都要钉行）
         assert (
             db.query(HandoffTicket).filter(HandoffTicket.session_id == session_id).count() >= 1
@@ -389,3 +402,25 @@ def test_oov_not_in_catalog_has_no_gap(api: ApiFixture, monkeypatch: Any) -> Non
         assert (
             db.query(KnowledgeGap).filter(KnowledgeGap.question == q).count() == 0
         ), "本店没有这款商品不是知识缺口（补文档补不出来），不得污染缺口池"
+
+
+def test_non_oov_refusal_gap_has_no_product(api: ApiFixture, monkeypatch: Any) -> None:
+    """审计刀 17 A-P1-4 反向钉：普通知识拒答（非 OOV）落缺口时 product_id=None。
+
+    拒答路径无法从自由文本可靠归属商品——不猜（record_refusal_gap 原注释
+    口径）；只有 OOV 在库资料缺（词法判据可靠命中商品名）才允许挂。
+    """
+    from suite_api.models import KnowledgeGap, ServiceSession
+    from suite_api.services.chat_engine import run_ask
+
+    client, _ = api
+    factory = client.app.state.session_factory
+    q = "会员积分怎么兑换"
+    with factory() as db:
+        session_id, _ = _make_session(client, "oov-noproduct-token")
+        session = db.get(ServiceSession, session_id)
+        outcome = asyncio.run(run_ask(db, session, q))
+        assert outcome.answer.kind == "refusal"
+        assert outcome.fallback_reason is None  # 普通（非 OOV/闸）拒答
+        gap_row = db.query(KnowledgeGap).filter(KnowledgeGap.question == q).one()
+        assert gap_row.product_id is None, "无法可靠归属商品的拒答不猜 product"

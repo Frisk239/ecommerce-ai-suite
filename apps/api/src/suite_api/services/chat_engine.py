@@ -55,7 +55,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from suite_api.models import Asset, HandoffTicket, KnowledgeGap, ServiceMessage, ServiceSession
+from suite_api.models import (
+    Asset,
+    HandoffTicket,
+    KnowledgeGap,
+    Product,
+    ServiceMessage,
+    ServiceSession,
+)
 from suite_api.observability import observe_first_token
 from suite_api.services import llm
 from suite_api.services.agent_tools import (
@@ -610,11 +617,20 @@ async def run_ask(
     if answer.kind == "refusal":
         # 第 86 刀：**「本店没有这款商品」不落知识缺口**——缺口池语义是「知识待补」
         # （点「去补文档」能补出来），而「本店不经营」补文档也补不出来；此类只建
-        # 工单（需求信号/销售线索）。商品在库但资料缺（oov_product 非空）照落缺口。
+        # 工单（需求信号/销售线索）。商品在库但资料缺（oov_product 非空）照落缺口，
+        # 且**挂上该商品**（审计刀 17 A-P1-4：oov_product_match 是可靠归属——判据
+        # 词法命中库内商品名；类目名命中查无同名商品行则不挂，不猜）。
         gap = None
         if not (oov_entity is not None and oov_product is None):
+            oov_product_id = (
+                db.scalar(select(Product.id).where(Product.name == oov_product))
+                if oov_product is not None
+                else None
+            )
             # 带上来源会话（走查修复）：操作者能从缺口抽屉跳回这条原始对话
-            gap = record_refusal_gap(db, question, session_id=session.id)
+            gap = record_refusal_gap(
+                db, question, session_id=session.id, product_id=oov_product_id
+            )
         agent_message.content = build_refusal_handoff_content(
             question,
             gap.id if expose_gap_id and gap is not None else None,

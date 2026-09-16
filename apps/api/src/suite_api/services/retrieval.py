@@ -425,7 +425,8 @@ def title_affinity(terms: frozenset[str], title: str | None, idf: dict[str, floa
 
 # ---------- 实体存在性闸（OOV 收口，第 82 刀） ----------
 
-# 判据常量（实验矩阵定稿，scripts/eval/oov_criterion.py；见 rag-eval-report §82）：
+# 判据常量（实验矩阵定稿，scripts/eval/oov_criterion.py；三轮迭代的测量细节
+# 见第 82 刀 closeout 与 ADR 0049）：
 # 实体段里「连续零出现串」的最短字数——专名形态（雀巢咖啡/星巴克杯子/戴森吸尘器）。
 # 取 4 是刻意的保守值：3 字会把「你们卖什么」（3 字）与同义改写（syn-005 的
 # 「退换政策说明」零出现串 3 字）卷进来（刀 12 口径：误判比漏检贵）。代价是
@@ -602,8 +603,10 @@ def oov_verdict(db: Session, question: str) -> str | None:
     if not query_terms(stripped):
         # 早退（评审 P2）：纯停用字/无有效 bigram 的问句在全库查询之前返回。
         # 注：字段问（「净含量是多少」）仍需查询——「库内字段名词表」要扫 chunk
-        # 才能抽（entity_terms 在其后判断）；本闸每 ask 多一次与 retrieve 同量级
-        # 的全库扫描，合并/缓存优化记债（评审 P2-4，千级语料可辩护）。
+        # 才能抽（entity_terms 在其后判断）。第 85 刀快照后早先「与 retrieve
+        # 同量级全库扫描」的记债描述不再成立（现为 corpus count + 资产摘要两笔
+        # 轻查询，OOV 命中再 +1 笔商品表）；retrieve 候选与 OOV 快照仍是两笔
+        # 独立查询——彻底合并需改 retrieve 返回契约，收益已低（85 刀裁决维持）。
         return None
     # 语料规模护栏（见 OOV_MIN_CORPUS_ROWS 注释）：小语料不判——小库的「零出现」
     # 不构成实体不存在的证据。第 85 刀改为轻量 count（只需行数，不必拉文本）。

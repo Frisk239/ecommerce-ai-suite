@@ -755,3 +755,26 @@ def test_verify_refreshes_freshness_and_audits(api: ApiFixture) -> None:
     pending = _upload(client, _WATER_DOC, title="瓶装水规格·未发布不可验证")
     assert pending.status_code == 201
     assert client.post(f"/api/assets/{pending.json()['id']}/verify").status_code == 409
+
+
+def test_retry_machine_wash_rejects_discarded_asset(api: ApiFixture) -> None:
+    """审计刀 17 B-P1-4：已废弃资产不可再重试机洗（84 刀闸门的端点级钉）。
+
+    否则 discarded -> pending_review 的推进在废弃态后无人接手：publish 拒
+    （新闸）、再 discard 拒（要求已接入）、全仓无 un-discard = 永久隐藏僵尸。
+    """
+    client, _ = api
+    _login(client)
+    bad_bytes = b"\xff\xfe\x00\x01not-utf8"
+    resp = _upload(client, bad_bytes, title="废弃后重试钉")
+    assert resp.status_code == 201
+    asset_id = resp.json()["id"]
+    assert resp.json()["status"] == "ingested"
+
+    # 已接入且从未发布 -> API 可废弃（0042 正道）
+    discard = client.post(f"/api/assets/{asset_id}/discard")
+    assert discard.status_code == 200, discard.text
+
+    retry = client.post(f"/api/assets/{asset_id}/retry-machine-wash")
+    assert retry.status_code == 409
+    assert retry.json()["detail"] == "已废弃的资产不能再重试"

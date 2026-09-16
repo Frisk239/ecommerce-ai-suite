@@ -178,3 +178,14 @@ def test_can_publish_rejects_discarded_asset() -> None:
     # 同一形态 + 已废弃 -> 拒绝
     live.discarded_at = datetime.now(UTC)
     assert _can_publish(live, version) is False
+
+
+def test_replace_bytes_rejects_discarded_asset() -> None:
+    """审计刀 17 B-P1-4：已废弃资产不可换字节（84 刀闸门补钉——此前无 discarded 形态用例）。
+
+    与 _can_publish 废弃闸同族：「废弃=只读终态」，留写口会与隐藏口径冲突。
+    """
+    # 待人洗首发 v1 本可换（上方正例），同一形态 + 已废弃 -> 拒绝
+    asset = _asset(status="pending_review")
+    asset.discarded_at = datetime.now(UTC)
+    assert _can_replace_version_bytes(asset, _version()) is False

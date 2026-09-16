@@ -561,6 +561,11 @@ def register_session(
     # 把回流路径的 Python 钟一并收口）。
     # 第 84 刀：from 状态在条件更新**之前**取——update 会把内存对象同步成
     # registered，收口后再读就成了 registered->registered。
+    # 审计刀 17 B-P2-5：取值前先 refresh——session 是路由开头加载的内存对象，
+    # expire_on_commit=False 使 register_asset 内部 commit（机洗 ≤20s）不刷新
+    # 它；窗口内顾客并发结束会话时，旧值会把 ended->registered 记成
+    # active->registered（总数不差、迁移序列失真）。refresh 取窗口后的真值。
+    db.refresh(session)
     register_from = session.status
     rowcount = db.execute(
         update(ServiceSession)
