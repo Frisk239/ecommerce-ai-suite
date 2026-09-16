@@ -5,7 +5,7 @@
 ## 0. 前置（服务器上）
 
 - Linux x86_64，已装 Docker Engine ≥ 24 与 docker compose 插件（`docker compose version` 有输出）。
-- 开放端口：`5173`（web 控制台+宿主页）、`8000`（api，含 `/mcp/`）。**不要开放 `5432`**（数据库只留在 compose 内网；云安全组/防火墙封掉，见安全 checklist #6）。
+- 开放端口：`5173`（web 控制台+宿主页）、`8000`（api，含 `/mcp/`）。**不要对公网开放 `5432`**——注意 compose 默认把 db 的 5432 **发布到宿主全接口**（`ports: "${PG_PORT:-5432}:5432"`，供灌库用），公网收敛只能靠云安全组/防火墙封 5432（checklist #6），或加 `compose.override.yaml` 绑回环：`services.db.ports: ["127.0.0.1:5432:5432"]`。
 - 本地仓库一份（用于跑 realdata 灌入脚本，见 §4）。
 
 ## 1. 起栈
@@ -32,6 +32,8 @@ api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者�
 | `CUSTOMER_TOKEN_TTL_SECONDS` | 默认 86400 即可 | 顾客令牌 24h |
 | `METRICS_TOKEN` | 留空（默认） | 空=`/metrics` 恒 401——公网演示不抓指标就别开；要开见 `ops/prometheus.yml` 与 metrics_token 文件三步 |
 | `PG_PORT` | 服务器 5432 空闲则不设 | 仅当宿主 5432 被占时覆盖（并同步 DATABASE_URL 端口） |
+| `STORAGE_ROOT` | 默认 `./data/objects` | 对象存储根；服务器上保持默认即可（数据卷持久化） |
+| `LOG_LEVEL` | 默认 INFO | structlog 级别 |
 | `DATABASE_URL` | 默认（容器内网） | 灌库脚本从外部连时才改成宿主可达形式 |
 
 ## 3. 验证（起栈后 3 分钟）
@@ -50,10 +52,13 @@ api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者�
 docker compose up -d db                                    # 本地起 db（幂等，脚本要 suite_api 模型）
 HTTPS_PROXY=... uv run python scripts/realdata/fetch_wikidata_products.py --load --db <服务器库URL>
 HTTPS_PROXY=... uv run python scripts/realdata/fetch_wikidata_products.py --digital-only --load --db <服务器库URL>
-uv run python scripts/realdata/load_openfoodfacts.py --load ...           # 形态见 scripts/realdata/README.md
-uv run python scripts/realdata/load_reviews.py --cats 平板,计算机,手机 --n 200 --import --publish 20 --db <服务器库URL>
-uv run python scripts/realdata/publish_digital_specs.py --db <服务器库URL>
+# 走 API 的脚本（评论导入 / 规格发布）必须显式带 --api/--user/--pass 指向服务器与 §2 新密码：
+uv run python scripts/realdata/load_reviews.py --cats 平板,计算机,手机 --n 200 --import --publish 20 \n    --api http://<服务器IP>:8000 --user operator --pass <§2新密码> --db <服务器库URL>
+uv run python scripts/realdata/publish_digital_specs.py \n    --api http://<服务器IP>:8000 --user operator --pass <§2新密码> --db <服务器库URL>
+# OFF/ABCD/WANDS 等其余脚本形态见 scripts/realdata/README.md（同样注意 --api 与凭证）
 ```
+
+> 注意：`--db` 只管直连库的写入（fetch 类），**评论导入与规格发布走 API**——缺 `--api/--user/--pass` 时脚本默认打 `localhost:8000` 和开发密码，会把数据灌进本机或直接 401。
 
 脚本清单、参数与幂等表见 `scripts/realdata/README.md`；政策口径三份与商品图走治理台上传通道（人工动作，即「开店」本身）。探针清理用 `scripts/demo_reset.py`（默认 dry-run）。
 
@@ -64,7 +69,7 @@ uv run python scripts/realdata/publish_digital_specs.py --db <服务器库URL>
 - [ ] `MCP_BEARER_TOKEN` 已设强值（或明确不用 MCP 保持 401）
 - [ ] `METRICS_TOKEN` 留空（`/metrics` 恒 401）
 - [ ] `WIDGET_ALLOWED_ORIGINS` 只含自己的 origin，不含通配
-- [ ] 云安全组/防火墙：**5432 不对公网开放**（compose 的 db 端口映射仅本机/内网用）
+- [ ] 云安全组/防火墙：**5432 不对公网开放**（compose 默认把 5432 发布到宿主全接口——见 §0，必须靠防火墙收敛或 override 绑回环）
 - [ ] `CUSTOMER_TRUST_PROXY` 留空（直连，忽略 XFF）
 - [ ] 服务器系统更新过；SSH 走密钥非密码（通用基线，非本栈特有）
 - [ ] 已读明文 HTTP 边界：**不放真实顾客个人数据**
