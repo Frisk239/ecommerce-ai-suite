@@ -9,6 +9,8 @@ parse_import_csv（上传通道批量形态）直接受理。
 刀 II 增：ABCD json→会话行（三切分展平、action 轮丢弃）→转写（顾客：/客服：
 与回流端点同构）→title（scene+首问截断）；WANDS TSV 解析→Exact join
 （缺行丢弃、重复去重）→切片候选行（transcript 形状、合成 timecode 自增）。
+刀 90 增：数码四类（QID 锚点/属性集常量、单类 SPARQL 形状、P571/P2048/P2049
+换算、attrs 行级承载不冒充 spec_values、演示价单一真源）与评论类目白名单。
 """
 
 import csv
@@ -133,7 +135,7 @@ def test_name_truncated_to_model_width() -> None:
 
 
 def test_products_csv_roundtrip(tmp_path: Path) -> None:
-    """写出 CSV（utf-8-sig+JSON 串 spec 列）可原样读回，列序与模型字段对齐。"""
+    """写出 CSV（utf-8-sig+JSON 串 spec/attrs 列）可原样读回，列序与模型字段对齐。"""
     rows = fwp.sparql_json_to_rows(_load_sparql_sample(), limit=5)
     out = tmp_path / "products.csv"
     fwp.write_products_csv(rows, out)
@@ -143,7 +145,185 @@ def test_products_csv_roundtrip(tmp_path: Path) -> None:
     assert len(read_back) == 6
     assert read_back[1][0] == rows[0]["name"]
     assert json.loads(read_back[1][2]) == rows[0]["spec_schema"]
-    assert int(read_back[1][4]) == rows[0]["stock"]
+    assert json.loads(read_back[1][4]) == rows[0]["attrs"]  # 六类目老查询无属性键={}
+    assert int(read_back[1][5]) == rows[0]["stock"]
+
+
+# ------------------------------------------------- 数码四类（第 90 刀）：查询/属性/行
+
+# 数码 QID→类目（实测修正锚点，docs/research/real-store-data-sources.md §①）
+DIGITAL_QID_TO_CATEGORY = {
+    "Q250": "键盘",
+    "Q7987": "鼠标",
+    "Q5290": "显示器",
+    "Q186819": "耳机",
+}
+
+
+def test_digital_categories_constant_matches_researched_qids() -> None:
+    """四类 QID/中文名与调研定案一字不差（任务书原 QID 全部失准，防再错进常量）。"""
+    assert {qid: name for qid, name, _ in fwp.DIGITAL_CATEGORIES} == DIGITAL_QID_TO_CATEGORY
+    # 属性集：键盘/鼠标只抽制造商；显示器+高/宽；耳机+上市时间
+    props = {name: set(props) for _, name, props in fwp.DIGITAL_CATEGORIES}
+    assert props["键盘"] == {"P176"} and props["鼠标"] == {"P176"}
+    assert props["显示器"] == {"P176", "P2048", "P2049"}
+    assert props["耳机"] == {"P176", "P571"}
+
+
+def test_digital_sparql_query_shape() -> None:
+    """单类查询：BIND 类目名/子类展开/FILTER 自身/属性 OPTIONAL/制造商走 label 服务。"""
+    for qid, zh_name, query_props in fwp.DIGITAL_CATEGORIES:
+        query = fwp.build_digital_sparql_query(qid, zh_name, query_props, per_category=40)
+        assert f"wd:{qid}" in query
+        assert f'BIND("{zh_name}" AS ?category)' in query
+        assert f"FILTER(?item != wd:{qid})" in query
+        assert "LIMIT 40" in query
+        assert query.count("UNION") == 0  # 单类逐查，不与大 UNION 混
+        for prop in query_props:
+            assert (
+                f"OPTIONAL {{ ?item wdt:{prop} {fwp.DIGITAL_PROP_VARS[prop]} . }}" in query
+            ), prop
+    keyboard = fwp.build_digital_sparql_query("Q250", "键盘", ("P176",))
+    assert "P2048" not in keyboard and "P2049" not in keyboard and "P571" not in keyboard
+    monitor = fwp.build_digital_sparql_query("Q5290", "显示器", ("P176", "P2048", "P2049"))
+    assert "?manufacturer rdfs:label ?manufacturerLabel." in monitor  # 品牌取标签
+    assert fwp.build_digital_sparql_query("Q250", "键盘", (), per_category=7).count("LIMIT 7") == 1
+
+
+def test_digital_attr_converters() -> None:
+    """P571 取年、P2048/P2049 米转厘米整数；坏值/超合理域弃权（None 不编造）。"""
+    assert fwp.inception_to_year("2016-01-01T00:00:00Z") == "2016"
+    assert fwp.inception_to_year("1999") == "1999"
+    assert fwp.inception_to_year("") is None
+    assert fwp.inception_to_year("约 2010 年") is None
+    assert fwp.metres_to_cm("0.36") == "36"
+    assert fwp.metres_to_cm("1.555") == "156"  # 四舍五入保整数
+    assert fwp.metres_to_cm("0.999") == "100"
+    assert fwp.metres_to_cm("12") is None  # ≥10m 必非商品规格
+    assert fwp.metres_to_cm("0") is None
+    assert fwp.metres_to_cm("-1.2") is None
+    assert fwp.metres_to_cm("abc") is None
+
+
+def test_digital_attrs_from_binding() -> None:
+    binding = {
+        "category": {"value": "耳机"},
+        "item": {"value": "http://www.wikidata.org/entity/Q1"},
+        "itemLabel": {"value": "Sony WH-1000XM4"},
+        "manufacturerLabel": {"value": "Sony"},
+        "inception": {"value": "2016-08-01T00:00:00Z"},
+    }
+    assert fwp.digital_attrs_from_binding(binding) == {"品牌": "Sony", "上市年份": "2016"}
+    # 六类目老查询无属性键 → {}；坏值键弃权不写
+    legacy = {
+        "category": {"value": "图书"},
+        "item": {"value": "http://www.wikidata.org/entity/Q9"},
+        "itemLabel": {"value": "某书"},
+    }
+    assert fwp.digital_attrs_from_binding(legacy) == {}
+    partial = dict(binding, height={"value": "0.62"}, width={"value": "not-a-number"})
+    assert fwp.digital_attrs_from_binding(partial) == {
+        "品牌": "Sony",
+        "上市年份": "2016",
+        "高度": "62",  # 宽度非数字 → 不写键
+    }
+
+
+def test_digital_rows_carry_attrs_not_spec_values() -> None:
+    """数码行：attrs 承载 Wikidata 属性（不冒充 spec_values 写回值）；类目模板接入。"""
+    payload = {
+        "results": {
+            "bindings": [
+                {
+                    "category": {"value": "显示器"},
+                    "item": {"value": "http://www.wikidata.org/entity/Q5"},
+                    "itemLabel": {"value": "Dell UltraSharp U2720Q"},
+                    "manufacturerLabel": {"value": "Dell"},
+                    "height": {"value": "0.46"},
+                    "width": {"value": "0.81"},
+                },
+                # 无 P176 的耳机：行仍保留，attrs 只带可解析键
+                {
+                    "category": {"value": "耳机"},
+                    "item": {"value": "http://www.wikidata.org/entity/Q6"},
+                    "itemLabel": {"value": "某蓝牙耳机"},
+                },
+            ]
+        }
+    }
+    rows = fwp.sparql_json_to_rows(payload)
+    assert rows[0]["attrs"] == {"品牌": "Dell", "高度": "46", "宽度": "81"}
+    assert rows[0]["spec_values"] == {}
+    assert rows[0]["spec_schema"]["品牌"]["required"] is True
+    assert rows[0]["spec_schema"]["高度"]["required"] is False
+    assert rows[1]["attrs"] == {}
+
+
+def test_sparql_payload_cache_roundtrip_and_query_mismatch(tmp_path: Path) -> None:
+    """逐查询缓存（第 90 刀）：命中返回 payload；查询串失配/坏文件 → None 重拉。"""
+    cache = tmp_path / "wikidata_Q250.json"
+    assert fwp.read_cached_payload(cache, "SELECT 1") is None  # 不存在
+    fwp.write_cached_payload(cache, "SELECT 1", {"results": {"bindings": [1, 2]}})
+    assert fwp.read_cached_payload(cache, "SELECT 1") == {"results": {"bindings": [1, 2]}}
+    # per_category 等参数变了 → 查询串变 → 缓存失配，不拿旧结果冒充新查询
+    assert fwp.read_cached_payload(cache, "SELECT 2") is None
+    cache.write_text("not-json", encoding="utf-8")
+    assert fwp.read_cached_payload(cache, "SELECT 1") is None  # 坏缓存当 miss
+
+
+def test_demo_price_single_source_is_seed_table() -> None:
+    """演示价单一真源=seed.CATEGORY_DEMO_PRICES：数码四类价格一致，未知类目 None。"""
+    from suite_api.services.seed import CATEGORY_DEMO_PRICES
+
+    assert fwp._demo_price_for("键盘") == CATEGORY_DEMO_PRICES["键盘"] == 39900
+    assert fwp._demo_price_for("鼠标") == 19900
+    assert fwp._demo_price_for("显示器") == 149900
+    assert fwp._demo_price_for("耳机") == 59900
+    assert fwp._demo_price_for("不存在的类目") is None
+
+
+# ------------------------------------- 数码规格文档（第 90 刀）：候选/正文/标题
+
+import publish_digital_specs as pds  # noqa: E402
+
+
+def test_digital_spec_candidates_and_text(tmp_path: Path) -> None:
+    """候选=耳机/显示器且有品牌；正文「品牌：X\n…\n类目：Y」；标题 OFF 形态。"""
+    csv_path = tmp_path / "products.csv"
+    # 用 csv 模块构造（attrs 是 JSON 串，内含逗号须整列引住——fetch 写出同款）
+    with open(csv_path, "w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(fwp.CSV_COLUMNS)
+        writer.writerow(
+            [
+                "WH-1000XM4",
+                "耳机",
+                "{}",
+                "{}",
+                json.dumps({"品牌": "Sony", "上市年份": "2016"}, ensure_ascii=False),
+                5,
+            ]
+        )
+        writer.writerow(
+            ["某键盘", "键盘", "{}", "{}", json.dumps({"品牌": "Logitech"}), 7]
+        )  # 键盘不在主力类目，不入候选
+        writer.writerow(
+            [
+                "U2720Q",
+                "显示器",
+                "{}",
+                "{}",
+                json.dumps({"品牌": "Dell", "高度": "46", "宽度": "81"}, ensure_ascii=False),
+                9,
+            ]
+        )
+        writer.writerow(["无牌耳机", "耳机", "{}", "{}", "{}", 3])  # 无品牌：规格文档无从写起
+    rows = pds.candidate_rows(csv_path)
+    assert [row["name"] for row in rows] == ["WH-1000XM4", "U2720Q"]
+    assert pds.spec_text("耳机", rows[0]["attrs"]) == "品牌：Sony\n上市年份：2016\n类目：耳机\n"
+    assert pds.spec_text("显示器", rows[1]["attrs"]) == "品牌：Dell\n高度：46\n宽度：81\n类目：显示器\n"
+    assert pds.spec_title("WH-1000XM4") == "WH-1000XM4 规格（Wikidata）"
+    assert len(pds.spec_title("长" * 300)) == pds.TITLE_MAX  # assets.title String(200)
 
 
 # ---------------------------------------------------------------- 评论 csv 解析 / zip
@@ -201,6 +381,22 @@ def test_sample_reviews_deterministic_and_capped() -> None:
     assert len(first) == 10
     assert set(first) <= set(rows)
     assert lr.sample_reviews(rows, 10_000) == rows  # n 超总量=全量
+
+
+def test_filter_by_cats_whitelist() -> None:
+    """--cats 类目白名单（第 90 刀）：逗号分隔剥空白；空/全空白=不过滤（默认不变）。"""
+    rows = [("平板", "1", "a"), ("书籍", "0", "b"), ("计算机", "1", "c"), ("手机", "0", "d")]
+    assert lr.filter_by_cats(rows, "平板,计算机,手机") == [
+        ("平板", "1", "a"),
+        ("计算机", "1", "c"),
+        ("手机", "0", "d"),
+    ]
+    assert lr.filter_by_cats(rows, " 平板 , 手机 ") == [("平板", "1", "a"), ("手机", "0", "d")]
+    assert lr.filter_by_cats(rows, ["计算机"]) == [("计算机", "1", "c")]
+    assert lr.filter_by_cats(rows, "") is rows  # 默认行为不变：原列表原样
+    assert lr.filter_by_cats(rows, None) is rows
+    assert lr.filter_by_cats(rows, "  ") is rows  # 全空白视同未指定
+    assert lr.filter_by_cats([], "平板") == []
 
 
 def test_review_to_title_content_shape() -> None:
