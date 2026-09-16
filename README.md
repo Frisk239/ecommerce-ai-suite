@@ -25,6 +25,8 @@
 docker compose up --build
 ```
 
+> 部署到自有服务器（IP + HTTP 演示栈：env 清单、安全 checklist、数据灌入、故障处置）见 [`ops/deploy.md`](ops/deploy.md)；LLM 端点更换三步与备用免费端点见 [`ops/runbook-llm.md`](ops/runbook-llm.md)。数码外设店宿主页示例：`/storefront.html`。
+
 打开 <http://localhost:5173>：健康卡应显示 API 与数据库双绿（页面真实调用 API 的 `GET /health`）。
 api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者、两个商品与三笔 mock 订单），无需手工迁移。
 
