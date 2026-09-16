@@ -712,6 +712,20 @@ export interface CustomerSessionEnded {
   closed_at: string | null
 }
 
+/** 会话续接回执（第 95 刀，GET /customer/sessions/current/messages）：
+ * 「current」= Bearer 令牌所指的会话——顾客端把令牌+会话 id 存 localStorage，
+ * 重开页面先打这里再决定恢复还是新建。messages 与操作者详情端点同形状（含
+ * media_citations/tool）；rating/ticket 供评分条与 handoff 联系表单跨重载回显
+ * （第 71 刀改评、第 42 刀工单锚的续接口径）。 */
+export interface CustomerSessionResume {
+  session_id: number
+  /** active=可继续问；ended/registered=只回放（前端锁输入，善后通道照旧）。 */
+  status: ServiceSessionStatus
+  messages: ServiceMessage[]
+  rating: SessionRating | null
+  ticket: { id: number; contact_at: string | null } | null
+}
+
 /** 顾客版 SSE complete：事件序与操作者版相同，但 gap_id 被服务端载荷白名单
  * 裁剪（顾客不暴露内部缺口 id）——类型上即不存在该字段。 */
 export type CustomerAnswerComplete = Omit<ServiceAnswerComplete, 'gap_id'>

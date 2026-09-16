@@ -119,7 +119,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 - 宿主页若开了 CSP，需放行 `script-src <控制台地址>`（加载 `embed.js`）、`frame-src <控制台地址>`（嵌入 iframe）与 `style-src 'unsafe-inline'`（加载器用一段内联样式做 Shadow DOM 里的按钮外观）；无需放行 `connect-src`（客服请求都发生在 iframe 内部）。
 - 宿主页**不要设 `Referrer-Policy: no-referrer`**：来源取自 `document.referrer`，剥掉它客服会拒绝工作（fail-closed，不是绕过）。
 - 白名单校验用的是我们前端读 `document.referrer` 后带上的 `X-Widget-Origin`。宿主若自己伪造请求头仍可能绕过，**要彻底堵死需在边缘/反代层拦文档请求**（本仓是 dev 栈，没有这层）——这里挡的是「把客服嵌进未授权站点」的正常路径。
-- 同一访客的**会话续接/历史回放**不在 v1（顾客通道没有历史端点）；每次打开是全新会话。
+- **会话续接（第 95 刀）**：顾客端（widget/独立顾客页共用）把令牌+会话 id 存进 localStorage（`ecustomer.session`），重开页面先调 `GET /api/customer/sessions/current/messages`（Bearer，「current」=令牌所指的会话）——active 自动恢复（消息重放+继续问，不建新会话）；已结束（ended）回放历史+锁输入（评分/反馈等善后照旧，已结束会话不复活）；令牌过期/失效（401）清存档走新会话。**不做的**是历史列表/多会话管理：一个浏览器一次只续最近一段。
 
 ## MCP 连接层（第 5 刀，ADR 0032）
 
