@@ -566,3 +566,75 @@ overall        96     86.2%     93.8%   69.2%    0.0%   73.3%
 ```
 uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
 ```
+
+## 第 100 刀：OFF 标题/正文品牌错配订正（2026-09-16，演示库数据订正 before/after）
+
+审计刀 16 认账的债兑现：OFF 众包 dump 同一行 `product_name` 与 `brands` 互相矛盾
+（如条码 000000000063 行 name="M&M white"、brands="Fitpiggy"），第 33 刀导入忠实转写
+——标题锚 name、正文锚 brands，具名问句归宿随机。第 100 刀
+`scripts/realdata/correct_off_mismatch.py` 诊断 20 份已发布 OFF 资产：**14 错配 / 1 无
+品牌锚（dump brands 空，无锚不订正）/ 5 匹配**；`--apply` 以正文为准改标题列（title
+是 assets 纯列不进版本快照；块不含标题、79 刀亲和实时读 title——改列即改亲和，无需
+重发布），audit 同事务落 14 行 `action='title_correct'` 手动备注，重跑幂等（mismatch=0）。
+
+### Before（订正前，逐位=审计刀 19 核对值）
+
+```
+positive       43     90.0%     92.5%       -    0.0%       -
+paraphrase     25     88.0%     96.0%       -       -       -
+confusion      15     73.3%     93.3%       -       -   73.3%
+refusal        13         -         -   69.2%       -       -
+overall        96     86.2%     93.8%   69.2%    0.0%   73.3%
+```
+
+（positive 的 recall 分母实为 40：ref-001/011/015 的 expect 用了 `cite_asset_title` 键
+——run_eval 的 judge_case 只认 `cite` 键，这 3 条不进分子分母，90 刀迁移时的形态
+笔误，存量无害——本刀核账时发现并在此申报。）
+
+### 漂移与维护（订正直接跑：positive 75.0 / paraphrase 56.0——全部来自问句锚过期）
+
+订正让金标 OFF 组问句里的**旧商品名**失去标题亲和（期望资产没变，是问句名字过期）。
+按 60 刀先例维护 `golden_large.json`：**22 条问句的商品名同步为订正后标题名**
+（`M&M white`→`Fitpiggy` 等 14 个名字；期望锚 asset_id+version_no 一条不动——
+问的还是同一件资产，名字随数据订正）。维护后终表：
+
+```
+positive       43     97.5%    100.0%       -    0.0%       -
+paraphrase     25     88.0%     96.0%       -       -       -
+confusion      15     73.3%     93.3%       -       -   73.3%
+refusal        13         -         -   69.2%       -       -
+overall        96     90.0%     97.5%   69.2%    0.0%   73.3%
+```
+
+### 漂移逐位归属
+
+- **positive 90.0→97.5（+7.5pp，4 条 miss→1 条）**：pos-003/004/010/030/034/036
+  （订正漂移的 6 条）问句锚维护后全部回位；**pos-006/012/028——90 刀记债 #90-P1 的
+  「OFF 字段同文跨资产并列」存量 miss——被顺带治好**：订正后标题=品牌名，问句
+  （同步新名后）与标题词法全重合，79 刀亲和破并列的信号变强；pos-038 仍 miss
+  （非 OFF 的标题弱命中，#90-P1 在案）。@3 92.5→100 同源。
+- **paraphrase/confusion/refusal/误拒逐位不变**（88.0/73.3/69.2/0.0；miss 清单与订正前
+  存量一字不差：syn-005/007/012、conf-007/008/010/011）。
+- 订正不改检索代码/不重发布——全部变化由 `assets.title` 列变化经实体亲和
+  （79 刀乘数）传导，机制路径与预测一致。
+
+### 行为面验证（真栈顾客通道）
+
+- **「Fitpiggy的条码是多少」3/3 同答**（answer，引用 A-226·v1，值 000000000063）；
+  「Erdbeeren的条码是多少」3/3 同答（A-237，00000019）——订正后的具名 OFF 规格问句
+  可演示。
+- **「M&M white的条码是多少」6 次**：检索层 6/6 稳定命中同一对他品条码块
+  （235/234，词法「条码」并列），表面归宿二态——3 次拒答（模型整段免责句进
+  58 刀 no_coverage 收口）/ 3 次澄清式作答（「证据中的条码 00000013 对应的是
+  Pbfit 规格（OFF）」）。**两种归宿都不再引用错配值**（订正前「稳定作答」答的是
+  把 Fitpiggy 的条码冒充 M&M white 的——值对不上名）；OOV 闸（82 刀）未拦是中英
+  混库的已知漏判形态（ABCD 英文对话块的 wh/hi/it/te 碎片 bigram 打断零出现链，
+  判据 2 的连续串凑不到 4 字）——改判据属检索代码（本刀 Out），记债
+  #100-P1 进 101 刀评测扩容。
+
+### 复现命令
+
+```
+uv run python scripts/realdata/correct_off_mismatch.py --db postgresql://suite:suite@localhost:5433/suite           # dry-run 诊断
+uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
+```
