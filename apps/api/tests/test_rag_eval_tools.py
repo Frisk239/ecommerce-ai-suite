@@ -408,3 +408,166 @@ def test_golden_oov_syn_words_outside_synonym_table() -> None:
     members |= {"折扣券", "优惠券"}
     for word in OOV_SYN_REWRITE_WORDS:
         assert word not in members, f"{word!r} 已进同义词表——表外探针失效，需换词"
+
+
+# ---------------------------------------------------------------- 第 102 刀：--judge-llm 生成路径观察
+
+
+def _msg(
+    mid: int, sid: int, role: str, content: str, kind: str | None = None, citations=None
+) -> dict:
+    return {
+        "id": mid,
+        "session_id": sid,
+        "role": role,
+        "content": content,
+        "kind": kind,
+        "citations": citations,
+    }
+
+
+def test_is_template_answer_matches_fallback_prefixes() -> None:
+    """降级模板形状判定：compose_answer 两类前缀是模板路径指纹。"""
+    assert runner.is_template_answer("根据已发布的规格文档《钛钢保温杯 · 规格》：净含量：500ml。")
+    assert runner.is_template_answer("根据已发布的客服对话记录：顾客：您好")
+    assert not runner.is_template_answer("净含量为500ml。")
+    assert not runner.is_template_answer("")
+
+
+def test_build_generated_samples_pairs_filters_and_dedupes() -> None:
+    """存量样本构造：answer+引用入集、模板形状剔除、同问同答去重、跨会话配对。"""
+    messages = [
+        _msg(1, 1, "customer", "保温杯的净含量是多少"),
+        _msg(2, 1, "agent", "净含量为500ml。", "answer", [{"asset_id": 9, "version_no": 1}]),
+        # 同问同答的重复探针：只留首条
+        _msg(3, 1, "customer", "保温杯的净含量是多少"),
+        _msg(4, 1, "agent", "净含量为500ml。", "answer", [{"asset_id": 9, "version_no": 1}]),
+        # 同问不同答（LLM 非确定性）：两条都留
+        _msg(5, 1, "customer", "保温杯的净含量是多少"),
+        _msg(6, 1, "agent", "该保温杯的净含量是 500ml。", "answer", [{"asset_id": 9, "version_no": 1}]),
+        # 模板回落形状（fallback 指纹）：剔除
+        _msg(7, 1, "customer", "材质是什么"),
+        _msg(
+            8, 1, "agent", "根据已发布的规格文档《钛钢保温杯 · 规格》：材质：316不锈钢。",
+            "answer", [{"asset_id": 3, "version_no": 1}],
+        ),
+        # citations 空（工具/目录模板面）：剔除
+        _msg(9, 1, "customer", "你们卖什么"),
+        _msg(10, 1, "agent", "本店在售商品共 3 件", "answer", []),
+        # refusal：剔除（87 刀口径只评 answered）
+        _msg(11, 1, "customer", "有赠品吗"),
+        _msg(12, 1, "agent", "抱歉，已发布资产里没有能回答这个问题的证据。", "refusal", []),
+        # 跨会话：会话 2 的问句配会话 2 的回答（不受会话 1 末问污染）
+        _msg(13, 2, "customer", "退货政策是什么"),
+        _msg(14, 2, "agent", "支持7天无理由退货。", "answer", [{"asset_id": 479, "version_no": 1}]),
+    ]
+    samples = runner.build_generated_samples(messages)
+    assert [(s["message_id"], s["question"]) for s in samples] == [
+        (2, "保温杯的净含量是多少"),
+        (6, "保温杯的净含量是多少"),
+        (14, "退货政策是什么"),
+    ]
+    assert all(s["source"] == "存量" and s["citations"] for s in samples)
+
+
+def test_judge_llm_summary_denominator_only_judged() -> None:
+    """汇总口径与 87 刀一致：分母只算评上的，未评上单列。"""
+    summary = runner.judge_llm_summary(3, [(True, "依据齐全。"), (False, "编造。"), None])
+    assert summary == {
+        "samples": 3,
+        "judged": 2,
+        "supported": 1,
+        "failed": 1,
+        "supported_rate": 0.5,
+    }
+    assert runner.judge_llm_summary(0, [])["supported_rate"] is None
+
+
+def test_reason_first_sentence() -> None:
+    assert runner.reason_first_sentence("「支持7天无理由」未在证据出现。另有第二句。") == (
+        "「支持7天无理由」未在证据出现。"
+    )
+    assert runner.reason_first_sentence("只有一句没有终止符") == "只有一句没有终止符"
+    assert runner.reason_first_sentence("第一行\n第二行") == "第一行"
+
+
+def test_reason_from_raw_json_and_fallback() -> None:
+    assert runner._reason_from_raw('{"supported": false, "reason": "第二句编造"}') == "第二句编造"
+    assert runner._reason_from_raw("没有 JSON 的原始输出\n第二行") == "没有 JSON 的原始输出"
+
+
+def test_judge_llm_with_retry_recovers_and_fails_soft(monkeypatch) -> None:
+    """87 刀同款重试纪律：抖动内恢复 -> (verdict, reason)；重试尽 -> None。"""
+    from suite_api.services.llm import LLMUnavailable
+
+    calls: list[int] = []
+
+    def fake_judge_llm_one(question: str, chunks, answer: str) -> tuple[bool, str]:
+        calls.append(1)
+        if len(calls) < runner.JUDGE_ATTEMPTS:
+            raise LLMUnavailable("网关抖动")
+        return (False, "首句无原文依据。")
+
+    monkeypatch.setattr(runner, "judge_llm_one", fake_judge_llm_one)
+    monkeypatch.setattr(runner.time, "sleep", lambda _s: None)
+    assert runner.judge_llm_with_retry("Q", ["证据"], "回答") == (False, "首句无原文依据。")
+    assert len(calls) == runner.JUDGE_ATTEMPTS
+
+    def always_fail(question: str, chunks, answer: str) -> tuple[bool, str]:
+        raise LLMUnavailable("网关持续不可用")
+
+    monkeypatch.setattr(runner, "judge_llm_one", always_fail)
+    assert runner.judge_llm_with_retry("Q", ["证据"], "回答") is None
+
+
+def test_judge_llm_report_lines_verdicts_and_caveats() -> None:
+    """报告装配（纯函数）：逐条 verdict 带原因首句、未评上注记、口径声明在案。"""
+    samples = [
+        {
+            "source": "存量",
+            "message_id": 2,
+            "session_id": 1,
+            "question": "净含量是多少",
+            "answer": "净含量为500ml。",
+            "citations": [{"asset_id": 9, "version_no": 1}],
+        },
+        {
+            "source": "新问",
+            "message_id": 900,
+            "session_id": 77,
+            "question": "退货运费多少钱",
+            "answer": "运费由商家承担。",
+            "citations": [{"asset_id": 479, "version_no": 1}],
+        },
+        {
+            "source": "存量",
+            "message_id": 5,
+            "session_id": 2,
+            "question": "会员积分怎么兑换",
+            "answer": "100积分抵1元。",
+            "citations": [{"asset_id": 106, "version_no": 1}],
+        },
+    ]
+    verdicts = [
+        (True, "每句均有原文依据。"),
+        (False, "「运费由商家承担」未在证据出现。第二句另有问题。"),
+        None,
+    ]
+    report = runner.judge_llm_report(
+        samples, verdicts, fresh_stats={"asked": 10, "generated": 8, "refusal": 2}, db_url="pg://x"
+    )
+    assert "存量生成消息 2 条" in report and "现场真问 1 条" in report
+    assert "问 10 条" in report and "生成作答 8" in report and "拒答 2" in report
+    assert "supported——每句均有原文依据。" in report
+    assert "False——「运费由商家承担」未在证据出现。" in report
+    assert "未评上（重试尽，不计入分母）" in report
+    assert "汇总：评上 2/3（未评上 1），supported 1 条，supported 率 50.0%" in report
+    assert "当日同一网关" in report and "不进 CI" in report
+
+
+def test_fresh_questions_are_rag_path_shapes() -> None:
+    """现场真问清单形状自检：8-10 条、无订单号/库存词/转人工（纯 RAG 问法）。"""
+    assert 8 <= len(runner.FRESH_QUESTIONS) <= 10
+    for question in runner.FRESH_QUESTIONS:
+        assert "SO-" not in question
+        assert "人工" not in question and "转接" not in question
