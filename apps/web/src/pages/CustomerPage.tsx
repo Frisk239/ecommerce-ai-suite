@@ -548,6 +548,10 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
                   m={m}
                   prev={messages[i - 1]}
                   citationAsLink={false}
+                  // 第 94b 刀（ADR 0052）：顾客通道的媒体附件带 query 令牌
+                  // （img/video 的 src 带不了 Authorization 头；服务端仅此端点
+                  // 接受 ?token=，见 ADR 与 mediaUrl 注释）
+                  mediaToken={session.token}
                   footer={handoffFooter(m) ?? feedbackFooter(m)}
                 />
               ))}

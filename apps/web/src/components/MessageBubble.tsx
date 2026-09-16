@@ -5,7 +5,8 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ChatCircleDots, HandArrowUp, UserCircle } from '@phosphor-icons/react'
-import type { ServiceCitation, ToolCallRecord } from '../api/types'
+import type { MediaCitation, ServiceCitation, ToolCallRecord } from '../api/types'
+import { mediaUrl } from '../api/client'
 import CitationChip from './CitationChip'
 import { formatAssetId, formatGapId, formatTime } from '../labels'
 
@@ -35,6 +36,9 @@ export interface UiMessage {
   /** 订单工具调用记录（第 13 刀/ADR 0036）：与 fallback 相反——随消息落库，
    * 重载后灰底 mono 工具条照样还原（回放完整性）。 */
   tool: ToolCallRecord | null
+  /** 第 94b 刀（ADR 0052）：媒体附件 [{asset_id, version_no, mime}]——随消息
+   * 落库（重载照样出图/出播放器）；空数组/ null = 本条无媒体。 */
+  mediaCitations: MediaCitation[] | null
   /** 第 42 刀（ADR 0046）：本条 handoff/拒答消息的工单 id（complete 带回的
    * 运行时可选键）。重载后服务器消息不带（工单详情在会话详情 ticket 上）；
    * 顾客页据此渲染联系方式表单。H 号只在回执正文里，不单独携带。 */
@@ -60,6 +64,7 @@ export function toUiMessage(
     gapId: null,
     fallback: false,
     tool: null,
+    mediaCitations: null,
     ticketId: null,
     ticketContactAt: null,
     ...init,
@@ -76,6 +81,8 @@ export function toUi(m: {
   handoff: boolean | null
   created_at: string
   tool?: ToolCallRecord | null
+  /** 第 94b 刀：随消息落库的媒体附件（旧消息/存量行可能没有该键）。 */
+  media_citations?: MediaCitation[] | null
 }): UiMessage {
   return toUiMessage({
     key: `s-${m.id}`,
@@ -87,6 +94,7 @@ export function toUi(m: {
     handoff: m.handoff ?? false,
     created_at: m.created_at,
     tool: m.tool ?? null,
+    mediaCitations: m.media_citations ?? null,
   })
 }
 
@@ -116,16 +124,62 @@ function ToolStrip({ tool }: { tool: ToolCallRecord }) {
   )
 }
 
+/** 媒体附件区（第 94b 刀，ADR 0052）：图片直出 <img>（限宽圆角）、视频
+ * <video controls preload="metadata">（点开才拉字节，首帧不预载整段）。
+ *
+ * 与引用芯片区**并列**（两个独立区块）：芯片是「依据哪份资料的哪一版」，附件
+ * 是「那份资料里的图/视频本身」。字节走 `mediaUrl`——顾客通道带 query 令牌
+ * （src 带不了 Authorization 头），操作者页不带（同源 cookie）。
+ * 媒体端点只出当前已发布指针版（未发布/已废弃 404），故一条旧消息里的附件在
+ * 资产被下架后自然显示为裂图/不可播——这是已发布口径的如实表达。 */
+function MediaAttachments({
+  items,
+  token,
+}: {
+  items: MediaCitation[]
+  token?: string | null
+}) {
+  return (
+    <div className="flex flex-wrap items-start gap-2">
+      <span className="mt-1 text-xs text-caption">附件：</span>
+      {items.map((c) =>
+        c.mime.startsWith('video/') ? (
+          <video
+            key={`${c.asset_id}-${c.version_no}`}
+            controls
+            preload="metadata"
+            className="max-h-[260px] w-full max-w-[320px] rounded-[6px] border border-line-2 bg-black"
+            src={mediaUrl(c.asset_id, token)}
+            title={`回答附带的视频（${formatAssetId(c.asset_id)} · v${c.version_no}）`}
+          />
+        ) : (
+          <img
+            key={`${c.asset_id}-${c.version_no}`}
+            src={mediaUrl(c.asset_id, token)}
+            alt={`回答附带的图片（${formatAssetId(c.asset_id)} · v${c.version_no}）`}
+            loading="lazy"
+            className="max-h-[260px] max-w-[240px] rounded-[6px] border border-line-2 bg-white object-contain"
+          />
+        ),
+      )}
+    </div>
+  )
+}
+
 // 连续同角色消息分组：隐藏重复头像，只留首条时间戳（Intercom 式分组）
 export default function MessageBubble({
   m,
   prev,
   citationAsLink = true,
+  mediaToken = null,
   footer,
 }: {
   m: UiMessage
   prev?: UiMessage
   citationAsLink?: boolean
+  /** 第 94b 刀：媒体附件的顾客会话令牌（顾客页传；操作者页不传——同源 cookie
+   * 自动带）。仅用于拼媒体 URL 的 `?token=`，不进任何请求头。 */
+  mediaToken?: string | null
   /** 消息下沿的可选动作区（第 40 刀）：顾客页「没有帮助」/客服页「确认退货」
    * 由各页面按消息条件构造后传入，共享组件不感知业务规则。 */
   footer?: ReactNode
@@ -218,6 +272,9 @@ export default function MessageBubble({
           <div className="text-[11px] text-caption">{m.thinkingText ?? '正在检索已发布资产…'}</div>
         )}
         {m.tool !== null && !m.streaming && <ToolStrip tool={m.tool} />}
+        {m.mediaCitations !== null && m.mediaCitations.length > 0 && !m.streaming && (
+          <MediaAttachments items={m.mediaCitations} token={mediaToken} />
+        )}
         {footer !== undefined && !m.streaming && (
           <div className="flex flex-wrap items-center gap-2">{footer}</div>
         )}

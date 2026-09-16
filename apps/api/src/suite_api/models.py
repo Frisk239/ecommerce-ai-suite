@@ -241,6 +241,11 @@ class ServiceMessage(Base):
     不连带缺口），customer 消息为 NULL；handoff 与 refusal 同消息
     显性标记（0018：无证据拒答时一并转人工）。同一会话旧消息的引用不随
     后续发布漂移（回放按当时版本，ADR 0023）。
+
+    第 94b 刀（ADR 0052）：``media_citations = [{asset_id, version_no, mime}]``
+    是 citations 的**姊妹键**（服务端按同一份证据派生的媒体附件，模型无决定权）
+    ——随消息落列，重载会话照样出图/出播放器（与 citations 同寿命，不是 gap_id
+    那种运行时键）。仅 agent 消息为列表（无媒体恒 ``[]``），customer 消息 NULL。
     """
 
     __tablename__ = "service_messages"
@@ -259,6 +264,9 @@ class ServiceMessage(Base):
     # 回放完整性——重载会话也要还原灰底工具条（与 gap_id 的「运行时返回」口径
     # 不同：工具条是已发生动作的留档，随消息落列，迁移 0007）
     tool: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # 第 94b 刀（迁移 0031，ADR 0052）：媒体引用 [{asset_id, version_no, mime}]
+    # ——citations 的姊妹键（同一份证据派生；image/video 命中才有条目，恒列表）。
+    media_citations: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     # 第 40 刀（ADR 0044 §四）：顾客 thumbs-down 反馈 {"helpful": false, "at": iso}
     # ——一条消息至多一次（非空即已反馈，应用层 409 幂等）；分诊在代码：
     # kind=answer 且 citations 非空的消息收到负反馈 -> 逐 citation 资产撤销
