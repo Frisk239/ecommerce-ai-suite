@@ -38,7 +38,7 @@
 - **SiliconFlow**：SenseVoiceSmall **免费档**，OpenAI 兼容 `POST api.siliconflow.cn/v1/audio/transcriptions`（api-docs.siliconflow.cn）；SenseVoiceSmall **不输出时间戳**（FunASR issue #2027）。
 - **DashScope**（help.aliyun.com/zh/model-studio/model-pricing）：paraformer-v2 **0.00008 元/秒（≈0.288 元/时）**+ 每月 36,000 秒（10h）免费（仅北京地域）；paraformer 原生**句级+字级毫秒时间戳**；qwen3-asr-flash 0.00022 元/秒，时间戳仅异步 filetrans 且由 enable_words 控制。
 - **Groq**（console.groq.com/docs/rate-limits）：whisper-large-v3-turbo 免费层 20 RPM、2,000 RPD、7,200 audio-s/时、**28,800 audio-s/日（≈8h/日）**、单文件 25MB；OpenAI 兼容，verbose_json 带时间戳。
-- 中文口碑：SenseVoice AISHELL-1 CER≈2.94、快 15 倍（arXiv 2407.04051）；Whisper 系中文基线弱（Belle-whisper 微调可再提升 24–65% 反证）。
+- 中文口碑：SenseVoice AISHELL-1 CER≈2.94、快 15 倍（arXiv 2407.04051）；Whisper 系中文基线弱于本土模型（SenseVoice 论文同任务对比，arXiv 2407.04051）。
 
 **结论与推荐**：无时间戳转写→SiliconFlow SenseVoiceSmall（免费+中文最优）；带时间戳免费档→Groq turbo；高精度长视频+时间戳→DashScope paraformer-v2。
 
@@ -48,7 +48,7 @@
 
 **实测/证据**：
 - funasr SenseVoiceSmall：AISHELL-1 **CER≈2.94**、比 whisper-large-v3 快 15 倍（arXiv 2407.04051）；H100 RTF 169.6x、**CPU 17.2x**，184 中文文件 CER 7.81% 约为 Whisper 一半（funasr.com benchmark）；无时间戳。
-- funasr paraformer-zh：**原生字级时间戳**（funasr.com 实战文），中文 CER 口碑强。
+- funasr paraformer-zh：**原生字级时间戳**（FunASR 官方仓库文档：github.com/modelscope/FunASR），中文 CER 口碑强。
 - faster-whisper small：ctranslate2 依赖轻（无 torch）、word 级时间戳，但中文 **CER 差约 2.7 倍**（funasr 同音频实测对比）。
 
 **结论与推荐**：`scripts/transcribe_local.py` 以 **funasr paraformer-zh 为主引擎**（中文 CER 低+字级时间戳，与云侧 paraformer-v2 同源可互备），SenseVoiceSmall 作无时间戳快速分支；仅当拒装 torch 才退 faster-whisper small。
@@ -63,7 +63,7 @@
 | spec_schema | manufacturer/image/website/release_year（显示器+高/宽） | 覆盖 22–67% |
 | 评论源 | online_shopping_10_cats 筛平板/计算机/手机，不挂商品 | 16,315/62,774 条实测 |
 | 辅轨视频 | Pexels 主（key 待申请）+ Commons 补充 | 158 / 1,415 实测 |
-| ASR | 云：SiliconFlow 免费→Groq turbo（时间戳）→paraformer-v2（0.288 元/时）；本地：funasr paraformer-zh | CER 2.94 / RTF 17x |
+| ASR | 云：SiliconFlow 免费→Groq turbo（时间戳）→paraformer-v2（0.288 元/时）；本地：funasr paraformer-zh（字级时间戳）+ SenseVoiceSmall 快检分支 | SenseVoiceSmall CER≈2.94 / CPU RTF≈17x（paraformer-zh 无该二数，见 §⑤） |
 
 **主轨源录像方案确认**：确认主轨仍为店主自录 3–5 分钟数码产品讲解视频（mp4 ≤200MB），上传后先走本地 funasr（或 SiliconFlow 免费档）转写，Pexels/Commons 仅作辅轨画面素材。
 

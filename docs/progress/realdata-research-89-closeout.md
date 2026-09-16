@@ -21,6 +21,7 @@
 - 任务书给的 5 个 QID 全部失准，子代理经 Special:EntityData 实测修正（修正值已进文档）；`online_shopping_10_cmds` 路径 404，实名 `online_shopping_10_cats`。
 - WDQS 四类聚合查询超时，改单类逐查；Commons/Pexels 官网 TLS 间歇失败靠重试与旁路完成。
 - Pexels 未申请 key 故无 API 实调（按文档定案）。
+- 本地兜底定案 paraformer-zh 为任务书候选外新增（任务书只点名 SenseVoice vs faster-whisper）——因刀 93 需字级时间戳而 SenseVoiceSmall 无时间戳，扩展候选后定案（Spec 轴认可合理深化）。
 
 ## 记债
 
