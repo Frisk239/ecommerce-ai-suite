@@ -18,7 +18,7 @@
 | ADR 0042 修订 + ADR 0049 新开 + CONTEXT 词条 ×5 | docs/adr 与 CONTEXT.md 在 234da51 diff 内 | ✓ |
 | 演示库手术：81 刀存量陈旧缺口 5 条外科 resolved | 治理动作，无从代码复核；demo_reset 不清缺口口径未破坏 | 留档采信 |
 
-## Safety
+## 安全
 
 234da51 diff 全部为 docs + apps/api 代码 + 测试，无 secrets、无运行时垃圾。
 
@@ -28,6 +28,6 @@
 2. **发布冲突检测**（audit-10 病例延续）→ 同上，间隙小刀或押后。
 3. OOV 零命中绕闸（audit-17 Owner 裁决：误判比漏检贵，边界已进 ADR 0049）→ 观察项，非刀。
 
-## Verdict
+## 结论
 
 **通过**。第四阶段（roadmap-system-completion.md，88–103 刀）开工；本刀=立项刀（goal/CONTEXT 口径修订 + roadmap 提交生效）。

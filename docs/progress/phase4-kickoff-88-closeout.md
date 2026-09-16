@@ -19,16 +19,21 @@
 
 - 本刀无 DB 单元层 spot-check：全绿 exit 0（无 `SUITE_TEST_DATABASE_URL` 时集成用例 skip 属预期）。
 - 集成全量/前端 build/lint：零代码改动，由本刀 CI 与 PR #124 CI 承担。
-- 修订对照可核：`git diff origin/main...HEAD -- docs/goal.md CONTEXT.md` 逐处与 roadmap 修订表对得上。
+- 修订对照可核：`git diff 234da51...HEAD -- docs/goal.md CONTEXT.md`（基线=本刀父提交，不含未合并的 audit-17 词条改动）逐处与 roadmap 修订表对得上。
 
-## Deviations
+## 评审实修（两轴并行子代理，commit 追加）
+
+- **Spec 轴**：验收通过——承诺全落实、偏差记录诚实、无 scope creep。发现表缝隙一处：goal §4⑦ 末句残留「导出是数据包，不是微调集」，修订表原只点 README——已补进修订表（随刀 97 收口）。
+- **Standards 轴**：3 处硬违规全实修——① roadmap 审计刀排期三处两说（排期原则已改 18，但 92 刀节与依赖图残留 17）→ 统一为审计刀 18；② CONTEXT 推进段开头残留「第三阶段推进中…下一刀=第 43 刀」与段尾矛盾 → 开头改收官态+历史补记压缩；③ goal 头部新句与 §6 前言/§6.2 标题「当前目标」矛盾 → 前言改收官态、标题加收官日期。判断项：roadmap 来源句补「懂王Ai 口径/Q1–Q10」名词溯源（结论已全部落档，无需回查会话）；intake/closeout 节名中文化对齐先例；closeout 对账命令基线从 origin/main 改 234da51。不采纳：刀 99「双因子核验升级路径」非预留实现，是 ADR 必载的升级路径记载（grill Q7 签核内容）。
+
+## 偏差
 
 - **roadmap 原表的 README 两行与 CONTEXT 词条行原计划随本刀提交，改为随 93/95/97 功能刀同步**（本刀已同步修订 roadmap 表并加注）。理由：行为层文档领先实现=假话，违反仓库「文档与实现同步」纪律；goal/CONTEXT 授权层口径先行的同时把行为句留到功能落地。
 
-## Debt
+## 记债
 
 - 无新增。审计刀 17 结转两项（免责句收口、发布冲突检测）维持「不占刀号、梯队间隙」归属（roadmap 排期原则已记）。
 
-## Next
+## 后续
 
 第 89 刀数据源调研刀（子代理）：`docs/research/real-store-data-sources.md` 五项带证据调研与定案。
