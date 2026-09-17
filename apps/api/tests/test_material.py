@@ -1,13 +1,18 @@
-"""素材中心单元测试（不依赖 DB，LLM 以替身注入不发外网；第 17 刀/ADR 0038）。
+"""素材中心单元测试（不依赖 DB，LLM 以替身注入不发外网；第 17 刀/ADR 0038；
+第 98 刀内容套件/ADR 0055）。
 
-覆盖四块纯逻辑与状态机：
+覆盖纯逻辑与状态机：
 - 规则质检 qc_check 四规则（正文非空/总长≤2000/标题非空/正文含商品名）；
 - 生成输出解析 parse_generated_output（好 JSON/围栏/坏 JSON/坏形状）；
-- 打码 redact 三态（手机号/邮箱/无 PII）+ 打码步三接入点（prompt、qa 值、
-  文档字段值）+ 生成 user prompt 出口掩（第 26 刀 P1①，0038 修订补全）；
-- 任务状态机转移矩阵（run/approve/reject/retry × 五态：非法转移 409，
-  生成失败分级 failed——空 key/LLM 故障=「生成不可用」，坏输出=解析失败，
-  规则不过=记规则项；打回=人工打回；retry 复位重跑）。
+- 打码 redact 三态（手机号/邮箱/无 PII）+ 打码步三接入点 + 生成 user prompt 出口掩
+  （第 26 刀 P1①，0038 修订补全）；
+- 内容模板（第 98 刀）：三键枚举/validate_template、模板派生 system prompt 与
+  配图 prompt/尺寸/标题/描述预填（纯函数钉形状）；
+- LLM 事实性质检二道闸（第 98 刀）：parse_qc_output 形状校验、判定不过=failed
+  文案保留、坏输出 fail-closed、规则闸先挡则 LLM 闸不跑（两闸独立记录）；
+- 配图步三态（第 98 刀）：无 key 跳过/成功暂存/失败不 fail 任务（替身+内存存储）；
+- 任务状态机转移矩阵（run/approve/reject/retry × 五态：非法转移 409，生成失败
+  分级 failed，打回=人工打回，retry 复位重跑）。
 """
 
 import json
@@ -17,7 +22,9 @@ import pytest
 from fastapi import HTTPException
 
 from suite_api.models import MaterialTask, Product
+from suite_api.services import imggen as imggen_module
 from suite_api.services import llm as llm_module
+from suite_api.services import material as material_module
 from suite_api.services.machine_wash import (
     build_qa_prompt,
     extract_document_fields,
@@ -26,19 +33,33 @@ from suite_api.services.machine_wash import (
 )
 from suite_api.services.material import (
     FAILED,
+    IMAGE_FAILED,
+    IMAGE_NONE,
+    IMAGE_PENDING,
+    IMAGE_REQUESTED,
+    IMAGE_SKIPPED_NO_KEY,
     MAX_TOTAL_CHARS,
     PENDING_QC,
     QUEUED,
     REGISTERED,
     RUNNING,
+    TEMPLATES,
     MaterialGenError,
     approve_task,
     build_generation_prompt,
+    build_image_prompt,
+    build_qc_prompt,
+    generation_system_prompt,
+    image_description_preset,
+    image_size_for,
+    image_title,
     parse_generated_output,
+    parse_qc_output,
     qc_check,
     reject_task,
     retry_task,
     run_generation_task,
+    validate_template,
 )
 
 # ---------- 替身 ----------
@@ -59,6 +80,24 @@ class _FakeDB:
         self.commits += 1
 
 
+class _FakeStorage:
+    """配图暂存的最小对象存储面（put/get/delete 记账，内存字典）。"""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    def put_bytes(self, key: str, data: bytes) -> None:
+        self.objects[key] = data
+
+    def get_bytes(self, key: str) -> bytes:
+        if key not in self.objects:
+            raise FileNotFoundError(key)
+        return self.objects[key]
+
+    def delete(self, key: str) -> None:
+        self.objects.pop(key, None)
+
+
 def _product() -> Product:
     return Product(
         id=1,
@@ -71,33 +110,193 @@ def _product() -> Product:
     )
 
 
-def _task(status: str = QUEUED) -> MaterialTask:
-    return MaterialTask(id=1, product_id=1, status=status, title=None, content=None)
+def _task(
+    status: str = QUEUED, *, template: str = "station", image: str = IMAGE_NONE
+) -> MaterialTask:
+    return MaterialTask(
+        id=1,
+        product_id=1,
+        status=status,
+        title=None,
+        content=None,
+        template=template,
+        image_status=image,
+    )
+
+
+# LLM 质检通过的标准回执（第二道闸的替身应答）
+QC_PASS = '{"passed": true, "issues": []}'
+QC_FAIL_NET_CONTENT = '{"passed": false, "issues": ["正文称净含量 990ml，与规格 480ml 矛盾", "夸大功效：宣称永久保温"]}'
 
 
 def _patch_llm(
     monkeypatch: pytest.MonkeyPatch,
+    script: list[Any] | None = None,
     result: str | None = None,
     error: Exception | None = None,
 ) -> list[dict[str, str]]:
-    """替换 llm.complete_chat（material 服务经模块属性调用它）；捕获 prompt。"""
+    """替换 llm.complete_chat（material 服务经模块属性调用它）；捕获 prompt。
+
+    ``script``：逐次调用的应答（字符串或 Exception 实例——实例则抛出），按序
+    弹出；耗尽再被调即断言失败（意外的额外 LLM 调用哨兵）。``result``/
+    ``error`` 是单值便捷形态（等价单元素/每次抛）。第 98 刀起一次任务有两处
+    LLM 等待点（生成 + 事实性质检），替身必须按调用序分派。
+    """
     calls: list[dict[str, str]] = []
+    queue: list[Any] = list(script or [])
+    if result is not None and not queue:
+        queue = [result]
 
     async def fake(system_prompt: str, user_prompt: str) -> Any:
         calls.append({"system": system_prompt, "user": user_prompt})
         if error is not None:
             raise error
-        assert result is not None
-        return result
+        if not queue:
+            raise AssertionError("意外的额外 LLM 调用（替身脚本已耗尽）")
+        item = queue.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
 
     monkeypatch.setattr(llm_module, "complete_chat", fake)
     return calls
+
+
+def _patch_imggen(
+    monkeypatch: pytest.MonkeyPatch,
+    result: bytes | None = None,
+    error: Exception | None = None,
+) -> list[dict[str, str]]:
+    """替换 imggen.generate_image：捕获 {prompt, size}；三态由参数分派。"""
+    calls: list[dict[str, str]] = []
+
+    def fake(prompt: str, *, size: str) -> bytes:
+        calls.append({"prompt": prompt, "size": size})
+        if error is not None:
+            raise error
+        assert result is not None
+        return result
+
+    monkeypatch.setattr(imggen_module, "generate_image", fake)
+    return calls
+
+
+# 最小合法 PNG 字节（魔数即可——暂存键后缀与预览端点的 mime 都只看魔数）
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 
 
 GOOD_OUTPUT = (
     '{"title": "钛钢保温杯：一杯守住温度", '
     '"content": "卖点一：钛钢保温杯，双层真空持久保温。\\n材质：钛钢\\n净含量：480ml"}'
 )
+
+
+# ---------- 内容模板（第 98 刀，纯函数钉形状） ----------
+
+
+def test_templates_three_keys_and_names() -> None:
+    assert set(TEMPLATES) == {"station", "xhs", "short_video"}
+    assert TEMPLATES["station"]["name"] == "站内投放文案"
+    assert TEMPLATES["xhs"]["name"] == "小红书笔记体"
+    assert TEMPLATES["short_video"]["name"] == "短视频口播稿"
+
+
+def test_validate_template() -> None:
+    assert validate_template("station") == "station"
+    assert validate_template("xhs") == "xhs"
+    with pytest.raises(ValueError, match="内容模板"):
+        validate_template("weibo")
+
+
+def test_generation_system_prompt_is_template_derived() -> None:
+    station = generation_system_prompt("station")
+    xhs = generation_system_prompt("xhs")
+    short = generation_system_prompt("short_video")
+    # 共同纪律不丢：只依据商品信息、不编造、JSON 输出形状
+    for prompt in (station, xhs, short):
+        assert "不要编造" in prompt
+        assert '"title"' in prompt and '"content"' in prompt
+    # 模板风格各自落位（站内=字段：值行文；小红书=emoji+话题标签；口播=分镜节奏）
+    assert "字段：值" in station and "emoji" not in station
+    assert "emoji" in xhs and "话题标签" in xhs
+    assert "分镜" in short and "开场钩子" in short
+
+
+def test_build_image_prompt_derives_from_template() -> None:
+    product = _product()
+    for template in TEMPLATES:
+        prompt = build_image_prompt(product, template)
+        assert "钛钢保温杯" in prompt  # 商品名进图 prompt（与文案配套）
+        assert TEMPLATES[template]["image_prompt"][:6] in prompt  # 模板风格行在前
+        assert "不要出现任何文字" in prompt  # 文生图模型渲染文字易糊
+
+
+def test_build_image_prompt_masks_contact() -> None:
+    product = Product(id=1, name="联系 13812345678 买杯", category="器皿")
+    prompt = build_image_prompt(product, "station")
+    assert "13812345678" not in prompt  # 0038 出口必掩：图 prompt 也是厂商边界
+
+
+def test_image_size_for_template() -> None:
+    assert image_size_for("station") == "1024x1024"  # 商品横图（方图档）
+    assert image_size_for("xhs") == "768x1024"  # 小红书封面竖版
+    assert image_size_for("short_video") == "768x1024"  # 口播竖版背景
+
+
+def test_image_title_and_description_preset() -> None:
+    assert image_title("钛钢保温杯", "xhs") == "钛钢保温杯 · 小红书笔记体配图"
+    long_name = "长" * 60
+    assert len(image_title(long_name, "station")) <= 200  # 基名截 40，列宽收口
+    content = "第一行卖点：钛钢保温杯。\n第二行：材质钛钢。\n净含量：480ml"
+    assert image_description_preset(content) == "第一行卖点：钛钢保温杯。"
+    # 无非空行兜底空串（登记端不会拿空串冒充描述——register 侧 0009 闸兜底）
+    assert image_description_preset("\n  \n") == ""
+    # 描述预填也过 redact（0038：落库 extracted 不留裸 PII）
+    assert image_description_preset("联系 13812345678 下单") == "联系 1********78 下单"
+
+
+def test_qc_prompt_contains_facts_and_copy() -> None:
+    product = _product()
+    prompt = build_qc_prompt("标题", "正文净含量 480ml", product)
+    assert "480ml" in prompt  # 规格事实面
+    assert "标题" in prompt and "正文净含量 480ml" in prompt  # 待审文案
+
+
+# ---------- LLM 质检输出解析（parse_qc_output） ----------
+
+
+def test_parse_qc_output_pass() -> None:
+    assert parse_qc_output(QC_PASS) == (True, [])
+
+
+def test_parse_qc_output_fail_with_issues() -> None:
+    passed, issues = parse_qc_output(QC_FAIL_NET_CONTENT)
+    assert passed is False
+    assert len(issues) == 2
+    assert "990ml" in issues[0]
+
+
+def test_parse_qc_output_strips_fence_and_blank_issues() -> None:
+    passed, issues = parse_qc_output(f"```json\n{QC_PASS}\n```")
+    assert (passed, issues) == (True, [])
+    passed, issues = parse_qc_output('{"passed": false, "issues": ["  ", "真问题 "]}')
+    assert (passed, issues) == (False, ["真问题"])
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "这段文案不错。",  # 不是 JSON
+        '["passed"]',  # 不是对象
+        '{"issues": []}',  # 缺 passed
+        '{"passed": "yes", "issues": []}',  # passed 非布尔
+        '{"passed": true, "issues": "没有问题"}',  # issues 非数组
+        '{"passed": true, "issues": [1]}',  # issues 项非字符串
+    ],
+)
+def test_parse_qc_output_bad_shapes_raise(raw: str) -> None:
+    with pytest.raises(MaterialGenError, match="LLM 质检输出不可解析"):
+        parse_qc_output(raw)
 
 
 # ---------- 规则质检四规则（qc_check） ----------
@@ -250,7 +449,7 @@ def test_generation_prompt_masks_product_text() -> None:
 @pytest.mark.parametrize("from_status", [RUNNING, PENDING_QC, REGISTERED])
 def test_run_illegal_from(from_status: str) -> None:
     with pytest.raises(HTTPException, match="409"):
-        run_generation_task(_FakeDB(_product()), _task(from_status))  # type: ignore[arg-type]
+        run_generation_task(_FakeDB(_product()), None, _task(from_status))  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("from_status", [QUEUED, RUNNING, REGISTERED])
@@ -270,7 +469,7 @@ def test_reject_illegal_from(from_status: str) -> None:
 @pytest.mark.parametrize("from_status", [QUEUED, RUNNING, PENDING_QC, REGISTERED])
 def test_retry_illegal_from(from_status: str) -> None:
     with pytest.raises(HTTPException, match="409"):
-        retry_task(None, _task(from_status))  # type: ignore[arg-type]
+        retry_task(None, None, _task(from_status))  # type: ignore[arg-type]
 
 
 def test_reject_pending_qc_marks_manual_failure() -> None:
@@ -283,15 +482,26 @@ def test_reject_pending_qc_marks_manual_failure() -> None:
 
 
 def test_run_queued_to_pending_qc(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _patch_llm(monkeypatch, result=GOOD_OUTPUT)
+    calls = _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
     task = _task(QUEUED)
     db = _FakeDB(_product())
-    run_generation_task(db, task)  # type: ignore[arg-type]
+    run_generation_task(db, None, task)  # type: ignore[arg-type]
     assert task.status == PENDING_QC
     assert task.title == "钛钢保温杯：一杯守住温度"
     assert task.last_error is None
+    assert task.qc_llm_passed is True  # 两闸独立记录：LLM 闸结果落列
     assert db.commits >= 2  # running 先落库（LLM 等待不持事务），终态再收口
-    assert "钛钢保温杯" in calls[0]["user"]  # 商品名进 prompt
+    assert "钛钢保温杯" in calls[0]["user"]  # 商品名进生成 prompt
+    # 第二次调用=LLM 事实性质检：同一事实面 + 待审文案
+    assert "480ml" in calls[1]["user"] and "钛钢保温杯" in calls[1]["user"]
+
+
+def test_run_uses_template_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
+    task = _task(QUEUED, template="xhs")
+    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
+    assert task.status == PENDING_QC
+    assert "小红书" in calls[0]["system"]  # 模板风格进生成 system prompt
 
 
 def test_retry_enters_run_from_failed_state_not_queued(
@@ -301,14 +511,14 @@ def test_retry_enters_run_from_failed_state_not_queued(
     running），不再先伪造内存 queued 中间态。"""
     seen: list[str] = []
 
-    def spy(_db: Any, t: MaterialTask) -> MaterialTask:
+    def spy(_db: Any, _storage: Any, t: MaterialTask) -> MaterialTask:
         seen.append(t.status)
         return t
 
-    monkeypatch.setattr("suite_api.services.material.run_generation_task", spy)
+    monkeypatch.setattr(material_module, "run_generation_task", spy)
     task = _task(FAILED)
     task.last_error = "人工打回"
-    retry_task(None, task)  # type: ignore[arg-type]
+    retry_task(None, None, task)  # type: ignore[arg-type]
     assert seen == [FAILED]
 
 
@@ -320,9 +530,12 @@ def test_qc_uses_truncated_title_matching_persisted_value(
     恰好过线，且落库标题就是参与质检的那 200 字。"""
     long_title = "标" * 250
     content = "钛钢保温杯" + "杯" * 1795  # 1800 字，含商品名
-    _patch_llm(monkeypatch, result=json.dumps({"title": long_title, "content": content}))
+    _patch_llm(
+        monkeypatch,
+        script=[json.dumps({"title": long_title, "content": content}), QC_PASS],
+    )
     task = _task(QUEUED)
-    run_generation_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
+    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
     assert task.status == PENDING_QC
     assert task.title == "标" * 200
     assert len(task.title) + len(task.content) == MAX_TOTAL_CHARS
@@ -340,37 +553,161 @@ def test_run_llm_error_fails_without_fallback(
 ) -> None:
     _patch_llm(monkeypatch, error=error)
     task = _task(QUEUED)
-    run_generation_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
+    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
     assert task.status == FAILED
     assert "生成不可用" in task.last_error
     assert task.content is None  # 无降级模板：失败不留任何生成物
 
 
 def test_run_bad_output_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_llm(monkeypatch, result="这我写不出来。")
+    _patch_llm(monkeypatch, script=["这我写不出来。"])
     task = _task(QUEUED)
-    run_generation_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
+    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
     assert task.status == FAILED
     assert "生成结果解析失败" in task.last_error
 
 
 def test_run_qc_violation_records_rule_items(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_llm(
+    calls = _patch_llm(
         monkeypatch,
-        result='{"title": "好文案", "content": "完全没有商品名的正文"}',
+        script=['{"title": "好文案", "content": "完全没有商品名的正文"}'],
     )
     task = _task(QUEUED)
-    run_generation_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
+    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
     assert task.status == FAILED
     assert "规则质检不过线" in task.last_error
     assert "商品名" in task.last_error
+    assert task.qc_llm_passed is None  # 规则闸先挡下：LLM 闸未跑到（独立记录）
+    assert len(calls) == 1  # 哨兵：规则不过不再调 LLM 质检
+
+
+# ---------- LLM 事实性质检二道闸（第 98 刀） ----------
+
+
+def test_llm_qc_fail_blocks_pending_qc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """矛盾文案被二道闸拦截：不进待抽检、failed 可重试、文案保留供人看。"""
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_FAIL_NET_CONTENT])
+    task = _task(QUEUED)
+    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
+    assert task.status == FAILED
+    assert "LLM 事实性质检不过线" in task.last_error
+    assert "990ml" in task.last_error  # 拦截原因带具体矛盾
+    assert task.qc_llm_passed is False
+    assert task.title is not None and "钛钢保温杯" in task.content  # 预览面保留
+
+
+def test_llm_qc_unparseable_output_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, "我觉得还行。"])
+    task = _task(QUEUED)
+    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
+    assert task.status == FAILED
+    assert "LLM 质检输出不可解析" in task.last_error
+    assert task.qc_llm_passed is False
+
+
+def test_llm_qc_unavailable_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_llm(
+        monkeypatch,
+        script=[GOOD_OUTPUT, llm_module.LLMUnavailable("厂商模型暂时不可用")],
+    )
+    task = _task(QUEUED)
+    run_generation_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
+    assert task.status == FAILED
+    assert "LLM 事实性质检不可用" in task.last_error
+    assert task.qc_llm_passed is False
+
+
+def test_llm_qc_fail_skips_image_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    """双闸没过线不给文案配图（省一次厂商调用，也避免给废文案产图）。"""
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_FAIL_NET_CONTENT])
+    img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)
+    task = _task(QUEUED, image=IMAGE_REQUESTED)
+    run_generation_task(_FakeDB(_product()), _FakeStorage(), task)  # type: ignore[arg-type]
+    assert task.status == FAILED
+    assert img_calls == []  # 质检闸在配图步之前
+    assert task.image_status == IMAGE_REQUESTED  # 请求标志保留（重试再要图）
+
+
+# ---------- 配图步三态（第 98 刀，替身 + 内存存储） ----------
+
+
+def test_image_step_no_key_skips_honestly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """无 IMGGEN key：配图步诚实跳过（不 fail 任务）——纯文案套件。"""
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
+    _patch_imggen(monkeypatch, error=imggen_module.ImggenNotConfigured("未配置"))
+    task = _task(QUEUED, image=IMAGE_REQUESTED)
+    run_generation_task(_FakeDB(_product()), _FakeStorage(), task)  # type: ignore[arg-type]
+    assert task.status == PENDING_QC  # 任务不 fail
+    assert task.image_status == IMAGE_SKIPPED_NO_KEY
+    assert task.image_object_key is None
+
+
+def test_image_step_success_stages_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
+    img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)
+    storage = _FakeStorage()
+    task = _task(QUEUED, template="xhs", image=IMAGE_REQUESTED)
+    run_generation_task(_FakeDB(_product()), storage, task)  # type: ignore[arg-type]
+    assert task.status == PENDING_QC
+    assert task.image_status == IMAGE_PENDING
+    # 暂存键：material/ 前缀 + 魔数派生 .png 后缀（不是资产键前缀）
+    assert task.image_object_key is not None
+    assert task.image_object_key.startswith("material/") and task.image_object_key.endswith(".png")
+    assert storage.objects[task.image_object_key] == PNG_BYTES
+    # 配图 prompt/尺寸由模板派生（小红书=封面竖版）
+    assert len(img_calls) == 1
+    assert img_calls[0]["size"] == "768x1024"
+    assert "小红书" in img_calls[0]["prompt"] and "钛钢保温杯" in img_calls[0]["prompt"]
+
+
+def test_image_step_failure_does_not_fail_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
+    _patch_imggen(monkeypatch, error=imggen_module.ImggenUnavailable("文生图服务暂时不可用"))
+    task = _task(QUEUED, image=IMAGE_REQUESTED)
+    run_generation_task(_FakeDB(_product()), _FakeStorage(), task)  # type: ignore[arg-type]
+    assert task.status == PENDING_QC  # 配图失败不影响文案任务
+    assert task.image_status == IMAGE_FAILED
+    assert task.image_object_key is None
+
+
+def test_image_step_not_requested_never_called(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
+    img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)
+    task = _task(QUEUED, image=IMAGE_NONE)
+    run_generation_task(_FakeDB(_product()), _FakeStorage(), task)  # type: ignore[arg-type]
+    assert task.status == PENDING_QC
+    assert task.image_status == IMAGE_NONE
+    assert img_calls == []
+
+
+def test_image_step_retry_replaces_stale_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """重试重跑配图：旧暂存字节被清理（防孤儿堆积），键换新。"""
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS, GOOD_OUTPUT, QC_PASS])
+    _patch_imggen(monkeypatch, result=PNG_BYTES)
+    storage = _FakeStorage()
+    task = _task(QUEUED, image=IMAGE_REQUESTED)
+    task.status = FAILED  # 直接从 failed 重试（retry 放行 failed）
+    retry_task(_FakeDB(_product()), storage, task)  # type: ignore[arg-type]
+    first_key = task.image_object_key
+    assert first_key is not None
+    # 第二轮：重打回再重试，旧键删除、新键落位
+    reject_like_fail = _FakeDB(_product())
+    task.status = FAILED
+    retry_task(reject_like_fail, storage, task)  # type: ignore[arg-type]
+    assert task.image_status == IMAGE_PENDING
+    assert task.image_object_key is not None
+    assert task.image_object_key != first_key
+    assert first_key not in storage.objects  # 旧暂存键已清
+
+
+# ---------- 既有失败/重试口径回归 ----------
 
 
 def test_retry_reruns_failed_task(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_llm(monkeypatch, result=GOOD_OUTPUT)
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
     task = _task(FAILED)
     task.last_error = "生成不可用：上次故障"
-    retry_task(_FakeDB(_product()), task)  # type: ignore[arg-type]
+    retry_task(_FakeDB(_product()), None, task)  # type: ignore[arg-type]
     assert task.status == PENDING_QC
     assert task.last_error is None  # 复位：旧故障原因清空
     assert "钛钢保温杯" in (task.content or "")

@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     vlm_base_url: str = "https://api.openai.com/v1"
     vlm_model: str = "gpt-4o-mini"
 
+    # 云文生图（第 98 刀，ADR 0055）：OpenAI 兼容 ``POST {base}/images/generations``
+    # （``{prompt, model, size, response_format:"b64_json"}`` → ``data[0].b64_json``）。
+    # 默认硅基流动（有免费 FLUX 档；任意 OpenAI 兼容图像端点可换 base）。密钥纪律
+    # 同 0033/ASR/VLM：只从 .env 读、不入库、不进日志与异常文案；**空 key = 不建
+    # 客户端、不发请求**——素材任务的配图步**诚实跳过不 fail 任务**（配图是增值项
+    # 不是任务本体，与 ASR/VLM 的 409 fail-closed 刻意不同级），任务详情如实标注。
+    imggen_api_key: str = ""
+    imggen_base_url: str = "https://api.siliconflow.cn/v1"
+    imggen_model: str = "black-forest-labs/FLUX.1-schnell"
+
     # 连接层 Bearer（ADR 0032）。空则 MCP 全部 401；与操作者会话无关。
     mcp_bearer_token: str = ""
 
