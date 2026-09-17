@@ -1,0 +1,86 @@
+厂商 Chat API 调用失败: APIConnectionError
+提议步 LLM 不可用，降级检索步: LLMUnavailable
+厂商 Chat API 调用失败: APIConnectionError
+提议步 LLM 不可用，降级检索步: LLMUnavailable
+厂商 Chat API 调用失败: APIConnectionError
+提议步 LLM 不可用，降级检索步: LLMUnavailable
+厂商 Chat API 调用失败: APIConnectionError
+提议步 LLM 不可用，降级检索步: LLMUnavailable
+厂商 Chat API 调用失败: APIConnectionError
+厂商生成失败，降级证据组装模板: LLMUnavailable
+厂商 Chat API 调用失败: APIConnectionError
+提议步 LLM 不可用，降级检索步: LLMUnavailable
+厂商 Chat API 调用失败: APIConnectionError
+厂商生成失败，降级证据组装模板: LLMUnavailable
+目标库：postgresql://suite:***@localhost:5433/suite（--apply 将写库）
+已从 .env 载入 18 个环境变量（操作者密码/LLM 等默认值）
+对象存储根：E:\code\ecommerce-ai-suite\data\objects
+
+[retire_assets] retire：资产软删（discarded_at）
+  计划 0 条 · 执行 0 条 · 幂等（无待清）
+  · 已废弃（幂等）：4-6,13,221-225,272-273,275-277,484,494-495,504,508-511,514-515
+  · skip（施工单/红线明示不动）：A-501（110 刀换字节对象（显示器商品图实拍帧））；A-502（110 刀换字节对象（待发布实拍帧））；A-503（110 刀换字节对象；94b 版本指针幕素材（demo_prepare/手册第二幕依赖））
+
+[stale_tickets] fix：陈旧 pending 工单 resolved（>24h）
+  计划 0 条 · 执行 0 条 · 幂等（无待清）
+
+[gaps_surgical] fix：缺口外科 resolved（G-148/149/150）
+  计划 0 条 · 执行 0 条 · 幂等（无待清）
+  · 已非 open（幂等）：148-150
+    - G-80 保留 open（held，不在本刀收口）：OOV 演示素材：手册第十一幕 + demo_prepare 检查点依赖 open（108 审计明示先确认）
+
+[gaps_reask] fix：缺口池漏网重问（auto-close）
+  计划 13 条 · 执行 4 条 · 已执行
+  · 已 resolved（幂等）：22,25,41,75-76,81,83,85-86
+    - G-23 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-33 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-29 closed（重问即答，auto-close 生效）
+    - G-53 closed（重问即答，auto-close 生效）
+    - G-30 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-62 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-64 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-74 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-16 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-92 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-77 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-84 closed（重问即答，auto-close 生效）
+    - G-87 closed（重问即答，auto-close 生效）
+
+[probe_sessions] retire：108B 探针会话 + 工单 + 缺口
+  计划 0 条 · 执行 0 条 · 幂等（无待清）
+  · 目标会话（108B 亲验窗口 2026-09-17）：—
+  · 库中不存在（已清/未建）：506-518
+    - H-0121 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+    - H-0122 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+    - H-0123 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+    - H-0124 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+    - H-0125 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+
+[material_tasks] retire：僵死素材任务终止（M-9/M-10）
+  计划 0 条 · 执行 0 条 · 幂等（无待清）
+  · 非 running（未动，幂等）：9-10
+
+[compose_tasks] retire：成片任务残留（C-2）
+  计划 0 条 · 执行 0 条 · 幂等（无待清）
+  · 库中不存在（未动）：2
+
+[recordings] retire：ASR 验收探针录像（R-5/R-6）
+  计划 0 条 · 执行 0 条 · 幂等（无待清）
+  · 库中不存在（已清，幂等）：5-6
+
+[brand_fix] fix：A-483 品牌 QID 修订（→Fairphone）
+  计划 1 条 · 执行 1 条 · 已执行
+  · 正文仍为 QID 形态
+    - A-483：v1→v3 换字节「品牌：Q5019402→Fairphone」+ confirm + publish（双审计行）
+
+汇总（计划/执行）：
+类别                                   计划  执行  状态
+retire：资产软删（discarded_at）             0     0  幂等（无待清）
+fix：陈旧 pending 工单 resolved（>24h）      0     0  幂等（无待清）
+fix：缺口外科 resolved（G-148/149/150）      0     0  幂等（无待清）
+fix：缺口池漏网重问（auto-close）              13     4  已执行
+retire：108B 探针会话 + 工单 + 缺口            0     0  幂等（无待清）
+retire：僵死素材任务终止（M-9/M-10）             0     0  幂等（无待清）
+retire：成片任务残留（C-2）                    0     0  幂等（无待清）
+retire：ASR 验收探针录像（R-5/R-6）            0     0  幂等（无待清）
+fix：A-483 品牌 QID 修订（→Fairphone）       1     1  已执行

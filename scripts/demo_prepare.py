@@ -15,7 +15,7 @@
 
 ## 查什么（三类）
 
-1. **数码店数据**（第 90 刀灌入）：商品 179 / 已发布 Wikidata 规格 11 /
+1. **数码店数据**（第 90 刀灌入）：商品 179 / 已发布 Wikidata 规格 10（109 刀退役冗余份 A-484 后）/
    政策文档 3（数码外设保修/退换货/发票与配送）。
 2. **演示资产**：A-492（刻字口径，G-78 已随发布解决）、A-493（回流对话，
    待人洗）、A-497（LK201 必填闸全链，confirm+publish 双审计行）、A-501
@@ -46,8 +46,11 @@ from dataclasses import dataclass
 from typing import Any
 
 # 90 刀灌入口径（digital-store-90-closeout §交付 5）：演示库的数码店底座。
+# 第 109 刀订正：Wikidata 规格 11→10——A-484「Fairbuds 规格」是与 A-483 同字节
+# 的冗余份（施工单 retire，正文同为未解析 QID 形态），退役后唯一规格 10 份；
+# 口径仍是「≥」，后续新灌规格只增不减（110 刀重灌时按新数再订正）。
 EXPECTED_PRODUCTS = 179
-EXPECTED_WIKIDATA_SPECS = 11
+EXPECTED_WIKIDATA_SPECS = 10
 POLICY_TITLES = ("数码外设保修政策", "退换货政策", "发票与配送口径")
 
 

@@ -26,6 +26,10 @@ from suite_api.services.machine_wash import redact
 # 记忆窗口：最近 N 轮。spec Out：N 不做可配置——写死即裁决。
 DEFAULT_TURN_WINDOW = 4
 
+# 整轮跳过的 agent kind（记忆与回流转写共用同一规则；第 108B 刀债务落点见
+# backflow_excluded_ids）。
+SKIP_TURN_KINDS = ("refusal", "handoff")
+
 # 代词正则（spec Must 3 词表：它|他|她|这个|那个|这款）。命中且历史有上一问
 # 才拼接检索词；纯代词问句（无历史）不拼接，照常独立检索。
 PRONOUN_RE = re.compile(r"它|他|她|这个|那个|这款")
@@ -64,7 +68,7 @@ def recent_turns(
             i += 1
         else:
             continue  # agent 消息无配对问句（防御）：不成轮
-        if agent.kind in ("refusal", "handoff") or agent.tool is not None:
+        if agent.kind in SKIP_TURN_KINDS or agent.tool is not None:
             continue  # 拒答/转人工/工具轮整轮跳过（含问句）
         turns.append((question, agent))
     return [
@@ -72,6 +76,60 @@ def recent_turns(
         for question, agent in reversed(turns)
         for role, content in (("customer", question.content), ("agent", agent.content))
     ]
+
+
+def backflow_excluded_ids(messages: list[ServiceMessage] | tuple[ServiceMessage, ...]) -> set[int]:
+    """回流转写排除集（第 108B 刀债务，第 109 刀修）：拒答/转人工轮**整轮**排除。
+
+    为什么：W4 拒答四段式（不编造理由+工单号+时限+行动选项）是模板话术，回流
+    登记后成为检索语料的一部分——顾客再问相近问句时 bigram 会把模板句拉成弱
+    命中（错误证据面）。规则与 ``recent_turns`` 的记忆跳过**同源**（拒答/转人工
+    整轮跳，含配对的 customer 问句）；工具轮在本面保留（工具答案是实质对话，
+    不是记忆面的「非对话语义」问题——回流转写的价值就在真实问答链）。
+
+    纯函数吃按 created_at 正序的消息序列，返回应排除的 message id 集合；
+    agent 无配对问句时只排 agent 自己（防御）。整会话只有拒答/转人工轮时不排
+    顾客问句（兜底见 ``backflow_transcript_messages``）。
+    """
+    excluded: set[int] = set()
+    pending_customer: ServiceMessage | None = None
+    for message in messages:
+        if message.role == "customer":
+            pending_customer = message
+            continue
+        if message.role != "agent":
+            continue
+        question, pending_customer = pending_customer, None
+        if message.kind in SKIP_TURN_KINDS:
+            excluded.add(message.id)
+            if question is not None:
+                excluded.add(question.id)
+    return excluded
+
+
+def backflow_transcript_messages(
+    messages: tuple[ServiceMessage, ...] | list[ServiceMessage],
+) -> list[ServiceMessage]:
+    """回流转写最终消息列表（登记端点的唯一入口；第 108B 刀债务的落点）。
+
+    主规则=整轮排除拒答/转人工轮（``backflow_excluded_ids``）；**兜底**：排除后
+    为空（整会话只有拒答/转人工轮）时只排 agent 侧的拒答/转人工消息、保留顾客
+    问句——两个理由：① 转写是登记的字节载体，空转写没有可登记的内容；② 弱命中
+    噪音源在 W4**客服话术**（工单号/时限/免责句），顾客问句不是噪音源，保留它
+    让「纯拒答会话」仍能回流为「未答问句」记录（治理可见），而不是把整条会话
+    挡在登记之外（实施中发现 7 个测试模块 34 处依赖旧契约——422 是比债务更大
+    的行为变化，故收在兜底，见 109 报告）。
+    """
+    excluded = backflow_excluded_ids(messages)
+    kept = [message for message in messages if message.id not in excluded]
+    if kept:
+        return kept
+    agent_side = {
+        message.id
+        for message in messages
+        if message.role == "agent" and message.kind in SKIP_TURN_KINDS
+    }
+    return [message for message in messages if message.id not in agent_side]
 
 
 def retrieval_query(question: str, history: list[dict[str, str]]) -> str:

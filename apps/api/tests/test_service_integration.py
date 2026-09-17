@@ -709,3 +709,50 @@ def test_gap_fill_wrong_doc_publish_keeps_open_right_doc_resolves(api: ApiFixtur
     )
     assert resolved["status"] == "resolved"
     assert resolved["resolved_at"] is not None
+
+
+# ---------- 回流转写排除拒答/转人工轮（108B 债，第 109 刀修） ----------
+
+
+_QUARK_DOC = "星际观测站参观说明\n参观：需提前三天在官网预约".encode()
+
+
+def test_backflow_transcript_excludes_refusal_turns(api: ApiFixture) -> None:
+    """拒答/转人工轮整轮不进转写（W4 新话术回流会成检索弱命中噪音——108B 债）：
+    普通问答与工具轮保留、拒答轮的问句与模板答都不落转写字节。"""
+    client, _ = api
+    _login(client)
+    doc = _upload(client, _QUARK_DOC, title="星际观测站参观说明")
+    assert doc.status_code == 201
+    assert client.post(f"/api/assets/{doc.json()['id']}/publish").status_code == 200
+
+    sid = client.post("/api/service/sessions").json()["id"]
+    answered = _ask(client, sid, "星际观测站怎么预约参观")
+    assert answered[-1][1]["kind"] == "answer"
+    refused = _ask(client, sid, "镍钛合金相变温度是多少")
+    assert refused[-1][1]["kind"] == "refusal"
+    assert refused[-1][1]["ticket_no"]  # 拒答轮带工单回执（W4 模板形态）
+
+    registered = client.post(f"/api/service/sessions/{sid}/register")
+    assert registered.status_code == 201
+    asset_id = registered.json()["id"]
+    text = client.get(f"/api/assets/{asset_id}/versions/1/text").text
+    assert "星际观测站怎么预约参观" in text  # 普通轮保留
+    assert "镍钛合金相变温度是多少" not in text  # 拒答轮问句整轮排除
+    assert "工单 H-" not in text  # 拒答模板话术（含工单号）不落转写
+    assert REFUSAL_OPENING not in text
+
+
+def test_backflow_all_refusal_session_keeps_question_only(api: ApiFixture) -> None:
+    """只有拒答轮的会话走兜底（第 109 刀规则）：顾客问句保留成转写（非空可登记），
+    W4 客服话术（工单号/免责句）不落字节。"""
+    client, _ = api
+    _login(client)
+    sid = client.post("/api/service/sessions").json()["id"]
+    refused = _ask(client, sid, "镍氢电池记忆效应怎么消除")
+    assert refused[-1][1]["kind"] == "refusal"
+    resp = client.post(f"/api/service/sessions/{sid}/register")
+    assert resp.status_code == 201
+    text = client.get(f"/api/assets/{resp.json()['id']}/versions/1/text").text
+    assert "镍氢电池记忆效应怎么消除" in text  # 顾客问句保留
+    assert "工单 H-" not in text and REFUSAL_OPENING not in text  # 客服话术不落

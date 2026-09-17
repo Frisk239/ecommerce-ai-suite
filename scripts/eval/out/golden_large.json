@@ -264,17 +264,6 @@
   }
  },
  {
-  "id": "pos-025",
-  "distribution": "positive",
-  "question": "account_access/recover_username · Hi! I forogt my username so i怎么样",
-  "expect": {
-   "cite": {
-    "asset_id": 225,
-    "version_no": 1
-   }
-  }
- },
- {
   "id": "pos-026",
   "distribution": "positive",
   "question": "瓶装水：日常补水随身装的保质期是什么",
@@ -352,17 +341,6 @@
   }
  },
  {
-  "id": "pos-033",
-  "distribution": "positive",
-  "question": "我想查询退款状态需要提供什么信息",
-  "expect": {
-   "cite": {
-    "asset_id": 224,
-    "version_no": 1
-   }
-  }
- },
- {
   "id": "pos-034",
   "distribution": "positive",
   "question": "Mg ricarica的品牌是什么",
@@ -391,17 +369,6 @@
   "expect": {
    "cite": {
     "asset_id": 245,
-    "version_no": 1
-   }
-  }
- },
- {
-  "id": "pos-037",
-  "distribution": "positive",
-  "question": "What information do you need to resend an order if I never received it",
-  "expect": {
-   "cite": {
-    "asset_id": 223,
     "version_no": 1
    }
   }
@@ -489,7 +456,7 @@
   "question": "请问退换政策说明值得入手吗",
   "expect": {
    "cite": {
-    "asset_id": 6,
+    "asset_id": 479,
     "version_no": 1
    }
   }
@@ -600,28 +567,6 @@
   "expect": {
    "cite": {
     "asset_id": 243,
-    "version_no": 1
-   }
-  }
- },
- {
-  "id": "syn-016",
-  "distribution": "paraphrase",
-  "question": "If I have waited over a week and still have not received my order, can you resend it，麻烦告知",
-  "expect": {
-   "cite": {
-    "asset_id": 223,
-    "version_no": 1
-   }
-  }
- },
- {
-  "id": "syn-017",
-  "distribution": "paraphrase",
-  "question": "请问subscription_inquiry/manage_pay_bill · I'm trying to find out about m值得入手吗",
-  "expect": {
-   "cite": {
-    "asset_id": 224,
     "version_no": 1
    }
   }
@@ -1210,17 +1155,6 @@
   "expect": {
    "cite": {
     "asset_id": 15,
-    "version_no": 1
-   }
-  }
- },
- {
-  "id": "exp-pos-019",
-  "distribution": "positive",
-  "question": "I never received my order, what should I do",
-  "expect": {
-   "cite": {
-    "asset_id": 223,
     "version_no": 1
    }
   }
