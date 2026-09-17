@@ -132,6 +132,9 @@ class FrameCandidatesOut(BaseModel):
     duration_seconds: float
     sampled: int  # 采样帧数（含被 VLM 判低分淘汰的——回执如实）
     candidates: list[FrameCandidateOut]
+    # 第 112 刀：VLM 请求失败被跳过的采样帧数（0=每帧都打上分；>0=部分降级，
+    # 候选照出但回执如实告知，前端提示「N 帧打分失败已跳过」）。
+    failed_frames: int = 0
 
 
 class FrameRegisterIn(BaseModel):
@@ -197,8 +200,10 @@ def list_frame_candidates(
 
     判定次序与码位：资产不存在 404；非视频 422；未发布 409；``VLM_API_KEY``
     为空 409（**不建客户端、不发请求**——打分没有本地兜底，无 key 就没有候选，
-    fail-closed 同 ASR）；字节不是 mp4 422；时长探测/抽帧失败 422；VLM 请求
-    失败 502。同步执行（ffprobe/ffmpeg/逐帧 VLM 串行，最长分钟级）。
+    fail-closed 同 ASR）；字节不是 mp4 422；时长探测/抽帧失败 422；**全部**采样
+    帧 VLM 请求失败 502（第 112 刀：单帧失败只跳过该帧、failed_frames 如实计数，
+    其余帧照常出候选——一帧超时不再杀整批）。同步执行（ffprobe/ffmpeg/逐帧
+    VLM 串行，最长分钟级）。
     """
     del operator  # 写接口仅要求登录，401 口径同既有写端点
     _asset, ref = _frame_wash_ref(db, asset_id)
@@ -234,6 +239,7 @@ def list_frame_candidates(
     return FrameCandidatesOut(
         duration_seconds=outcome.duration_seconds,
         sampled=outcome.sampled,
+        failed_frames=outcome.failed_frames,
         candidates=[
             FrameCandidateOut(
                 at_second=frame.at_second,

@@ -686,6 +686,9 @@ export interface FrameCandidatesResult {
   duration_seconds: number
   sampled: number
   candidates: FrameCandidate[]
+  /** 第 112 刀：VLM 请求失败被跳过的采样帧数（0=每帧都打上分；>0=部分降级，
+   * 候选照出但如实告知哪几帧没评上——一帧超时不再让整批 502）。 */
+  failed_frames: number
 }
 
 /** 确认登记回执（第 94c 刀 POST /assets/{id}/frames）：新图片资产

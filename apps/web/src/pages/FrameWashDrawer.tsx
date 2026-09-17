@@ -5,6 +5,8 @@
 // 候选是**请求态**（不落库、刷新即重算）；确认时只回传 at_second——服务器从
 // 已发布版字节重新抽全尺寸帧，不信任请求里的缩略图。VLM 无 key：按钮禁用
 // （父页按 /clips/frames/status 判定），候选端点自身也 409（后端是唯一闸）。
+// 第 112 刀：单帧 VLM 失败只跳过该帧（后端 failed_frames 计数）——候选页如实
+// 提示「N 帧打分失败已跳过」，不再一帧超时整批 502 白跑。
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -145,6 +147,14 @@ export default function FrameWashDrawer({
               {candidates.length === 0 ? ' 没有帧达到 6 分——可再洗一次或改用人工截图上传。' : null}
             </div>
           )}
+          {/* 第 112 刀：单帧 VLM 失败只跳过该帧（不再整批 502）——部分降级如实提示，
+              候选照常可拣（failed_frames=0 时不出现）。 */}
+          {result !== null && result.failed_frames > 0 ? (
+            <div className="rounded-[6px] border border-line-2 bg-fill/60 px-3 py-2 text-[11px] leading-4 text-ink-3" role="status">
+              {result.failed_frames} 帧打分失败已跳过（看图服务超时或抖动）——其余帧已照常打分，
+              下面的候选可用；需要完整打分可稍后重洗。
+            </div>
+          ) : null}
           {error !== null ? <ActionError message={error} /> : null}
 
           {candidates.length > 0 ? (
