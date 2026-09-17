@@ -607,3 +607,83 @@ def test_mcp_title_masked_on_all_three_read_exits(mcp_env: McpEnv) -> None:
     # 行原文不动（出口掩不回写 assets.title，0038 修订「字节不动」同口径）
     with app.state.session_factory() as db:
         assert db.get(Asset, asset_id).title == title_raw
+
+
+def test_mcp_excludes_discarded_published_asset(mcp_env: McpEnv) -> None:
+    """审计刀 17 B-P1-3：已发布后被（运维 SQL）废弃的资产在 MCP 三个读出口全不可见。
+
+    83 刀把废弃过滤落到 search/get/export，但该 commit 测试零改动——三处 where
+    被改回去不会有任何红灯。「已发布后废弃」无 API 通道（端点闸挡），唯一入口
+    是手工 SQL，与 fetch_published_refs 钉子（87 刀）同形态。**重建 app 实例**
+    （同库同存储根）：前序用例已耗尽 mcp_env app 的 session manager.run()
+    （每实例仅一次，见 export 留痕用例的先例说明），本用例自带 lifespan。
+    """
+    import psycopg
+
+    _, settings, storage_root = mcp_env
+    app = create_app(
+        Settings(
+            database_url=settings.database_url,
+            storage_root=storage_root,
+            mcp_bearer_token=_TOKEN,
+        )
+    )
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=_BASE
+        ) as api:
+            login = await api.post(
+                "/api/auth/login", json={"username": "operator", "password": "operator123"}
+            )
+            assert login.status_code == 200
+            api.cookies.update(login.cookies)
+            up = await api.post(
+                "/api/assets/register",
+                files={
+                    "file": (
+                        "discarded-mcp.txt",
+                        "独特口径锚词：报废期保值说明文档正文".encode(),
+                        "text/plain",
+                    )
+                },
+                data={"title": "报废资产规格"},
+            )
+            assert up.status_code == 201, up.text
+            asset_id = up.json()["id"]
+            assert (await api.post(f"/api/assets/{asset_id}/publish")).status_code == 200
+
+        async with _mcp_session(app, settings) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                before = await session.call_tool(
+                    "search_published", {"query": "报废期保值"}
+                )
+                assert not before.isError
+                assert _payload(before), "废弃前：search 必须命中（否则本钉是空断言）"
+
+        # 运维手工废弃（无 API 通道——_can_discard_asset 挡已发布）
+        with psycopg.connect(settings.database_url, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE assets SET discarded_at = now() WHERE id = %s", (asset_id,)
+                )
+
+        async with _mcp_session(app, settings) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                after = await session.call_tool(
+                    "search_published", {"query": "报废期保值"}
+                )
+                assert not after.isError
+                assert _payload(after) == [], "废弃后：search 不得再命中"
+
+                got = await session.call_tool("get_asset", {"asset_id": asset_id})
+                assert got.isError, "废弃后：get_asset 必须拒绝"
+
+                exported = await session.call_tool("export_published", {})
+                assert not exported.isError
+                ids = [row["asset_id"] for row in _payload(exported)]
+                assert asset_id not in ids, "废弃后：export 不得包含"
+
+    _run_with_lifespan(app, scenario)

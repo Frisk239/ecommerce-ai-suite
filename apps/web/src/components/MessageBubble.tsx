@@ -166,7 +166,14 @@ export default function MessageBubble({
                 模板回退
               </span>
             )}
-            {m.kind === 'refusal' && <span className="badge badge-failed">拒答 · 无已发布证据</span>}
+            {m.kind === 'refusal' && (
+              <span
+                className="badge badge-failed"
+                title="本条按拒答处理——知识无证据/商品资料待补/本店无此商品，详见消息正文"
+              >
+                拒答 · 已转人工
+              </span>
+            )}
             {m.handoff && (
               <span className="badge badge-review">
                 <HandArrowUp aria-hidden size={11} />

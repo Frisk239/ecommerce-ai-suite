@@ -84,7 +84,8 @@ def normalize_question(question: str) -> str:
 
 
 def record_refusal_gap(
-    db: Session, question: str, *, session_id: int | None = None
+    db: Session, question: str, *, session_id: int | None = None,
+    product_id: int | None = None,
 ) -> KnowledgeGap:
     """拒答落缺口（0024，第 30 刀归一化幂等）：归一化问相同且 open 时复用。
 
@@ -94,8 +95,10 @@ def record_refusal_gap(
     check-then-insert；并发窗口由部分唯一索引
     ``uq_knowledge_gaps_open_normalized``（open 同归一化问）兜底——IntegrityError
     时 SAVEPOINT 回滚插入，再查已有 open 行返回。不可 session.rollback()：
-    会把同事务尚未提交的拒答消息一并丢掉。product_id 留空：拒答路径无法从
-    自由文本可靠归属商品，不猜。flush 拿 id 供 SSE complete 的 gap_id
+    会把同事务尚未提交的拒答消息一并丢掉。``product_id``（审计刀 17 A-P1-4
+    收口）：OOV 在库资料缺路径由 ``oov_product_match`` 可靠归属（86 刀判据
+    词法命中库内商品名）时传入；其余拒答路径无法从自由文本可靠归属商品，
+    保持 None 不猜。flush 拿 id 供 SSE complete 的 gap_id
     （ADR 0030：运行时返回，不在消息表加列）。
 
     第 39 刀热度：命中既有 open 缺口不再是无感复用——hit_count += 1（被问
@@ -104,7 +107,8 @@ def record_refusal_gap(
     +1（并发复用的那次拒答也是一次真实的被问）。
 
     ``session_id``（走查修复）：来源会话，**只在首次插入时写**——归一化命中
-    复用的那几路都不覆盖（溯源是可核对的历史，不是「最近一次被问」）。
+    复用的那几路都不覆盖（溯源是可核对的历史，不是「最近一次被问」）；
+    ``product_id`` 同口径，只在首次插入时写。
     """
     normalized = normalize_question(question)
     gap = db.scalar(
@@ -116,7 +120,11 @@ def record_refusal_gap(
         gap.hit_count += 1  # 重复问法累加热度（第 39 刀），随拒答消息同事务提交
         return gap
     gap = KnowledgeGap(
-        question=question, normalized_question=normalized, status=OPEN, session_id=session_id
+        question=question,
+        normalized_question=normalized,
+        status=OPEN,
+        session_id=session_id,
+        product_id=product_id,
     )
     try:
         with db.begin_nested():
