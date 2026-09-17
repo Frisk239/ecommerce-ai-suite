@@ -163,6 +163,8 @@
 
 ### 第 103 刀：压测刀
 
+> 随刀注记（2026-09-17）：locust 换自制 stdlib 压测（零新依赖）；服务器未实挂——本机 compose 口径已跑，真环境数字待实挂后补。
+
 - 内容：locust 脚本压三路径（SSE 生成/拒答词法/工具查询）+ /health；**在服务器真环境跑**；`docs/research/perf-report.md`（TTFT 分位、RPS、错误率、限流闸触发行为验证）——`ttft_seconds` 埋点终于有报告数字。
 - 验收：报告入档；限流闸在压测下按 429+Retry-After 预期触发。
 

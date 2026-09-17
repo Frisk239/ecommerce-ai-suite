@@ -82,7 +82,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 | `LLM_BASE_URL` | OpenAI 兼容端点（默认 `https://opencode.ai/zen/go/v1`） |
 | `LLM_MODEL` | 模型名（默认 `qwen3.8-flash`） |
 
-- **无证据不调模型**（0018）：拒答+转人工路径原样，防编造也省调用。
+- **无证据不调生成**（0018；第 103 刀压测订正表述）：零命中拒答不进生成步——但**提议步先于检索**，无信号问句仍付 1 次提议 LLM 调用；弱命中 no_coverage 收口付 2 次。防编造不省这部分调用。
 - **降级**：LLM 未配置/超时（20s，重试 0 次）/网络失败/空产出 -> 复用 `answer.py` 证据组装模板回答，走同一 delta 流，`complete` 事件带 `fallback: true`，前端显示「模板回退」徽章（诚实标注，不装作模型回答）；错误细节只进服务端日志且不含密钥。
 - **引用服务端定**（0007）：`citations` 恒由检索命中确定，模型无引用决定权；系统提示明确要求模型不输出引用编号。
 - 回答先收全再落库再流式：断连仍完整落库（契约不变）。
@@ -348,6 +348,7 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 - **关联 id**：每个响应带 `X-Request-Id`，同值进每条 JSON 日志的 `correlation_id` 字段——一行一问能拼回一条请求链。客户端传合规 id（8–64 位 `[A-Za-z0-9._-]`）则沿用，否则服务端生成（脏值不原样回显）。
 - **指标**：`GET /metrics`（Prometheus 文本格式），**独立 Bearer**——设 `METRICS_TOKEN` 才可用，**留空一律 401**（默认栈不裸奔），不接受登录 cookie。内容 = HTTP RED（`http_requests_total` / `http_request_duration_seconds`，`/metrics` 与 `/health` 自身不入账）+ 七个业务指标：`chat_requests_total{channel,kind,generated}`（`generated=false` 即模板/工具回答，给出**模板回退率**）、`ttft_seconds`（请求进入 → 厂商首个增量，只记生成路径）、`llm_tokens_total{direction,model}`（厂商 usage，缺了不记、不用字数估算冒充）、`clip_cuts_total{result}`（切片拣选：真切成功 / 切段失败 / 无源录像走旧文本路径，审计刀 9 补）、`csat_ratings_total{score}`（会话评分分布，审计刀 9 补）、`chat_fallbacks_total{channel,reason}`（**闸回退**：coverage=忠实度闸降级 / no_coverage=证据未覆盖按拒答收口 / oov=实体不在库按拒答收口 / other=防御位；普通厂商失败不计——第 63 刀补、第 82 刀补 oov，审计刀 7 起记债。**闸回退率 = 本指标 / `chat_requests_total`，不是 `generated=false` 占比**——后者把厂商失败降级与工具/目录回答都算进来）、`service_session_transitions_total{from,to}`（会话生命周期迁移：new->active 建会话 / active->ended 顾客结束 / active\|ended->registered 回流——第 84 刀补，审计刀 16 记债；标签值有界、不带会话 id）。
 - **抓取（可选，默认不启）**：**先建令牌文件再起**——`printf '%s' "$METRICS_TOKEN" > ops/metrics_token`（与 api 的 `METRICS_TOKEN` 同值；该文件已 gitignore，模板见 `ops/metrics_token.example`），然后 `docker compose --profile metrics up` → Prometheus 起在 <http://localhost:9090>，配置 `ops/prometheus.yml`。两点环境事实：①Prometheus **不展开**配置文件里的 `${VAR}`，故令牌只能走 `credentials_file` 挂文件；②缺该文件时 Docker 会把源路径建成同名**目录**，表现为 target down（不是 401）。
+- **压测（第 103 刀）**：`uv run python scripts/perf/loadtest.py --path rag --users 30 --duration 60`（路径 `health|refusal|tool|rag|ratelimit`，stdlib 线程+httpx 自制，不引 locust；输出 RPS/p50/p95/p99/错误率/429 与可直接粘贴的表格行，rag 另采客户端 TTFT）——本机口径基线、限流闸验证实录与 `ttft_seconds` 埋点对照见 `docs/research/perf-report.md`。
 - 口径、标签基数纪律与 Out（不接 OTel/trace 传播、无面板/告警/远端写）见 `docs/progress/observability-intake.md`。
 
 ## 数据库迁移（Alembic）
