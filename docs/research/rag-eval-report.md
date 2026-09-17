@@ -997,3 +997,109 @@ overall       236     88.8%     96.6%  0.9248   0.9354    39.3%   86.7%    0.0% 
 ```
 uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
 ```
+
+## 第 106 刀：稠密稀疏融合形态矩阵与实现（2026-09-17，检索语义改动 before/after）
+
+**定位**：105 刀向量备料（598 块全量回填 bge-m3）的读路径消费——三种融合形态
+（A 级联兜底/B 并联 RRF/C 加权线性）× 参数 × ef_search × 亲和应用型 × 两轮实测
+新增闸，在 236 条六分布上跑对照矩阵定案，胜者进 `retrieve()`（四出口单点）。
+实验脚本 `scripts/eval/fusion_matrix.py`（融合纯函数三形态可离线单测），全矩阵
+工件 `scripts/eval/out/106-fusion-matrix.txt`（661 配置 + 逐配置六分布详表）；
+查询向量缓存 `scripts/eval/out/fusion-query-vectors.json`（236 问句只嵌一次，
+重跑矩阵零 API）。ADR 0058。
+
+### 三轮矩阵迭代——两个实测教训（形态定义的必要组成）
+
+- **第一轮（66 配置，无闸）**：全形态拒答率崩 **0.0**——向量近邻永远存在
+  （cosine 永远返回最近邻），词法零命中的 refusal 问句被强行灌进证据，
+  0018 宁缺勿滥被破。正例红线同破（A 形态最重 88.8）。
+- **第二轮（330 配置，+TAU cosine 下限五档）**：全局阈值封顶只救回 **56.7%**
+  拒答（TAU=0.65）——实测 refusal 组向量 top1 cos（0.501-0.754，中位 0.629）
+  与 cite 组期望资产（低至 0.402-0.522）**完全重叠**，bge-m3 在本多语言杂语料
+  上无完美可分阈值；且 TAU 越高正例/混淆的向量改善同步被掐。
+- **第三轮（661 配置，+lexgate 词法空手闸）**：拒答崩 0 的唯一机制是「词法零
+  命中时向量无中生有」（refusal 26/30 词法零命中；cite 组词法 recall@3 96.6）
+  ——**词法命中非空才让向量路参与**后，拒答语义完全由词法路决定，融合收益
+  全保留。33/660（评审订正：原报 34 系脚本分子含 baseline 的 off-by-one） 保红线（全部 C-before-lexgate），baseline 复算与 107a 逐位
+  一致（judge 口径修正：融合输出截 top-3 再判定，rerank_experiment 先例）。
+
+### 矩阵摘要（最优 3 行，ef 三档 40/80/200 零行为差异——598 行小表 HNSW 近全扫）
+
+```
+config                        pos@1  par@1  conf@1  oov@1  sneg@1   ref%  ovr@1  ovr@3     MRR   红线
+C-w=0.5-ef40-before-tau0.60-lexgate  98.8   91.4    72.0   86.7    78.6   86.7   89.8   97.1  0.9320  OK
+C-w=0.5-ef40-before-tau0.55-lexgate  98.8   91.4    72.0   86.7    78.6   86.7   89.8   96.6  0.9304  OK
+C-w=0.2-ef40-before-tau0.55-lexgate  98.8   91.4    68.0   86.7    78.6   86.7   89.3   96.6  0.9280  OK
+baseline（纯词法）                    98.8   91.4    64.0   86.7    78.6   86.7   88.8   96.6  0.9248  OK
+```
+
+形态规律：**A 级联全面最差**（向量组前置破坏词法主路，pos 88.8-97.5）；
+**B RRF 中游**（排名融合丢分数信息，pos ≤92.5）；**C 线性 + affinity_before**
+唯一全族保红线——79 刀亲和乘数在融合前原位（词法管线不动），向量分只在线性
+量纲上加分。affinity_after 全线差 2-6pp（融合后重排丢「亲和进词法分」的耦合）。
+w=0.5 定案：w≥1 向量项盖过词法归一域 [0,1] 压动正例；TAU=0.60 在 0.50-0.65
+的 conf@1 平台上 ovr@3/MRR 达峰（97.1/0.9320）。
+
+### 定案与实现
+
+**胜者：C 加权线性 w=0.5 + TAU=0.60 + lexgate + affinity_before（ef 用 pgvector
+默认 40）**。实现进 `services/retrieval.py retrieve()`（引擎双通道/MCP/缺口验证/
+评测四出口的单点）：词法管线（打分/stale/亲和）产出的命中集 per-query min-max
+归一 + `VECTOR_WEIGHT × cosine`（cos ≥ `VECTOR_COS_FLOOR` 的向量近邻加分/补召回，
+不排除任何词法命中——NULL 块 fail-open）；词法空手闸在 retrieve 单点收口（词法
+零命中直接空手出）。查询向量按 (库, 模型, 问句) 进程内 LRU 缓存（512 条，维度
+自检防换模型旧缓存），同问句不重复调云 API；未配置 EMBED_API_KEY / 嵌入失败 /
+向量查询失败 = 纯词法（归一化单调保序，名次逐位不变）。服务融合纯函数
+`fuse_dense_sparse` 与脚本 `linear_fuse` 同输入同名次（单测钉），实现后全量
+run_eval 与矩阵胜者行**逐位一致**。
+
+### 实现后全量 vs 107a 基线（236 条，机械粘贴 run_eval stdout，工件 `scripts/eval/out/106-eval-after.txt`）
+
+```
+golden：scripts/eval/out/golden_large.json（236 条）  检索 top-3
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       80     98.8%    100.0%  0.9938   0.9954    39.2%       -    0.0%       -
+paraphrase     58     91.4%     98.3%  0.9483   0.9573    31.0%       -       -       -
+confusion      25     72.0%     92.0%  0.8133   0.8409    60.0%       -       -   72.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     86.7%     93.3%  0.9000   0.9087    40.0%       -       -       -
+sem_neg        28     78.6%     92.9%  0.8452   0.8665    35.7%       -       -       -
+overall       236     89.8%     97.1%  0.9320   0.9421    39.0%   86.7%    0.0%   72.0%
+```
+
+无 key 复核（`EMBED_API_KEY= ` 空凭证跑 run_eval）：六分布全格与 107a 基线
+**逐位一致**（98.8/91.4/64.0/86.7/86.7/78.6/88.8/96.6/0.9248）——fail-open
+零漂移的实测钉。
+
+### 逐位归属（每格变化）
+
+- **正例 98.8@1 没变**（79/80，唯一 miss pos-038 前后同形态）；@3 100.0 不变；
+  噪声@3 38.3→39.2（top2/3 位横移：向量把同资产/他资产块换进 2/3 位，12 条
+  positive 有 2/3 位变动、top1 全不动）。
+- **混淆@1 64.0→72.0（+2 条）**：exp-conf-002（top1 501 显示器图片帧→478 政策
+  资产，向量把意图资产抬上 top1）、exp-conf-010（301→479）。**混淆@3 96.0→
+  92.0（-1 条）**：conf-007 的期望 226 被向量块 232 挤出 top3——本刀唯一退步格。
+- **paraphrase/oov_syn 零漂移**（@1/@3 逐位同；par MRR 0.9454→0.9483 微升来自
+  2/3 位换块）。
+- **sem_neg 近邻 6 miss（@1）救回 0 条**——nb-003/004（保温杯三连问）top3 仍
+  被保温杯语料占据；但 **@3 miss 4 条救回 2 条**：nb-005（480 发票进 top3）、
+  nb-006（492 刻字进 top3）→ 近邻亚组 @3 75.0→87.5（12/16→14/16）、分布值
+  sem_neg@3 85.7→92.9、MRR 0.8214→0.8452、噪声@3 44.0→35.7。否定亚组 12/12
+  逐位不变。
+- **拒答红线 86.7 恒**（26/30 词法零命中的照旧空手——lexgate 收口；ref-004/007
+  两条词法命中的误答形态前后不变，仅 2/3 位横移）。
+
+### 红线结论
+
+正例 98.8@1 与拒答 86.7 **双双保持**（矩阵红线列 OK 34 个配置均如此，无取舍
+required）；overall@1 88.8→89.8（+1.0pp）、@3 96.6→97.1（+0.5pp）、MRR
+0.9248→0.9320。代价格：conf@3 -4.0（1 条被挤出）、positive 噪声@3 +0.9——
+均小于收益格。
+
+### 复现命令（仓库根目录）
+
+```
+uv run python scripts/eval/fusion_matrix.py --db postgresql://suite:suite@localhost:5433/suite --out scripts/eval/out/106-fusion-matrix.txt
+uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
+EMBED_API_KEY= uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite  # 无 key 零漂移复核
+```

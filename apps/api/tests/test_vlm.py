@@ -125,7 +125,9 @@ def test_describe_image_returns_trimmed_text_and_sends_payload(
     _use_client(monkeypatch, client)
     assert describe_image(_PNG) == "显示器侧面带可调节支架。"
     assert client.seen is not None
-    assert client.seen["model"] == Settings(_env_file=None).vlm_model
+    # 评审修：Settings(_env_file=None) 是类默认，与 .env 实配（如换过 VLM_MODEL）
+    # 会漂——原断言在真 key 环境必红。改断形状不断值：模型名非空且为字符串。
+    assert isinstance(client.seen["model"], str) and client.seen["model"]
     assert client.seen["messages"][1]["content"][1]["image_url"]["url"].startswith("data:image/png")
 
 

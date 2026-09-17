@@ -27,6 +27,16 @@
   事务**提交后**补写 ``retrieval_chunks.embedding``（迁移 0034 的 pgvector 列，
   只备料不动检索——retrieve 打分路径一行不改，融合是 106 刀）。未配置/失败 =
   块照写、embedding NULL+日志，发布不被云调用阻塞。
+- 稠密稀疏融合（第 106 刀，ADR 0058）：词法管线（打分/stale/亲和）产出的
+  命中集上叠加**加权线性**的向量分——词法分 per-query min-max 归一 +
+  VECTOR_WEIGHT × cosine（矩阵 ``scripts/eval/fusion_matrix.py`` 三形态
+  661 配置的定案形态 C-w=0.5-tau0.60-lexgate-before）。两条纪律闸（两轮
+  矩阵实测教训，缺一拒答率崩）：**cos ≥ VECTOR_COS_FLOOR**（bge-m3 在本
+  语料上 refusal 近邻与正例相似度重叠，无闸时无关块灌进证据）+
+  **词法空手闸**（词法零命中时向量不无中生有——0018 宁缺勿滥在融合层的
+  延伸，拒答语义完全由词法路决定）。NULL 块 fail-open 到词法（向量路只
+  加分不排除）；未配置 EMBED_API_KEY / 嵌入或查询失败 = 纯词法零变化。
+  查询向量按 (库, 模型, 问句) 进程内 LRU 缓存——同问句不重复调云 API。
 """
 
 import hashlib
@@ -35,6 +45,7 @@ import logging
 import math
 import os
 import re
+from collections import OrderedDict
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -46,6 +57,7 @@ from sqlalchemy.orm import Session
 from suite_api.models import Asset, AssetVersion, Product, RetrievalChunk
 from suite_api.services.machine_wash import QA_FIELD, redact
 from suite_api.services.synonyms import apply_synonyms
+from suite_api.settings import get_settings
 from suite_platform.storage import ObjectStorage
 
 logger = logging.getLogger(__name__)
@@ -123,6 +135,7 @@ def excludes_review_evidence(query: str) -> bool:
     相权取其轻（第 69 刀初版用事实尾白名单，评审证伪后反转，见上方注释）。
     """
     return bool(_SERVICE_STATE_RE.search(query)) and not _OPINION_RE.search(query)
+
 
 # 切块数上限：单版本切块超限即截断（防长文档/长转写把索引写爆；截断即丢尾部证据，
 # 属防炸取舍，上传上限 2MB 文本按句切通常远小于此）
@@ -311,8 +324,7 @@ def set_chunk_embeddings(db: Session, rows: Sequence[tuple[int, Sequence[float]]
         return 0
     result = db.execute(
         sa_text(
-            "UPDATE retrieval_chunks SET embedding = CAST(:vector AS vector)"
-            " WHERE id = :chunk_id"
+            "UPDATE retrieval_chunks SET embedding = CAST(:vector AS vector) WHERE id = :chunk_id"
         ),
         [{"chunk_id": chunk_id, "vector": json.dumps(list(vector))} for chunk_id, vector in rows],
     )
@@ -479,9 +491,9 @@ AFFINITY_ALPHA = 3.0
 def title_idf(titles: list[str]) -> dict[str, float]:
     """按候选资产标题全集算每个标题 bigram 的 idf（log(1 + N/(1+df))）。
 
-    「规格（OFF）/评论/说明」这类跨资产共享 bigram 天然低 idf，商品名/
-   专名 bigram 天然高 idf——亲和信号由区分性词主导，共享词几乎不贡献。
-    空标题不参与统计（其亲和恒 0=中性，不因无标题被显式惩罚）。
+     「规格（OFF）/评论/说明」这类跨资产共享 bigram 天然低 idf，商品名/
+    专名 bigram 天然高 idf——亲和信号由区分性词主导，共享词几乎不贡献。
+     空标题不参与统计（其亲和恒 0=中性，不因无标题被显式惩罚）。
     """
     df: dict[str, int] = {}
     n = 0
@@ -573,6 +585,7 @@ def oov_product_match(db: Session, entity: str) -> str | None:
     # catalog_tools.category_targets 的 `target in universe` 同口径、单一真源）
     categories = set(universe)
     categories |= {alias for alias, target in CATEGORY_ALIASES.items() if target in universe}
+
     # 两个方向语义不同（预热测量后收紧）：
     # - 实体串 ⊂ 库内名（顾客用简称：「保温杯」⊂「钛钢保温杯」）——任意长度命中；
     # - 库内名 ⊂ 实体串（实体里含一个库内名片段）——**要求库内名 ≥3 字**，否则
@@ -659,7 +672,12 @@ def _corpus_snapshot(
         titles[asset_id] = title or ""
     for chunk in chunks:
         corpus |= query_terms(chunk)
-    payload = (frozenset(corpus), _field_name_terms(chunks), titles, title_idf(list(titles.values())))
+    payload = (
+        frozenset(corpus),
+        _field_name_terms(chunks),
+        titles,
+        title_idf(list(titles.values())),
+    )
     _corpus_cache = (key, payload)
     return payload
 
@@ -759,6 +777,148 @@ def oov_verdict(db: Session, question: str) -> str | None:
     return norm[best_start : best_start + span]
 
 
+# ---------- 稠密稀疏融合（第 106 刀，ADR 0058；矩阵定案 C-w=0.5-tau0.60-lexgate） ----------
+
+# 向量分权重（线性融合 final = 词法归一分 + VECTOR_WEIGHT × cosine）。
+# 矩阵 661 配置定案值：w=0.5 在「保正例 98.8@1」的配置里 overall@1 最高
+# （89.8，+1.0pp），w≥1 开始压动正例（词法归一域 [0,1] 被向量项盖过）。
+VECTOR_WEIGHT = 0.5
+# cosine 相似度下限（TAU 闸）：cos < 此值的向量命中不进融合。矩阵实测教训：
+# 无闸时拒答率崩 0（向量近邻永远存在）；全局阈值封顶只救回 56.7%——0.60 是
+# 「拒答保住线」与「改善保留线」的权衡点（conf@1 72.0 在 0.50-0.65 平台，
+# ovr@3/MRR 在 0.60 达峰后回落）。词法路不受此闸影响（fail-open）。
+VECTOR_COS_FLOOR = 0.60
+# 向量路召回宽度（矩阵口径 top-10；融合出口仍由 top_k 截断）
+VECTOR_TOP_N = 10
+
+# 查询向量进程内 LRU（第 106 刀）：键 = (库 URL, embed 模型, 问句)——同问句
+# 同库不重复调云 API（嵌入纯函数于问句文本，但按任务口径带库身份防多库串）。
+# 维度自检：换 EMBED_MODEL 后旧缓存维度不符即作废重算（不落错维向量进融合）。
+_QUERY_VEC_CACHE_MAX = 512
+_query_vec_cache: OrderedDict[tuple[str, str, str], list[float]] = OrderedDict()
+
+
+def query_vector_for(db: Session, query: str) -> list[float] | None:
+    """问句 -> bge-m3 查询向量（LRU 缓存优先）。未配置/失败 -> None（fail-open
+    纯词法），异常只留服务端日志，检索不被云调用阻塞。"""
+    from suite_api.services import embedding
+
+    if not embedding.is_configured():
+        return None
+    try:
+        bind_url = str(db.get_bind().url)
+    except Exception:  # noqa: BLE001 - 替身 db 无 bind：缓存键退通用值不阻塞
+        bind_url = "<fake>"
+    key = (bind_url, get_settings().embed_model, query)
+    cached = _query_vec_cache.get(key)
+    if cached is not None and len(cached) == embedding.EMBEDDING_DIM:
+        _query_vec_cache.move_to_end(key)
+        return cached
+    try:
+        vector = embedding.embed_texts([query])[0]
+    except embedding.EmbeddingError as exc:
+        logger.warning(
+            "问句查询向量嵌入失败（融合退纯词法）: %s %s", query[:40], type(exc).__name__
+        )
+        return None
+    _query_vec_cache[key] = vector
+    while len(_query_vec_cache) > _QUERY_VEC_CACHE_MAX:
+        _query_vec_cache.popitem(last=False)
+    return vector
+
+
+# 向量近邻查询：当前指针版 join 同口径 + embedding IS NOT NULL（NULL 块不进
+# 向量路——词法资格由词法路保留，fail-open）+ TAU 闸（cos 相似度 ≥ 下限，
+# 无关近邻不进融合）。ef_search 用 pgvector 默认 40：矩阵实测三档
+# （40/80/200）在当前语料规模（598 块）零行为差异，语料破万再调。
+_VECTOR_TOP_SQL = sa_text(
+    """
+    SELECT c.asset_id, c.version_no, c.chunk, a.source_kind,
+           1 - (c.embedding <=> CAST(:qv AS vector)) AS cos_sim
+    FROM retrieval_chunks c
+    JOIN asset_versions v ON v.asset_id = c.asset_id AND v.version_no = c.version_no
+    JOIN assets a ON a.id = v.asset_id
+      AND a.current_published_version_id = v.id
+      AND a.status = 'published'
+      AND a.discarded_at IS NULL
+    WHERE c.embedding IS NOT NULL
+      AND 1 - (c.embedding <=> CAST(:qv AS vector)) >= :floor
+    ORDER BY c.embedding <=> CAST(:qv AS vector)
+    LIMIT :n
+    """
+)
+
+
+def dense_candidates(db: Session, query: str, *, drop_reviews: bool) -> list[dict[str, Any]] | None:
+    """向量路：查询向量 -> cosine ≥ 下限的 top-N（评论闸同口径过滤）。
+
+    返回 None = 向量路整体不可用（未配置 key/嵌入失败/查询失败）——调用方
+    fail-open 纯词法；返回行 {asset_id, version_no, chunk(redact 后), cos}。
+    """
+    vector = query_vector_for(db, query)
+    if vector is None:
+        return None
+    try:
+        rows = db.execute(
+            _VECTOR_TOP_SQL,
+            {"qv": json.dumps(vector), "floor": VECTOR_COS_FLOOR, "n": VECTOR_TOP_N},
+        ).all()
+    except Exception as exc:  # noqa: BLE001 - 向量查询失败不阻塞检索主路
+        logger.warning("向量近邻查询失败（融合退纯词法）: %s", type(exc).__name__)
+        return None
+    return [
+        {
+            "asset_id": asset_id,
+            "version_no": version_no,
+            "chunk": redact(chunk),
+            "source_kind": source_kind,
+            "cos": float(cos_sim),
+        }
+        for asset_id, version_no, chunk, source_kind, cos_sim in rows
+        if not (drop_reviews and source_kind == "review_import")
+    ]
+
+
+def fuse_dense_sparse(
+    lex_hits: list[dict[str, Any]],
+    vec_hits: list[dict[str, Any]] | None,
+    *,
+    vec_weight: float = VECTOR_WEIGHT,
+) -> list[dict[str, Any]]:
+    """加权线性融合（矩阵 C 形态，纯函数便于单测）：词法分 per-query min-max
+    归一 + vec_weight × cosine。
+
+    - 归一域 = lex_hits 全集的 score（79 刀现役综合分：词法×stale×亲和——
+      affinity_before，乘数在融合前原位）；max==min（含单块命中）时全取 1.0；
+    - 词法命中块无向量（NULL 块/未进向量 top-N）cos 项为 0——fail-open 只
+      加分不排除；向量补召回块（不在词法命中集）词法项为 0；
+    - vec_hits=None/空 = 纯词法：归一分排序（min-max 单调，名次与词法分一致，
+      仅并列破平次序可能因归一化持平——同分块归一同值，稳定键不变）。
+    """
+    if not lex_hits:
+        return []
+    if not vec_hits:
+        vec_hits = []
+    raw = [hit["score"] for hit in lex_hits]
+    lo, hi = min(raw), max(raw)
+    cos_of = {(hit["asset_id"], hit["version_no"], hit["chunk"]): hit["cos"] for hit in vec_hits}
+    pool: dict[tuple[int, int, str], dict[str, Any]] = {}
+    for hit in lex_hits:
+        key = (hit["asset_id"], hit["version_no"], hit["chunk"])
+        norm = 1.0 if hi <= lo else (hit["score"] - lo) / (hi - lo)
+        pool[key] = {**hit, "score": norm + vec_weight * cos_of.get(key, 0.0)}
+    for hit in vec_hits:
+        key = (hit["asset_id"], hit["version_no"], hit["chunk"])
+        if key not in pool:
+            pool[key] = {
+                "asset_id": hit["asset_id"],
+                "version_no": hit["version_no"],
+                "chunk": hit["chunk"],
+                "score": vec_weight * hit["cos"],
+            }
+    return sorted(pool.values(), key=lambda hit: (-hit["score"], hit["asset_id"], hit["chunk"]))
+
+
 # ---------- 检索（只查当前已发布版本，join 保证） ----------
 
 
@@ -793,7 +953,15 @@ def retrieve(
     ``1 + AFFINITY_ALPHA * title_affinity``（问句 terms 对该资产标题的 IDF
     加权覆盖）。跨商品同文字段块的并列由此被「问句点名的资产」破开；
     问句与标题无 bigram 交集时乘数恒 1（中性面——标题含字段词/回流首问
-    时纯字段问也有亲和，ADR 0048 已知取舍）。返回的 score 是重排后的名次分。
+    时纯字段问也有亲和，ADR 0048 已知取舍）。
+
+    稠密稀疏融合（第 106 刀，ADR 0058，affinity_before）：词法命中集（上述
+    全管线产物）的分数 per-query min-max 归一后加 ``VECTOR_WEIGHT × cosine``
+    ——向量路给语义近邻加分/补召回（cos ≥ VECTOR_COS_FLOOR），**不排除任何
+    词法命中**（embedding NULL 块照旧参与，fail-open）。词法空手闸：词法零
+    命中时直接空手出（向量不无中生有，0018 拒答语义完全由词法路决定）。
+    未配置 EMBED_API_KEY / 嵌入失败 / 向量查询失败 = 纯词法（归一化单调，
+    名次逐位不变）。返回的 score 是融合分（归一词法 + 0.5×cosine）。
     """
     # 查询侧同义词扩展（0023 词法口径内的确定性扩展，非向量）：原查询词与
     # 归一后词取并集——只增不删，保证既有命中不丢（after 评测裁决的修正）。
@@ -852,9 +1020,7 @@ def retrieve(
     # 评论闸同在 retrieve 内=引擎双通道/MCP/缺口验证/评测四出口同语义。
     titles = {asset_id: title for asset_id, _, _, _, _, title in rows}
     idf = title_idf(list(titles.values()))
-    aff_of = {
-        asset_id: title_affinity(terms, title, idf) for asset_id, title in titles.items()
-    }
+    aff_of = {asset_id: title_affinity(terms, title, idf) for asset_id, title in titles.items()}
     scored = [
         {
             "asset_id": asset_id,
@@ -881,8 +1047,14 @@ def retrieve(
         key = (hit["asset_id"], hit["version_no"], hit["chunk"])
         if key not in unique:
             unique[key] = hit
-    # 分数降序；并列按 (asset_id, chunk) 稳定排序，结果可重现
-    results = sorted(
-        unique.values(), key=lambda hit: (-hit["score"], hit["asset_id"], hit["chunk"])
-    )
-    return results[:top_k]
+    # 第 106 刀融合（ADR 0058）：词法命中集上叠加向量分（矩阵定案 C-w=0.5-
+    # tau0.60-lexgate-before）。词法空手闸在此单点收口——unique 为空直接空手
+    # 出，向量路不无中生有（拒答语义完全由词法路决定，refusal 组 26/30 词法
+    # 零命中的照旧拒答）。未配置 key/云调用失败时 dense_candidates 返回 None，
+    # fuse_dense_sparse 退纯词法（归一化单调保序，名次与词法分排序逐位一致）。
+    lex_hits = list(unique.values())
+    if not lex_hits:
+        return []
+    vec_hits = dense_candidates(db, query, drop_reviews=drop_reviews)
+    fused = fuse_dense_sparse(lex_hits, vec_hits)
+    return fused[:top_k]

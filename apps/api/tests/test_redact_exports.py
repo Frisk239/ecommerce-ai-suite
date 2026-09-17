@@ -148,8 +148,11 @@ def test_retrieve_returns_masked_chunk_and_scores_on_raw() -> None:
     hit = hits[0]
     assert API_PHONE not in hit["chunk"]
     assert MASKED_PHONE in hit["chunk"]
-    # 分数与原文块直打分一致（收口不动打分路径）
-    assert hit["score"] == score_chunk(query_terms("电话能改收货地址吗"), raw)
+    # 分数口径（第 106 刀起）：score 是融合分（词法 min-max 归一 + 0.5×cosine，
+    # ADR 0058）——无 key 纯词法下单块命中归一恒 1.0（min==max 即最强词法证据）。
+    # 收口仍不动打分路径：掩码语义与名次不变，词法分本体在 score_chunk。
+    assert hit["score"] == 1.0
+    assert score_chunk(query_terms("电话能改收货地址吗"), raw) > 0
 
 
 def test_build_prompts_masks_customer_question_line() -> None:
