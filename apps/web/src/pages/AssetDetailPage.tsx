@@ -25,7 +25,7 @@ import {
   Warning,
   XCircle,
 } from '@phosphor-icons/react'
-import { ApiError, detailText, parsePublishGate, type PublishGateDetail } from '../api/client'
+import { ApiError, assetMediaUrl, detailText, parsePublishGate, type PublishGateDetail } from '../api/client'
 import { api } from '../api/endpoints'
 import { resolveFieldValue, toFieldView, type FieldView } from '../api/fields'
 import type { AssetVersion, Product, QaPair, WashVerify } from '../api/types'
@@ -1204,6 +1204,49 @@ export default function AssetDetailPage() {
               note="引用指向的已发布不可变快照 · 只读"
               emptyText="该版本正文为空。"
             />
+          ) : null}
+
+          {/* 视频播放（第 114 刀 W8）：viewedVersion 的字节流式播放——待人洗时是
+              刚切出的片段本身，已发布无修订时是指针版，只读证据视图是锚定版。
+              洗帧入口读的仍是已发布指针版字节（服务端口径不变）。 */}
+          {detail.kind === 'video' && viewedVersion !== null ? (
+            <div className="panel">
+              <div className="panel-title flex-wrap">
+                <span>视频 · v{viewedVersion.version_no}</span>
+                <span className="text-xs font-normal text-ink-3">
+                  正在查看的那一版；支持拖动进度（Range 流式），洗帧仍读已发布指针版字节
+                </span>
+              </div>
+              <div className="px-4 py-3">
+                <video
+                  controls
+                  preload="metadata"
+                  src={assetMediaUrl(detail.id, viewedVersion.version_no)}
+                  className="max-h-[420px] w-full rounded-[4px] border border-line-2 bg-canvas object-contain"
+                >
+                  当前浏览器不支持视频播放。
+                </video>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 原图（第 114 刀 W8）：人洗对照用——111 刀护栏教用户「对照图上内容
+              核实描述」，此前页面不给看原图，护栏无从下手。锚定 viewedVersion
+              （待人洗=工作版，只读证据=引用指向的快照）。 */}
+          {detail.kind === 'image' && viewedVersion !== null ? (
+            <div className="panel">
+              <div className="panel-title flex-wrap">
+                <span>原图 · v{viewedVersion.version_no}</span>
+                <span className="text-xs font-normal text-ink-3">人洗对照用：下面的描述必须与这张画面一致</span>
+              </div>
+              <div className="px-4 py-3">
+                <img
+                  src={assetMediaUrl(detail.id, viewedVersion.version_no)}
+                  alt={`${detail.title ?? '图片资产'} 原图（v${viewedVersion.version_no}）`}
+                  className="mx-auto max-h-[420px] rounded-[4px] border border-line-2 bg-canvas object-contain"
+                />
+              </div>
+            </div>
           ) : null}
 
           {!readOnlyEvidence && detail.kind === 'image' && activeVersion !== null && imageView !== null ? (

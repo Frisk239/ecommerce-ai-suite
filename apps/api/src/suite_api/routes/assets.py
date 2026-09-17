@@ -23,8 +23,18 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import PlainTextResponse
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -66,6 +76,7 @@ from suite_api.services.machine_wash import (
     run_machine_wash,
     validate_qa_pairs,
 )
+from suite_api.services.media import media_mime, media_stream_response
 from suite_api.services.publishing import (
     evaluate_publish_gate,
     publishable_values,
@@ -1400,3 +1411,84 @@ def get_version_text(
     except VersionTextError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return PlainTextResponse(text)
+
+
+# ---------- 媒体字节·操作者面（第 114 刀 W8）：列表缩略图 / 详情原图与视频 ----------
+
+# 与顾客面（customer 路由，只出已发布指针版、404 不泄漏存在性）不同，这里是
+# 治理面：**未发布版本也读得到**——W8 第一诉求就是人洗时对照原图核描述（111 刀
+# 护栏教用户「对照图上内容」，页面得给看）。版本语义与 /text 端点对齐；对象键
+# 在详情页本来就可见，缺失如实 409 带键（不做存在性隐藏）。
+_OPERATOR_MEDIA_NOT_FOUND = "不是可预览的媒体字节（非图片/视频资产，或版本对象键后缀不是媒体）"
+
+
+def _version_media_response(
+    request: Request,
+    storage: ObjectStorage,
+    asset: Asset,
+    version: AssetVersion,
+) -> Response:
+    """(资产, 版本) → 媒体响应；非媒体/已废弃 404、对象缺失 409。两端点共用。"""
+    if asset.discarded_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产已废弃，字节已清除")
+    mime = media_mime(asset.kind, version.object_key)
+    if mime is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_OPERATOR_MEDIA_NOT_FOUND
+        )
+    try:
+        size = storage.size(version.object_key)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=f"媒体对象缺失: {version.object_key}"
+        ) from exc
+    return media_stream_response(
+        request.headers.get("range"), storage, version.object_key, mime, size
+    )
+
+
+@router.get("/{asset_id}/media")
+def get_asset_media(
+    asset_id: int,
+    request: Request,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> Response:
+    """资产媒体字节·最新版（列表缩略图用，W8）：服务端取 version_no 最大的那版。
+
+    列表行上没有版本号，缩略图只需要「这份资产长什么样」——修订中的最新版字节
+    是刚上传的替换稿，正是该看的那版。详情页预览不要用本端点（要锚定正在处理
+    的那一版），用带版本号的 ``/versions/{version_no}/media``。
+    """
+    del operator  # 读接口要求登录（<img> src 同源自动带操作者 cookie）
+    asset = _get_asset_or_404(db, asset_id)
+    version = _latest_version_or_404(db, asset)
+    return _version_media_response(request, storage, asset, version)
+
+
+@router.get("/{asset_id}/versions/{version_no}/media")
+def get_version_media(
+    asset_id: int,
+    version_no: int,
+    request: Request,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> Response:
+    """版本媒体字节·指定版（详情页原图/视频播放用，W8）：图片直出、视频 Range。
+
+    版本号进 URL 是 ``<img>``/``<video>`` 的 src 形态决定的（带不了请求头，也
+    带不了 body）；鉴权靠操作者 cookie 同源自动携带。未发布版本可读（治理面
+    语义，同 /text）；Range 语义与顾客面共用 ``media_stream_response``。
+    """
+    del operator
+    asset = _get_asset_or_404(db, asset_id)
+    version = db.scalar(
+        select(AssetVersion).where(
+            AssetVersion.asset_id == asset.id, AssetVersion.version_no == version_no
+        )
+    )
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产版本不存在")
+    return _version_media_response(request, storage, asset, version)

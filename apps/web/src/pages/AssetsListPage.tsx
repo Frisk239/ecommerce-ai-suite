@@ -12,13 +12,14 @@ import {
   ArrowsClockwise,
   CaretDown,
   CaretRight,
+  FilmSlate,
   Funnel,
   MagnifyingGlass,
   Plus,
   Warning,
   X,
 } from '@phosphor-icons/react'
-import { detailText } from '../api/client'
+import { assetMediaUrl, detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { AssetListItem, AssetStatus, KnowledgeGap } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
@@ -637,6 +638,9 @@ export default function AssetsListPage() {
           <table className="table-gov">
             <thead>
               <tr>
+                {/* 预览列（第 114 刀 W8）：图片行出真缩略图（最新版字节），视频行
+                    留图标位（详情页可播放），其余空位——列宽恒定不跳版 */}
+                <th className="w-14">预览</th>
                 <th className="w-20">资产 ID</th>
                 <th>标题</th>
                 <th className="w-16">种类</th>
@@ -655,6 +659,23 @@ export default function AssetsListPage() {
                   className="row-click"
                   onClick={() => navigate(`/platform/assets/${asset.id}`)}
                 >
+                  <td>
+                    {asset.kind === 'image' ? (
+                      <img
+                        src={assetMediaUrl(asset.id)}
+                        alt=""
+                        loading="lazy"
+                        className="h-8 w-11 rounded-[3px] border border-line-2 bg-canvas object-cover"
+                      />
+                    ) : (
+                      <span
+                        className="flex h-8 w-11 items-center justify-center text-caption"
+                        title={asset.kind === 'video' ? '视频资产：详情页可播放' : undefined}
+                      >
+                        {asset.kind === 'video' ? <FilmSlate aria-hidden size={13} /> : null}
+                      </span>
+                    )}
+                  </td>
                   <td className="font-mono text-xs text-ink-3">{formatAssetId(asset.id)}</td>
                   {/* 走查修复：td 只有 max-w 时 nowrap 内容会溢出压到邻列（同表「失败原因」
                       列的既有口径是 max-w + truncate）——标题补 truncate + hover 全称 */}
@@ -734,7 +755,7 @@ export default function AssetsListPage() {
               {importedRows.length > 0 ? (
                 <>
                   <tr className="bg-canvas">
-                    <td colSpan={9} className="px-3 py-1.5">
+                    <td colSpan={10} className="px-3 py-1.5">
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
@@ -756,14 +777,31 @@ export default function AssetsListPage() {
                       </button>
                     </td>
                   </tr>
-                  {importsOpen
-                    ? importedRows.map((asset) => (
-                        <tr
-                          key={asset.id}
-                          className="row-click"
-                          onClick={() => navigate(`/platform/assets/${asset.id}`)}
-                        >
-                          <td className="font-mono text-xs text-ink-3">{formatAssetId(asset.id)}</td>
+                      {importsOpen
+                        ? importedRows.map((asset) => (
+                          <tr
+                            key={asset.id}
+                            className="row-click"
+                            onClick={() => navigate(`/platform/assets/${asset.id}`)}
+                          >
+                            <td>
+                              {asset.kind === 'image' ? (
+                                <img
+                                  src={assetMediaUrl(asset.id)}
+                                  alt=""
+                                  loading="lazy"
+                                  className="h-8 w-11 rounded-[3px] border border-line-2 bg-canvas object-cover"
+                                />
+                              ) : (
+                                <span
+                                  className="flex h-8 w-11 items-center justify-center text-caption"
+                                  title={asset.kind === 'video' ? '视频资产：详情页可播放' : undefined}
+                                >
+                                  {asset.kind === 'video' ? <FilmSlate aria-hidden size={13} /> : null}
+                                </span>
+                              )}
+                            </td>
+                            <td className="font-mono text-xs text-ink-3">{formatAssetId(asset.id)}</td>
                           <td className="max-w-[22rem] truncate">
                             <Link
                               to={`/platform/assets/${asset.id}`}

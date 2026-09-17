@@ -58,6 +58,17 @@ export function mediaUrl(assetId: number, token?: string | null): string {
   return token ? `${base}?token=${encodeURIComponent(token)}` : base
 }
 
+/** 操作者面媒体 URL（第 114 刀 W8）：治理台的原图预览 / 视频播放 / 列表缩略图。
+ *
+ * 版本号给定时锚定那一版（详情页用——人洗对照的正是未发布工作版）；省略时
+ * 服务端取最新版（列表缩略图用，行上没有版本号）。鉴权走操作者 cookie
+ * （同源 <img>/<video> src 自动携带），Range 语义与顾客面同一份装配。 */
+export function assetMediaUrl(assetId: number, versionNo?: number): string {
+  return versionNo !== undefined
+    ? `${API_BASE}/assets/${assetId}/versions/${versionNo}/media`
+    : `${API_BASE}/assets/${assetId}/media`
+}
+
 export interface PublishGateDetail {
   missing: string[]
   unconfirmed: string[]

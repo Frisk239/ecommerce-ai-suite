@@ -347,3 +347,76 @@ def test_complete_payload_always_carries_media_citations_key(api: ApiFixture) ->
     session_id, token = _customer(client)
     customer_complete = _ask_customer(client, session_id, token, "我的订单 SO-1001 到哪了？")
     assert customer_complete["media_citations"] == []
+
+
+# ---------- 5. 操作者面媒体端点（第 114 刀 W8）：治理面版本语义 ----------
+
+
+def test_operator_media_serves_unpublished_version(api: ApiFixture) -> None:
+    """治理面读得到未发布版（W8 第一诉求：人洗对照原图）——同一资产顾客面 404。"""
+    client, _ = api
+    _login(client)
+    image = _upload_image(client, title="待洗对照原图")
+    asset_id = int(image["id"])
+    # 不发布：停在待人洗。顾客面（操作者 cookie 已过鉴权）对未发布一律 404。
+    assert client.get(f"/api/customer/assets/{asset_id}/media").status_code == 404
+
+    versioned = client.get(f"/api/assets/{asset_id}/versions/1/media")
+    assert versioned.status_code == 200, versioned.text
+    assert versioned.content == _PNG
+    assert versioned.headers["content-type"] == "image/png"
+    assert versioned.headers["content-length"] == str(len(_PNG))
+    assert versioned.headers["accept-ranges"] == "bytes"
+
+    latest = client.get(f"/api/assets/{asset_id}/media")
+    assert latest.status_code == 200 and latest.content == _PNG
+
+
+def test_operator_media_range_on_video(api: ApiFixture) -> None:
+    """视频走同一份 Range 装配：206 区间/后缀、416 带总长、多段忽略回全量。"""
+    client, storage_root = api
+    _login(client)
+    asset_id, _key = _insert_video_asset(storage_root)
+    url = f"/api/assets/{asset_id}/versions/1/media"
+
+    partial = client.get(url, headers={"Range": "bytes=0-15"})
+    assert partial.status_code == 206
+    assert partial.content == _MP4[:16]
+    assert partial.headers["content-range"] == f"bytes 0-15/{len(_MP4)}"
+
+    suffix = client.get(url, headers={"Range": "bytes=-8"})
+    assert suffix.status_code == 206 and suffix.content == _MP4[-8:]
+
+    too_far = client.get(url, headers={"Range": f"bytes={len(_MP4) + 10}-"})
+    assert too_far.status_code == 416
+    assert too_far.headers["content-range"] == f"bytes */{len(_MP4)}"
+
+    multi = client.get(url, headers={"Range": "bytes=0-1,4-5"})
+    assert multi.status_code == 200 and multi.content == _MP4
+
+
+def test_operator_media_gates(api: ApiFixture) -> None:
+    """404 非媒体/不存在版本；409 对象缺失带键（治理面如实说）；未登录 401。"""
+    client, storage_root = api
+    _login(client)
+    doc = client.post(
+        "/api/assets/register",
+        files={"file": ("note.txt", b"plain text body", "text/plain")},
+        data={"title": "非媒体文档"},
+    )
+    assert doc.status_code == 201, doc.text
+    assert client.get(f"/api/assets/{int(doc.json()['id'])}/media").status_code == 404
+
+    image = _upload_image(client, title="闸门钉子图")
+    asset_id = int(image["id"])
+    assert client.get(f"/api/assets/{asset_id}/versions/99/media").status_code == 404
+
+    key = image["versions"][0]["object_key"]
+    storage_root.joinpath(*key.split("/")).unlink()
+    missing = client.get(f"/api/assets/{asset_id}/versions/1/media")
+    assert missing.status_code == 409
+    assert key in missing.json()["detail"]
+
+    client.cookies.clear()
+    assert client.get(f"/api/assets/{asset_id}/media").status_code == 401
+    assert client.get(f"/api/assets/{asset_id}/versions/1/media").status_code == 401
