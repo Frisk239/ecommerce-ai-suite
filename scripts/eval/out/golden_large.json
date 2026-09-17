@@ -1,2200 +1,2200 @@
 [
-  {
-    "id": "pos-001",
-    "distribution": "positive",
-    "question": "这款 1MD Nutrition 的产品是什么牌子的",
-    "expect": {
-      "cite": {
-        "asset_id": 245,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-002",
-    "distribution": "positive",
-    "question": "保温杯的净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-003",
-    "distribution": "positive",
-    "question": "Jeff de Bruges的销售国家是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 227,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-004",
-    "distribution": "positive",
-    "question": "Coca-Cola的净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 239,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-005",
-    "distribution": "positive",
-    "question": "衣服评论 · 裤子早都到了忘了确认收货 物流很快怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 44,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-006",
-    "distribution": "positive",
-    "question": "Zuivelmeester 规格（OFF）怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 241,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-007",
-    "distribution": "positive",
-    "question": "Nestle Carnation的净含量是1kg吗",
-    "expect": {
-      "cite": {
-        "asset_id": 244,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-008",
-    "distribution": "positive",
-    "question": "该商品的退货政策是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-009",
-    "distribution": "positive",
-    "question": "Fitpiggy的条码是000000000063吗",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-010",
-    "distribution": "positive",
-    "question": "AdvoCare的品牌是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 228,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-011",
-    "distribution": "positive",
-    "question": "Erdbeeren的条码是00000019吗",
-    "expect": {
-      "cite": {
-        "asset_id": 237,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-012",
-    "distribution": "positive",
-    "question": "Toneop 规格（OFF）怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 233,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-013",
-    "distribution": "positive",
-    "question": "水果评论 · 买了六次了，每次只买80mm ，每次怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 78,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-014",
-    "distribution": "positive",
-    "question": "水果评论 · 买了3次，第一次1箱，第二次2箱，第怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 76,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-015",
-    "distribution": "positive",
-    "question": "Hershey’s Syrup 规格（OFF）怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 242,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-016",
-    "distribution": "positive",
-    "question": "平板评论 · 在你家买个手机、耳塞都没有、差评怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 47,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-017",
-    "distribution": "positive",
-    "question": "该商品的净含量是500ml吗",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-018",
-    "distribution": "positive",
-    "question": "瓶装水：日常补水随身装怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 15,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-019",
-    "distribution": "positive",
-    "question": "Frog Fuel Power Protein的净含量是610 g吗",
-    "expect": {
-      "cite": {
-        "asset_id": 240,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-020",
-    "distribution": "positive",
-    "question": "酒店评论 · 周边环境不好，除了酒店没有别的。一个怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 160,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-021",
-    "distribution": "positive",
-    "question": "衣服评论 · 黄渤:“班尼路，牌子!”哈哈哈哈，很怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 49,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-022",
-    "distribution": "positive",
-    "question": "Erdbeeren的条码是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 237,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-023",
-    "distribution": "positive",
-    "question": "Confiture extra citron de Menton的条码是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 229,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-024",
-    "distribution": "positive",
-    "question": "水果评论 · 水份多，味道甜，没有坏果，物流速度快怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 80,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-025",
-    "distribution": "positive",
-    "question": "account_access/recover_username · Hi! I forogt my username so i怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 225,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-026",
-    "distribution": "positive",
-    "question": "瓶装水：日常补水随身装的保质期是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 15,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-027",
-    "distribution": "positive",
-    "question": "xxx的条码是00000010吗",
-    "expect": {
-      "cite": {
-        "asset_id": 232,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-028",
-    "distribution": "positive",
-    "question": "Jeff de Bruges 规格（OFF）怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 227,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-029",
-    "distribution": "positive",
-    "question": "洗发水评论 · 还没用，到货后看着很多，不过和我在超怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 172,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-030",
-    "distribution": "positive",
-    "question": "Nestlé的品牌是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 238,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-031",
-    "distribution": "positive",
-    "question": "钛钢保温杯 500ml 316不锈钢 日常饮水随行的净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 10,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-032",
-    "distribution": "positive",
-    "question": "水果评论 · 物流超级快，宝贝收到了就打开来吃了，怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 91,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-033",
-    "distribution": "positive",
-    "question": "我想查询退款状态需要提供什么信息",
-    "expect": {
-      "cite": {
-        "asset_id": 224,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-034",
-    "distribution": "positive",
-    "question": "Mg ricarica的品牌是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 230,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-035",
-    "distribution": "positive",
-    "question": "酒店评论 · 没有第一次去舒服怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 184,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-036",
-    "distribution": "positive",
-    "question": "1MD Nutrition的销售国家是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 245,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-037",
-    "distribution": "positive",
-    "question": "What information do you need to resend an order if I never received it",
-    "expect": {
-      "cite": {
-        "asset_id": 223,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-038",
-    "distribution": "positive",
-    "question": "补口径 · 你们几点上班怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 17,
-        "version_no": 2
-      }
-    }
-  },
-  {
-    "id": "pos-039",
-    "distribution": "positive",
-    "question": "书籍评论 · 没有塑料包装，也没有同事说的送记单词怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 194,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "pos-040",
-    "distribution": "positive",
-    "question": "洗发水评论 · 用沙宣好多年，这次买到的洗发水和护发怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 43,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-001",
-    "distribution": "paraphrase",
-    "question": "请问Bodylab 参数（OFF）值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 236,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-002",
-    "distribution": "paraphrase",
-    "question": "请问洗发水评价 · 第一次给差评，这款产品用完头发特别痒值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 209,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-003",
-    "distribution": "paraphrase",
-    "question": "Mg ricarica的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 230,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-004",
-    "distribution": "paraphrase",
-    "question": "Apple bandit的条码是00000015，对吧",
-    "expect": {
-      "cite": {
-        "asset_id": 235,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-005",
-    "distribution": "paraphrase",
-    "question": "请问退换政策说明值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 6,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-006",
-    "distribution": "paraphrase",
-    "question": "xylimgxyling的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 231,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-007",
-    "distribution": "paraphrase",
-    "question": "xxx的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 232,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-008",
-    "distribution": "paraphrase",
-    "question": "请问尺码对照说明值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 7,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-009",
-    "distribution": "paraphrase",
-    "question": "Fitpiggy的配料是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-010",
-    "distribution": "paraphrase",
-    "question": "AdvoCare的销售国家是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 228,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-011",
-    "distribution": "paraphrase",
-    "question": "Apple bandit的stabilisant是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 235,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-012",
-    "distribution": "paraphrase",
-    "question": "钛钢保温瓶的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 3,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-013",
-    "distribution": "paraphrase",
-    "question": "请问Lindt Vollmilch Schokolade 参数（OFF）值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 243,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-014",
-    "distribution": "paraphrase",
-    "question": "Nestlé的容量是1080g，对吧",
-    "expect": {
-      "cite": {
-        "asset_id": 238,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-015",
-    "distribution": "paraphrase",
-    "question": "Lindt Vollmilch Schokolade的容量是100g，对吧",
-    "expect": {
-      "cite": {
-        "asset_id": 243,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-016",
-    "distribution": "paraphrase",
-    "question": "If I have waited over a week and still have not received my order, can you resend it，麻烦告知",
-    "expect": {
-      "cite": {
-        "asset_id": 223,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-017",
-    "distribution": "paraphrase",
-    "question": "请问subscription_inquiry/manage_pay_bill · I'm trying to find out about m值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 224,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-018",
-    "distribution": "paraphrase",
-    "question": "钛钢保温瓶的材质有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 3,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-019",
-    "distribution": "paraphrase",
-    "question": "Hershey’s Syrup的容量有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 242,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-020",
-    "distribution": "paraphrase",
-    "question": "请问保温瓶的容量是多少？值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-021",
-    "distribution": "paraphrase",
-    "question": "请问手机评价 · 实际上这个机子就是多浦达700的OE值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 27,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-022",
-    "distribution": "paraphrase",
-    "question": "请问平板评价 · 很一般的产品，常常黑屏，设置显示5分值得入手吗",
-    "expect": {
-      "cite": {
-        "asset_id": 28,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-023",
-    "distribution": "paraphrase",
-    "question": "钛钢保温瓶 500ml 316不锈钢 日常饮水随行的材质有多少",
-    "expect": {
-      "cite": {
-        "asset_id": 10,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-024",
-    "distribution": "paraphrase",
-    "question": "Pbfit的容量是300g，对吧",
-    "expect": {
-      "cite": {
-        "asset_id": 234,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "syn-025",
-    "distribution": "paraphrase",
-    "question": "Pbfit的销售国家是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 234,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-001",
-    "distribution": "confusion",
-    "question": "净含怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-002",
-    "distribution": "confusion",
-    "question": "含量怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-003",
-    "distribution": "confusion",
-    "question": "售国怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-004",
-    "distribution": "confusion",
-    "question": "国家怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-005",
-    "distribution": "confusion",
-    "question": "据库怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-006",
-    "distribution": "confusion",
-    "question": "数据怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-007",
-    "distribution": "confusion",
-    "question": "条码怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-008",
-    "distribution": "confusion",
-    "question": "来源怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-009",
-    "distribution": "confusion",
-    "question": "销售怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-010",
-    "distribution": "confusion",
-    "question": "品牌怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 226,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-011",
-    "distribution": "confusion",
-    "question": "配料怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 228,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-012",
-    "distribution": "confusion",
-    "question": "客服怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 29,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-013",
-    "distribution": "confusion",
-    "question": "物流怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 78,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-014",
-    "distribution": "confusion",
-    "question": "第一怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 76,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "conf-015",
-    "distribution": "confusion",
-    "question": "一次怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 76,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "ref-001",
-    "distribution": "positive",
-    "question": "发票可以开电子的吗",
-    "expect": {
-      "cite": {
-        "asset_id": 480,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "ref-002",
-    "distribution": "refusal",
-    "question": "宠物用品区在几楼",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-003",
-    "distribution": "refusal",
-    "question": "机票改签找谁",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-004",
-    "distribution": "refusal",
-    "question": "以旧换新怎么办理",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-005",
-    "distribution": "refusal",
-    "question": "可以货到付款吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-006",
-    "distribution": "refusal",
-    "question": "礼品卡怎么充值",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-007",
-    "distribution": "refusal",
-    "question": "话费充值有优惠吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-008",
-    "distribution": "refusal",
-    "question": "二手回收怎么估价",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-009",
-    "distribution": "refusal",
-    "question": "医疗器械能退吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-010",
-    "distribution": "refusal",
-    "question": "汽车用品有推荐的吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-011",
-    "distribution": "positive",
-    "question": "可以开发票吗",
-    "expect": {
-      "cite": {
-        "asset_id": 480,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "ref-012",
-    "distribution": "refusal",
-    "question": "降价了能补差价吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-013",
-    "distribution": "refusal",
-    "question": "直播间优惠券怎么领",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-014",
-    "distribution": "refusal",
-    "question": "数码相机防水吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "ref-015",
-    "distribution": "positive",
-    "question": "无人机保修多久",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "ref-016",
-    "distribution": "refusal",
-    "question": "运动鞋有增高款吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-pos-001",
-    "distribution": "positive",
-    "question": "怎么退货",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-002",
-    "distribution": "positive",
-    "question": "退货政策是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-003",
-    "distribution": "positive",
-    "question": "退货运费多少钱",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-004",
-    "distribution": "positive",
-    "question": "退货需要什么材料",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-005",
-    "distribution": "positive",
-    "question": "运费谁出",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-006",
-    "distribution": "positive",
-    "question": "退货运费谁承担",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-007",
-    "distribution": "positive",
-    "question": "退货要钱吗",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-008",
-    "distribution": "positive",
-    "question": "买了东西想退货，政策是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-009",
-    "distribution": "positive",
-    "question": "保修多久",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-010",
-    "distribution": "positive",
-    "question": "发票怎么开具",
-    "expect": {
-      "cite": {
-        "asset_id": 480,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-011",
-    "distribution": "positive",
-    "question": "能刻字吗",
-    "expect": {
-      "cite": {
-        "asset_id": 492,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-012",
-    "distribution": "positive",
-    "question": "笔记本电脑刻字怎么收费",
-    "expect": {
-      "cite": {
-        "asset_id": 492,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-013",
-    "distribution": "positive",
-    "question": "你们几点上班",
-    "expect": {
-      "cite": {
-        "asset_id": 17,
-        "version_no": 2
-      }
-    }
-  },
-  {
-    "id": "exp-pos-014",
-    "distribution": "positive",
-    "question": "Vivo Y300 是什么品牌",
-    "expect": {
-      "cite": {
-        "asset_id": 268,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-015",
-    "distribution": "positive",
-    "question": "Xperia Ear Duo 什么时候上市的",
-    "expect": {
-      "cite": {
-        "asset_id": 482,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-016",
-    "distribution": "positive",
-    "question": "Xperia Ear Duo 上市了吗",
-    "expect": {
-      "cite": {
-        "asset_id": 482,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-017",
-    "distribution": "positive",
-    "question": "Xperia Ear 是耳机吗",
-    "expect": {
-      "cite": {
-        "asset_id": 481,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-018",
-    "distribution": "positive",
-    "question": "饮用水的保质期是多久",
-    "expect": {
-      "cite": {
-        "asset_id": 15,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-019",
-    "distribution": "positive",
-    "question": "I never received my order, what should I do",
-    "expect": {
-      "cite": {
-        "asset_id": 223,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-020",
-    "distribution": "positive",
-    "question": "仓库在哪里",
-    "expect": {
-      "cite": {
-        "asset_id": 260,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-021",
-    "distribution": "positive",
-    "question": "羊绒围巾起球怎么处理",
-    "expect": {
-      "cite": {
-        "asset_id": 261,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-022",
-    "distribution": "positive",
-    "question": "钛钢保温壶的材质是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 3,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-023",
-    "distribution": "positive",
-    "question": "整箱堆放会不会变形",
-    "expect": {
-      "cite": {
-        "asset_id": 264,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-024",
-    "distribution": "positive",
-    "question": "有瓶装水直播实拍的清晰商品图吗",
-    "expect": {
-      "cite": {
-        "asset_id": 505,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-025",
-    "distribution": "positive",
-    "question": "显示器支架能调节吗",
-    "expect": {
-      "cite": {
-        "asset_id": 501,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-026",
-    "distribution": "positive",
-    "question": "帮我查下我的订单到哪了，顺便讲讲退货政策",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-027",
-    "distribution": "positive",
-    "question": "净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-028",
-    "distribution": "positive",
-    "question": "保温杯的净含量多少",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-029",
-    "distribution": "positive",
-    "question": "Chocolate n3的销售国家",
-    "expect": {
-      "cite": {
-        "asset_id": 239,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-030",
-    "distribution": "positive",
-    "question": "Cardiofitmd的品牌是1MD Nutrition吗",
-    "expect": {
-      "cite": {
-        "asset_id": 245,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-031",
-    "distribution": "positive",
-    "question": "Erdbeeren 酸奶的净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 237,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-032",
-    "distribution": "positive",
-    "question": "Erdbeeren 巧克力的条码是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 237,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-033",
-    "distribution": "positive",
-    "question": "现场实测保温能坚持几个小时",
-    "expect": {
-      "cite": {
-        "asset_id": 11,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-034",
-    "distribution": "positive",
-    "question": "钛钢内胆是一体成型的吗",
-    "expect": {
-      "cite": {
-        "asset_id": 11,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-035",
-    "distribution": "positive",
-    "question": "瓶装水的保质期是多久",
-    "expect": {
-      "cite": {
-        "asset_id": 15,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-036",
-    "distribution": "positive",
-    "question": "塑料外壳的键盘能刻字吗",
-    "expect": {
-      "cite": {
-        "asset_id": 492,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-pos-037",
-    "distribution": "positive",
-    "question": "蓝牙耳机电池保修多久",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-001",
-    "distribution": "paraphrase",
-    "question": "怎么退换",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-002",
-    "distribution": "paraphrase",
-    "question": "退货的邮费谁出",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-003",
-    "distribution": "paraphrase",
-    "question": "退换货政策是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-004",
-    "distribution": "paraphrase",
-    "question": "退货用什么快递寄回",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-005",
-    "distribution": "paraphrase",
-    "question": "瓶装水的保存期是多久",
-    "expect": {
-      "cite": {
-        "asset_id": 15,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-006",
-    "distribution": "paraphrase",
-    "question": "能开收据吗",
-    "expect": {
-      "cite": {
-        "asset_id": 480,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-007",
-    "distribution": "paraphrase",
-    "question": "三包政策是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-008",
-    "distribution": "paraphrase",
-    "question": "水果的口感怎么样",
-    "expect": {
-      "cite": {
-        "asset_id": 76,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-009",
-    "distribution": "paraphrase",
-    "question": "键盘上刻字怎么收费",
-    "expect": {
-      "cite": {
-        "asset_id": 492,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-010",
-    "distribution": "paraphrase",
-    "question": "发票多久能开好",
-    "expect": {
-      "cite": {
-        "asset_id": 480,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-011",
-    "distribution": "paraphrase",
-    "question": "退货后退款几天到账",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-012",
-    "distribution": "paraphrase",
-    "question": "保修维修要几个工作日",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-013",
-    "distribution": "paraphrase",
-    "question": "刻字服务怎么收费",
-    "expect": {
-      "cite": {
-        "asset_id": 492,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-014",
-    "distribution": "paraphrase",
-    "question": "耳机的类目是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 481,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-015",
-    "distribution": "paraphrase",
-    "question": "无人机的保修期是多长",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-016",
-    "distribution": "paraphrase",
-    "question": "键盘的保修政策是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-017",
-    "distribution": "paraphrase",
-    "question": "显示器的实拍图有吗",
-    "expect": {
-      "cite": {
-        "asset_id": 501,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-018",
-    "distribution": "paraphrase",
-    "question": "退换的时间限制是几天",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-019",
-    "distribution": "paraphrase",
-    "question": "邮费是你们出吗",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-020",
-    "distribution": "paraphrase",
-    "question": "瓶装水开盖即饮吗",
-    "expect": {
-      "cite": {
-        "asset_id": 15,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-021",
-    "distribution": "paraphrase",
-    "question": "vivo 手机的品牌是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 268,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-022",
-    "distribution": "paraphrase",
-    "question": "羊绒围巾起球咋办",
-    "expect": {
-      "cite": {
-        "asset_id": 261,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-023",
-    "distribution": "paraphrase",
-    "question": "仓库位置在哪里",
-    "expect": {
-      "cite": {
-        "asset_id": 260,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-024",
-    "distribution": "paraphrase",
-    "question": "保修期内维修收费吗",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-025",
-    "distribution": "paraphrase",
-    "question": "换货政策是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-026",
-    "distribution": "paraphrase",
-    "question": "开具发票要多久",
-    "expect": {
-      "cite": {
-        "asset_id": 480,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-027",
-    "distribution": "paraphrase",
-    "question": "刻字的内容写在哪里",
-    "expect": {
-      "cite": {
-        "asset_id": 492,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-028",
-    "distribution": "paraphrase",
-    "question": "杯子的净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-029",
-    "distribution": "paraphrase",
-    "question": "邮费怎么算",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-030",
-    "distribution": "paraphrase",
-    "question": "快递什么时候到",
-    "expect": {
-      "cite": {
-        "asset_id": 480,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-031",
-    "distribution": "paraphrase",
-    "question": "三包要保留什么凭证",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-032",
-    "distribution": "paraphrase",
-    "question": "保修卡要留着吗",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-syn-033",
-    "distribution": "paraphrase",
-    "question": "退换要扣钱吗",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-001",
-    "distribution": "confusion",
-    "question": "显示器和耳机你们都有吗",
-    "expect": {
-      "cite": {
-        "asset_id": 501,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-002",
-    "distribution": "confusion",
-    "question": "耳机的保修和显示器一样吗",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-003",
-    "distribution": "confusion",
-    "question": "耳机多少钱",
-    "expect": {
-      "cite": {
-        "asset_id": 481,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-004",
-    "distribution": "confusion",
-    "question": "有没有便宜点的耳机",
-    "expect": {
-      "cite": {
-        "asset_id": 481,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-005",
-    "distribution": "confusion",
-    "question": "保温杯的材质是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 3,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-006",
-    "distribution": "confusion",
-    "question": "Xperia Ear 是什么品牌",
-    "expect": {
-      "cite": {
-        "asset_id": 481,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-007",
-    "distribution": "confusion",
-    "question": "Xperia Ear 是什么品牌的耳机",
-    "expect": {
-      "cite": {
-        "asset_id": 481,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-008",
-    "distribution": "confusion",
-    "question": "刻字的键盘支持七天无理由退货吗",
-    "expect": {
-      "cite": {
-        "asset_id": 492,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-009",
-    "distribution": "confusion",
-    "question": "Sennheiser HD 800 和 HD 800 S 是同一款吗",
-    "expect": {
-      "cite": {
-        "asset_id": 485,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-conf-010",
-    "distribution": "confusion",
-    "question": "质量问题几天内可以换新",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-ref-001",
-    "distribution": "refusal",
-    "question": "鼠标有货吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-002",
-    "distribution": "refusal",
-    "question": "鼠标还有吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-003",
-    "distribution": "refusal",
-    "question": "有赠品吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-004",
-    "distribution": "refusal",
-    "question": "有没有白色款",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-005",
-    "distribution": "refusal",
-    "question": "会员积分怎么兑换",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-006",
-    "distribution": "refusal",
-    "question": "无人机多少钱",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-007",
-    "distribution": "refusal",
-    "question": "乐事薯片有货吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-008",
-    "distribution": "refusal",
-    "question": "小龙虾有货吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-009",
-    "distribution": "refusal",
-    "question": "你们老板叫什么名字",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-010",
-    "distribution": "refusal",
-    "question": "你们老板在吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-011",
-    "distribution": "refusal",
-    "question": "投诉！要真人",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-012",
-    "distribution": "refusal",
-    "question": "举报你们",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-013",
-    "distribution": "refusal",
-    "question": "孕妇可以喝这个茶吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-014",
-    "distribution": "refusal",
-    "question": "家具送货安装怎么收费",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-015",
-    "distribution": "refusal",
-    "question": "还有别的颜色吗",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-016",
-    "distribution": "refusal",
-    "question": "有没有货",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-ref-017",
-    "distribution": "refusal",
-    "question": "我要转人工",
-    "expect": {
-      "refuse": true
-    }
-  },
-  {
-    "id": "exp-oovsyn-001",
-    "distribution": "oov_syn",
-    "question": "邮资怎么算",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-002",
-    "distribution": "oov_syn",
-    "question": "坏了给修吗",
-    "expect": {
-      "cite": {
-        "asset_id": 478,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-003",
-    "distribution": "oov_syn",
-    "question": "能开张票据吗",
-    "expect": {
-      "cite": {
-        "asset_id": 480,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-004",
-    "distribution": "oov_syn",
-    "question": "可以在键盘上雕字吗",
-    "expect": {
-      "cite": {
-        "asset_id": 492,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-005",
-    "distribution": "oov_syn",
-    "question": "拍了多久寄出",
-    "expect": {
-      "cite": {
-        "asset_id": 480,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-006",
-    "distribution": "oov_syn",
-    "question": "退回去的邮资哪边付",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-007",
-    "distribution": "oov_syn",
-    "question": "瓶装水能存放多久",
-    "expect": {
-      "cite": {
-        "asset_id": 15,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-008",
-    "distribution": "oov_syn",
-    "question": "Erdbeeren的商品编码是什么",
-    "expect": {
-      "cite": {
-        "asset_id": 237,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-009",
-    "distribution": "oov_syn",
-    "question": "Xperia Ear Duo 哪一年出的",
-    "expect": {
-      "cite": {
-        "asset_id": 482,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-010",
-    "distribution": "oov_syn",
-    "question": "Vivo Y300 是哪家厂的",
-    "expect": {
-      "cite": {
-        "asset_id": 268,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-011",
-    "distribution": "oov_syn",
-    "question": "羊绒围巾磨出毛球咋处理",
-    "expect": {
-      "cite": {
-        "asset_id": 261,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-012",
-    "distribution": "oov_syn",
-    "question": "不想要了能退掉吗",
-    "expect": {
-      "cite": {
-        "asset_id": 479,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-013",
-    "distribution": "oov_syn",
-    "question": "货从哪里发出来",
-    "expect": {
-      "cite": {
-        "asset_id": 260,
-        "version_no": 1
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-014",
-    "distribution": "oov_syn",
-    "question": "你们什么时间开门",
-    "expect": {
-      "cite": {
-        "asset_id": 17,
-        "version_no": 2
-      }
-    }
-  },
-  {
-    "id": "exp-oovsyn-015",
-    "distribution": "oov_syn",
-    "question": "保温壶的净含量是多少",
-    "expect": {
-      "cite": {
-        "asset_id": 9,
-        "version_no": 1
-      }
-    }
+ {
+  "id": "pos-001",
+  "distribution": "positive",
+  "question": "这款 1MD Nutrition 的产品是什么牌子的",
+  "expect": {
+   "cite": {
+    "asset_id": 245,
+    "version_no": 1
+   }
   }
+ },
+ {
+  "id": "pos-002",
+  "distribution": "positive",
+  "question": "保温杯的净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-003",
+  "distribution": "positive",
+  "question": "Jeff de Bruges的销售国家是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 227,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-004",
+  "distribution": "positive",
+  "question": "Coca-Cola的净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 239,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-005",
+  "distribution": "positive",
+  "question": "衣服评论 · 裤子早都到了忘了确认收货 物流很快怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 44,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-006",
+  "distribution": "positive",
+  "question": "Zuivelmeester 规格（OFF）怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 241,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-007",
+  "distribution": "positive",
+  "question": "Nestle Carnation的净含量是1kg吗",
+  "expect": {
+   "cite": {
+    "asset_id": 244,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-008",
+  "distribution": "positive",
+  "question": "该商品的退货政策是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-009",
+  "distribution": "positive",
+  "question": "Fitpiggy的条码是000000000063吗",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-010",
+  "distribution": "positive",
+  "question": "AdvoCare的品牌是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 228,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-011",
+  "distribution": "positive",
+  "question": "Erdbeeren的条码是00000019吗",
+  "expect": {
+   "cite": {
+    "asset_id": 237,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-012",
+  "distribution": "positive",
+  "question": "Toneop 规格（OFF）怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 233,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-013",
+  "distribution": "positive",
+  "question": "水果评论 · 买了六次了，每次只买80mm ，每次怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 78,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-014",
+  "distribution": "positive",
+  "question": "水果评论 · 买了3次，第一次1箱，第二次2箱，第怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 76,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-015",
+  "distribution": "positive",
+  "question": "Hershey’s Syrup 规格（OFF）怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 242,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-016",
+  "distribution": "positive",
+  "question": "平板评论 · 在你家买个手机、耳塞都没有、差评怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 47,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-017",
+  "distribution": "positive",
+  "question": "该商品的净含量是500ml吗",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-018",
+  "distribution": "positive",
+  "question": "瓶装水：日常补水随身装怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 15,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-019",
+  "distribution": "positive",
+  "question": "Frog Fuel Power Protein的净含量是610 g吗",
+  "expect": {
+   "cite": {
+    "asset_id": 240,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-020",
+  "distribution": "positive",
+  "question": "酒店评论 · 周边环境不好，除了酒店没有别的。一个怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 160,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-021",
+  "distribution": "positive",
+  "question": "衣服评论 · 黄渤:“班尼路，牌子!”哈哈哈哈，很怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 49,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-022",
+  "distribution": "positive",
+  "question": "Erdbeeren的条码是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 237,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-023",
+  "distribution": "positive",
+  "question": "Confiture extra citron de Menton的条码是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 229,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-024",
+  "distribution": "positive",
+  "question": "水果评论 · 水份多，味道甜，没有坏果，物流速度快怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 80,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-025",
+  "distribution": "positive",
+  "question": "account_access/recover_username · Hi! I forogt my username so i怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 225,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-026",
+  "distribution": "positive",
+  "question": "瓶装水：日常补水随身装的保质期是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 15,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-027",
+  "distribution": "positive",
+  "question": "xxx的条码是00000010吗",
+  "expect": {
+   "cite": {
+    "asset_id": 232,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-028",
+  "distribution": "positive",
+  "question": "Jeff de Bruges 规格（OFF）怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 227,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-029",
+  "distribution": "positive",
+  "question": "洗发水评论 · 还没用，到货后看着很多，不过和我在超怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 172,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-030",
+  "distribution": "positive",
+  "question": "Nestlé的品牌是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 238,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-031",
+  "distribution": "positive",
+  "question": "钛钢保温杯 500ml 316不锈钢 日常饮水随行的净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 10,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-032",
+  "distribution": "positive",
+  "question": "水果评论 · 物流超级快，宝贝收到了就打开来吃了，怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 91,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-033",
+  "distribution": "positive",
+  "question": "我想查询退款状态需要提供什么信息",
+  "expect": {
+   "cite": {
+    "asset_id": 224,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-034",
+  "distribution": "positive",
+  "question": "Mg ricarica的品牌是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 230,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-035",
+  "distribution": "positive",
+  "question": "酒店评论 · 没有第一次去舒服怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 184,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-036",
+  "distribution": "positive",
+  "question": "1MD Nutrition的销售国家是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 245,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-037",
+  "distribution": "positive",
+  "question": "What information do you need to resend an order if I never received it",
+  "expect": {
+   "cite": {
+    "asset_id": 223,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-038",
+  "distribution": "positive",
+  "question": "补口径 · 你们几点上班怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 17,
+    "version_no": 2
+   }
+  }
+ },
+ {
+  "id": "pos-039",
+  "distribution": "positive",
+  "question": "书籍评论 · 没有塑料包装，也没有同事说的送记单词怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 194,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "pos-040",
+  "distribution": "positive",
+  "question": "洗发水评论 · 用沙宣好多年，这次买到的洗发水和护发怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 43,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-001",
+  "distribution": "paraphrase",
+  "question": "请问Bodylab 参数（OFF）值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 236,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-002",
+  "distribution": "paraphrase",
+  "question": "请问洗发水评价 · 第一次给差评，这款产品用完头发特别痒值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 209,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-003",
+  "distribution": "paraphrase",
+  "question": "Mg ricarica的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 230,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-004",
+  "distribution": "paraphrase",
+  "question": "Apple bandit的条码是00000015，对吧",
+  "expect": {
+   "cite": {
+    "asset_id": 235,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-005",
+  "distribution": "paraphrase",
+  "question": "请问退换政策说明值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 6,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-006",
+  "distribution": "paraphrase",
+  "question": "xylimgxyling的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 231,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-007",
+  "distribution": "paraphrase",
+  "question": "xxx的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 232,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-008",
+  "distribution": "paraphrase",
+  "question": "请问尺码对照说明值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 7,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-009",
+  "distribution": "paraphrase",
+  "question": "Fitpiggy的配料是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-010",
+  "distribution": "paraphrase",
+  "question": "AdvoCare的销售国家是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 228,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-011",
+  "distribution": "paraphrase",
+  "question": "Apple bandit的stabilisant是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 235,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-012",
+  "distribution": "paraphrase",
+  "question": "钛钢保温瓶的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 3,
+    "version_no": 2
+   }
+  }
+ },
+ {
+  "id": "syn-013",
+  "distribution": "paraphrase",
+  "question": "请问Lindt Vollmilch Schokolade 参数（OFF）值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 243,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-014",
+  "distribution": "paraphrase",
+  "question": "Nestlé的容量是1080g，对吧",
+  "expect": {
+   "cite": {
+    "asset_id": 238,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-015",
+  "distribution": "paraphrase",
+  "question": "Lindt Vollmilch Schokolade的容量是100g，对吧",
+  "expect": {
+   "cite": {
+    "asset_id": 243,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-016",
+  "distribution": "paraphrase",
+  "question": "If I have waited over a week and still have not received my order, can you resend it，麻烦告知",
+  "expect": {
+   "cite": {
+    "asset_id": 223,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-017",
+  "distribution": "paraphrase",
+  "question": "请问subscription_inquiry/manage_pay_bill · I'm trying to find out about m值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 224,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-018",
+  "distribution": "paraphrase",
+  "question": "钛钢保温瓶的材质有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 3,
+    "version_no": 2
+   }
+  }
+ },
+ {
+  "id": "syn-019",
+  "distribution": "paraphrase",
+  "question": "Hershey’s Syrup的容量有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 242,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-020",
+  "distribution": "paraphrase",
+  "question": "请问保温瓶的容量是多少？值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-021",
+  "distribution": "paraphrase",
+  "question": "请问手机评价 · 实际上这个机子就是多浦达700的OE值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 27,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-022",
+  "distribution": "paraphrase",
+  "question": "请问平板评价 · 很一般的产品，常常黑屏，设置显示5分值得入手吗",
+  "expect": {
+   "cite": {
+    "asset_id": 28,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-023",
+  "distribution": "paraphrase",
+  "question": "钛钢保温瓶 500ml 316不锈钢 日常饮水随行的材质有多少",
+  "expect": {
+   "cite": {
+    "asset_id": 10,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-024",
+  "distribution": "paraphrase",
+  "question": "Pbfit的容量是300g，对吧",
+  "expect": {
+   "cite": {
+    "asset_id": 234,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "syn-025",
+  "distribution": "paraphrase",
+  "question": "Pbfit的销售国家是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 234,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-001",
+  "distribution": "confusion",
+  "question": "净含怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-002",
+  "distribution": "confusion",
+  "question": "含量怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-003",
+  "distribution": "confusion",
+  "question": "售国怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-004",
+  "distribution": "confusion",
+  "question": "国家怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-005",
+  "distribution": "confusion",
+  "question": "据库怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-006",
+  "distribution": "confusion",
+  "question": "数据怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-007",
+  "distribution": "confusion",
+  "question": "条码怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-008",
+  "distribution": "confusion",
+  "question": "来源怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-009",
+  "distribution": "confusion",
+  "question": "销售怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-010",
+  "distribution": "confusion",
+  "question": "品牌怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 226,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-011",
+  "distribution": "confusion",
+  "question": "配料怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 228,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-012",
+  "distribution": "confusion",
+  "question": "客服怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 29,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-013",
+  "distribution": "confusion",
+  "question": "物流怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 78,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-014",
+  "distribution": "confusion",
+  "question": "第一怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 76,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "conf-015",
+  "distribution": "confusion",
+  "question": "一次怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 76,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "ref-001",
+  "distribution": "positive",
+  "question": "发票可以开电子的吗",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "ref-002",
+  "distribution": "refusal",
+  "question": "宠物用品区在几楼",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-003",
+  "distribution": "refusal",
+  "question": "机票改签找谁",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-004",
+  "distribution": "refusal",
+  "question": "以旧换新怎么办理",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-005",
+  "distribution": "refusal",
+  "question": "可以货到付款吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-006",
+  "distribution": "refusal",
+  "question": "礼品卡怎么充值",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-007",
+  "distribution": "refusal",
+  "question": "话费充值有优惠吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-008",
+  "distribution": "refusal",
+  "question": "二手回收怎么估价",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-009",
+  "distribution": "refusal",
+  "question": "医疗器械能退吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-010",
+  "distribution": "refusal",
+  "question": "汽车用品有推荐的吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-011",
+  "distribution": "positive",
+  "question": "可以开发票吗",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "ref-012",
+  "distribution": "refusal",
+  "question": "降价了能补差价吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-013",
+  "distribution": "refusal",
+  "question": "直播间优惠券怎么领",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-014",
+  "distribution": "refusal",
+  "question": "数码相机防水吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "ref-015",
+  "distribution": "positive",
+  "question": "无人机保修多久",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "ref-016",
+  "distribution": "refusal",
+  "question": "运动鞋有增高款吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-pos-001",
+  "distribution": "positive",
+  "question": "怎么退货",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-002",
+  "distribution": "positive",
+  "question": "退货政策是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-003",
+  "distribution": "positive",
+  "question": "退货运费多少钱",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-004",
+  "distribution": "positive",
+  "question": "退货需要什么材料",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-005",
+  "distribution": "positive",
+  "question": "运费谁出",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-006",
+  "distribution": "positive",
+  "question": "退货运费谁承担",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-007",
+  "distribution": "positive",
+  "question": "退货要钱吗",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-008",
+  "distribution": "positive",
+  "question": "买了东西想退货，政策是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-009",
+  "distribution": "positive",
+  "question": "保修多久",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-010",
+  "distribution": "positive",
+  "question": "发票怎么开具",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-011",
+  "distribution": "positive",
+  "question": "能刻字吗",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-012",
+  "distribution": "positive",
+  "question": "笔记本电脑刻字怎么收费",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-013",
+  "distribution": "positive",
+  "question": "你们几点上班",
+  "expect": {
+   "cite": {
+    "asset_id": 17,
+    "version_no": 2
+   }
+  }
+ },
+ {
+  "id": "exp-pos-014",
+  "distribution": "positive",
+  "question": "Vivo Y300 是什么品牌",
+  "expect": {
+   "cite": {
+    "asset_id": 268,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-015",
+  "distribution": "positive",
+  "question": "Xperia Ear Duo 什么时候上市的",
+  "expect": {
+   "cite": {
+    "asset_id": 482,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-016",
+  "distribution": "positive",
+  "question": "Xperia Ear Duo 上市了吗",
+  "expect": {
+   "cite": {
+    "asset_id": 482,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-017",
+  "distribution": "positive",
+  "question": "Xperia Ear 是耳机吗",
+  "expect": {
+   "cite": {
+    "asset_id": 481,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-018",
+  "distribution": "positive",
+  "question": "饮用水的保质期是多久",
+  "expect": {
+   "cite": {
+    "asset_id": 15,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-019",
+  "distribution": "positive",
+  "question": "I never received my order, what should I do",
+  "expect": {
+   "cite": {
+    "asset_id": 223,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-020",
+  "distribution": "positive",
+  "question": "仓库在哪里",
+  "expect": {
+   "cite": {
+    "asset_id": 260,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-021",
+  "distribution": "positive",
+  "question": "羊绒围巾起球怎么处理",
+  "expect": {
+   "cite": {
+    "asset_id": 261,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-022",
+  "distribution": "positive",
+  "question": "钛钢保温壶的材质是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 3,
+    "version_no": 2
+   }
+  }
+ },
+ {
+  "id": "exp-pos-023",
+  "distribution": "positive",
+  "question": "整箱堆放会不会变形",
+  "expect": {
+   "cite": {
+    "asset_id": 264,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-024",
+  "distribution": "positive",
+  "question": "有瓶装水直播实拍的清晰商品图吗",
+  "expect": {
+   "cite": {
+    "asset_id": 505,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-025",
+  "distribution": "positive",
+  "question": "显示器支架能调节吗",
+  "expect": {
+   "cite": {
+    "asset_id": 501,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-026",
+  "distribution": "positive",
+  "question": "帮我查下我的订单到哪了，顺便讲讲退货政策",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-027",
+  "distribution": "positive",
+  "question": "净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-028",
+  "distribution": "positive",
+  "question": "保温杯的净含量多少",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-029",
+  "distribution": "positive",
+  "question": "Chocolate n3的销售国家",
+  "expect": {
+   "cite": {
+    "asset_id": 239,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-030",
+  "distribution": "positive",
+  "question": "Cardiofitmd的品牌是1MD Nutrition吗",
+  "expect": {
+   "cite": {
+    "asset_id": 245,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-031",
+  "distribution": "positive",
+  "question": "Erdbeeren 酸奶的净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 237,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-032",
+  "distribution": "positive",
+  "question": "Erdbeeren 巧克力的条码是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 237,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-033",
+  "distribution": "positive",
+  "question": "现场实测保温能坚持几个小时",
+  "expect": {
+   "cite": {
+    "asset_id": 11,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-034",
+  "distribution": "positive",
+  "question": "钛钢内胆是一体成型的吗",
+  "expect": {
+   "cite": {
+    "asset_id": 11,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-035",
+  "distribution": "positive",
+  "question": "瓶装水的保质期是多久",
+  "expect": {
+   "cite": {
+    "asset_id": 15,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-036",
+  "distribution": "positive",
+  "question": "塑料外壳的键盘能刻字吗",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-pos-037",
+  "distribution": "positive",
+  "question": "蓝牙耳机电池保修多久",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-001",
+  "distribution": "paraphrase",
+  "question": "怎么退换",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-002",
+  "distribution": "paraphrase",
+  "question": "退货的邮费谁出",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-003",
+  "distribution": "paraphrase",
+  "question": "退换货政策是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-004",
+  "distribution": "paraphrase",
+  "question": "退货用什么快递寄回",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-005",
+  "distribution": "paraphrase",
+  "question": "瓶装水的保存期是多久",
+  "expect": {
+   "cite": {
+    "asset_id": 15,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-006",
+  "distribution": "paraphrase",
+  "question": "能开收据吗",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-007",
+  "distribution": "paraphrase",
+  "question": "三包政策是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-008",
+  "distribution": "paraphrase",
+  "question": "水果的口感怎么样",
+  "expect": {
+   "cite": {
+    "asset_id": 76,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-009",
+  "distribution": "paraphrase",
+  "question": "键盘上刻字怎么收费",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-010",
+  "distribution": "paraphrase",
+  "question": "发票多久能开好",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-011",
+  "distribution": "paraphrase",
+  "question": "退货后退款几天到账",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-012",
+  "distribution": "paraphrase",
+  "question": "保修维修要几个工作日",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-013",
+  "distribution": "paraphrase",
+  "question": "刻字服务怎么收费",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-014",
+  "distribution": "paraphrase",
+  "question": "耳机的类目是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 481,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-015",
+  "distribution": "paraphrase",
+  "question": "无人机的保修期是多长",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-016",
+  "distribution": "paraphrase",
+  "question": "键盘的保修政策是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-017",
+  "distribution": "paraphrase",
+  "question": "显示器的实拍图有吗",
+  "expect": {
+   "cite": {
+    "asset_id": 501,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-018",
+  "distribution": "paraphrase",
+  "question": "退换的时间限制是几天",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-019",
+  "distribution": "paraphrase",
+  "question": "邮费是你们出吗",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-020",
+  "distribution": "paraphrase",
+  "question": "瓶装水开盖即饮吗",
+  "expect": {
+   "cite": {
+    "asset_id": 15,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-021",
+  "distribution": "paraphrase",
+  "question": "vivo 手机的品牌是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 268,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-022",
+  "distribution": "paraphrase",
+  "question": "羊绒围巾起球咋办",
+  "expect": {
+   "cite": {
+    "asset_id": 261,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-023",
+  "distribution": "paraphrase",
+  "question": "仓库位置在哪里",
+  "expect": {
+   "cite": {
+    "asset_id": 260,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-024",
+  "distribution": "paraphrase",
+  "question": "保修期内维修收费吗",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-025",
+  "distribution": "paraphrase",
+  "question": "换货政策是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-026",
+  "distribution": "paraphrase",
+  "question": "开具发票要多久",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-027",
+  "distribution": "paraphrase",
+  "question": "刻字的内容写在哪里",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-028",
+  "distribution": "paraphrase",
+  "question": "杯子的净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-029",
+  "distribution": "paraphrase",
+  "question": "邮费怎么算",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-030",
+  "distribution": "paraphrase",
+  "question": "快递什么时候到",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-031",
+  "distribution": "paraphrase",
+  "question": "三包要保留什么凭证",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-032",
+  "distribution": "paraphrase",
+  "question": "保修卡要留着吗",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-syn-033",
+  "distribution": "paraphrase",
+  "question": "退换要扣钱吗",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-conf-001",
+  "distribution": "confusion",
+  "question": "显示器和耳机你们都有吗",
+  "expect": {
+   "cite": {
+    "asset_id": 501,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-conf-002",
+  "distribution": "confusion",
+  "question": "耳机的保修和显示器一样吗",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-conf-003",
+  "distribution": "confusion",
+  "question": "耳机多少钱",
+  "expect": {
+   "cite": {
+    "asset_id": 481,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-conf-004",
+  "distribution": "confusion",
+  "question": "有没有便宜点的耳机",
+  "expect": {
+   "cite": {
+    "asset_id": 481,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-conf-005",
+  "distribution": "confusion",
+  "question": "保温杯的材质是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 3,
+    "version_no": 2
+   }
+  }
+ },
+ {
+  "id": "exp-conf-006",
+  "distribution": "confusion",
+  "question": "Xperia Ear 是什么品牌",
+  "expect": {
+   "cite": {
+    "asset_id": 481,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-conf-007",
+  "distribution": "confusion",
+  "question": "Xperia Ear 是什么品牌的耳机",
+  "expect": {
+   "cite": {
+    "asset_id": 481,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-conf-008",
+  "distribution": "confusion",
+  "question": "刻字的键盘支持七天无理由退货吗",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-conf-009",
+  "distribution": "confusion",
+  "question": "Sennheiser HD 800 和 HD 800 S 是同一款吗",
+  "expect": {
+   "cite": {
+    "asset_id": 485,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-conf-010",
+  "distribution": "confusion",
+  "question": "质量问题几天内可以换新",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-ref-001",
+  "distribution": "refusal",
+  "question": "鼠标有货吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-002",
+  "distribution": "refusal",
+  "question": "鼠标还有吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-003",
+  "distribution": "refusal",
+  "question": "有赠品吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-004",
+  "distribution": "refusal",
+  "question": "有没有白色款",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-005",
+  "distribution": "refusal",
+  "question": "会员积分怎么兑换",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-006",
+  "distribution": "refusal",
+  "question": "无人机多少钱",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-007",
+  "distribution": "refusal",
+  "question": "乐事薯片有货吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-008",
+  "distribution": "refusal",
+  "question": "小龙虾有货吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-009",
+  "distribution": "refusal",
+  "question": "你们老板叫什么名字",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-010",
+  "distribution": "refusal",
+  "question": "你们老板在吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-011",
+  "distribution": "refusal",
+  "question": "投诉！要真人",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-012",
+  "distribution": "refusal",
+  "question": "举报你们",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-013",
+  "distribution": "refusal",
+  "question": "孕妇可以喝这个茶吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-014",
+  "distribution": "refusal",
+  "question": "家具送货安装怎么收费",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-015",
+  "distribution": "refusal",
+  "question": "还有别的颜色吗",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-016",
+  "distribution": "refusal",
+  "question": "有没有货",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-ref-017",
+  "distribution": "refusal",
+  "question": "我要转人工",
+  "expect": {
+   "refuse": true
+  }
+ },
+ {
+  "id": "exp-oovsyn-001",
+  "distribution": "oov_syn",
+  "question": "邮资怎么算",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-002",
+  "distribution": "oov_syn",
+  "question": "坏了给修吗",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-003",
+  "distribution": "oov_syn",
+  "question": "能开张票据吗",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-004",
+  "distribution": "oov_syn",
+  "question": "可以在键盘上雕字吗",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-005",
+  "distribution": "oov_syn",
+  "question": "拍了多久寄出",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-006",
+  "distribution": "oov_syn",
+  "question": "退回去的邮资哪边付",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-007",
+  "distribution": "oov_syn",
+  "question": "瓶装水能存放多久",
+  "expect": {
+   "cite": {
+    "asset_id": 15,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-008",
+  "distribution": "oov_syn",
+  "question": "Erdbeeren的商品编码是什么",
+  "expect": {
+   "cite": {
+    "asset_id": 237,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-009",
+  "distribution": "oov_syn",
+  "question": "Xperia Ear Duo 哪一年出的",
+  "expect": {
+   "cite": {
+    "asset_id": 482,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-010",
+  "distribution": "oov_syn",
+  "question": "Vivo Y300 是哪家厂的",
+  "expect": {
+   "cite": {
+    "asset_id": 268,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-011",
+  "distribution": "oov_syn",
+  "question": "羊绒围巾磨出毛球咋处理",
+  "expect": {
+   "cite": {
+    "asset_id": 261,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-012",
+  "distribution": "oov_syn",
+  "question": "不想要了能退掉吗",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-013",
+  "distribution": "oov_syn",
+  "question": "货从哪里发出来",
+  "expect": {
+   "cite": {
+    "asset_id": 260,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-014",
+  "distribution": "oov_syn",
+  "question": "你们什么时间开门",
+  "expect": {
+   "cite": {
+    "asset_id": 17,
+    "version_no": 2
+   }
+  }
+ },
+ {
+  "id": "exp-oovsyn-015",
+  "distribution": "oov_syn",
+  "question": "保温壶的净含量是多少",
+  "expect": {
+   "cite": {
+    "asset_id": 9,
+    "version_no": 1
+   }
+  }
+ }
 ]

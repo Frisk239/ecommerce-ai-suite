@@ -274,3 +274,126 @@ def test_strip_coverage_disclaimers(answer_text: str, expect: str) -> None:
         assert all_disclaimers is False
         assert expect in remaining
         assert "未覆盖" not in remaining and "未提供" not in remaining
+
+
+# ---------- 审计刀 17 记债①：免责式 answer 不关缺口（auto-close 判据收紧） ----------
+
+
+@pytest.mark.parametrize(
+    ("answer_text", "expect_kind"),
+    [
+        # 58 刀词表内形态：整段免责按拒答收口（缺口照落、照转人工——既有语义）
+        ("证据未覆盖保修信息。", "refusal"),
+        # 审计刀 17 实测形态：无证据类主语、拖着宾语不满 fullmatch——58 刀摘句层
+        # 刻意不收（误摘比漏检贵），句子照旧以 kind=answer 出给顾客
+        ("未覆盖保修信息。", "answer"),
+        ("未给出净含量数值。[1]", "answer"),
+    ],
+)
+def test_disclaimer_only_answer_keeps_gap_open(
+    engine: dict[str, Any], monkeypatch: pytest.MonkeyPatch, answer_text: str, expect_kind: str
+) -> None:
+    """钉①（审计刀 17 记债①）：纯免责句挂 kind=answer 时是「答非所答」——
+    同问 open 缺口不关（知识仍缺，下次再答），无论 58 刀摘句层是否把它转成拒答。"""
+
+    def fake(_system: str, _user: str, history: list[dict[str, str]] | None = None):
+        del history
+
+        async def _gen() -> Any:
+            yield answer_text
+
+        return _gen()
+
+    monkeypatch.setattr("suite_api.services.chat_engine.llm.stream_chat", fake)
+    closes = {"called": 0}
+
+    def _fake_close(*_a: Any, **_k: Any) -> bool:
+        closes["called"] += 1
+        return True
+
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.resolve_gap_answered_by_catalog", _fake_close
+    )
+
+    def _fake_gap(*_a: Any, **_k: Any) -> Any:
+        return type("G", (), {"id": 1})()
+
+    monkeypatch.setattr("suite_api.services.chat_engine.record_refusal_gap", _fake_gap)
+    hits = [_hit(3, "保修：整机一年。"), _hit(9, "客服：非人为损坏免费维修。")]
+    monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: hits)
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.assets_meta",
+        lambda *_a, **_k: {3: {"kind": "document", "title": "保修"}, 9: {"kind": "dialogue", "title": "客服"}},
+    )
+
+    outcome = asyncio.run(run_ask(engine["db"], engine["session"], "保修政策是什么？"))
+
+    assert outcome.answer.kind == expect_kind
+    assert closes["called"] == 0  # 免责式回答（答非所答）不关缺口
+
+
+def test_substantive_answer_with_disclaimer_tail_closes_gap(
+    engine: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """钉②：部分实质+部分免责=照答照关——12 刀「答上即关」与 58 刀「摘句作答」
+    的既有语义不回归（摘掉免责尾后仍是实质回答，缺口照常收）。"""
+
+    def fake(_system: str, _user: str, history: list[dict[str, str]] | None = None):
+        del history
+
+        async def _gen() -> Any:
+            yield "整机保修一年。[1][2] 贴膜保修证据未覆盖。"
+
+        return _gen()
+
+    monkeypatch.setattr("suite_api.services.chat_engine.llm.stream_chat", fake)
+    closes = {"called": 0}
+
+    def _fake_close(*_a: Any, **_k: Any) -> bool:
+        closes["called"] += 1
+        return True
+
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.resolve_gap_answered_by_catalog", _fake_close
+    )
+    hits = [_hit(3, "保修：整机一年。"), _hit(9, "客服：非人为损坏免费维修。")]
+    monkeypatch.setattr("suite_api.services.chat_engine.retrieve", lambda *_a, **_k: hits)
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.assets_meta",
+        lambda *_a, **_k: {3: {"kind": "document", "title": "保修"}, 9: {"kind": "dialogue", "title": "客服"}},
+    )
+
+    outcome = asyncio.run(run_ask(engine["db"], engine["session"], "保修政策是什么？"))
+
+    assert outcome.answer.kind == "answer"
+    assert outcome.agent_message.content == "整机保修一年。"  # 58 刀摘句作答
+    assert closes["called"] == 1  # 实质内容在——照关
+
+
+@pytest.mark.parametrize(
+    ("text", "expect"),
+    [
+        # 纯免责（三族词表各形态）-> 无实质内容
+        ("证据未覆盖保修信息。", False),  # _NO_COVERAGE_RE（58 刀词表内）
+        ("未覆盖保修信息。", False),  # 刀 17 实测：覆盖动词开头的无主语形态
+        ("未给出净含量数值。[1]", False),  # 刀 17 实测形态二
+        ("[未覆盖]", False),  # 刀 16 裸标记 fullmatch
+        ("暂无相关信息。", False),
+        ("无法确认。[1][2]", False),
+        ("[1][2]", False),  # 光秃秃的引用标记不算实质
+        # 有实质内容 -> True（含刀 12 事实否定句负例：句首是主语，不误判）
+        ("整机保修一年。贴膜保修证据未覆盖。", True),
+        ("配料信息中不包含任何防腐剂。[2]", True),
+        ("产品信息不包含电池，需另行购买。", True),
+        ("根据已发布证据，净含量为 500ml。[1]", True),
+    ],
+)
+def test_has_substantive_answer(text: str, expect: bool) -> None:
+    """纯函数钉：auto-close 判据（审计刀 17 记债①）的免责/实质分界。
+
+    负例必须放行刀 12 的事实否定句（「配料信息中不包含任何防腐剂」——句首是
+    主语不是覆盖动词）；正例覆盖三族免责词表各收一种形态。
+    """
+    from suite_api.services.chat_engine import has_substantive_answer
+
+    assert has_substantive_answer(text) is expect

@@ -300,6 +300,16 @@ def test_full_loop_plan_preview_draft_publish(
     )
     assert not any(s.get("codec_type") == "audio" for s in meta["streams"])
     assert _corner_has_watermark(probe_path)
+    # 审计 19 P2-5：像素钉对水印窗口化盲（首帧在窗内才验）——补一帧**非首帧**
+    # 的水印像素证据：取时间线里最后一张文案卡（深底色画面，非首素材）窗口
+    # 中点抽帧，角标仍在（红线①「常驻」到字节面，drawtext 无 enable= 窗口）。
+    last_text = max(
+        (item for item in timeline if item["type"] == "text"), key=lambda i: i["start"]
+    )
+    assert last_text["start"] > 0, "rich_product 时间线应有中段文案卡"
+    assert _corner_has_watermark(
+        probe_path, at=last_text["start"] + last_text["dur"] / 2
+    )
 
     # 剪映草稿 zip：结构 + 媒体字节随包 + 相对路径
     draft = client.get(f"/api/video-compose/{task_id}/draft")
@@ -584,9 +594,10 @@ def test_unknown_task_404(api: ApiFixture) -> None:
     assert client.get("/api/video-compose/999999/draft").status_code == 404
 
 
-def _corner_has_watermark(video: Path) -> bool:
-    """抽 1s 帧：右上角水印区出现亮像素（黑 letterbox/深色画面上的白色「AI 生成」
-    + 半透明黑底框——红线①的字节面证据）。"""
+def _corner_has_watermark(video: Path, *, at: float = 1.0) -> bool:
+    """抽 ``at`` 秒帧（默认 1.0）：右上角水印区出现亮像素（黑 letterbox/深色
+    画面上的白色「AI 生成」+ 半透明黑底框——红线①的字节面证据）。审计 19
+    P2-5 起 ``at`` 可指定非首帧位（如中段文案卡窗口中点）。"""
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -596,7 +607,7 @@ def _corner_has_watermark(video: Path) -> bool:
         width, height = int(stream["width"]), int(stream["height"])
         subprocess.run(  # noqa: S603 - 固定参数，无 shell
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-             "-ss", "1.0", "-i", str(video), "-frames:v", "1",
+             "-ss", str(at), "-i", str(video), "-frames:v", "1",
              "-vf", "format=rgb24", "-f", "rawvideo", str(frame)],
             check=True, capture_output=True,
         )

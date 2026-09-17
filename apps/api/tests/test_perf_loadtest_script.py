@@ -164,3 +164,41 @@ def test_render_summary_line_empty_sample():
     empty = loadtest.Summary(path="tool", users=5, duration=10.0, setup_errors=3)
     line = loadtest.render_summary_line(empty)
     assert line == "| tool | 5 | 0 | 0 | - | - | - | - | 0 | setup_errors=3 |"
+
+
+# ---------- ratelimit 线程纪律（103 刀债收口：daemon + 栅栏超时） ----------
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_run_ratelimit_survives_worker_dying_before_barrier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """钉：单线程**先死**（栅栏前抛非 httpx 异常，如连接池构造失败）不再挂死
+    进程——barrier.wait 带超时：幸存线程按 BrokenBarrierError 记 status=-3
+    错误样本，run 整体秒级返回（旧形态裸 wait 会永久等待 + 非 daemon 线程
+    钉死进程退出）。真发请求的一击路径由真跑压测覆盖（perf-report）。"""
+    import threading
+
+    calls = {"n": 0}
+    real_client = loadtest._client
+
+    def one_dies_client(base_url, cookies=None):  # noqa: ANN001 - 测试替身窄用
+        calls["n"] += 1
+        if calls["n"] == 1:  # 首个线程构造 Client 即炸（栅栏之前先死）
+            raise RuntimeError("连接池构造失败（模拟先死者）")
+        return real_client(base_url, cookies)
+
+    monkeypatch.setattr(loadtest, "_BARRIER_TIMEOUT", 0.2)
+    monkeypatch.setattr(loadtest, "_client", one_dies_client)
+    summary = loadtest.Summary(path="ratelimit", users=4, duration=0.0)
+    done = threading.Event()
+
+    def run() -> None:
+        loadtest._run_ratelimit("http://localhost:8000", 4, summary)
+        done.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    assert done.wait(timeout=5.0), "单线程先死后 _run_ratelimit 挂死（栅栏无超时回归）"
+    # 幸存 3 线程：栅栏破裂记错误样本（status=-3，不是 4xx/5xx 也不是 -1）
+    assert [s.status for s in summary.samples] == [-3, -3, -3]
+    assert summary.errors == 3

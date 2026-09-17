@@ -9,8 +9,9 @@ TOOL_REGISTRY 同一条目（同一份白名单校验 + 同一个执行函数）
 - get_stock：查有（单品）/类目聚合/查无，与客服 get_stock 同一口径（含
   query_stock 的先类目后单品与部分名容错）。
 - get_order_status：查有/查无/小写单号归一/坏格式拒绝（注册表 SO-\\d+ 白名单，
-  与客服提议步同一道闸）；**脱敏钉**：返回不含顾客联系方式——mock 种子单本无
-  PII，测试数据补一条带电话的订单（事件文本 + 联系键），断言出口剥键+文本打码。
+  与客服提议步同一道闸）；**脱敏钉**两道：纯函数钉（构造带联系字段的结果对象
+  过 ``_egress_order_result``，无 PG 也跑——审计 19 P2-5）+ 集成钉（真库真
+  协议出口；mock 种子单本无 PII，测试数据补一条带电话的订单，断言剥键+打码）。
 
 协议面（恰七、无 publish、活状态工具描述无写动作字样）钉在
 tests/test_mcp_evidence.py；设施（独立库/每测试新 app/手动 lifespan/
@@ -33,6 +34,7 @@ from sqlalchemy import select
 
 from suite_api.deps import ensure_engine
 from suite_api.main import create_app
+from suite_api.mcp_server import _egress_order_result
 from suite_api.models import Order, Product
 from suite_api.settings import Settings
 
@@ -345,3 +347,48 @@ def test_live_order_status_redaction_pin(live_env) -> None:
     assert order["events"][0]["text"] == f"顾客来电 {_PHONE_MASKED} 预约送货"
     assert order["events"][1]["text"] == "已签收，放前台"
     assert _PHONE not in json.dumps(order, ensure_ascii=False)
+
+
+def test_egress_order_result_redaction_pure_pin() -> None:
+    """脱敏钉的**纯函数形态**（审计 19 P2-5）：不依赖真 PG——直接构造带联系
+    字段的订单结果对象过 ``_egress_order_result``，钉「剥键 + 打码 + 查无/
+    故障形状原样走」三件事。真库真 MCP 协议出口的端到端面仍由上面的
+    ``test_live_order_status_redaction_pin`` 守（该集成钉保持不动）。"""
+    order = {
+        "found": True,
+        "order_no": "SO-9901",
+        "status": "已签收",
+        "phone": _PHONE,  # 顶层联系键
+        "items": [
+            {"name": "钛钢保温杯", "qty": 1, "contact": _PHONE},
+            {"name": "瓶装水", "qty": 2, "email": "buyer@example.com"},
+        ],
+        "events": [
+            {
+                "at": "2026-09-10 09:00",
+                "text": f"顾客来电 {_PHONE} 预约送货",
+                "phone": _PHONE,
+                "email": "buyer@example.com",
+            },
+            {"at": "2026-09-10 18:00", "text": "已签收，放前台"},
+        ],
+    }
+
+    out = _egress_order_result(order)
+
+    # 顶层固定形状：联系键被剥（只剩业务字段）
+    assert set(out) == {"found", "order_no", "status", "items", "events"}
+    assert out["found"] is True and out["order_no"] == "SO-9901"
+    # items/events 条目：联系键全剥（phone/contact/email 不剩），业务键原样
+    assert all("contact" not in i and "email" not in i for i in out["items"])
+    assert all("phone" not in e and "email" not in e for e in out["events"])
+    assert {i["name"] for i in out["items"]} == {"钛钢保温杯", "瓶装水"}
+    # 事件自由文本里的电话被打码（保留前 1 后 2），裸号码全文不出现
+    assert out["events"][0]["text"] == f"顾客来电 {_PHONE_MASKED} 预约送货"
+    assert out["events"][1]["text"] == "已签收，放前台"
+    assert _PHONE not in json.dumps(out, ensure_ascii=False)
+    assert "buyer@example.com" not in json.dumps(out, ensure_ascii=False)
+    # 查无/故障形状原样走（防御不改写形状——不是命中单不硬造 items/events）
+    assert _egress_order_result({"found": False}) == {"found": False}
+    error_shape = {"found": False, "error": "订单服务暂时不可用"}
+    assert _egress_order_result(error_shape) == error_shape

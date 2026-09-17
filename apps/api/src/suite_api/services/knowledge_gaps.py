@@ -57,6 +57,11 @@ def resolve_gap_answered_by_catalog(db: Session, question: str) -> bool:
     实测：收口原先只挂在目录分支，`你们有笔记本吗？`（库存已答）、`怎么退货？`
     （RAG 已答）两条缺口仍 open——所以本函数改成**任何 kind=answer 的出口都调一次**。
 
+    审计刀 17 记债①的调用契约：「答上」指**答的是实质内容**——LLM 生成面由
+    调用方（chat_engine.run_ask）先过 `has_substantive_answer`：纯免责句
+    （「未覆盖保修信息」类）挂 kind=answer 是「答非所答」，不调本函数（知识
+    仍缺，下次再答）；模板/目录/工具/澄清路径的固定文案恒实质，照旧无条件调。
+
     只关**同问**（normalized_question 相同）且 open 的行；`resolved_by_asset_id`
     保持 NULL（它不是靠文档补上的，如实留白）。返回是否关掉了。
     """

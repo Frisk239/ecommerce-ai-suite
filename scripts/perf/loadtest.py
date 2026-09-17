@@ -66,6 +66,10 @@ SESSION_COOKIE = "suite_session"
 # 单请求超时：LLM 20s 服务端上限 + 检索/落库/SSE 传输余量
 REQUEST_TIMEOUT = 45.0
 
+# ratelimit 场景栅栏等待上限（103 刀债）：防「单线程先死、其余线程裸 wait」
+# 把进程钉死——量级与单请求超时对齐；单测把它改小来钉回归
+_BARRIER_TIMEOUT = REQUEST_TIMEOUT
+
 
 # ---------- 纯函数（单测钉口径：test_perf_loadtest_script.py） ----------
 
@@ -349,15 +353,19 @@ def _run_ratelimit(base_url: str, users: int, summary: Summary) -> None:
 
     不走时长窗（闸是滑动窗口计数，一波并发即验证）；预期同 IP 最多 5 个
     201、其余 429+Retry-After（IP 建会话 5/60s，services/rate_limit）。
+
+    对齐另两 runner 的线程纪律（103 刀债）：daemon=True + barrier.wait 带超时
+    ——某线程在开火前先死（连接池构造失败等）时，其余线程的裸 barrier.wait
+    会永久挂起把进程钉死；超时计一击 error 样本（status=-3）如实进报告。
     """
     local_samples: list[list[Sample]] = [[] for _ in range(users)]
     barrier = threading.Barrier(users)
 
     def worker(index: int) -> None:
-        with _client(base_url) as client:
-            barrier.wait()  # 全员就绪同时开火——窗口内一击触发闸
-            start = time.perf_counter()
-            try:
+        start = time.perf_counter()  # 起点含栅栏等待：同伴未到齐超时也是本次的真实耗时
+        try:
+            with _client(base_url) as client:
+                barrier.wait(timeout=_BARRIER_TIMEOUT)  # 全员就绪同时开火——窗口内一击触发闸
                 resp = client.post("/api/customer/sessions")
                 local_samples[index].append(
                     Sample(
@@ -366,12 +374,16 @@ def _run_ratelimit(base_url: str, users: int, summary: Summary) -> None:
                         retry_after=resp.headers.get("retry-after"),
                     )
                 )
-            except httpx.HTTPError:
-                local_samples[index].append(
-                    Sample(status=-1, elapsed=time.perf_counter() - start)
-                )
+        except threading.BrokenBarrierError:
+            # 有同批线程没到齐（先死者打破栅栏/自己等待超时）：按错误样本记账，
+            # 不挂死——daemon 线程随主线程退出，报告里 status=-3 可见
+            local_samples[index].append(Sample(status=-3, elapsed=time.perf_counter() - start))
+        except httpx.HTTPError:
+            local_samples[index].append(
+                Sample(status=-1, elapsed=time.perf_counter() - start)
+            )
 
-    threads = [threading.Thread(target=worker, args=(i,)) for i in range(users)]
+    threads = [threading.Thread(target=worker, args=(i,), daemon=True) for i in range(users)]
     for thread in threads:
         thread.start()
     for thread in threads:
