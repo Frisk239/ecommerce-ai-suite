@@ -11,6 +11,7 @@ import {
   CaretDown,
   CaretRight,
   Images,
+  MagnifyingGlass,
   Package,
   PencilSimple,
   Plus,
@@ -21,6 +22,7 @@ import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { AssetListItem, Product } from '../api/types'
 import { kindLabel, sourceKindLabel } from '../labels'
+import { matchesAllTerms, splitTerms } from '../search'
 import { isPublished } from '../workQueue'
 import { useApiData } from '../hooks/useApiData'
 import { useEscapeClose } from '../hooks/useEscapeClose'
@@ -503,6 +505,20 @@ export default function ProductsPage() {
   const { state, reload } = useApiData(fetcher)
   const products = state.phase === 'ok' ? state.data : EMPTY_PRODUCTS
 
+  // 搜索（第 114 刀 B，W9）：客户端过滤（数据量小），不进 URL——口径对齐资产页
+  // （切筛选保留输入、刷新即清）。多词空格分隔 AND（W10 同一口径：分词最小实现）。
+  const [query, setQuery] = useState('')
+  const terms = useMemo(() => splitTerms(query), [query])
+  const searched = useMemo(() => {
+    if (terms.length === 0) return null
+    return products.filter((p) =>
+      matchesAllTerms(
+        [p.name.toLowerCase(), p.category.toLowerCase(), String(p.id), `P-${p.id}`],
+        terms,
+      ),
+    )
+  }, [products, terms])
+
   const [drawer, setDrawer] = useState<{ open: boolean; product: Product | null }>({
     open: false,
     product: null,
@@ -661,28 +677,77 @@ export default function ProductsPage() {
         </div>
       ) : (
         <div>
-          <div className="grid items-start gap-4 md:grid-cols-2">{featured.map(renderCard)}</div>
-          {rest.length > 0 ? (
-            <div className="mt-4">
-              <button
-                type="button"
-                className="panel panel-hover flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-left"
-                aria-expanded={restOpen}
-                onClick={() => setRestOpen((v) => !v)}
-              >
-                <span className="flex items-center text-caption">
-                  {restOpen ? <CaretDown aria-hidden size={13} /> : <CaretRight aria-hidden size={13} />}
-                </span>
-                <span className="text-[13px] font-medium text-ink">
-                  其余 {rest.length} 件（已定价优先排在前面）
-                </span>
-                <span className="text-xs text-ink-3">未定价且尚无写回规格，收在这里</span>
-              </button>
-              {restOpen ? (
-                <div className="mt-4 grid items-start gap-4 md:grid-cols-2">{rest.map(renderCard)}</div>
+          {/* 搜索行（第 114 刀 B，W9）：179 件卡片墙此前没有检索，找特定商品只能滚。
+              多词空格分隔 AND（与资产页 W10 同一口径）；有查询词时覆盖首屏/折叠分区。 */}
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <div className="relative w-full max-w-xs">
+              <MagnifyingGlass
+                aria-hidden
+                size={13}
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-caption"
+              />
+              <input
+                className="input w-full pl-8 pr-8"
+                aria-label="搜索商品"
+                placeholder="搜索名称 / 类目 / ID（多词空格分隔，如：杯 不锈钢）…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              {query !== '' ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm absolute right-1 top-1/2 -translate-y-1/2"
+                  aria-label="清空搜索"
+                  onClick={() => setQuery('')}
+                >
+                  <X aria-hidden size={12} />
+                </button>
               ) : null}
             </div>
-          ) : null}
+            {searched !== null ? (
+              <span className="text-xs tabular-nums text-ink-3">
+                {searched.length} 条匹配 · 搜索覆盖全部商品（含折叠区）
+              </span>
+            ) : null}
+          </div>
+          {searched !== null ? (
+            searched.length === 0 ? (
+              <div className="rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface/60">
+                <Empty
+                  icon={<MagnifyingGlass aria-hidden size={24} />}
+                  title="没有匹配的商品"
+                  hint="按名称 / 类目 / ID 搜索（不区分大小写）：多词空格分隔，每个词都要命中；清空输入恢复完整列表。"
+                />
+              </div>
+            ) : (
+              <div className="grid items-start gap-4 md:grid-cols-2">{searched.map(renderCard)}</div>
+            )
+          ) : (
+            <>
+              <div className="grid items-start gap-4 md:grid-cols-2">{featured.map(renderCard)}</div>
+              {rest.length > 0 ? (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    className="panel panel-hover flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-left"
+                    aria-expanded={restOpen}
+                    onClick={() => setRestOpen((v) => !v)}
+                  >
+                    <span className="flex items-center text-caption">
+                      {restOpen ? <CaretDown aria-hidden size={13} /> : <CaretRight aria-hidden size={13} />}
+                    </span>
+                    <span className="text-[13px] font-medium text-ink">
+                      其余 {rest.length} 件（已定价优先排在前面）
+                    </span>
+                    <span className="text-xs text-ink-3">未定价且尚无写回规格，收在这里</span>
+                  </button>
+                  {restOpen ? (
+                    <div className="mt-4 grid items-start gap-4 md:grid-cols-2">{rest.map(renderCard)}</div>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       )}
 

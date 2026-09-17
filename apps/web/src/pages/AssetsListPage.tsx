@@ -22,6 +22,7 @@ import {
 import { assetMediaUrl, detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { AssetListItem, AssetStatus, KnowledgeGap } from '../api/types'
+import { matchesAllTerms, splitTerms } from '../search'
 import { useApiData } from '../hooks/useApiData'
 import {
   formatDateTime,
@@ -204,23 +205,27 @@ export default function AssetsListPage() {
   // 有查询词时跳过状态 tab：搜索的语义是「找这条资产」，在当前视图内全状态搜——
   // 否则在默认「待人洗」下搜已发布资产得 0 行，像这条资产不存在。
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const terms = splitTerms(query)
     let rows: typeof scoped
-    if (q !== '' || activeTab === '全部' || activeTab === '知识缺口') rows = scoped
+    if (terms.length > 0 || activeTab === '全部' || activeTab === '知识缺口') rows = scoped
     else rows = rowsInTab(scoped, activeTab)
 
     if (activeSource !== null) rows = rows.filter((a) => a.source_kind === activeSource)
 
-    if (q === '') return rows
+    if (terms.length === 0) return rows
     // NULL 标题用展示兜底「未命名资产」，ID 同时支持裸数字与 A-0000 形态。
-    return rows.filter((a) => {
-      const title = (a.title ?? '未命名资产').toLowerCase()
-      return (
-        title.includes(q) ||
-        String(a.id).includes(q) ||
-        formatAssetId(a.id).toLowerCase().includes(q)
-      )
-    })
+    // 多词空格分隔 AND（第 114 刀 B，W10）：「退货」不含连续子串「退货」于
+    // 《退换货政策》——改搜「退 货」两词分别命中即可；单词=原子串，行为不变。
+    return rows.filter((a) =>
+      matchesAllTerms(
+        [
+          (a.title ?? '未命名资产').toLowerCase(),
+          String(a.id),
+          formatAssetId(a.id).toLowerCase(),
+        ],
+        terms,
+      ),
+    )
   }, [scoped, activeTab, query, activeSource])
 
   // 来源筛选 chips 的取数：按「当前 tab + 范围」下的实际行统计（**不含搜索词**——
@@ -412,7 +417,7 @@ export default function AssetsListPage() {
             <input
               className="input w-full pl-8 pr-8"
               aria-label="搜索资产"
-              placeholder="搜索标题 / ID（如 保温杯、A-0029）…"
+              placeholder="搜索标题 / ID（多词空格分隔，如：退 货）…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -600,7 +605,7 @@ export default function AssetsListPage() {
             <Empty
               icon={<MagnifyingGlass aria-hidden size={24} />}
               title="没有匹配的资产"
-              hint="按标题（不区分大小写）或资产 ID 搜索：A-0029 / 29 都可命中；清空输入恢复当前筛选。"
+              hint="按标题（不区分大小写）或资产 ID 搜索：A-0029 / 29 都可命中。中文标题是连续子串匹配——「退货」搜不到《退换货政策》时，改搜「退 货」（多词空格分隔，每词都要命中）。清空输入恢复当前筛选。"
             />
           </div>
         ) : activeSource !== null ? (
