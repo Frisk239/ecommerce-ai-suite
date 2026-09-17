@@ -12,7 +12,7 @@
 - 版本正文端点：操作者面单版原文回放；本端点面向**外部训练者**，故出口统一
   过 redact（0038「出口必掩」——confirmed 落库已掩，这里幂等兜底防历史脏行）。
 
-微调集导出**不进 MCP**：「恰四工具」断言不动（0020；test_mcp_evidence 钉着）。
+微调集导出**不进 MCP**：「恰七工具」断言不动（0020/0057；test_mcp_evidence 钉着）。
 """
 
 from typing import Annotated

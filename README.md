@@ -14,7 +14,7 @@
 素材中心选「钛钢保温杯」选模板（站内投放/小红书笔记体/短视频口播稿，可选文生图配图——无 IMGGEN key 就诚实跳过、纯文案照常）一键生成文案，双闸质检（规则四条 + LLM 事实性核对规格矛盾/夸大/编造）过线进待抽检，操作者抽检通过就登记为资产进中台（文案=种类素材，配图=独立图片资产，同走机洗、人洗、发布）；直播侧先在切片页上传一份源录像（.mp4，≤200MB；绑错或换录像随时可「改绑」），点「自动转写」由云 ASR 按停顿聚合出待拣候选（无 key 则人工填转写，见「自动转写」节），再把转写片段拣选登记成视频资产——登记字节是 `ffmpeg` 从该源录像切出的**真 mp4 片段**（回执指名切自哪一份），转写作为版本字段供检索，汇入切片页；商品侧传一张商品图上中台（种类=图片），VLM 看图出「图片描述」草稿、人洗确认改写后发布——顾客问图片内容词（如「有没有带支架的显示器」）就命中这张图带引用（无 VLM key 则纯人洗补写，见「图片资产」节）；运营 Agent 读商品事实与已发布素材组装投放文案，操作者确认投放——「投放」和治理台的「发布」是两回事。成品与过程都进中台，可被引用、可被追溯。
 
 **1:30 连接层（MCP）——「外部 Agent 接同一份数据，一天接一个新系统」**
-同一个 FastAPI 挂 `/mcp/`（Streamable HTTP），独立 Bearer 鉴权，不复用登录 cookie。只有四个工具：`search_published` 检索已发布、`get_asset` 取已发布正文（可取历史已发布版）、`register_asset` 带正文登记（来源服务端定值）、`export_published` 全量导出已发布。**没有 publish 这个工具**——发布权只在治理台操作者手里。MCP `export_published` 导出已发布正文数据包；微调数据集（SFT 形态，只出已发布对话资产的人工确认问答对，逐条带资产版本血缘）经治理台 `POST /api/exports/sft` 导出——本产品不做训练。
+同一个 FastAPI 挂 `/mcp/`（Streamable HTTP），独立 Bearer 鉴权，不复用登录 cookie。七个工具：知识四件 `search_published` 检索已发布、`get_asset` 取已发布正文（可取历史已发布版）、`register_asset` 带正文登记（来源服务端定值）、`export_published` 全量导出已发布；活状态只读三件 `get_product` / `get_stock` / `get_order_status`（第 99 刀起，包的是与客服同一套查询函数，订单返回不含顾客联系方式）。**没有 publish 这个工具**——发布权只在治理台操作者手里。MCP `export_published` 导出已发布正文数据包；微调数据集（SFT 形态，只出已发布对话资产的人工确认问答对，逐条带资产版本血缘）经治理台 `POST /api/exports/sft` 导出——本产品不做训练。
 
 **2:20 中台为什么是核心——「答错可追溯」**
 七块能力共用一个数据中台。资产只有三态：已接入、待人洗、已发布——只有已发布进检索索引，这是唯一能被 AI 引用的权威；每次引用都锚定 `A-xxxx · vN` 二元组，答错了能追回当时回答用的是哪一版字节；资产详情的血缘面板给出：从哪条来源来、被哪些提问引用过、写回了哪个商品的哪条规格、被哪场考核用过、有没有被 MCP 导出过。拒答留缺口、登记带来源、发布有审计，治理是闭环，不是七个各养一套数据的 demo。
@@ -128,7 +128,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 外部 Agent（Cursor / Claude / 官方 SDK 客户端）经 Streamable HTTP 连同一份中台，端点 `http://localhost:8000/mcp/`。
 
 - **鉴权**：`Authorization: Bearer <MCP_BEARER_TOKEN>`，与操作者登录会话完全隔离（不读 cookie）。token 未配置或为空时所有 MCP 调用一律 401；本地开发默认值见 `.env.example`（`dev-mcp-bearer`，生产必换）。
-- **四工具**（没有 publish——发布只属于治理台操作者）：
+- **七工具**（第 99 刀/ADR 0057：知识四件 + 活状态只读三件；没有 publish——发布只属于治理台操作者）：
 
   | 工具 | 语义 |
   | --- | --- |
@@ -136,6 +136,11 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
   | `get_asset(asset_id, version?)` | 取已发布资产正文；不传 version=当前指针版，传 version=历史已发布版；待人洗/已接入一律拒绝 |
   | `register_asset(content, title?, product_id?)` | 登记文档（必须带正文），来源固定 `mcp_registered`，落为已接入等治理台处理 |
   | `export_published()` | 全部当前已发布资产，含该版正文全文 |
+  | `get_product(name)` | 按名查商品行档案（价格/库存/已写回规格摘要；类目名或别名给类目聚合），与客服目录同款匹配 |
+  | `get_stock(product_name)` | 查商品（或类目）当前库存，与客服 get_stock 同一函数 |
+  | `get_order_status(order_no)` | 查订单状态与物流轨迹，与客服 get_order_status 同一函数；**脱敏**：返回不含顾客联系方式（items/events 联系键剥除、自由文本过出口打码），真实部署升级路径=单号+手机尾数双因子核验（ADR 0057） |
+
+  活状态三件是**只读**的：复用客服 agent loop 的 TOOL_REGISTRY 同一条目（同一份参数白名单校验 + 同一执行函数），无任何写动作；订单/库存/商品仍不经检索索引、不进治理台（0002 工具数据源口径不变）。
 
 - **冒烟**（需先有已发布资产）：
 
@@ -146,7 +151,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
   MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py 保温杯 1 1
   ```
 
-- **协议证据**：`MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py --evidence`（goal §6.2.5 三断言：工具恰四无 publish、未发布 search 空、register 落已接入；pytest 版见 `apps/api/tests/test_mcp_evidence.py`）
+- **协议证据**：`MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py --evidence`（goal §6.2.5 三断言：工具恰七无 publish、未发布 search 空、register 落已接入、活状态工具只读；pytest 版见 `apps/api/tests/test_mcp_evidence.py`）
 - **Cursor mcp.json**：
 
   ```json
