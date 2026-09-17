@@ -27,19 +27,36 @@ def test_known_categories_have_required_fields() -> None:
 
 
 def test_digital_peripherals_brand_required_others_optional() -> None:
-    """第 90 刀：数码四类品牌（P176）必填；高/宽/上市年份覆盖稀疏不设闸。"""
-    assert schema_for_category("键盘") == {"品牌": {"required": True}}
-    assert schema_for_category("鼠标") == {"品牌": {"required": True}}
+    """第 90 刀：数码四类品牌（P176）必填；高/宽/上市年份覆盖稀疏不设闸。
+
+    第 94a 刀（审计 18 归位）：四类各加 `图片`（P18）/`官网`（P856）两个**可选**
+    字段位——Wikidata 有图商品回填用，不设必填、不进发布闸门。"""
+    assert schema_for_category("键盘") == {
+        "品牌": {"required": True},
+        "图片": {"required": False},
+        "官网": {"required": False},
+    }
+    assert schema_for_category("鼠标") == {
+        "品牌": {"required": True},
+        "图片": {"required": False},
+        "官网": {"required": False},
+    }
     monitor = schema_for_category("显示器")
     assert monitor["品牌"] == {"required": True}
     assert monitor["高度"] == {"required": False}
     assert monitor["宽度"] == {"required": False}
+    assert monitor["图片"] == {"required": False}
+    assert monitor["官网"] == {"required": False}
     headphone = schema_for_category("耳机")
     assert headphone["品牌"] == {"required": True}
     assert headphone["上市年份"] == {"required": False}
     # 品牌缺失拦发布；可选字段缺失/未确认不拦（evaluate_publish_gate 只看必填）
     missing, unconfirmed = evaluate_publish_gate(monitor, {}, {})
     assert missing == ["品牌"] and unconfirmed == []
+    # 可选字段（图片/官网）弃权/未确认同样不拦、也不进写回（只写 confirmed）
+    assert publishable_values(monitor, {}, {"品牌": {"value": "戴尔", "source": "human"}}) == {
+        "品牌": "戴尔"
+    }
 
 
 def test_unknown_category_empty_schema() -> None:

@@ -15,6 +15,10 @@ os.environ["LLM_API_KEY"] = ""
 # 自动转写也必须走「未配置 409」（零外网调用）；要测配置态用例自己 monkeypatch
 # services.asr 的 is_configured/transcribe_audio（替身，不打真网）。
 os.environ["ASR_API_KEY"] = ""
+# 第 94a 刀同口径：测试进程强制空 VLM 凭证——本机 .env 配了真 VLM_API_KEY 时，
+# 图片登记的看图草稿也必须走「未配置 = 无草稿弃权」（零外网调用）；要测配置态
+# 用例自己 monkeypatch services.vlm 的 describe_image（替身，不打真网）。
+os.environ["VLM_API_KEY"] = ""
 
 from pathlib import Path  # noqa: E402
 from urllib.parse import urlsplit, urlunsplit  # noqa: E402

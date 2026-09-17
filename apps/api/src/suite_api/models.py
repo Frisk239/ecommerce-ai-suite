@@ -81,7 +81,9 @@ class Asset(Base):
     __table_args__ = (Index("ix_assets_status", "status"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    kind: Mapped[str] = mapped_column(String(20))  # 本刀仅 "document"
+    # 种类词表（CONTEXT「资产种类」）：document/dialogue/material/video/image；
+    # 无 DB CHECK（应用层按 kind 分派机洗与切块，同 status/source_kind 风格）
+    kind: Mapped[str] = mapped_column(String(20))
     # ingested=已接入 / pending_review=待人洗 / published=已发布
     status: Mapped[str] = mapped_column(String(20))
     # 0025 来源=资产进入中台的通道，登记端点语义定值（枚举校验在应用层），

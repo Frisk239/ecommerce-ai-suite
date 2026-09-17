@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     asr_base_url: str = "https://api.groq.com/openai/v1"
     asr_model: str = "whisper-large-v3-turbo"
 
+    # 云 VLM 看图出描述草稿（第 94a 刀，ADR 0051）：OpenAI 兼容
+    # ``POST {base}/chat/completions``，messages 带 ``image_url``（data URL 内联
+    # base64，不依赖外网可取的图片地址）。**只出草稿**——写进 extracted 待人洗
+    # 确认，确认后才进检索索引（人洗生效）。密钥纪律同 0033/ASR：只从 .env 读、
+    # 不入库、不进日志与异常文案；**空 key = 不建客户端、不发请求**（无草稿，
+    # 纯人洗补写兜底）。
+    vlm_api_key: str = ""
+    vlm_base_url: str = "https://api.openai.com/v1"
+    vlm_model: str = "gpt-4o-mini"
+
     # 连接层 Bearer（ADR 0032）。空则 MCP 全部 401；与操作者会话无关。
     mcp_bearer_token: str = ""
 

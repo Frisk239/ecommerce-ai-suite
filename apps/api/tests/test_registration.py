@@ -6,11 +6,12 @@
 由集成测试钉死（test_service_integration 的缺口契约组）。
 """
 
+import base64
 from typing import Any
 
 import pytest
 
-from suite_api.models import Product
+from suite_api.models import AssetVersion, Product
 from suite_api.services.registration import (
     PENDING_REVIEW,
     SOURCE_KINDS,
@@ -55,6 +56,19 @@ def test_register_asset_validates_source_before_any_io() -> None:
 def test_dialogue_field_set_is_only_qa_pairs() -> None:
     # 对话种类的字段集就是 qa_pairs 一个字段（LLM 抽取），与是否挂商品无关
     assert machine_wash_field_names("dialogue", None) == ["qa_pairs"]
+
+
+def test_image_field_set_is_only_image_description() -> None:
+    """第 94a 刀（ADR 0051）：图片的唯一治理字段是「图片描述」（VLM 草稿/人洗
+    补写），与是否挂商品无关——这个字段集同时是人洗 PATCH 的合法集合，
+    描述必须可确认（否则人洗无路可走）。"""
+    product = Product(
+        name="显示器",
+        category="显示器",
+        spec_schema={"品牌": {"required": True}, "图片": {"required": False}},
+    )
+    assert machine_wash_field_names("image", None) == ["图片描述"]
+    assert machine_wash_field_names("image", product) == ["图片描述"]  # 不跑商品规格正则
 
 
 def test_document_field_set_follows_spec_schema() -> None:
@@ -233,3 +247,131 @@ def test_retry_machine_wash_releases_transaction_before_llm(
     assert seen["in_transaction"] is False, "retry 的 LLM 调用时刻不得持有事务（P1#2）"
     assert asset.status == "pending_review"
     assert asset.last_error is None
+
+
+# ---------- 第 94a 刀：图片登记（对象键跟字节走 + VLM 草稿三态） ----------
+
+# 1x1 真 PNG（魔数 + 完整字节流）：登记路径按魔数复验，测试用它当合法图片字节
+_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="
+)
+
+
+def test_make_object_key_image_suffix_follows_bytes() -> None:
+    """键后缀**跟字节走**（第 46 刀裁决 4 的图片延伸）：不给 suffix 时按魔数
+    嗅探（png/jpeg/webp），嗅不出退 bin（不拿假后缀冒充）；显式 suffix 优先。"""
+    from suite_api.services.registration import make_object_key
+
+    png = b"\x89PNG\r\n\x1a\n" + b"payload"
+    jpeg = b"\xff\xd8\xff\xe0" + b"payload"
+    webp = b"RIFF\x00\x00\x00\x00WEBP" + b"payload"
+    assert make_object_key("image", png).endswith(".png")
+    assert make_object_key("image", jpeg).endswith(".jpg")
+    assert make_object_key("image", webp).endswith(".webp")
+    assert make_object_key("image", b"not-an-image").endswith(".bin")
+    assert make_object_key("image", png, suffix="png").endswith(".png")
+    assert make_object_key("image", png).startswith("documents/")  # 图片不是切片，不走 clips/
+
+
+def test_register_asset_image_without_vlm_key_abstains_and_advances() -> None:
+    """空 key = 无草稿（弃权）且照常推进待人洗（fail-诚实：登记不因草稿缺位失败）。"""
+    db = _RegisterStub()
+    storage = _MemoryStorage()
+    asset = register_asset(
+        db,  # type: ignore[arg-type]
+        storage,  # type: ignore[arg-type]
+        kind="image",
+        title="商品图",
+        content_bytes=_PNG,
+        filename="a.png",
+        product_id=None,
+        source_kind="upload",
+    )
+    assert asset.status == PENDING_REVIEW
+    assert asset.last_error is None
+    version = db.version()
+    assert version is not None
+    assert version.extracted_fields == {"图片描述": {"abstained": True}}
+    assert version.object_key.endswith(".png")  # 键后缀跟字节走
+
+
+def test_register_asset_image_vlm_failure_is_abstained_not_ingested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """VLM 失败**不 fail 整个登记**（第 94a 刀裁决）：草稿缺位 → 弃权 →
+    照常待人洗，人洗补写兜底（与 dialogue 的「已配置失败=停已接入」刻意不同级）。"""
+    from suite_api.services import vlm as vlm_module
+
+    def _boom(_image_bytes: bytes) -> str:
+        raise vlm_module.VLMUnavailable("看图服务暂时不可用")
+
+    monkeypatch.setattr(vlm_module, "describe_image", _boom)
+    db = _RegisterStub()
+    asset = register_asset(
+        db,  # type: ignore[arg-type]
+        _MemoryStorage(),  # type: ignore[arg-type]
+        kind="image",
+        title=None,
+        content_bytes=_PNG,
+        filename=None,
+        product_id=None,
+        source_kind="upload",
+    )
+    assert asset.status == PENDING_REVIEW
+    assert asset.last_error is None
+    version = db.version()
+    assert version is not None and version.extracted_fields["图片描述"] == {"abstained": True}
+
+
+def test_register_asset_image_vlm_draft_lands_as_machine_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """草稿进 extracted（source=machine，草稿不是事实）——**不进 confirmed**：
+    人确认才生效（0010：confirmed 才进索引）。草稿值过 redact（0038 出口必掩）。"""
+    from suite_api.services import vlm as vlm_module
+
+    monkeypatch.setattr(
+        vlm_module,
+        "describe_image",
+        lambda _bytes: "显示器侧面带可调节支架，客服电话13812345678。",
+    )
+    db = _RegisterStub()
+    asset = register_asset(
+        db,  # type: ignore[arg-type]
+        _MemoryStorage(),  # type: ignore[arg-type]
+        kind="image",
+        title="商品图",
+        content_bytes=_PNG,
+        filename=None,
+        product_id=None,
+        source_kind="upload",
+    )
+    assert asset.status == PENDING_REVIEW
+    version = db.version()
+    assert version is not None
+    entry = version.extracted_fields["图片描述"]
+    assert entry["source"] == "machine"  # 草稿：机洗面，人确认才转 confirmed
+    assert "13812345678" not in entry["value"]  # 打码步（ADR 0038）
+    assert version.confirmed_fields == {}
+
+
+class _RegisterStub:
+    """登记用 Session 替身：留下被 add 的行对象（版本行从里面取来断言）。"""
+
+    def __init__(self) -> None:
+        self.added: list[Any] = []
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
+
+    def flush(self) -> None:
+        pass
+
+    def commit(self) -> None:
+        pass
+
+    def refresh(self, _obj: Any) -> None:
+        pass
+
+    def version(self) -> Any:
+        return next((o for o in self.added if isinstance(o, AssetVersion)), None)

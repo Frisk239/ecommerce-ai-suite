@@ -30,12 +30,15 @@ def read_version_text(session: Session, storage: ObjectStorage, version: AssetVe
     decode 失败给明确错误，不静默替换字符（外部 Agent 拿到的正文必须与
     登记字节一致）。
 
-    **video 二进制回落（第 46 刀，ADR 0047）**：真切出的切片资产字节是 mp4
-    二进制，解 UTF-8 必失败——此时正文改由 ``transcript`` 字段供给（与检索
-    切块同口径：confirmed 优先、extracted 次之），否则 MCP 的 get_asset /
-    export_published 与版本正文端点会被一份切片资产整体带崩。旧路径（无源
-    录像）字节本就是时间码文本，上面已照常返回、形态不变。**只对 video
-    回落**：别的种类字节不是文本是真错误（409），不拿字段掩盖坏字节。
+    **二进制资产回落（第 46 刀 ADR 0047 video / 第 94a 刀 ADR 0051 image）**：
+    真切出的切片资产字节是 mp4、商品图字节是 png/jpeg/webp，解 UTF-8 必失败
+    ——此时正文改由各自的**文本面字段**供给（video=``transcript``、image=
+    ``图片描述``；均为 confirmed 优先、extracted 次之），否则 MCP 的 get_asset /
+    export_published 与版本正文端点会被一份切片/图片资产整体带崩。旧路径（无源
+    录像的切片时间码文本）字节本就是文本，上面已照常返回、形态不变。**只对这两
+    类回落**：别的种类字节不是文本是真错误（409），不拿字段掩盖坏字节；这两类
+    里也没有描述/转写的资产同样报错（不静默返回空串——「无描述的图片资产」也是
+    取不到正文）。
     """
     try:
         data = storage.get_bytes(version.object_key)
@@ -45,21 +48,35 @@ def read_version_text(session: Session, storage: ObjectStorage, version: AssetVe
         return data.decode("utf-8")
     except UnicodeDecodeError as exc:
         if session is not None:
-            transcript = _video_transcript(session, version)
-            if transcript is not None:
-                return transcript
+            fallback = _binary_body_field(session, version)
+            if fallback is not None:
+                return fallback
+        if session is not None:
+            asset = session.get(Asset, version.asset_id)
+            if asset is not None and asset.kind in ("video", "image"):
+                label = "转写" if asset.kind == "video" else "图片描述"
+                raise VersionTextError(
+                    f"该{'视频' if asset.kind == 'video' else '图片'}资产尚无{label}，取不到正文"
+                    "（先补描述/转写字段再读）"
+                ) from exc
         raise VersionTextError("版本字节不是合法 UTF-8 文本，无法读取正文") from exc
 
 
-def _video_transcript(session: Session, version: AssetVersion) -> str | None:
-    """video 资产的正文源：``transcript`` 字段（confirmed 优先、extracted 次之）。
+def _binary_body_field(session: Session, version: AssetVersion) -> str | None:
+    """二进制资产的正文源：按 kind 取字段（video=transcript / image=图片描述）。
 
-    非 video 资产、或字段缺失/为空 -> None（调用方照旧报错，不静默降级）。"""
+    confirmed 优先、extracted 次之（与检索切块同口径）。非这两类资产、或字段
+    缺失/为空 -> None（调用方照旧报错，不静默降级为空串）。"""
+    from suite_api.services.machine_wash import IMAGE_DESCRIPTION_FIELD
+
     asset = session.get(Asset, version.asset_id)
-    if asset is None or asset.kind != "video":
+    field = {"video": "transcript", "image": IMAGE_DESCRIPTION_FIELD}.get(
+        asset.kind if asset is not None else ""
+    )
+    if field is None:
         return None
     return resolve_field_value(
-        version.extracted_fields or {}, version.confirmed_fields or {}, "transcript"
+        version.extracted_fields or {}, version.confirmed_fields or {}, field
     )
 
 

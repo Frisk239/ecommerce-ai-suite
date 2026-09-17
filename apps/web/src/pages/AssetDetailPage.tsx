@@ -42,12 +42,15 @@ function FieldRow({
   view,
   editable,
   onSaved,
+  abstainedLabel = '弃权 · 原文未找到',
 }: {
   assetId: number
   versionNo: number
   view: FieldView
   editable: boolean
   onSaved: () => void
+  /** 弃权态的说明文案：文档/素材是「原文未找到」；图片是 VLM 未出草稿。 */
+  abstainedLabel?: string
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -131,7 +134,7 @@ function FieldRow({
             ) : view.abstained ? (
               <div className="flex min-w-[10rem] flex-1 items-center gap-1.5 text-[13px] text-ink-3">
                 <Prohibit aria-hidden size={13} />
-                弃权 · 原文未找到
+                {abstainedLabel}
               </div>
             ) : (
               <div className="flex min-w-[10rem] flex-1 text-[13px] text-ink-3">未抽取</div>
@@ -559,13 +562,21 @@ function auditActionLabel(action: string): string {
   return action
 }
 
-/** 换正文文件校验（对齐登记抽屉口径）：.txt/.md、≤2MB、非空；后端闸门兜底。 */
+/** 换正文文件校验（对齐登记抽屉口径）：文本 .txt/.md ≤2MB；图片 .png/.jpg/
+ * .jpeg/.webp ≤10MB（第 94a 刀：换字节按资产种类分派，种类不匹配后端 415）。 */
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
-function validateTextFile(file: File): string | null {
+function validateUploadFile(file: File, kind: string): string | null {
   const lower = file.name.toLowerCase()
-  if (!lower.endsWith('.txt') && !lower.endsWith('.md')) return '仅接受 .txt 或 .md 文本文件'
-  if (file.size > MAX_UPLOAD_BYTES) return '文件超过 2MB 上限'
+  const isImage = ['.png', '.jpg', '.jpeg', '.webp'].some((ext) => lower.endsWith(ext))
+  if (kind === 'image') {
+    if (!isImage) return '图片资产只接受 .png / .jpg / .jpeg / .webp'
+    if (file.size > MAX_IMAGE_BYTES) return '图片超过 10MB 上限'
+  } else {
+    if (!lower.endsWith('.txt') && !lower.endsWith('.md')) return '仅接受 .txt 或 .md 文本文件'
+    if (file.size > MAX_UPLOAD_BYTES) return '文件超过 2MB 上限'
+  }
   if (file.size === 0) return '空文件不能上传'
   return null
 }
@@ -717,6 +728,16 @@ export default function AssetDetailPage() {
     [detail?.kind, viewedVersion],
   )
 
+  // 图片的唯一治理字段：图片描述（第 94a 刀/ADR 0051）——描述是图片的检索文本面，
+  // VLM 只出草稿，人确认后才在发布时成块入索引（与后端 machine_wash_field_names
+  // 的 image 分派、index_chunks_for_version 的 confirmed-only 口径同源）。
+  const imageView = useMemo<FieldView | null>(
+    () => (detail?.kind === 'image' && viewedVersion !== null
+      ? toFieldView(viewedVersion, '图片描述', false)
+      : null),
+    [detail?.kind, viewedVersion],
+  )
+
   const requiredNames = useMemo(
     () =>
       product === null
@@ -830,6 +851,8 @@ export default function AssetDetailPage() {
   // 放弃修订=有 version_no>1 的未发布版；废弃=已接入且从未发布（指针空）。
   // 第 46 刀：视频资产不出换正文（ADR 0047——正文由转写字段承载、字节是切片，
   // 换字节会把键写成 .mp4 装文本并清空转写；后端 409 同口径）。
+  // 第 94a 刀：图片资产**可以**换（字节就是原图，换错图是本出口的正经用途；
+  // 后端按 kind 收 png/jpeg/webp 并重跑 VLM 草稿）。
   const canUploadBytes = editable && activeVersion !== null && detail?.kind !== 'video'
   const canDiscardRevision = unpublished !== null && unpublished.version_no > 1
   const canDiscardAsset = detail?.status === 'ingested' && currentPublishedNo === null
@@ -843,7 +866,7 @@ export default function AssetDetailPage() {
   const onUploadFilePicked = (files: FileList | null) => {
     const file = files?.[0] ?? null
     if (file === null) return
-    const err = validateTextFile(file)
+    const err = validateUploadFile(file, detail?.kind ?? 'document')
     if (err !== null) {
       setUploadFieldError(err)
       return
@@ -1110,6 +1133,36 @@ export default function AssetDetailPage() {
             />
           ) : null}
 
+          {!readOnlyEvidence && detail.kind === 'image' && activeVersion !== null && imageView !== null ? (
+            <div className="panel">
+              <div className="panel-title flex-wrap">
+                <span>图片描述 · v{activeVersion.version_no}</span>
+                {imageView.source === 'human' ? (
+                  <span className="tag tag-confirmed">
+                    {imageView.inherited ? '继承自已发布版 · 已确认' : '已确认'}
+                  </span>
+                ) : imageView.source === 'machine' ? (
+                  <span className="tag tag-machine">VLM 草稿</span>
+                ) : null}
+                <span className="text-xs font-normal text-ink-3">
+                  描述是图片的检索文本面：确认后才在发布时成块入索引；VLM 草稿未经人确认不生效
+                </span>
+              </div>
+              <p className="px-4 pt-3 text-xs leading-5 text-ink-3">
+                图片字节是原图（本身不可检索）——顾客问图片内容词（如「有没有带支架的显示器」）
+                命中的是这里的描述。请对照图上内容核过或改写后再确认。
+              </p>
+              <FieldRow
+                assetId={detail.id}
+                versionNo={activeVersion.version_no}
+                view={imageView}
+                editable={editable}
+                onSaved={reloadDetail}
+                abstainedLabel="未出草稿 · VLM 未配置或调用失败，请人工补写"
+              />
+            </div>
+          ) : null}
+
           {!readOnlyEvidence && detail.kind === 'dialogue' && activeVersion !== null && qaView !== null ? (
             <>
               <VersionTextPanel
@@ -1130,41 +1183,47 @@ export default function AssetDetailPage() {
             </>
           ) : null}
 
-          {detail.product !== null && productQ.state.phase === 'loading' ? (
-            <div className="panel">
-              <LoadingHint text="加载商品规格字段…" />
-            </div>
-          ) : (
-            <div className="panel">
-              <div className="panel-title flex-wrap">
-                <span>结构化字段 · v{viewedVersion?.version_no ?? '—'}</span>
-                <span className="text-xs font-normal text-ink-3">{fieldsNote}</span>
-                {!readOnlyEvidence && requiredNames.length > 0 ? (
-                  <span className="text-xs font-normal text-ink-3">
-                    （发布必填：{requiredNames.join('、')}）
-                  </span>
-                ) : null}
+          {/* 规格字段面板：仅对「按商品 spec_schema 做机洗与人洗」的种类显示——
+              图片的唯一治理字段是「图片描述」（已在上方面板），显示规格行会出现
+              「看着能编辑、点了 422」的字段行（字段闸门按 machine_wash_field_names
+              分派，图片只认「图片描述」）。video 的同类历史形态本刀未动（记债）。 */}
+          {detail.kind !== 'image' ? (
+            detail.product !== null && productQ.state.phase === 'loading' ? (
+              <div className="panel">
+                <LoadingHint text="加载商品规格字段…" />
               </div>
-              {fieldViews.length > 0 ? (
-                fieldViews.map((view) => (
-                  <FieldRow
-                    key={view.field}
-                    assetId={detail.id}
-                    versionNo={viewedVersion?.version_no ?? 0}
-                    view={view}
-                    editable={editable && !readOnlyEvidence}
-                    onSaved={reloadDetail}
-                  />
-                ))
-              ) : (
-                <div className="px-4 py-3.5 text-[13px] leading-6 text-ink-3">
-                  {detail.product !== null
-                    ? '机洗尚未产出字段（或全部待产出）。'
-                    : '未挂商品：这个资产没有规格必填项，发布没有字段闸门。'}
+            ) : (
+              <div className="panel">
+                <div className="panel-title flex-wrap">
+                  <span>结构化字段 · v{viewedVersion?.version_no ?? '—'}</span>
+                  <span className="text-xs font-normal text-ink-3">{fieldsNote}</span>
+                  {!readOnlyEvidence && requiredNames.length > 0 ? (
+                    <span className="text-xs font-normal text-ink-3">
+                      （发布必填：{requiredNames.join('、')}）
+                    </span>
+                  ) : null}
                 </div>
-              )}
-            </div>
-          )}
+                {fieldViews.length > 0 ? (
+                  fieldViews.map((view) => (
+                    <FieldRow
+                      key={view.field}
+                      assetId={detail.id}
+                      versionNo={viewedVersion?.version_no ?? 0}
+                      view={view}
+                      editable={editable && !readOnlyEvidence}
+                      onSaved={reloadDetail}
+                    />
+                  ))
+                ) : (
+                  <div className="px-4 py-3.5 text-[13px] leading-6 text-ink-3">
+                    {detail.product !== null
+                      ? '机洗尚未产出字段（或全部待产出）。'
+                      : '未挂商品：这个资产没有规格必填项，发布没有字段闸门。'}
+                  </div>
+                )}
+              </div>
+            )
+          ) : null}
         </div>
 
         {/* 侧栏 */}
@@ -1251,7 +1310,9 @@ export default function AssetDetailPage() {
                   ) : null}
                 </div>
                 <div className="text-xs leading-5 text-ink-3">
-                  传错了文件可在这里替换正文：旧对象键字节删除，机洗按新正文重跑，已确认字段保留。
+                  {detail?.kind === 'image'
+                    ? '传错了图可在这里替换：旧对象键字节删除，重新出描述草稿，已确认字段保留。'
+                    : '传错了文件可在这里替换正文：旧对象键字节删除，机洗按新正文重跑，已确认字段保留。'}
                 </div>
               </div>
             ) : detail.status === 'ingested' ? (
@@ -1499,7 +1560,11 @@ export default function AssetDetailPage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".txt,.md,text/plain,text/markdown"
+        accept={
+          detail?.kind === 'image'
+            ? 'image/png,image/jpeg,image/webp'
+            : '.txt,.md,text/plain,text/markdown'
+        }
         className="hidden"
         onChange={(e) => {
           onUploadFilePicked(e.target.files)
