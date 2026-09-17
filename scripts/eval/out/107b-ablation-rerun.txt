@@ -1,0 +1,65 @@
+golden：E:\code\ecommerce-ai-suite\scripts\eval\out\golden_large.json（236 条）  候选资产 95 个  候选块 598  检索 top-3
+level             pos@1  par@1  conf@1  oov@1  sneg@1   ref%  ovr@1  ovr@3      MRR   nDCG@3     噪声@3      红线
+L1-词法+同义           90.0   81.0    56.0   73.3    67.9   86.7   79.1   88.8   0.8374   0.8506     51.5  BROKEN
+L2-+亲和重排           98.8   91.4    64.0   86.7    78.6   86.7   88.8   96.6   0.9248   0.9354     39.3      OK
+L3-+稠密稀疏融合         98.8   91.4    72.0   86.7    78.6   86.7   89.8   97.1   0.9320   0.9421     39.0      OK
+L3 == 生产复核（retrieve() 逐位对照 236 问）: 逐位一致
+
+=== L2-+亲和重排 − L1-词法+同义 ===
+  positive   @1   +8.8pp  @3   +7.5pp  MRR   +8.1pp  nDCG   +8.0pp  噪声  -13.8pp
+  paraphrase @1  +10.3pp  @3   +3.4pp  MRR   +6.9pp  nDCG   +6.0pp  噪声  -15.5pp
+  confusion  @1   +8.0pp  @3  +24.0pp  MRR  +16.0pp  nDCG  +18.1pp  噪声   -9.3pp
+  oov_syn    @1  +13.3pp  @3   +0.0pp  MRR   +6.7pp  nDCG   +4.9pp  噪声   -4.4pp
+  sem_neg    @1  +10.7pp  @3   +7.1pp  MRR   +8.9pp  nDCG   +8.5pp  噪声   -7.1pp
+  overall    @1   +9.7pp  @3   +7.8pp  MRR   +8.7pp  nDCG   +8.5pp  噪声  -12.1pp
+  拒答率 +0.0pp
+  recall1: +23(pos-017,pos-023,syn-008,syn-015,conf-001,conf-002,exp-pos-015,exp-pos-016,exp-pos-017,exp-pos-027,exp-pos-029,exp-syn-001,exp-syn-009,exp-syn-018,exp-syn-028,exp-syn-033,exp-conf-001,exp-conf-009,exp-oovsyn-004,exp-oovsyn-009,sneg-neg-001,sneg-neg-005,sneg-neg-007) / -3(syn-012,exp-conf-002,exp-conf-005)
+  recall3: +16(pos-017,pos-023,syn-005,conf-001,conf-002,exp-pos-015,exp-pos-016,exp-pos-017,exp-pos-027,exp-syn-028,exp-conf-001,exp-conf-006,exp-conf-007,exp-conf-009,sneg-nb-007,sneg-nb-008) / -0
+  mrr: +28(pos-017,pos-023,syn-005,syn-008,syn-015,conf-001,conf-002,exp-pos-015,exp-pos-016,exp-pos-017,exp-pos-027,exp-pos-029,exp-syn-001,exp-syn-009,exp-syn-018,exp-syn-028,exp-syn-033,exp-conf-001,exp-conf-006,exp-conf-007,exp-conf-009,exp-oovsyn-004,exp-oovsyn-009,sneg-neg-001,sneg-neg-005,sneg-neg-007,sneg-nb-007,sneg-nb-008) / -3(syn-012,exp-conf-002,exp-conf-005)
+  ndcg3: +28(pos-017,pos-023,syn-005,syn-008,syn-015,conf-001,conf-002,exp-pos-015,exp-pos-016,exp-pos-017,exp-pos-027,exp-pos-029,exp-syn-001,exp-syn-009,exp-syn-018,exp-syn-028,exp-syn-033,exp-conf-001,exp-conf-006,exp-conf-007,exp-conf-009,exp-oovsyn-004,exp-oovsyn-009,sneg-neg-001,sneg-neg-005,sneg-neg-007,sneg-nb-007,sneg-nb-008) / -3(syn-012,exp-conf-002,exp-conf-005)
+  noise3: +63(pos-002,pos-003,pos-004,pos-008,pos-009,pos-010,pos-011,pos-013,pos-015,pos-017,pos-022,pos-023,pos-025,pos-026,pos-029,pos-031,pos-036,syn-001,syn-002,syn-003,syn-004,syn-005,syn-006,syn-009,syn-010,syn-013,syn-014,syn-015,syn-017,syn-019,syn-020,syn-021,syn-023,syn-024,conf-001,conf-002,exp-pos-015,exp-pos-016,exp-pos-017,exp-pos-027,exp-pos-028,exp-pos-029,exp-pos-030,exp-pos-031,exp-pos-032,exp-pos-036,exp-syn-003,exp-syn-012,exp-syn-013,exp-syn-016,exp-syn-028,exp-conf-001,exp-conf-006,exp-conf-007,exp-conf-009,exp-oovsyn-008,exp-oovsyn-015,sneg-neg-001,sneg-neg-009,sneg-neg-011,sneg-nb-007,sneg-nb-008,sneg-nb-009) / -3(conf-013,conf-014,conf-015)
+
+=== L3-+稠密稀疏融合 − L2-+亲和重排 ===
+  positive   @1   +0.0pp  @3   +0.0pp  MRR   +0.0pp  nDCG   +0.0pp  噪声   +0.8pp
+  paraphrase @1   +0.0pp  @3   +0.0pp  MRR   +0.3pp  nDCG   +0.2pp  噪声   +1.7pp
+  confusion  @1   +8.0pp  @3   -4.0pp  MRR   +2.7pp  nDCG   +0.9pp  噪声   +0.0pp
+  oov_syn    @1   +0.0pp  @3   +0.0pp  MRR   +0.0pp  nDCG   +0.0pp  噪声   +0.0pp
+  sem_neg    @1   +0.0pp  @3   +7.2pp  MRR   +2.4pp  nDCG   +3.6pp  噪声   -8.3pp
+  overall    @1   +1.0pp  @3   +0.5pp  MRR   +0.7pp  nDCG   +0.7pp  噪声   -0.3pp
+  拒答率 +0.0pp
+  recall1: +2(exp-conf-002,exp-conf-010) / -0
+  recall3: +2(sneg-nb-005,sneg-nb-006) / -1(conf-007)
+  mrr: +5(syn-005,exp-conf-002,exp-conf-010,sneg-nb-005,sneg-nb-006) / -1(conf-007)
+  ndcg3: +5(syn-005,exp-conf-002,exp-conf-010,sneg-nb-005,sneg-nb-006) / -1(conf-007)
+  noise3: +16(pos-033,conf-013,exp-pos-037,exp-syn-020,exp-syn-025,exp-syn-026,exp-conf-002,exp-oovsyn-004,sneg-neg-010,sneg-nb-005,sneg-nb-006,sneg-nb-007,sneg-nb-008,sneg-nb-010,sneg-nb-011,sneg-nb-013) / -15(pos-008,pos-009,pos-029,syn-001,syn-004,syn-021,conf-002,conf-007,exp-pos-027,exp-pos-031,exp-syn-012,exp-syn-016,exp-oovsyn-012,sneg-nb-015,sneg-nb-016)
+
+=== L1-词法+同义（六分布全表） ===
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       80     90.0%     92.5%  0.9125   0.9158    52.1%       -    0.0%       -
+paraphrase     58     81.0%     94.8%  0.8764   0.8951    44.8%       -       -       -
+confusion      25     56.0%     72.0%  0.6267   0.6505    69.3%       -       -   56.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     73.3%     93.3%  0.8333   0.8595    44.4%       -       -       -
+sem_neg        28     67.9%     78.6%  0.7321   0.7462    51.2%       -       -       -
+overall       236     79.1%     88.8%  0.8374   0.8506    51.5%   86.7%    0.0%   56.0%
+
+=== L2-+亲和重排（六分布全表） ===
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       80     98.8%    100.0%  0.9938   0.9954    38.3%       -    0.0%       -
+paraphrase     58     91.4%     98.3%  0.9454   0.9550    29.3%       -       -       -
+confusion      25     64.0%     96.0%  0.7867   0.8314    60.0%       -       -   64.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     86.7%     93.3%  0.9000   0.9087    40.0%       -       -       -
+sem_neg        28     78.6%     85.7%  0.8214   0.8308    44.0%       -       -       -
+overall       236     88.8%     96.6%  0.9248   0.9354    39.3%   86.7%    0.0%   64.0%
+
+=== L3-+稠密稀疏融合（六分布全表） ===
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       80     98.8%    100.0%  0.9938   0.9954    39.2%       -    0.0%       -
+paraphrase     58     91.4%     98.3%  0.9483   0.9573    31.0%       -       -       -
+confusion      25     72.0%     92.0%  0.8133   0.8409    60.0%       -       -   72.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     86.7%     93.3%  0.9000   0.9087    40.0%       -       -       -
+sem_neg        28     78.6%     92.9%  0.8452   0.8665    35.7%       -       -       -
+overall       236     89.8%     97.1%  0.9320   0.9421    39.0%   86.7%    0.0%   72.0%
+
