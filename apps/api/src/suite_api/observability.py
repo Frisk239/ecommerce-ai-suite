@@ -10,6 +10,8 @@
 - **日志**：structlog JSON 渲染，经 ``ProcessorFormatter`` 接管 stdlib——既有
   ``logging.getLogger(__name__).warning(...)`` 调用**一行不改**就变 JSON 行，且
   自动带 ``correlation_id``。留 ``trace_id`` 字段口子（本刀不接 OTel）。
+  第 94b 刀：日志文本里的 ``?token=`` 值在渲染链上脱敏（媒体端点 query 令牌，
+  见 ``redact_query_tokens``）——uvicorn 访问日志与业务日志同一条链，无死角。
 - **指标**：instrumentator 的 HTTP RED（在 main 装配）+ 本模块的六个自定义。
   **标签值一律有限集合**（channel/kind/generated/direction/model/result/score/reason/from/to）——绝不把
   session_id / asset_id / 问题文本打进标签，那是指标基数爆炸的经典自杀方式。
@@ -37,6 +39,35 @@ CORRELATION_ID_HEADER = "X-Request-Id"
 # 客户端自报 id 的收口：8–64 位、只认 [A-Za-z0-9._-]（日志字段与响应头都进，
 # 别让换行/控制字符/超长串进来——日志伪造与头注入都从这来）
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
+
+# 第 94b 刀（ADR 0052）：媒体端点的 query 令牌（``?token=``，<img>/<video> 的
+# src 带不了 Authorization 头）会随 URL 进**访问日志**——uvicorn 的 access log
+# 记的是 `GET /api/customer/assets/1/media?token=xxx HTTP/1.1`，一份 24 小时
+# 有效的顾客凭证就此落盘。日志侧的唯一收口点在这里：JSON 行的 event 文本里
+# 「?」或「&」后紧跟 ``token=`` 的值一律替换成 ``***``（只认 query 形态——
+# 正文/异常里出现的「待确认 token=」是另一种东西，不在本规则内，也不该被误伤）。
+_QUERY_TOKEN_RE = re.compile(r"([?&]token=)[^&\s\"']+", re.IGNORECASE)
+
+
+def redact_query_tokens(
+    logger: Any, method_name: str, event_dict: dict[str, Any]
+) -> dict[str, Any]:
+    """structlog 处理器：把日志文本里的 ``?token=`` 值脱敏成 ``***``。
+
+    uvicorn 访问日志（stdlib 记录）经 ``ProcessorFormatter`` 转成 event 文本后
+    与本进程所有 ``logger.*`` 调用走同一条处理链，故这一处就是服务端日志的
+    全部出口——比在每个调用点手掩可靠（调用点会漏，链上不会）。连带处理
+    ``exception`` 字段（堆栈文本同样可能内嵌 URL）。
+
+    签名是 structlog 处理器标准三件套（``logger, method_name, event_dict``）：
+    ``ProcessorFormatter.processors`` 里的每个处理器都按这个形状调用。
+    """
+    del logger, method_name  # 只改文本，不看来源
+    for key in ("event", "exception"):
+        value = event_dict.get(key)
+        if isinstance(value, str) and _QUERY_TOKEN_RE.search(value):
+            event_dict[key] = _QUERY_TOKEN_RE.sub(r"\1***", value)
+    return event_dict
 
 _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
 # 请求进入时刻（perf_counter）：TTFT 的起点。中间件设，引擎读——同一请求任务，
@@ -317,6 +348,8 @@ def configure_logging(level: str = "INFO") -> None:
         foreign_pre_chain=shared_processors,
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            # 第 94b 刀：query 令牌脱敏（媒体端点 ?token= 会随访问日志的 URL 出）
+            redact_query_tokens,
             structlog.processors.JSONRenderer(ensure_ascii=False),
         ],
     )
@@ -330,3 +363,9 @@ def configure_logging(level: str = "INFO") -> None:
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers = []
         uvicorn_logger.propagate = True
+        # 第 94b 刀：同进程里若先跑过 alembic 的 fileConfig（CLI 直跑 / 测试里程序化
+        # 调 upgrade，`disable_existing_loggers` 默认 True），它会把既有 logger
+        # **disable 掉**并写死级别——那样「访问日志进 JSON 链」只是碰巧成立。
+        # 这里把两项一并扳回（正常路径本就是 False/NOTSET，等于不动）。
+        uvicorn_logger.disabled = False
+        uvicorn_logger.setLevel(logging.NOTSET)

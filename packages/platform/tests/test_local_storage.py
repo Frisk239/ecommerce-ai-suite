@@ -59,3 +59,39 @@ def test_storage_satisfies_protocol(tmp_path: Path) -> None:
     storage: ObjectStorage = LocalDirectoryStorage(tmp_path)
     storage.put_bytes("k", b"v")
     assert storage.get_bytes("k") == b"v"
+
+
+# ---------- 第 94b 刀：媒体端点用的 size / 区间流式读 ----------
+
+
+def test_size_reports_bytes_and_missing_raises(tmp_path: Path) -> None:
+    storage = LocalDirectoryStorage(tmp_path)
+    storage.put_bytes("clips/a/b.mp4", b"0123456789")
+    assert storage.size("clips/a/b.mp4") == 10
+    with pytest.raises(FileNotFoundError):
+        storage.size("clips/a/missing.mp4")
+
+
+def test_iter_bytes_full_and_ranges(tmp_path: Path) -> None:
+    storage = LocalDirectoryStorage(tmp_path)
+    payload = bytes(range(256)) * 1000  # 256000 字节：跨多个 64KiB 分块
+    storage.put_bytes("clips/a/b.mp4", payload)
+
+    assert b"".join(storage.iter_bytes("clips/a/b.mp4")) == payload
+    assert b"".join(storage.iter_bytes("clips/a/b.mp4", start=0, end=99)) == payload[:100]
+    assert b"".join(storage.iter_bytes("clips/a/b.mp4", start=100)) == payload[100:]
+    assert b"".join(storage.iter_bytes("clips/a/b.mp4", start=255900, end=255999)) == payload[-100:]
+    # 分块（不是一次整读）：一块一 yield，跨分块的区间块数 > 1
+    assert len(list(storage.iter_bytes("clips/a/b.mp4", start=0, end=200000))) > 1
+
+
+def test_iter_bytes_rejects_bad_ranges_and_missing(tmp_path: Path) -> None:
+    storage = LocalDirectoryStorage(tmp_path)
+    storage.put_bytes("k.bin", b"0123456789")
+    for kwargs in ({"start": -1}, {"start": 5, "end": 4}, {"start": 11}, {"start": 0, "end": 10}):
+        with pytest.raises(ValueError):
+            list(storage.iter_bytes("k.bin", **kwargs))
+    # start == size 是空区间（合法）：零字节对象/空区间不抛，产出空
+    assert list(storage.iter_bytes("k.bin", start=10)) == []
+    with pytest.raises(FileNotFoundError):
+        list(storage.iter_bytes("missing.bin"))

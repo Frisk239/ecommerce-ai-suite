@@ -43,13 +43,19 @@
 组装失败会留下已落库的顾客问句——属可接受残留：问题真实发生过，不因回答侧
 失败而抹掉提问记录。LLM 前再 commit 一次只为归还连接，不改变「问句与回答
 分两事务」的语义。
+
+第 94b 刀（ADR 0052）媒体引用：``media_citations`` 是 citations 的姊妹键
+（同一份服务端证据派生，模型无决定权）——派生点在**所有会改写 citations 的闸
+之后**（覆盖声明收口/OOV 闸清空 citations 时媒体跟着空，不会「拒答挂图」），
+随 agent 消息落列（重载会话照样出图/出播放器），SSE complete 两通道同形状
+（恒列表，无媒体=[]）。工具/目录/澄清/转人工出口不检索，恒空。
 """
 
 import json
 import logging
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
@@ -96,6 +102,7 @@ from suite_api.services.knowledge_gaps import (
     resolve_gap_answered_by_catalog,
 )
 from suite_api.services.machine_wash import redact
+from suite_api.services.media import media_citations_for
 from suite_api.services.order_tools import (
     find_order_no,
     get_order_status,
@@ -203,6 +210,10 @@ class AskOutcome:
     # 第 42 刀（ADR 0046）：本会话工单（handoff/拒答路径非 None；answer/工具
     # 查得路径恒 None）。SSE complete 据此带工单号回执（运行时可选键）。
     ticket: HandoffTicket | None = None
+    # 第 94b 刀（ADR 0052）：媒体附件 ``[{asset_id, version_no, mime}]``——服务端
+    # 按 citations 同一份证据派生（模型无决定权）；无媒体恒 ``[]``，形态固定
+    # （不是可选键）。工具/目录/澄清/转人工出口不检索，恒空。
+    media_citations: list[dict[str, Any]] = field(default_factory=list)
 
 
 # 覆盖声明（第 58 刀）：模型自己说「证据没覆盖/没有相关信息」——**保守**只认
@@ -587,6 +598,12 @@ async def run_ask(
     fallback = answer.kind == "answer" and generated is None and not is_catalog
     content = generated if generated is not None else answer.content
 
+    # 第 94b 刀（ADR 0052）：媒体引用派生——**在所有会改写 citations 的闸之后**
+    # （覆盖声明收口/实体存在性闸都把 citations 清成 []，媒体必须跟着这份最终
+    # 证据走，否则会出现「拒答却挂一张图」）。输入是服务端定的 citations（0007），
+    # 输出只认命中的 image/video 且字节真是媒体（services.media）。
+    media_citations = media_citations_for(db, answer.citations)
+
     # 落 agent 消息：引用带版本（0007），拒答/转人工显性（0018）。
     # agent 消息 citations 恒为列表（refusal=[]），customer 消息为 None（ADR 0023「仅 agent」）
     agent_message = ServiceMessage(
@@ -597,6 +614,7 @@ async def run_ask(
         kind=answer.kind,
         handoff=answer.handoff,
         tool=tool_record,
+        media_citations=media_citations,
     )
     db.add(agent_message)
     # 0024：无证据拒答同事务落知识缺口（question=顾客原问，精确幂等：同文
@@ -659,6 +677,7 @@ async def run_ask(
             else ("coverage" if gate_fallback else ("no_coverage" if no_coverage else None))
         ),
         ticket=ticket,
+        media_citations=media_citations,
     )
 
 
@@ -686,6 +705,7 @@ def _run_handoff_ask(
         role="agent",
         content=content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind="handoff",
         handoff=True,
         tool=tool_record,
@@ -785,6 +805,7 @@ def _run_rejected_proposal(
         role="agent",
         content=REJECTED_CONTENT,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind="handoff",
         handoff=True,
         tool=tool_record,
@@ -838,6 +859,7 @@ def _run_return_eligibility_ask(
         role="agent",
         content=content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind=kind,
         handoff=handoff,
         tool=tool_record,
@@ -907,6 +929,7 @@ def _run_order_clarify_ask(db: Session, session: ServiceSession, question: str) 
         role="agent",
         content=_ORDER_CLARIFY_CONTENT,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind="answer",
         handoff=False,
         tool=tool_record,
@@ -956,6 +979,7 @@ def _run_order_ask(db: Session, session: ServiceSession, order_no: str) -> AskOu
         role="agent",
         content=content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind=kind,
         handoff=handoff,
         tool=tool_record,
@@ -993,6 +1017,7 @@ def _run_catalog_ask(
         role="agent",
         content=catalog.content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind="answer",
         handoff=False,
         tool=catalog.tool,
@@ -1046,6 +1071,7 @@ def _run_stock_ask(
         role="agent",
         content=content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind=kind,
         handoff=handoff,
         tool=tool_record,
@@ -1124,6 +1150,10 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     complete: dict[str, Any] = {
         "message_id": outcome.agent_message.id,
         "citations": outcome.answer.citations,
+        # 第 94b 刀（ADR 0052）：媒体附件与 citations 并列（同一份证据派生的
+        # 图片/视频），**恒为列表**——无媒体是 []，不是缺键（形态固定，前端
+        # 按键直取）；两通道同形状（媒体不是内部 id：顾客要拿它取字节）。
+        "media_citations": list(outcome.media_citations),
         "kind": outcome.answer.kind,
         "handoff": outcome.answer.handoff,
         # 0036：None 或 {name, arg, result}——非订单路径多一个 null 键，

@@ -288,6 +288,16 @@ export interface ServiceCitation {
   version_no: number
 }
 
+/** 媒体引用（第 94b 刀，ADR 0052）：citations 的姊妹键——服务端按**同一份**
+ * 检索命中派生的媒体附件（模型无决定权）。mime 决定渲染形态：image/* 直出
+ * <img>、video/* 出 <video controls>；字节走 GET /api/customer/assets/{id}/media
+ * （只出当前已发布指针版，未发布/已废弃 404）。无媒体命中恒 []（形态固定）。 */
+export interface MediaCitation {
+  asset_id: number
+  version_no: number
+  mime: string
+}
+
 /** 工具调用记录（第 13 刀/ADR 0036）：SSE tool 事件、complete.tool 与消息表
  * tool 列同形状；result 是后端生成的一行摘要（灰底工具条「参数→结果」）。 */
 export interface ToolCallRecord {
@@ -307,6 +317,9 @@ export interface ServiceMessage {
   handoff: boolean | null
   /** 仅订单工具路径的 agent 消息非空（0036：随消息落库，重载还原工具条）。 */
   tool: ToolCallRecord | null
+  /** 第 94b 刀（ADR 0052）：媒体附件——citations 的姊妹键，随消息落库
+   * （重载会话照样出图/出播放器；仅 agent 消息为列表，无媒体恒 []）。 */
+  media_citations: MediaCitation[] | null
   created_at: string
 }
 
@@ -433,6 +446,9 @@ export interface StatsOverview {
 export interface ServiceAnswerComplete {
   message_id: number
   citations: ServiceCitation[]
+  /** 第 94b 刀（ADR 0052）：媒体附件（与 citations 同一份服务端证据派生；
+   * 无媒体恒 []，形态固定不是可选键）。两通道同形状——顾客要拿它取字节。 */
+  media_citations: MediaCitation[]
   kind: 'answer' | 'refusal' | 'handoff'
   handoff: boolean
   gap_id: number | null

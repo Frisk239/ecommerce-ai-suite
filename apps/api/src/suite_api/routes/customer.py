@@ -20,6 +20,11 @@
   ADR 0046 §4）：转人工工单留联系方式——闸序同上；name/note 必填、email/
   phone 可选轻校验；工单须属于本会话（统一 404）；顾客回显自己的输入不掩。
 
+- ``GET /api/customer/assets/{id}/media``（第 94b 刀，ADR 0052）：媒体字节出口
+  （图片直出 / 视频 Range）——双通道鉴权（操作者 cookie 或顾客令牌 Bearer/
+  ``?token=``），**只出当前已发布指针版**，未发布/已废弃/非媒体一律 404
+  （不泄漏存在性、不回对象键）。完整口径见该端点 docstring 与 ADR 0052。
+
 - ``POST /api/customer/sessions/{id}/rating``（第 48 刀；第 71 刀评分可改）：会话级
   1–5 星 CSAT——闸序同上；score 越界 422、非 (active|ended) 409（第 80 刀：结束后可评分）、已评再提交是**改评**
   （UPDATE 覆盖式留最新，updated_at 记修改）；comment 可选（≤500 字，整体覆盖，
@@ -43,15 +48,16 @@ from hmac import compare_digest
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from suite_api.deps import get_db
+from suite_api.deps import get_db, get_storage, operator_from_cookie
 from suite_api.models import (
     Asset,
+    AssetVersion,
     HandoffTicket,
     ServiceMessage,
     ServiceSession,
@@ -64,8 +70,10 @@ from suite_api.observability import (
 )
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.handoff_tickets import submit_contact, ticket_no
+from suite_api.services.media import RangeNotSatisfiable, media_mime, parse_single_range
 from suite_api.services.rate_limit import CustomerRateLimits
 from suite_api.services.triage import triage_asset_ids
+from suite_platform.storage import ObjectStorage
 
 router = APIRouter(prefix="/api/customer", tags=["customer"])
 
@@ -394,6 +402,133 @@ async def ask(
     db.close()
     return StreamingResponse(
         sse_event_stream(outcome, expose_gap_id=False), media_type="text/event-stream"
+    )
+
+
+# ---------- 媒体字节（第 94b 刀，ADR 0052） ----------
+
+# 统一 404 文案（不区分「不存在/未发布/已废弃/不是媒体」）：媒体端点的存在性
+# 是不可探测面——待人洗、已废弃、非媒体资产一律同一句话（goal 口径：未发布
+# 拒绝；不给 id 探测留反馈面）。也**不回对象键**（字节只经此端点出，键不出门）。
+_MEDIA_NOT_FOUND = "媒体不存在"
+# 媒体响应头（两分支共用）：Range 能力声明 + 不缓存（URL 带顾客令牌，别让
+# 中间层/浏览器把「带凭证的 URL 内容」留在共享缓存里）+ nosniff（字节是运营
+# 上传/切片产物，Content-Type 由我们定死，不许浏览器嗅探改判）。
+_MEDIA_BASE_HEADERS = {
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+def _media_customer_token(request: Request) -> str | None:
+    """媒体端点的顾客令牌取值：``Authorization: Bearer`` 优先，其次 ``?token=``。
+
+    ``<img>``/``<video>`` 的 src 带不了请求头（浏览器规范），query 令牌是这个
+    场景的唯一出路——**边界只开在本端点**：别处一概只认 Bearer 头（发问/反馈/
+    评分/联系方式），query 形态不接受（ADR 0052 写明权衡与泄漏面：URL 会进
+    访问日志，故日志侧对 ``token=`` 参数脱敏，见 observability）。
+    """
+    header_token = _bearer_token(request)
+    if header_token is not None:
+        return header_token
+    query_token = (request.query_params.get("token") or "").strip()
+    return query_token or None
+
+
+def _media_token_session(db: Session, request: Request) -> ServiceSession | None:
+    """媒体端点的顾客通道鉴权：令牌有效且未过期（TTL 口径与发问一致）。
+
+    **不**走 `_authorize_customer_session`（那个按 session_id 查 + 恒定时间比对，
+    形态是「操作已鉴权的会话」）；媒体只有令牌没有会话 id，故按令牌等值查行。
+    取舍（ADR 0052）：DB 索引等值查没有恒定时间比对，但端点对「令牌错/过期/
+    不存在」统一 401 同文案、且响应内容只依赖 asset_id（与令牌身份无关）——
+    探测面为零；换来的是 ``<img src>`` 能带凭证。会话状态不作闸（active/ended
+    都放行）：附件是「本次会话已经收到的回答」的一部分，结束会话不该让图裂。
+    """
+    token = _media_customer_token(request)
+    if token is None:
+        return None
+    session = db.scalar(select(ServiceSession).where(ServiceSession.customer_token == token))
+    if session is None or session.customer_token_expires_at is None:
+        return None
+    if datetime.now(UTC) > session.customer_token_expires_at:
+        return None
+    return session
+
+
+@router.get("/assets/{asset_id}/media")
+def get_asset_media(
+    asset_id: int,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> Response:
+    """媒体字节出口（第 94b 刀，ADR 0052）：图片直出、视频支持 Range。
+
+    为什么不复用 ``routes/assets.py`` 的版本正文端点：那是**操作者治理面**
+    （未发布版本也读得到、对话附件带 cookie），而本端点是顾客面——只出
+    **当前已发布指针版**，未发布/已废弃/非媒体一律 404（不泄漏存在性），
+    响应不回对象键。
+
+    鉴权（双通道，二者有其一即可）：操作者 cookie（客服预览页 img/video 同源
+    带 cookie）或顾客令牌（Bearer 头 **或** ``?token=``——见 ``_media_customer_token``
+    的边界说明）。缺凭证统一 401（不区分令牌错/过期，同发问口径）。
+
+    Range（RFC 9110 §14.2 单段子集，判定在 ``services.media.parse_single_range``）：
+    无头/多段/坏头 -> 200 全量；``bytes=a-b`` / ``bytes=a-`` / ``bytes=-n`` ->
+    206 + ``Content-Range``；语法合法但越界 -> 416 + ``bytes */{size}``。字节按
+    区间**流式**出（``storage.iter_bytes`` 分块），不整读进内存——视频可上百 MB。
+
+    失败口径：对象缺失（文件被清/迁移残留）同样 404 同一文案——「已发布指针
+    指向一份取不到的字节」对顾客就是「媒体不存在」，不暴露内部原因。
+    """
+    if operator_from_cookie(request, db) is None and _media_token_session(db, request) is None:
+        raise _unauthorized()
+
+    asset = db.get(Asset, asset_id)
+    version = (
+        db.get(AssetVersion, asset.current_published_version_id)
+        if asset is not None and asset.current_published_version_id is not None
+        else None
+    )
+    mime = media_mime(
+        asset.kind if asset is not None else None,
+        version.object_key if version is not None else None,
+    )
+    if mime is None or asset.discarded_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_MEDIA_NOT_FOUND)
+    object_key = version.object_key
+    try:
+        size = storage.size(object_key)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_MEDIA_NOT_FOUND
+        ) from None
+
+    try:
+        window = parse_single_range(request.headers.get("range"), size)
+    except RangeNotSatisfiable:
+        # 416 必须带 ``bytes */{size}``，客户端据此知道真实长度（RFC 9110 §15.5.17）
+        return Response(
+            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+            headers={**_MEDIA_BASE_HEADERS, "Content-Range": f"bytes */{size}"},
+        )
+    if window is None:
+        return StreamingResponse(
+            storage.iter_bytes(object_key),
+            media_type=mime,
+            headers={**_MEDIA_BASE_HEADERS, "Content-Length": str(size)},
+        )
+    return StreamingResponse(
+        storage.iter_bytes(object_key, start=window.start, end=window.end),
+        status_code=status.HTTP_206_PARTIAL_CONTENT,
+        media_type=mime,
+        headers={
+            **_MEDIA_BASE_HEADERS,
+            "Content-Length": str(window.length),
+            "Content-Range": f"bytes {window.start}-{window.end}/{size}",
+        },
     )
 
 
