@@ -831,3 +831,36 @@ def test_off_brand_from_chunk_field_line_only() -> None:
     assert com.brand_from_chunk("品牌: 半角冒号") == "半角冒号"
     assert com.brand_from_chunk("净含量：250g") == ""
     assert com.brand_from_chunk("品牌：") == ""
+
+
+# --------------------------- 存量 embedding 回填（第 105 刀）：口径与诚实退出
+
+import backfill_embeddings as bfe  # noqa: E402
+
+
+def test_backfill_missing_db_arg_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert bfe.main([]) == 2  # 无 --db 无 env：参数错退出，不猜库
+
+
+def test_backfill_without_key_exits_before_touching_db(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """未配 EMBED_API_KEY：诚实退出（fail-closed）——不建客户端、不发请求、不连库。"""
+    from suite_api.services import embedding as embedding_service
+
+    monkeypatch.setattr(embedding_service, "is_configured", lambda: False)
+    # --db 给假串：若未在连接前短路，create_engine 的后续查询会炸出异常而非
+    # 退出码 2——测试因此能区分「先检查 key」与「先碰库」
+    assert bfe.main(["--db", "postgresql://suite:suite@127.0.0.1:1/nope"]) == 2
+    assert "EMBED_API_KEY" in capsys.readouterr().err
+
+
+def test_backfill_sql_pins_pointer_version_and_null_only() -> None:
+    """两条口径在 SQL 层钉死：只扫当前指针版（与 retrieve 候选同款 join）、只补
+    embedding IS NULL（幂等——重跑只补漏，已嵌入行不碰）。"""
+    sql = bfe._PENDING_SQL
+    assert "c.embedding IS NULL" in sql  # 幂等口径
+    assert "a.current_published_version_id = v.id" in sql  # 当前指针版
+    assert "a.status = 'published'" in sql
+    assert "a.discarded_at IS NULL" in sql  # 废弃资产不回填（ADR 0042 证据面口径）

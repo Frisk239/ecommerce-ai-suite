@@ -27,6 +27,11 @@ os.environ["IMGGEN_API_KEY"] = ""
 # 成片预览的口播也必须走「未配置 = 无声预览」（零外网调用）；要测配置态用例
 # 自己 monkeypatch services.tts 的 synthesize_speech（替身，不打真网）。
 os.environ["TTS_API_KEY"] = ""
+# 第 105 刀同口径：测试进程强制空 Embedding 凭证——本机 .env 配了真
+# EMBED_API_KEY 时，发布补写也必须走「未配置 = 块照写、embedding NULL」
+# （零外网调用）；要测配置态用例自己 monkeypatch services.embedding 的
+# embed_texts/is_configured（替身，不打真网）。
+os.environ["EMBED_API_KEY"] = ""
 
 from pathlib import Path  # noqa: E402
 from urllib.parse import urlsplit, urlunsplit  # noqa: E402

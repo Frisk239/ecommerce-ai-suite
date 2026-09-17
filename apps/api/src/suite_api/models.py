@@ -171,7 +171,10 @@ class RetrievalChunk(Base):
     """ADR 0023：已发布资产版本的切块（CONTEXT「检索索引」派生视图，不是中台对象）。
 
     只在发布事务内写入（0004/CONTEXT「已发布」词条：发布时切块入索引，
-    索引里只有已发布）；发布事务外无写入路径。待人洗/已接入内容绝不出现在此表。
+    索引里只有已发布）；发布事务外无写入路径。embedding（迁移 0034 的
+    vector(1024) 语义列）**有意不映射进 ORM**——pgvector 类型非 sa 内建，
+    读写走裸 SQL（retrieval.embed_version_chunks / 回填脚本）；106 刀接
+    混合检索时再议映射。
     """
 
     __tablename__ = "retrieval_chunks"
