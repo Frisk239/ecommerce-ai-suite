@@ -8,11 +8,13 @@
    （无时间戳；时间戳只活在 clip_candidates，且候选行与资产无关联）——「按句
    定位帧」没有数据可用。故对视频每 5s 抽一帧（采样数上限 24：超上限拉大间隔
    保持均匀，不掐尾），每帧 VLM 打分（1-10 + 一句话），分数 ≥6 的帧成候选
-   （上限 8，超出取分高者、按时间序返回）。
+   （上限 8，超出取分高者、按时间序返回）。**单帧 VLM 失败只跳过该帧**（第
+   112 刀韧性：一帧超时不再杀整批；全帧失败才 502，回执带 failed_frames）。
 2. **候选是请求态，不落库**：帧候选是轻量预览不是资产（0014 同性质），零新表
    零新行；缩略图（宽 ≤480px 的 jpeg）以 base64 data URL 回传，不落对象存储。
    刷新即重算——确认登记是唯一写动作，但**它本身无幂等键**：并发双击/重放会登记
-   两份同秒帧（at_second 是自由参数，非拣选 CAS 行；单客户端有 registering 守卫）——\   ADR 0053 Debt，并发场景触发时补。
+   两份同秒帧（at_second 是自由参数，非拣选 CAS 行；单客户端有 registering 守卫）
+   ——ADR 0053 Debt，并发场景触发时补。
 3. **确认登记**：从**当前已发布指针版**字节抽该秒全尺寸 jpg，走
    ``register_asset(kind=image, source_kind="clip_frame")`` 挂同商品（若源资产
    挂商品）、标题 ``{商品/视频名} · 实拍帧 mm:ss``。登记后与其他 image 同路走
@@ -168,11 +170,17 @@ class ScoredFrame:
 
 @dataclass(frozen=True)
 class WashOutcome:
-    """洗帧回执（路由照此组装响应）：时长 + 采样数 + 候选。"""
+    """洗帧回执（路由照此组装响应）：时长 + 采样数 + 候选 + 打分失败被跳过的帧数。
+
+    ``failed_frames``（第 112 刀）：VLM 请求失败（超时/抖动）被跳过、**没有**
+    打上分的采样帧数。0=每帧都有分（过不过线另说）；>0=部分降级（候选照出，
+    回执如实告知哪几帧没评上，前端据此提示）。
+    """
 
     duration_seconds: float
     sampled: int
     candidates: list[ScoredFrame]
+    failed_frames: int = 0
 
 
 @dataclass(frozen=True)
@@ -298,25 +306,52 @@ def score_frame(thumbnail_bytes: bytes) -> tuple[int, str] | None:
 def generate_candidates(video_bytes: bytes) -> WashOutcome:
     """已发布视频字节 → 打分候选（采样 → 缩略 → 逐帧 VLM 打分 → 过滤）。
 
-    单帧打分输出解析失败=该帧跳过（无分不编造）；VLM 请求异常向上冒泡（路由
-    502）。串行调用（≤24 帧 × 正常 1-3s/帧在同步请求预算内；VLM 单请求超时
-    由 vlm 模块的 20s 纪律兜底）。
+    韧性（第 112 刀）：**单帧失败不杀整批**——一帧 ``VLMUnavailable``（超时/
+    连接抖动）只跳过该帧、记 warning 与 ``failed_frames``，其余帧照常打分出候选
+    （此前一帧 APITimeoutError 让整段 47s 视频白跑并 502）。只有**全部采样帧都
+    栽在 VLM 上**（``scored`` 为空且失败数 == 采样数）才是「打分整体不可用」，
+    抛 ``VLMUnavailable`` 由路由转 502（文案带帧数，可行动）。
+
+    ``VLMNotConfigured`` **不 catch**：空 key 是配置问题不是韧性面，fail-fast
+    冒泡成 409（同路由既有口径，与 ASR 一致）。单帧打分输出解析失败=该帧跳过
+    （无分不编造，不算 failed_frames——那不是请求失败）。串行调用（≤24 帧 ×
+    正常 1-3s/帧在同步请求预算内；VLM 单请求超时由 vlm 模块的 20s 纪律兜底）。
     """
+    from suite_api.services import vlm  # 延迟导入：同 score_frame 口径
+
     duration = probe_duration_seconds(video_bytes)
     points = sample_points(duration)
     scored: list[ScoredFrame] = []
+    failed_frames = 0
     for at_second in points:
-        thumbnail = extract_frame_jpeg(video_bytes, at_second, max_width=THUMB_MAX_WIDTH)
-        verdict = score_frame(thumbnail)
+        # 审计 113 P0 补修：抽帧失败（越界/损坏/超时）也单帧跳过——不能杀整批
+        try:
+            thumbnail = extract_frame_jpeg(video_bytes, at_second, max_width=THUMB_MAX_WIDTH)
+        except FrameExtractionError as exc:
+            failed_frames += 1
+            logger.warning("洗帧抽帧单帧失败，跳过 at=%s err=%s", at_second, exc)
+            continue
+        try:
+            verdict = score_frame(thumbnail)
+        except vlm.VLMUnavailable as exc:
+            failed_frames += 1
+            logger.warning("洗帧打分单帧失败，跳过 at=%s err=%s", at_second, exc)
+            continue
         if verdict is None:
             logger.info("洗帧打分输出不可解析，跳过该帧: at=%s", at_second)
             continue
         score, note = verdict
         scored.append(ScoredFrame(at_second=at_second, score=score, note=note, thumbnail=thumbnail))
+    if points and not scored and failed_frames == len(points):
+        # 全帧皆失败（抽帧+打分合计）：不是「没有过线帧」（那是 200 + 空候选），是整链不可用
+        raise vlm.VLMUnavailable(
+            f"全部 {len(points)} 帧处理失败（抽帧或打分），洗帧没有候选可出，请稍后重试"
+        )
     return WashOutcome(
         duration_seconds=duration,
         sampled=len(points),
         candidates=filter_candidates(scored),
+        failed_frames=failed_frames,
     )
 
 

@@ -273,6 +273,7 @@ def test_frame_candidates_sampling_scoring_and_shape(
     body = resp.json()
     assert 11.5 < body["duration_seconds"] < 12.5  # ffprobe 真跑（容器精度）
     assert body["sampled"] == 3  # 采样三帧（含被淘汰的，回执如实）
+    assert body["failed_frames"] == 0  # 全帧评上（第 112 刀：降级计数 0）
     assert len(calls) == 3  # 每个采样帧都送了 VLM（真 ffmpeg 缩略字节）
     assert all(c.startswith(b"\xff\xd8\xff") for c in calls)  # 缩略图是真 jpeg
     assert [c["at_second"] for c in body["candidates"]] == [0.0, 10.0]
@@ -299,6 +300,37 @@ def test_frame_candidates_vlm_failure_502(
     monkeypatch.setattr(vlm_service, "chat_with_image", _boom)
     resp = client.post(f"/api/assets/{asset_id}/frame-candidates")
     assert resp.status_code == 502
+    # 第 112 刀：502 文案带帧数（可行动），不是通用「看图服务暂时不可用」
+    assert "全部 3 帧处理失败" in resp.json()["detail"]
+
+
+def test_frame_candidates_partial_vlm_failure_keeps_candidates(
+    api: ApiFixture, live_mp4: bytes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """第 112 刀真栈钉子：12s 视频采样 [0,5,10]，第 2 帧（at=5）VLM 超时被跳过，
+    其余两帧照常出候选 —— 200 + failed_frames=1（旧行为：一帧超时整批 502）。"""
+    client, _ = api
+    _login(client)
+    asset_id = _make_published_video(client, live_mp4, transcript="部分帧失败洗帧测试")
+    calls: list[int] = []
+    replies = ['{"score": 8, "note": "商品居中"}', '{"score": 7, "note": "特写完整"}']
+
+    def flaky(system_prompt: str, user_prompt: str, image_bytes: bytes) -> str:
+        del system_prompt, user_prompt, image_bytes
+        calls.append(1)
+        if len(calls) == 2:  # 第 2 个采样帧超时
+            raise VLMUnavailable("看图服务暂时不可用")
+        return replies.pop(0)
+
+    monkeypatch.setattr(vlm_service, "is_configured", lambda: True)
+    monkeypatch.setattr(vlm_service, "chat_with_image", flaky)
+    resp = client.post(f"/api/assets/{asset_id}/frame-candidates")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["sampled"] == 3
+    assert body["failed_frames"] == 1  # 部分降级如实回执
+    assert [c["at_second"] for c in body["candidates"]] == [0.0, 10.0]
+    assert [c["score"] for c in body["candidates"]] == [8, 7]
 
 
 # ---------- 3. 确认登记（人工闸门后的写路径） ----------

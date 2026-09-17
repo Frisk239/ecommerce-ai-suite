@@ -65,6 +65,34 @@ function latestRecording(clips: readonly ClipCandidate[]): ClipRecording | null 
   return latest
 }
 
+/** 拣选回执链接条数上限：批量拣选（勾 20 条也常见）不许把横幅撑成链接墙，
+ * 超出的按条数收尾——全部资产仍可在下面的已登记卡片上逐条点开。 */
+const PICK_RECEIPT_LINK_CAP = 6
+
+/** 拣选回执（第 112 刀 W12）：文案 + 登记出资产的「查看 A-xxxx」内联链接。
+ * 后端 pickClips 的回执**就是**登记出的资产列表（含 id），这里直接拿来回链，
+ * 不再靠「回执文案里念一句资产号」（此前只有已登记候选卡有链，回执没有）。 */
+function PickReceipt({ note, assetIds }: { note: string; assetIds: number[] }) {
+  const shown = assetIds.slice(0, PICK_RECEIPT_LINK_CAP)
+  const rest = assetIds.length - shown.length
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      <span>{note}</span>
+      {shown.map((id) => (
+        <Link
+          key={id}
+          to={`/platform/assets/${id}`}
+          className="shrink-0 font-mono underline"
+          title="查看登记出的视频资产（治理台补转写/发布）"
+        >
+          查看 {formatAssetId(id)}
+        </Link>
+      ))}
+      {rest > 0 ? <span className="shrink-0 font-mono">…另 {rest} 条</span> : null}
+    </span>
+  )
+}
+
 export default function ClipsPage() {
   const fetcher = useCallback(() => api.listClipCandidates(), [])
   const { state, reload } = useApiData(fetcher)
@@ -76,6 +104,9 @@ export default function ClipsPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [uploadNote, setUploadNote] = useState<string | null>(null)
   const [pickNote, setPickNote] = useState<string | null>(null)
+  // 第 112 刀 W12：本次拣选登记出的资产 id（后端回执同序返回）——回执横幅的
+  // 「查看 A-xxxx」链接用它；与 pickNote 同生命周期（清回执处一并清）。
+  const [pickedAssetIds, setPickedAssetIds] = useState<number[]>([])
   const [bindNote, setBindNote] = useState<string | null>(null)
   // 第 49 刀：源录像列表 + 选择器（「改绑到哪一份」得先看得见有哪些份）
   const [recordings, setRecordings] = useState<ClipRecording[]>([])
@@ -148,12 +179,18 @@ export default function ClipsPage() {
     fileInputRef.current?.click()
   }
 
+  // 回执与它的链接同生死：清回执处一并清 id（避免「旧链接配新文案」）
+  const clearPickReceipt = () => {
+    setPickNote(null)
+    setPickedAssetIds([])
+  }
+
   const onRecordingPicked = async (files: FileList | null) => {
     const file = files?.[0] ?? null
     if (file === null || uploading) return
     setActionError(null)
     setUploadNote(null)
-    setPickNote(null)
+    clearPickReceipt()
     setBindNote(null)
     setUploading(true)
     try {
@@ -186,6 +223,7 @@ export default function ClipsPage() {
     setActionError(null)
     setBindNote(null)
     setUploadNote(null)
+    clearPickReceipt()
     try {
       const result = await api.bindClipRecording(chosenRecordingId, ids)
       setBindNote(
@@ -211,7 +249,7 @@ export default function ClipsPage() {
     setTranscribeNote(null)
     setUploadNote(null)
     setBindNote(null)
-    setPickNote(null)
+    clearPickReceipt()
     try {
       const result = await api.transcribeClipRecording(chosenRecordingId)
       const label = recordings.find((r) => r.id === chosenRecordingId)?.label ?? '所选录像'
@@ -235,7 +273,7 @@ export default function ClipsPage() {
     if (submitting || registrable.length === 0) return
     setSubmitting(true)
     setActionError(null)
-    setPickNote(null)
+    clearPickReceipt()
     setUploadNote(null)
     setBindNote(null)
     // 回执口径按「勾选候选是否绑了源录像」分：真切片段 vs 时间码文本旧路径；
@@ -249,7 +287,10 @@ export default function ClipsPage() {
     const sourceText =
       sourceLabels.length === 1 ? `《${sourceLabels[0]}》` : `${sourceLabels.length} 份源录像`
     try {
-      await api.pickClips(registrable.map((c) => c.id))
+      // 第 112 刀 W12：回执就是登记出的资产列表（含 id）——用它给回执横幅挂
+      // 「查看 A-xxxx」链接（此前回执只有文案，链接只在已登记候选卡上）。
+      const registered = await api.pickClips(registrable.map((c) => c.id))
+      setPickedAssetIds(registered.map((asset) => asset.id))
       setSelected(new Set())
       if (realCount > 0 && textCount > 0) {
         setPickNote(
@@ -277,7 +318,11 @@ export default function ClipsPage() {
       {actionError ? <ActionError message={actionError} variant="prominent" className="mb-4" /> : null}
       {uploadNote ? <SuccessBanner>{uploadNote}</SuccessBanner> : null}
       {transcribeNote ? <SuccessBanner>{transcribeNote}</SuccessBanner> : null}
-      {pickNote ? <SuccessBanner>{pickNote}</SuccessBanner> : null}
+      {pickNote ? (
+        <SuccessBanner>
+          <PickReceipt note={pickNote} assetIds={pickedAssetIds} />
+        </SuccessBanner>
+      ) : null}
       {bindNote ? <SuccessBanner>{bindNote}</SuccessBanner> : null}
 
       <PageHeader
