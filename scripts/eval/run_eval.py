@@ -23,13 +23,22 @@
 一次性观察：非确定性不进 CI、不进可复现评测尺（口径声明随报告输出）。
 
 指标（docs/research/rag-accuracy-engineering.md §3 协议）：
-- recall@1/@3：cite 组（positive/paraphrase/confusion/oov_syn）期望资产进 top-1/top-3；
+- recall@1/@3：cite 组（positive/paraphrase/confusion/oov_syn/sem_neg）期望资产进 top-1/top-3；
 - 拒答率：refusal 组实际拒答比例（kind=refusal）；
 - 误拒率：positive 组被拒答的比例（宁缺勿滥的反面代价，单独成列）；
 - 混淆@1：confusion 组 top-1 恰为期望资产的比例（跨商品共有词是否被词法分
   拉向「证据更短更实」的资产）；
 - 表外同义（第 101 刀第五分布 oov_syn）：同义词表之外的自然改写，期望锚与
   表内基底同句相同——recall@1 即表外泛化实测，embedding 评估门的裁判列；
+- 语义负例（第 107a 刀第六分布 sem_neg）：否定语义（「不支持退货吗」——不/没
+  是停用字，词法层否定式与正向完全同命中；稠密检索的已知弱向：否定句向量≈
+  肯定句向量，检索应命中同一块而模型不被否定形态带偏）+ 语义近邻（「保温杯的
+  保修政策」——实体词与意图分属两资产，词法被实体亲和拉偏的形态）——向量
+  上场前先把靶子钉进评测集；
+- 排序三指标（第 107a 刀，对全部 cite 组；refusal 无期望锚不适用）：
+  MRR（期望资产首次进榜位次的倒数 1/rank，不中=0）、nDCG@3（期望资产首次
+  进榜位次的 log2(i+1) 折扣增益，p1=1.0/p2≈0.63/p3=0.5——IDCG 取 rank1 常数
+  归一）、噪声率@3（top3 里非期望资产块占比 (3-期望块数)/3，期望不在=100%）；
 - 忠实度（--judge）：answered 条目中被 judge 判 supported 的比例。
 
 统计全为纯函数（judge_case/aggregate/_supported_verdict/format_table），
@@ -46,6 +55,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import re
 import time
 from collections.abc import Callable, Sequence
@@ -59,10 +69,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_DB = "postgresql://suite:suite@localhost:5433/suite"
 DEFAULT_GOLDEN = SCRIPT_DIR / "out" / "golden_large.json"
 TOP_K = 3
-# 五分布（第 101 刀起）：四原始分布 + oov_syn（表外同义探针——同义词表之外的
-# 自然改写，期望锚与表内同义问句相同；recall 是表外泛化的自由测量值，正是
-# embedding 评估门的裁判列）。
-DISTRIBUTIONS = ("positive", "paraphrase", "confusion", "refusal", "oov_syn")
+# 六分布（第 107a 刀起）：四原始分布 + oov_syn（表外同义探针，101 刀）+ sem_neg
+# （语义负例，107a 刀——否定语义/语义近邻两类：稠密检索已知弱向的提前钉死，
+# 向量上场前评测集先备好靶子）。
+DISTRIBUTIONS = ("positive", "paraphrase", "confusion", "refusal", "oov_syn", "sem_neg")
 JUDGE_ATTEMPTS = 3
 JUDGE_RETRY_WAIT_SECONDS = 2.0
 
@@ -115,11 +125,44 @@ TEMPLATE_ANSWER_PREFIXES: tuple[str, ...] = (
 # ---------------------------------------------------------------- 单条判定（纯函数）
 
 
+def reciprocal_rank(hits: list[dict[str, Any]], want_asset_id: int) -> float:
+    """MRR 单条（第 107a 刀）：期望资产（任意版本，与 recall@3 同口径）首次进榜
+    位次的倒数 1/rank——top1=1.0/top2=0.5/top3≈0.333；不在 top-k 或零命中=0。"""
+    for rank, hit in enumerate(hits[:TOP_K], start=1):
+        if hit["asset_id"] == want_asset_id:
+            return 1.0 / rank
+    return 0.0
+
+
+def discounted_gain(hits: list[dict[str, Any]], want_asset_id: int) -> float:
+    """nDCG@3 单条（第 107a 刀）：期望资产首次进榜位次 i 的折扣增益 1/log2(i+1)
+    ——p1=1.0/p2≈0.6309/p3=0.5；不在 top-k=0。
+
+    二值相关（命中即 gain=1）且 IDCG 取 rank1 常数 1 归一——期望资产多块进榜
+    时只记首块位次（多块的贡献由噪声率吸收），保证取值域 [0,1] 且与
+    「p1=1/p2=0.63/p3=0.5」口径逐位一致。"""
+    for rank, hit in enumerate(hits[:TOP_K], start=1):
+        if hit["asset_id"] == want_asset_id:
+            return 1.0 / math.log2(rank + 1)
+    return 0.0
+
+
+def noise_rate(hits: list[dict[str, Any]], want_asset_id: int) -> float:
+    """噪声率@3 单条（第 107a 刀）：top3 里非期望资产块的占比 (3-期望块数)/3。
+
+    「相关」= 属于期望资产（任意版本）的块（同资产多块都算相关）；期望资产
+    不在 top3（含零命中）时=100%；命中列表短于 3 时空位按非相关计（分母恒 3，
+    与 spec 公式逐字一致）。"""
+    expected = sum(1 for hit in hits[:TOP_K] if hit["asset_id"] == want_asset_id)
+    return (TOP_K - expected) / TOP_K
+
+
 def judge_case(case: dict[str, Any], hits: list[dict[str, Any]], kind: str) -> dict[str, Any]:
     """单条判定：hits=retrieve(top_k) 结果、kind=compose_answer().kind -> 行记录。
 
     recall@1 要求资产与版本都中；recall@3 资产命中即可（引到同资产更早版本
-    也说明检索找到了证据源，版本漂移是发布语义不是检索错误）。
+    也说明检索找到了证据源，版本漂移是发布语义不是检索错误）。排序三指标
+    （MRR/nDCG@3/噪声率@3，107a 刀）同为资产级口径，随 cite 期望一并落列。
     """
     row: dict[str, Any] = {
         "id": case["id"],
@@ -129,6 +172,9 @@ def judge_case(case: dict[str, Any], hits: list[dict[str, Any]], kind: str) -> d
         "hit_asset_ids": [hit["asset_id"] for hit in hits],
         "recall1": None,
         "recall3": None,
+        "mrr": None,
+        "ndcg3": None,
+        "noise3": None,
         "confusion_top1": None,
         "faithful": None,
     }
@@ -139,6 +185,9 @@ def judge_case(case: dict[str, Any], hits: list[dict[str, Any]], kind: str) -> d
             "version_no"
         ] == want["version_no"]
         row["recall3"] = any(hit["asset_id"] == want["asset_id"] for hit in hits)
+        row["mrr"] = reciprocal_rank(hits, want["asset_id"])
+        row["ndcg3"] = discounted_gain(hits, want["asset_id"])
+        row["noise3"] = noise_rate(hits, want["asset_id"])
         if case["distribution"] == "confusion":
             row["confusion_top1"] = bool(hits) and hits[0]["asset_id"] == want["asset_id"]
     return row
@@ -146,6 +195,10 @@ def judge_case(case: dict[str, Any], hits: list[dict[str, Any]], kind: str) -> d
 
 def _mean(values: Sequence[bool]) -> float | None:
     return round(sum(1 for v in values if v) / len(values), 4) if values else None
+
+
+def _mean_float(values: Sequence[float]) -> float | None:
+    return round(sum(values) / len(values), 4) if values else None
 
 
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -157,6 +210,9 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             "n": len(group),
             "recall1": _mean([r["recall1"] for r in group if r["recall1"] is not None]),
             "recall3": _mean([r["recall3"] for r in group if r["recall3"] is not None]),
+            "mrr": _mean_float([r["mrr"] for r in group if r["mrr"] is not None]),
+            "ndcg3": _mean_float([r["ndcg3"] for r in group if r["ndcg3"] is not None]),
+            "noise3": _mean_float([r["noise3"] for r in group if r["noise3"] is not None]),
             "refusal_rate": _mean([r["refused"] for r in group if r["distribution"] == "refusal"]),
             "false_refusal": _mean([r["refused"] for r in group if r["distribution"] == "positive"]),
             "confusion_top1": _mean(
@@ -173,6 +229,7 @@ def format_table(agg: dict[str, dict[str, Any]], *, judge_on: bool) -> str:
     """stdout/报告共用的分层表（纯函数）。None 指标显示 -。"""
     header = (
         f"{'分布':<12}{'条数':>5}{'recall@1':>10}{'recall@3':>10}"
+        f"{'MRR':>8}{'nDCG@3':>9}{'噪声@3':>9}"
         f"{'拒答率':>8}{'误拒率':>8}{'混淆@1':>8}"
     )
     if judge_on:
@@ -184,8 +241,12 @@ def format_table(agg: dict[str, dict[str, Any]], *, judge_on: bool) -> str:
         def pct(value: float | None) -> str:
             return "-" if value is None else f"{value * 100:.1f}%"
 
+        def num(value: float | None) -> str:
+            return "-" if value is None else f"{value:.4f}"
+
         line = (
             f"{dist:<12}{m['n']:>5}{pct(m['recall1']):>10}{pct(m['recall3']):>10}"
+            f"{num(m['mrr']):>8}{num(m['ndcg3']):>9}{pct(m['noise3']):>9}"
             f"{pct(m['refusal_rate']):>8}{pct(m['false_refusal']):>8}{pct(m['confusion_top1']):>8}"
         )
         if judge_on:
