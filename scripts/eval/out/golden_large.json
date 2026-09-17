@@ -1210,7 +1210,7 @@
   "expect": {
    "cite": {
     "asset_id": 505,
-    "version_no": 1
+    "version_no": 2
    }
   }
  },
@@ -1221,7 +1221,7 @@
   "expect": {
    "cite": {
     "asset_id": 501,
-    "version_no": 1
+    "version_no": 3
    }
   }
  },
@@ -1540,7 +1540,7 @@
   "expect": {
    "cite": {
     "asset_id": 501,
-    "version_no": 1
+    "version_no": 3
    }
   }
  },
@@ -1727,7 +1727,7 @@
   "expect": {
    "cite": {
     "asset_id": 501,
-    "version_no": 1
+    "version_no": 3
    }
   }
  },
