@@ -49,6 +49,19 @@
 之后**（覆盖声明收口/OOV 闸清空 citations 时媒体跟着空，不会「拒答挂图」），
 随 agent 消息落列（重载会话照样出图/出播放器），SSE complete 两通道同形状
 （恒列表，无媒体=[]）。工具/目录/澄清/转人工出口不检索，恒空。
+
+第 108B 刀（W2/W3/W4 快修）：
+
+- **W3 会话元问题快路径**：转人工 -> 订单号 -> 库存/报价回落 -> **元意图**
+  （≤20 字且命中 ``_META_INTENT_RE``）-> 提议/检索。命中即回声当前会话上一条
+  顾客消息（首问边界回固定引导句）：kind=answer、零 LLM 零检索、不落缺口、
+  不建工单（元问题不是知识问题——此前落检索无命中后拒答+转人工+污染缺口池）。
+  伪工具条 ``meta_echo`` 不进 TOOL_REGISTRY，SSE 状态行换「正在回看会话…」。
+- **W4 拒答话术**：四段式确定性模板（services.answer.REFUSAL_OPENING），
+  拒答消息文本在 ensure_session_ticket 之后拼装——新话术直接带真实工单号
+  H-xxxx（顾客回执，不走白名单），随后仍是「问句摘要（+操作者通道的缺口段）」。
+- **W2 回答路径标识**：complete 追加运行时键 ``path``（``answer_path`` 纯函数
+  派生，tool/template/llm/refusal 四态）——前端气泡角落的来路标签。
 """
 
 import json
@@ -87,6 +100,7 @@ from suite_api.services.answer import (
 from suite_api.services.catalog_tools import catalog_intent, try_catalog_answer, try_price_answer
 from suite_api.services.conversation_memory import (
     PRONOUN_RE,
+    last_customer_question,
     last_tool_subject,
     recent_turns,
     retrieval_query,
@@ -146,6 +160,9 @@ STOCK_THINKING_TEXT = "查询库存中…"
 RETURN_THINKING_TEXT = "查询退货资格中…"
 # 第 70 刀：澄清路径的状态行——没有发生订单查询，不能沿用「查询订单中…」
 CLARIFY_THINKING_TEXT = "正在核对订单信息…"
+# 第 108B 刀（W3）：会话元问题（回声上一条顾客消息）的状态行——没有发生检索，
+# 不能报「正在检索已发布资产…」（同 REJECTED/CATALOG 的诚实口径）
+META_ECHO_THINKING_TEXT = "正在回看会话…"
 # 第 41 刀（ADR 0045）：目录回落路径的状态行（retrieve 无命中后读商品行，
 # 真实动作；工具式模板组装，不调 LLM）
 CATALOG_THINKING_TEXT = "查询商品目录中…"
@@ -349,6 +366,35 @@ def sse_event(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def answer_path(outcome: AskOutcome) -> str:
+    """回答路径标识（第 108B 刀 W2，纯函数便于单测）：``tool`` / ``template`` /
+    ``llm`` / ``refusal`` 四态——让「什么时候没调大模型」一眼可见。
+
+    - ``refusal``：拒答（无证据/无覆盖声明/OOV 实体闸）——同一种「答不了」的
+      一种形态（58 刀收口），前端 red chip；
+    - ``llm``：厂商模型真的产出了正文（generated=True；提议步工具结果 + 检索
+      生成的混意图轮也归这里——终稿是模型写的）；
+    - ``tool``：确定性工具/查询路径（订单/库存/退货资格/目录/澄清/元回声）——
+      零 LLM 直取事实，answer 与 handoff 两 kind 都算（工具查无=工具真实跑过，
+      只是转了人工）；
+    - ``template``：证据组装模板（LLM 未配置/失败/忠实度闸回退）与纯文案出口
+      （显式转人工回执、提议被拒）——非模型生成、也非工具查询。
+
+    只在 complete 载荷标注，**不改任何分支行为**；与 fallback/gap_id 同为
+    运行时键（消息表不加列，重载后前端不重现——同 0030/第 7 刀口径）。
+    """
+    if outcome.answer.kind == "refusal":
+        return "refusal"
+    if outcome.generated:
+        return "llm"
+    tool = outcome.tool or {}
+    name = str(tool.get("name") or "")
+    # handoff 回执/被拒提议是固定文案而不是工具查询（模板出口）
+    if name and name != "handoff" and not tool.get("rejected"):
+        return "tool"
+    return "template"
+
+
 def split_deltas(text: str) -> list[str]:
     return [text[i : i + _DELTA_CHARS] for i in range(0, len(text), _DELTA_CHARS)]
 
@@ -413,6 +459,13 @@ async def run_ask(
     语义零改动，无证据仍拒答（记忆不制造证据）。0043 例外：提议步执行的
     工具结果作为 history 附加轮恒进生成 prompt（本问刚刚产生的上下文，与
     代词无关——否则模型综合不出「订单状态+保修政策」双命中回答）。
+
+    第 108B 刀（W3）会话元问题快路径：插在库存/报价回落之后（词表协调：
+    库存/目录工具真能接住的问句先走工具，不被回声截胡——实测「保温杯有货吗」
+    走 get_stock；库存纯度闸拒收的混合说法如「库存多少再说一遍」才轮到回声，
+    归宿仍是不落缺口的 answer）、提议步之前；长度闸 ≤20 字。命中 ->
+    ``_run_meta_echo_ask``：回声上一条顾客消息、kind=answer、不落缺口/
+    不建工单/不调 LLM/不检索。
     """
     # 1) 先落 customer 消息（留引用：多轮记忆取历史时排除本轮刚落的问句）
     customer_message = ServiceMessage(session_id=session.id, role="customer", content=question)
@@ -483,6 +536,16 @@ async def run_ask(
             priced = try_price_answer(db, f"{subject}{question}")
             if priced is not None:
                 return _run_catalog_ask(db, session, question, priced)
+
+    # 步 1（续，第 108B 刀 W3）：**会话元问题**快路径——「我的上一个问题是什么」
+    # 「我刚才问了啥」「再说一遍」这类**关于对话本身**的问题，回声上一条顾客
+    # 消息即可，零 LLM 零检索零缺口零工单（此前它们走检索 -> 无命中 -> 拒答+
+    # 转人工+污染缺口池，与 86 刀「不在售商品」同族病）。位置**在库存/报价回落
+    # 之后**（词表协调：库存/目录工具能接住的问句先走工具，不被回声截胡）、
+    # 提议步/检索之前；长度闸 ≤20 字（同 70 刀澄清的路数——口语元问都是短问，
+    # 混意图长句留给检索/提议步综合）。
+    if len(question) <= _META_MAX_CHARS and _META_INTENT_RE.search(question):
+        return _run_meta_echo_ask(db, session, question, customer_message.id)
 
     # 步 2 提议步（第 37 刀，ADR 0043）：模型按工具描述提议，代码校验授权
     # 执行。history 无条件取（提议步需要会话上下文——单号常以代词在上问）；
@@ -696,16 +759,19 @@ async def run_ask(
             gap = record_refusal_gap(
                 db, question, session_id=session.id, product_id=oov_product_id
             )
+        # 第 42 刀（ADR 0046 §2）：拒答也建/取工单——前端见 handoff=true 已亮
+        # 「已转人工」徽章，必须真有东西接住。同事务 create-or-get。
+        # 第 108B 刀（W4）：先建/取工单再拼文本——新话术的「已经为您转人工处理
+        # （工单 H-xxxx）」要用真实号码（H 号本就是给顾客的回执，不走白名单）；
+        # 建单在消息 flush 之后（锚点 message_id 照旧指向这条拒答消息）。
+        ticket = ensure_session_ticket(db, session, message=agent_message)
         agent_message.content = build_refusal_handoff_content(
             question,
             gap.id if expose_gap_id and gap is not None else None,
             missing_entity=oov_entity,  # 第 84 刀：OOV 首行点名未收录对象
             known_product=oov_product,  # 第 86 刀：在库=资料待补 / 不在库=本店没有
+            ticket_no=ticket_no(ticket),  # 第 108B 刀 W4：新话术带工单号回执
         )
-        # 第 42 刀（ADR 0046 §2）：拒答也建/取工单——前端见 handoff=true 已亮
-        # 「已转人工」徽章，必须真有东西接住。同事务 create-or-get；**拒答消息
-        # 文本一个字符都不改**（REFUSAL_CONTENT 与既有全等断言保持）。
-        ticket = ensure_session_ticket(db, session, message=agent_message)
     db.commit()
     db.refresh(agent_message)
 
@@ -926,6 +992,86 @@ def _run_return_eligibility_ask(
         fallback=False,  # 模板组装是本路径的正式产出，非降级
         tool=tool_record,
         ticket=ticket,
+    )
+
+
+# 第 108B 刀（W3）：会话元意图（「我刚才问了什么」这类**关于对话本身**的问题）。
+# 词表形态四类（Owner 口径；纯词法零成本，误判代价=少答一次知识问，故长度闸
+# 与库存/报价前置把混意图挡在外面）：
+#   ①「我/刚才/刚/上面/上一条/上一个…+ ≤4 字 + 问/说/打/提 +（了/过/的/是）+ 什么」
+#     ——「我刚才问了什么」「我上一条说了啥」「我刚才问的是啥」；
+#   ②「上一个/上一条/刚才…+（的）+ 问题/消息/问句 +（是/叫）+ 什么」
+#     ——「我的上一个问题是什么」「我刚才的问题是什么」；
+#   ③裸名词收尾「我的上一个问题」「上一条消息」（^…$ 锚定，不许后接别的诉求）；
+#   ④重复请求「再说一遍/重复一下/复述…」——**收尾锚定**（`…$`，容许件尾语气
+#     词「吗/吧/？」）：「再说一遍」是元请求，「重复一下退货政策并说说保修」是
+#     混意图长句（不该被回声截胡，留给检索/提议步综合）。
+# 刻意不收的形态：「你刚才说的退货政策是什么」（内容问——①②的紧邻动词/名词
+# 闸都拦得住，见 test_meta_echo 的反例断言）；「我刚才买的杯子什么时候发货」
+# 也不是元问题（②要求问题/消息类名词）。
+_META_INTENT_RE = re.compile(
+    r"(我|刚才|刚刚|刚|上面|上边|前面|上一条|上一个|上一次|上句|上一句)"
+    r".{0,4}?(问|说|打|提)(了|过|的|是){0,2}(什么|啥)"
+    r"|(上一个|上一条|上一次|上句|上一句|刚才|刚刚|上面|上边|前面)(的)?"
+    r"(问题|消息|问句|对话|话)(是|叫)?(什么|啥)"
+    r"|(上一个|上一条|上一次|上句|上一句)(的)?(问题|消息|问句|对话)$"
+    r"|(再说一遍|再讲一遍|重新说一遍|重复一下|重复一遍|复述(一下)?)[吗吧呢？?。!！]*$"
+)
+# 长度闸（同 70 刀澄清的口语短问口径）：元问都是短问；长句留给检索/提议步综合
+_META_MAX_CHARS = 20
+# 首问边界（会话里没有更早的顾客消息）：不回声、不拒答——诚实告知并给引导
+_META_ECHO_FIRST_CONTENT = "这是我们对话的第一条消息，您有什么想问的？"
+# 伪工具名（同 70 刀 need_order_no 先例）：**不进 TOOL_REGISTRY**——模型提议不到
+# 它，纯引擎内部分派；落 tool 列/进 SSE tool 事件只为「已发生的动作留档」。
+META_ECHO_TOOL_NAME = "meta_echo"
+
+
+def _run_meta_echo_ask(
+    db: Session, session: ServiceSession, question: str, exclude_message_id: int
+) -> AskOutcome:
+    """会话元问题出口（第 108B 刀 W3；customer 消息已由 run_ask 落库提交）。
+
+    回声当前会话**上一条顾客消息**（排除本轮刚落问句）：kind=answer、
+    citations=[]、**不落缺口、不建工单、不调 LLM、不检索**（元问题不是知识
+    问题——此前落检索无命中后拒答+转人工+污染缺口池，与 86 刀「不在售商品」
+    同族病）。回声文本过 0038 出口掩（redact）——它是服务端复读，不是顾客
+    自己输入的即时回显；首问边界（无历史）回固定引导句。
+
+    伪工具条 ``meta_echo`` 与 70 刀 ``need_order_no`` 同形：SSE 状态行据此换
+    「正在回看会话…」（没有发生检索，不能报「正在检索已发布资产…」）。
+    """
+    previous = last_customer_question(db, session.id, exclude_message_id=exclude_message_id)
+    if previous is None:
+        content = _META_ECHO_FIRST_CONTENT
+        result = "会话首条消息，无可回放问句"
+    else:
+        content = f"您上一条问的是『{redact(previous)}』。"
+        result = "已回放上一条问句"
+    tool_record = {"name": META_ECHO_TOOL_NAME, "arg": "-", "result": result}
+    # 答上即关（审计刀 11 契约的泛化口径，同 70 刀澄清）：W3 修前误落的同类
+    # 元问题缺口，在这一问真的被答上时收掉——治理台「待补」不该留着元问题。
+    resolve_gap_answered_by_catalog(db, question)
+    agent_message = ServiceMessage(
+        session_id=session.id,
+        role="agent",
+        content=content,
+        citations=[],
+        media_citations=[],  # 不检索 -> 媒体引用恒空（94b 形态固定）
+        kind="answer",
+        handoff=False,
+        tool=tool_record,
+    )
+    db.add(agent_message)
+    db.commit()
+    db.refresh(agent_message)
+    return AskOutcome(
+        agent_message=agent_message,
+        answer=ComposedAnswer(content=content, citations=[], kind="answer", handoff=False),
+        gap=None,  # 元问题不是知识缺口（补文档也补不出「我刚才问了什么」）
+        generated=False,
+        fallback=False,  # 非降级：回声是本路径的正式产出
+        tool=tool_record,
+        ticket=None,
     )
 
 
@@ -1165,6 +1311,9 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     complete 追加运行时可选键 ticket_id/ticket_no/ticket_contact_at（H 号是
     给顾客的回执，**不走 expose_gap_id 白名单**——缺口号是内部 ID；两条通道
     同形状）。工具条 name="handoff" 的 thinking 换「正在转接人工…」。
+
+    第 108B 刀（W2）：complete 追加 ``path``（tool/template/llm/refusal，见
+    ``answer_path``）——气泡角落的来源标签；纯标注，事件序与既有键零改动。
     """
     if outcome.tool is not None:
         # 0036/0037：状态行按工具名换成真实动作；0043 被拒：只陈述校验与转人工
@@ -1181,6 +1330,8 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
                 "handoff": HANDOFF_THINKING_TEXT,
                 # 第 70 刀：无单号澄清（没发生订单查询，不装作查过）
                 "need_order_no": CLARIFY_THINKING_TEXT,
+                # 第 108B 刀（W3）：元问题回声（没发生检索，不装作查过）
+                META_ECHO_TOOL_NAME: META_ECHO_THINKING_TEXT,
             }.get(str(outcome.tool.get("name")), ORDER_THINKING_TEXT)
         yield sse_event("thinking", {"text": thinking_text})
         # 顾客通道剥写动作凭证（审计刀 8 P1）；操作者通道原样（确认端点要用）
@@ -1213,6 +1364,10 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     # 第 7 刀：true=厂商生成失败降级模板（前端「模板回退」徽章；运行时返回，
     # 同 gap_id 口径，消息表不加列）
     complete["fallback"] = outcome.fallback
+    # 第 108B 刀（W2）：回答路径标识（tool/template/llm/refusal，纯标注不改行为）
+    # ——气泡角落的小标签，让「什么时候没调大模型」一眼可见。两通道同形状：
+    # 它不含任何内部 id（工具名/回退原因这类内部口径仍只在操作者通道）。
+    complete["path"] = answer_path(outcome)
     if outcome.fallback_reason is not None and expose_gap_id:
         # 第 40 刀：忠实度闸触发原因（可观测可校准；普通厂商失败降级不带
         # 该键——运行时返回口径同 fallback，消息表不加列）。

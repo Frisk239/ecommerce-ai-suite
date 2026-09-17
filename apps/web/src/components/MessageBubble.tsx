@@ -4,8 +4,16 @@
 
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ChatCircleDots, HandArrowUp, UserCircle } from '@phosphor-icons/react'
-import type { MediaCitation, ServiceCitation, ToolCallRecord } from '../api/types'
+import {
+  ChatCircleDots,
+  FileText,
+  HandArrowUp,
+  Prohibit,
+  Sparkle,
+  UserCircle,
+  Wrench,
+} from '@phosphor-icons/react'
+import type { MediaCitation, ServiceAnswerPath, ServiceCitation, ToolCallRecord } from '../api/types'
 import { mediaUrl } from '../api/client'
 import CitationChip from './CitationChip'
 import { formatAssetId, formatGapId, formatTime } from '../labels'
@@ -33,6 +41,10 @@ export interface UiMessage {
   /** 厂商生成失败降级为证据组装模板（第 7 刀）：只在 complete 事件带回，
    * 重载后徽章不重现（同 gapId 运行时口径）。 */
   fallback: boolean
+  /** 回答路径标识（第 108B 刀 W2）：complete 带回的 tool/template/llm/refusal
+   * ——气泡角落的来源标签，让「什么时候没调大模型」一眼可见。同 fallback/
+   * gapId 运行时口径：消息表不加列，重载后标签不重现（重载的存量消息为 null）。 */
+  path: ServiceAnswerPath | null
   /** 订单工具调用记录（第 13 刀/ADR 0036）：与 fallback 相反——随消息落库，
    * 重载后灰底 mono 工具条照样还原（回放完整性）。 */
   tool: ToolCallRecord | null
@@ -47,8 +59,9 @@ export interface UiMessage {
   ticketContactAt: string | null
 }
 
-/** UiMessage 构造单点（第 25 刀收口）：13 字段默认值集中在这里，调用方只给
- * 差异字段——服务器消息回填（toUi）与本地流式占位（useAskStream）共用。 */
+/** UiMessage 构造单点（第 25 刀收口）：全部字段默认值集中在这里（计数不再写死
+ * ——每刀加字段是常态），调用方只给差异字段——服务器消息回填（toUi）与本地
+ * 流式占位（useAskStream）共用。 */
 export function toUiMessage(
   init: Pick<UiMessage, 'key' | 'role' | 'content' | 'created_at'> &
     Partial<Omit<UiMessage, 'key' | 'role' | 'content' | 'created_at'>>,
@@ -63,6 +76,7 @@ export function toUiMessage(
     thinkingText: null,
     gapId: null,
     fallback: false,
+    path: null,
     tool: null,
     mediaCitations: null,
     ticketId: null,
@@ -121,6 +135,49 @@ function ToolStrip({ tool }: { tool: ToolCallRecord }) {
       </span>
       <span className="tool-result">{tool.result}</span>
     </div>
+  )
+}
+
+/** 回答路径标签（第 108B 刀 W2）：气泡右下角一枚小 chip，四态各有语义色
+ * （灰=工具 / 蓝=模板 / 紫=AI / 红=拒答）。图标用 Phosphor（与页面图标语言
+ * 一致，不引 emoji）；标签是「来路」不是证据，故不做链接也不可点。 */
+const PATH_CHIP_META: Record<
+  ServiceAnswerPath,
+  { label: string; title: string; className: string; Icon: typeof Wrench }
+> = {
+  tool: {
+    label: '工具',
+    title: '确定性路径：引擎直接查库/取事实（订单/库存/目录/会话回声），未调用大模型',
+    className: 'path-chip-tool',
+    Icon: Wrench,
+  },
+  template: {
+    label: '模板',
+    title: '模板组装：固定句式拼装（证据组装/转人工回执），未调用大模型',
+    className: 'path-chip-template',
+    Icon: FileText,
+  },
+  llm: {
+    label: 'AI',
+    title: 'AI 生成：检索证据 + 大模型生成（引用仍由服务端定）',
+    className: 'path-chip-llm',
+    Icon: Sparkle,
+  },
+  refusal: {
+    label: '拒答',
+    title: '拒答：没有查到可靠资料，不编造——已转人工',
+    className: 'path-chip-refusal',
+    Icon: Prohibit,
+  },
+}
+
+function PathChip({ path }: { path: ServiceAnswerPath }) {
+  const { label, title, className, Icon } = PATH_CHIP_META[path]
+  return (
+    <span className={`path-chip ${className}`} title={title}>
+      <Icon aria-hidden size={11} />
+      {label}
+    </span>
   )
 }
 
@@ -265,6 +322,13 @@ export default function MessageBubble({
               >
                 已停止展示 · 完整回答已留档
               </span>
+            )}
+            {/* 第 108B 刀（W2）：回答路径标签——气泡右下角（角落在气泡内，
+                不占正文宽度；只读、不进引用芯片区） */}
+            {m.path !== null && !m.streaming && (
+              <div className="mt-1.5 flex justify-end">
+                <PathChip path={m.path} />
+              </div>
             )}
           </div>
         )}

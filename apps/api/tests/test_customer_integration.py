@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sse_helpers import parse_sse_events
 
+from suite_api.services.answer import REFUSAL_OPENING
 from suite_api.services.rate_limit import CustomerRateLimits
 
 ApiFixture = tuple[TestClient, Path]
@@ -113,11 +114,14 @@ def test_customer_full_flow_same_engine(api: ApiFixture) -> None:
     assert refusal_complete["citations"] == []
     assert "gap_id" not in refusal_complete
     # 第 27 刀：拒答交接摘要白名单延伸到消息文本——顾客通道带问句摘要、
-    # **不带**「缺口：G-xxxx」段（操作者版全等断言见 test_service_integration）
+    # **不带**「缺口：G-xxxx」段（操作者版全等断言见 test_service_integration）；
+    # 第 108B 刀（W4）：话术重写为四段式，转人工回执行带工单号（H 号是顾客的
+    # 回执，两通道同形状——顾客在正文里直接看到号码）
     refusal_deltas = "".join(d["text"] for e, d in refusal_events if e == "delta")
-    assert refusal_deltas == (
-        "抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：会员生日礼怎么领？"
-    )
+    assert refusal_deltas.splitlines()[0] == REFUSAL_OPENING
+    assert "已发布资产" not in refusal_deltas
+    assert f"已经为您转人工处理（工单 {refusal_complete['ticket_no']}），" in refusal_deltas
+    assert refusal_deltas.endswith("问句摘要：会员生日礼怎么领？")
     assert "缺口" not in refusal_deltas
     assert "G-" not in refusal_deltas
 

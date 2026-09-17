@@ -20,6 +20,11 @@ from sqlalchemy import func, select
 from sse_helpers import parse_sse_events
 
 from suite_api.models import KnowledgeGap, RetrievalChunk, ServiceMessage
+from suite_api.services.answer import (
+    _REFUSAL_HANDOFF_LINE,
+    _REFUSAL_TAIL,
+    REFUSAL_OPENING,
+)
 
 ApiFixture = tuple[TestClient, Path]
 
@@ -41,6 +46,16 @@ def _login(client: TestClient) -> None:
             "/api/auth/login", json={"username": "operator", "password": "operator123"}
         ).status_code
         == 200
+    )
+
+
+def _refusal_expected(question: str, ticket_no: str, gap_id: int) -> str:
+    """拒答全文逐字钉（第 108B 刀 W4 结构）：四段式模板 + 工单号回执 + 问句摘要
+    + 缺口段（行序与号码位置都是契约；工单号来自 complete.ticket_no）。"""
+    return (
+        f"{REFUSAL_OPENING}\n"
+        + _REFUSAL_HANDOFF_LINE.format(no=f"（工单 {ticket_no}）")
+        + f"\n{_REFUSAL_TAIL}\n问句摘要：{question}\n缺口：G-{gap_id:04d}"
     )
 
 
@@ -155,13 +170,13 @@ def test_service_citation_full_loop(api: ApiFixture) -> None:
     assert refusal_complete["handoff"] is True
     assert refusal_complete["citations"] == []
     # 第 27 刀拒答交接摘要：原「全等固定文案」断言按新语义更新——操作者通道
-    # 拒答消息 = 固定文案 + 问句摘要 + 缺口 G-xxxx（id 与 complete.gap_id 同源）
+    # 拒答消息 = 四段式模板（第 108B 刀 W4：首行不再有「已发布资产」内部术语）
+    # + 工单号回执 + 问句摘要 + 缺口 G-xxxx（id 与 complete.gap_id 同源）
     refusal_deltas = "".join(d["text"] for e, d in refusal_events if e == "delta")
     gap_id = refusal_complete["gap_id"]
     assert isinstance(gap_id, int)
-    assert refusal_deltas == (
-        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
-        f"问句摘要：退货政策是怎样的？\n缺口：G-{gap_id:04d}"
+    assert refusal_deltas == _refusal_expected(
+        "退货政策是怎样的？", refusal_complete["ticket_no"], gap_id
     )
 
     # 4) 回流登记：转写落对象存储 -> dialogue 资产待人洗 -> 会话 registered
@@ -474,9 +489,9 @@ def test_refusal_gap_question_masked_on_exit(api: ApiFixture) -> None:
 
 
 def test_refusal_handoff_summary_operator(api: ApiFixture) -> None:
-    """第 27 刀拒答交接摘要（操作者通道钉）：消息文本 = 固定文案 + 问句摘要 +
-    缺口 G-xxxx（4 位补零，与 complete.gap_id 同源）；SSE delta 拼接与落库
-    文本同源；拒答判定/缺口语义不动，只升级文本。"""
+    """第 27 刀拒答交接摘要（操作者通道钉）：消息文本 = 四段式模板（108B 刀 W4
+    重写）+ 工单号回执 + 问句摘要 + 缺口 G-xxxx（4 位补零，与 complete.gap_id
+    同源）；SSE delta 拼接与落库文本同源；拒答判定/缺口语义不动，只升级文本。"""
     client, _ = api
     _login(client)
     sid = client.post("/api/service/sessions").json()["id"]
@@ -486,10 +501,8 @@ def test_refusal_handoff_summary_operator(api: ApiFixture) -> None:
     assert complete["handoff"] is True
     gap_id = complete["gap_id"]
     assert isinstance(gap_id, int)
-    expected = (
-        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
-        f"问句摘要：登山绳可以定制长度吗\n缺口：G-{gap_id:04d}"
-    )
+    expected = _refusal_expected("登山绳可以定制长度吗", complete["ticket_no"], gap_id)
+    assert "已发布资产" not in expected  # W4：内部术语不进顾客面话术
     assert "".join(d["text"] for e, d in events if e == "delta") == expected
     messages = client.get(f"/api/service/sessions/{sid}").json()["messages"]
     agent_msg = next(m for m in messages if m["role"] == "agent")
@@ -508,9 +521,8 @@ def test_refusal_summary_truncates_long_question(api: ApiFixture) -> None:
     assert complete["kind"] == "refusal"
     gap_id = complete["gap_id"]
     content = "".join(d["text"] for e, d in events if e == "delta")
-    assert content == (
-        "抱歉，已发布资产里没有能回答这个问题的证据。\n"
-        f"问句摘要：{question[:60]}…\n缺口：G-{gap_id:04d}"
+    assert content == _refusal_expected(
+        f"{question[:60]}…", complete["ticket_no"], gap_id
     )
     session_factory = client.app.state.session_factory
     with session_factory() as db:
@@ -623,10 +635,15 @@ def test_source_kind_set_by_endpoint_semantics(api: ApiFixture) -> None:
 
 def test_gap_hit_count_increments_and_orders_list(api: ApiFixture) -> None:
     """热度（第 39 刀 Must 1）：同问法再拒答不新建、hit_count=2；列表按
-    hit_count DESC 排序——两次被问的缺口排在一次被问的之前。"""
+    hit_count DESC 排序——两次被问的缺口排在一次被问的之前。
+
+    问句用**零命中独有词**（本 module 库共享：此前用的「羊绒围巾起球怎么处理」
+    与回流对话资产的新拒答文案共享「处理」bigram，第 108B 刀 W4 新话术后被判为
+    弱命中降级模板——本测要的是「无命中拒答」，换成与语料零交集的问句）。
+    """
     client, _ = api
     _login(client)
-    hot_question = "羊绒围巾起球怎么处理"
+    hot_question = "银饰氧化发黑怎么擦拭"
     cold_question = "真丝衬衫能水洗吗"
 
     hot_first = _ask(client, client.post("/api/service/sessions").json()["id"], hot_question)

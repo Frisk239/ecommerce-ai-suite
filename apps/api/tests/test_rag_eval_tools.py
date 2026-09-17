@@ -594,7 +594,7 @@ def test_build_generated_samples_pairs_filters_and_dedupes() -> None:
         _msg(10, 1, "agent", "本店在售商品共 3 件", "answer", []),
         # refusal：剔除（87 刀口径只评 answered）
         _msg(11, 1, "customer", "有赠品吗"),
-        _msg(12, 1, "agent", "抱歉，已发布资产里没有能回答这个问题的证据。", "refusal", []),
+        _msg(12, 1, "agent", "抱歉，这个问题我暂时没有查到可靠的资料——不想随便编一个答案误导您。", "refusal", []),
         # 跨会话：会话 2 的问句配会话 2 的回答（不受会话 1 末问污染）
         _msg(13, 2, "customer", "退货政策是什么"),
         _msg(14, 2, "agent", "支持7天无理由退货。", "answer", [{"asset_id": 479, "version_no": 1}]),

@@ -378,5 +378,44 @@
     }
    }
   ]
+ },
+ {
+  "id": "eg-meta-001",
+  "surface": "meta",
+  "question": "我的上一个问题是什么",
+  "expect": {
+   "kind": "answer",
+   "handoff": false,
+   "tool": "meta_echo",
+   "cites": "empty",
+   "content_has": [
+    "这是我们对话的第一条消息"
+   ]
+  }
+ },
+ {
+  "id": "eg-meta-002",
+  "surface": "meta",
+  "turns": [
+   {
+    "question": "保温杯的净含量是多少？",
+    "expect": {
+     "kind": "answer",
+     "cites": "nonempty"
+    }
+   },
+   {
+    "question": "我刚才问了什么",
+    "expect": {
+     "kind": "answer",
+     "handoff": false,
+     "tool": "meta_echo",
+     "cites": "empty",
+     "content_has": [
+      "您上一条问的是『保温杯的净含量是多少？』。"
+     ]
+    }
+   }
+  ]
  }
 ]

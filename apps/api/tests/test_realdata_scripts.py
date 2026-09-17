@@ -864,3 +864,133 @@ def test_backfill_sql_pins_pointer_version_and_null_only() -> None:
     assert "a.current_published_version_id = v.id" in sql  # 当前指针版
     assert "a.status = 'published'" in sql
     assert "a.discarded_at IS NULL" in sql  # 废弃资产不回填（ADR 0042 证据面口径）
+
+
+# --------------------------- 数据中心健康审计（第 108 刀）：判据纯函数
+
+import data_health_check as dhc  # noqa: E402
+
+
+def test_health_md5_groups_only_duplicates() -> None:
+    """md5 分组只留 ≥2 成员组；组内/组间稳定排序（离线可复现）。"""
+    entries = [
+        ("a" * 32, "A-3"),
+        ("b" * 32, "A-1"),
+        ("a" * 32, "A-2"),
+        ("a" * 32, "A-1"),
+        ("c" * 32, "A-9"),
+    ]
+    groups = dhc.group_duplicates(entries)
+    assert groups == {"a" * 32: ["A-1", "A-2", "A-3"]}
+    assert dhc.group_duplicates([("a" * 32, "A-1"), ("c" * 32, "A-9")]) == {}
+
+
+def test_health_keyword_overlap_consistent_vs_suspect() -> None:
+    """关键词交集：同物描述交集 ≥2（显示器+支架/边框），异物交集 0。"""
+    confirmed = "显示器侧面带可调节支架，正面三边窄边框"
+    same = "一台黑色显示器，侧面有可调节支架，三边窄边框"
+    other = "一位女士手持一个深色咖啡胶囊，背景是厨房环境"
+    assert dhc.keyword_overlap(confirmed, same) >= dhc.DESCRIPTION_MIN_OVERLAP
+    assert dhc.keyword_overlap(confirmed, other) < dhc.DESCRIPTION_MIN_OVERLAP
+    # ASCII 词也进关键词集（品牌/型号类描述）
+    assert dhc.keyword_overlap("Sennheiser HD 800", "Sennheiser HD 800 S") >= 2
+
+
+def test_health_description_verdict_four_states() -> None:
+    """四种判定：一致 / 疑似不符 / 无确认描述 / 无法核验（优先级：无法核验最前）。"""
+    same = "显示器侧面带可调节支架，正面三边窄边框"
+    assert dhc.description_verdict(same, "黑色显示器，可调节支架，三边窄边框") == dhc.VERDICT_CONSISTENT
+    assert dhc.description_verdict(same, "女士手持咖啡胶囊，厨房背景") == dhc.VERDICT_SUSPECT
+    assert dhc.description_verdict("", "任意描述") == dhc.VERDICT_NO_CONFIRMED
+    assert dhc.description_verdict(same, "任意描述", vlm_failed=True) == dhc.VERDICT_UNVERIFIED
+    assert dhc.description_verdict(same, "", vlm_failed=True) == dhc.VERDICT_UNVERIFIED
+    assert dhc.description_verdict(same, "任意描述", skipped=True) == dhc.VERDICT_SKIPPED
+
+
+def test_health_probe_and_mojibake_predicates() -> None:
+    """探针判据与乱码判据（与 demo_reset/workQueue 同源口径 + 单重音不误伤）。"""
+    assert dhc.is_probe_asset("mcp-smoke 保温杯", "mcp_registered")
+    assert dhc.is_probe_asset("evidence probe evidence-unpublished-1", "mcp_registered")
+    assert not dhc.is_probe_asset("mcp-smoke 保温杯", "upload")  # 来源不对不判
+    assert not dhc.is_probe_asset("保温杯", "mcp_registered")
+    assert dhc.is_probe_label("asr_probe.mp4") and dhc.is_probe_label("VLM 真跑探针图")
+    assert not dhc.is_probe_label("live93.mp4")
+    assert dhc.is_probe_like({"title": "mcp-smoke 保温杯", "source_kind": "mcp_registered"})
+    assert dhc.looks_mojibake("94b Î´·¢²¼¶¤×ÓÍ¼")
+    assert not dhc.looks_mojibake("Nestlé 规格（OFF）")  # 单个重音字母不是乱码
+    assert not dhc.looks_mojibake("显示器商品图 · 实拍帧")
+
+
+def test_health_meta_question_and_scope_classification() -> None:
+    """缺口三分类启发：元问题 / 经营范围类（未点到在售商品）/ 在售商品 / 泛词。"""
+    universe = ["显示器", "键盘", "钛钢保温杯", "Xperia Ear Duo"]
+    assert dhc.is_meta_question("我的上一个问题是什么")
+    assert dhc.is_meta_question("我们店的问题在哪")  # 「我」开头 + 含「问题」
+    assert not dhc.is_meta_question("我该怎么退货")
+    assert not dhc.is_meta_question("我的订单")  # 缺「问题/上一个」判据不命中
+    # 有没有白色款：不是库内商品 -> OOV 误落
+    assert dhc.scope_question_kind("有没有白色款", universe) == "out_of_scope"
+    # 你们卖键盘吗 / 键盘有机械的吗：点到在售商品 -> 不是 OOV
+    assert dhc.scope_question_kind("你们卖键盘吗", universe) == "in_scope"
+    assert dhc.scope_question_kind("键盘有机械的吗", universe) == "in_scope"
+    assert dhc.offers_known_product("键盘有机械的吗", universe) == "键盘"
+    # 泛词与非常规问句不判 OOV
+    assert dhc.scope_question_kind("有没有货？", universe) == "generic"
+    assert dhc.scope_question_kind("还有别的颜色吗", universe) == "generic"
+    assert dhc.scope_question_kind("那个多少钱？", universe) == "not_scope"
+    # 拉丁商品名大小写不敏感（Xperia Ear Duo 什么时候上市的）
+    assert dhc.offers_known_product("Xperia Ear Duo 什么时候上市的", universe) == "Xperia Ear Duo"
+
+
+def test_health_gap_verdict_heuristics_shape() -> None:
+    """分类输出三元组（分类/理由/命中商品）：元问题优先于 OOV 判定。"""
+    verdict, reason, matched = dhc._gap_verdict_heuristics("我的上一个问题是什么", ["键盘"])
+    assert verdict == "元问题误落" and matched is None and "多轮记忆" in reason
+    verdict, _reason, matched = dhc._gap_verdict_heuristics("有没有白色款", ["键盘"])
+    assert verdict == "OOV 误落" and matched is None
+    verdict, _reason, matched = dhc._gap_verdict_heuristics("你们卖键盘吗", ["键盘"])
+    assert verdict == "经营范围正常" and matched == "键盘"
+    verdict, _reason, _matched = dhc._gap_verdict_heuristics("保温杯保修多久？", ["键盘"])
+    assert verdict == "普通待补"
+
+
+def test_health_redundancy_groups_published_docs_only() -> None:
+    """同主题 >1 份已发布口径文档=冗余；评论（review_import）不算口径文档。"""
+    assets = [
+        {"id": 6, "title": "退货政策说明", "status": "published", "kind": "document", "source_kind": "upload"},
+        {"id": 13, "title": "退货政策", "status": "published", "kind": "document", "source_kind": "upload"},
+        {"id": 479, "title": "退换货政策", "status": "published", "kind": "document", "source_kind": "upload"},
+        {"id": 478, "title": "数码外设保修政策", "status": "published", "kind": "document", "source_kind": "upload"},
+        {"id": 301, "title": "平板评论 · 要求退货。质量太次。", "status": "published", "kind": "document", "source_kind": "review_import"},
+        {"id": 99, "title": "退货政策（待人洗）", "status": "pending_review", "kind": "document", "source_kind": "upload"},
+    ]
+    groups = dhc.redundancy_groups(assets)
+    assert set(groups) == {"退货/退换"}
+    assert [member["id"] for member in groups["退货/退换"]] == [6, 13, 479]
+
+
+def test_health_duplicate_title_groups() -> None:
+    """重题分组：去空白后同文成组（≥2），按组大小降序。"""
+    assets = [
+        {"id": 4, "title": "保温杯的净含量是多少？"},
+        {"id": 9, "title": " 保温杯的净含量是多少？ "},
+        {"id": 273, "title": "保温杯的净含量是多少？"},
+        {"id": 5, "title": "  "},
+        {"id": 6, "title": "独一份"},
+    ]
+    groups = dhc.duplicate_title_groups(assets)
+    assert groups == [("保温杯的净含量是多少？", [4, 9, 273])]
+
+
+def test_health_stale_buckets_and_compact_ids() -> None:
+    """陈旧分桶边界（24h/5 天）与工单 id 区间压缩（报告一格放得下）。"""
+    now = dhc.datetime(2026, 9, 17, 8, 0, tzinfo=dhc.UTC)
+    assert dhc.age_hours(now - dhc.timedelta(hours=25), now) == 25
+    assert dhc.is_stale(now - dhc.timedelta(hours=24), now, 24)
+    assert not dhc.is_stale(now - dhc.timedelta(hours=23), now, 24)
+    assert not dhc.is_stale(None, now, 24)
+    assert dhc.stale_bucket(24 * 6) == "≥5 天"
+    assert dhc.stale_bucket(48) == "1–5 天"
+    assert dhc.stale_bucket(2) == "24h 内"
+    assert dhc.compact_id_ranges([4, 2, 3, 7], "H") == "H-0002–H-0004、H-0007"
+    assert dhc.compact_id_ranges([], "H") == ""

@@ -3,7 +3,7 @@
 覆盖（对应 Owner 裁决与任务验收）：
 - 显式「转人工」-> kind=handoff 消息（含 H-xxxx 回执）+ 库里一条 pending 工单；
 - 同会话再转 -> 不新增工单、号码不变（一会话一单幂等）；
-- 拒答也建工单，且拒答消息文本不变（REFUSAL_CONTENT 全等结构保持）；
+- 拒答也建工单，且拒答消息文本带真实工单号回执（第 108B 刀 W4 四段式）；
 - 顾客提交联系方式 -> contact_at 落值；操作者面出口掩电话/邮箱（钉测 0038），
   库内原文不动；
 - 操作者结单 -> 幂等 409 + 会话列表 pending_ticket_count 归零；
@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sse_helpers import parse_sse_events
 
 from suite_api.models import HandoffTicket, KnowledgeGap, ServiceSession
-from suite_api.services.answer import REFUSAL_CONTENT
+from suite_api.services.answer import REFUSAL_OPENING
 from suite_api.services.chat_engine import REJECTED_CONTENT, run_ask
 from suite_api.services.handoff_tickets import wants_human
 
@@ -253,17 +253,20 @@ def test_second_handoff_same_session_reuses_ticket(api: ApiFixture) -> None:
     assert len(_tickets(client, session_id)) == 1
 
 
-def test_refusal_creates_ticket_and_keeps_refusal_text(api: ApiFixture) -> None:
-    """③拒答也建工单；拒答消息文本一个字符不改（REFUSAL_CONTENT 结构保持）。"""
+def test_refusal_creates_ticket_and_carries_it_in_text(api: ApiFixture) -> None:
+    """③拒答也建工单；第 108B 刀（W4）起拒答消息文本带真实工单号回执。"""
     client, _ = api
     _login(client)
     outcome, session_id = _run_question(client, "会员积分怎么兑换礼品？")
     assert outcome.answer.kind == "refusal"
     assert outcome.gap is not None
     assert outcome.ticket is not None
-    # 拒答消息文本口径不变：固定文案开头 + 问句摘要（第 27 刀结构）
-    assert outcome.agent_message.content.startswith(REFUSAL_CONTENT)
-    assert "问句摘要：会员积分怎么兑换礼品？" in outcome.agent_message.content
+    # 拒答消息文本（W4 四段式）：首行模板 + 转人工回执行带 H 号 + 问句摘要
+    content = outcome.agent_message.content
+    assert content.startswith(REFUSAL_OPENING)
+    assert f"已经为您转人工处理（工单 H-{outcome.ticket.id:04d}），" in content
+    assert "问句摘要：会员积分怎么兑换礼品？" in content
+    assert "已发布资产" not in content  # W4：内部术语清零
     tickets = _tickets(client, session_id)
     assert len(tickets) == 1
     assert tickets[0].message_id == outcome.agent_message.id  # 表单挂在拒答消息下

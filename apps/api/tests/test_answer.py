@@ -1,7 +1,10 @@
 """回答组装与拒答判定单测（纯函数，无 DB；0018 拒答是消息种类不是异常）。"""
 
 from suite_api.services.answer import (
+    _REFUSAL_HANDOFF_LINE,
+    _REFUSAL_TAIL,
     REFUSAL_CONTENT,
+    REFUSAL_OPENING,
     build_refusal_handoff_content,
     compose_answer,
 )
@@ -15,7 +18,7 @@ def test_no_hits_is_refusal_with_handoff() -> None:
     answer = compose_answer([], {})
     assert answer.kind == "refusal"
     assert answer.handoff is True
-    assert answer.content == "抱歉，已发布资产里没有能回答这个问题的证据。"
+    assert answer.content == REFUSAL_CONTENT
     assert answer.citations == []
 
 
@@ -77,8 +80,14 @@ def test_missing_title_falls_back() -> None:
 
 
 def test_refusal_content_constant_is_stable() -> None:
-    # 文案固定（任务锁定）：前端与测试都按此断言
-    assert REFUSAL_CONTENT == "抱歉，已发布资产里没有能回答这个问题的证据。"
+    # 文案固定（任务锁定）：前端与测试都按此断言。第 108B 刀（W4）重写为四段式
+    # ——旧文案的「已发布资产」是内部术语（顾客不可理解）且无引导。
+    assert REFUSAL_CONTENT == (
+        "抱歉，这个问题我暂时没有查到可靠的资料——不想随便编一个答案误导您。\n"
+        "已经为您转人工处理，工作时间会在 4 小时内回复您。\n"
+        "您也可以在下方留言，或者换个说法再问我一次。"
+    )
+    assert "已发布资产" not in REFUSAL_CONTENT  # 内部术语清零（W4 验收）
 
 
 # ---------- 第 27 刀：拒答交接摘要拼装（纯函数，通道差异由 gap_id 传否决定） ----------
@@ -86,16 +95,30 @@ def test_refusal_content_constant_is_stable() -> None:
 
 def test_handoff_summary_operator_with_gap_ref() -> None:
     content = build_refusal_handoff_content("登山绳可以定制长度吗", gap_id=7)
-    assert content == (
-        "抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：登山绳可以定制长度吗\n缺口：G-0007"
-    )
-    assert content.startswith(REFUSAL_CONTENT)  # 常量结构不变，摘要段追加
+    lines = content.splitlines()
+    assert lines[0] == REFUSAL_OPENING
+    assert lines[1] == _REFUSAL_HANDOFF_LINE.format(no="")
+    assert lines[2] == _REFUSAL_TAIL
+    assert lines[3:] == ["问句摘要：登山绳可以定制长度吗", "缺口：G-0007"]
+    assert content.startswith(REFUSAL_CONTENT)  # 四段式模板原样，摘要段追加
 
 
 def test_handoff_summary_without_gap_id_has_no_gap_line() -> None:
     # 顾客通道（run_ask expose_gap_id=False → 传 None）：带问句摘要、不带缺口段
     content = build_refusal_handoff_content("会员生日礼怎么领？")
-    assert content == ("抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：会员生日礼怎么领？")
+    assert content == f"{REFUSAL_CONTENT}\n问句摘要：会员生日礼怎么领？"
+
+
+def test_handoff_summary_carries_ticket_no() -> None:
+    """第 108B 刀（W4）：新话术的转人工回执行带真实工单号（H 号是顾客回执，
+    不走 gap_id 白名单）；无工单上下文的纯函数直调省略号码，其余逐字一致。"""
+    numbered = build_refusal_handoff_content("会员生日礼怎么领？", ticket_no="H-0007")
+    assert "已经为您转人工处理（工单 H-0007），工作时间会在 4 小时内回复您。" in numbered
+    assert numbered.splitlines()[0] == REFUSAL_OPENING
+    assert numbered.splitlines()[2] == _REFUSAL_TAIL
+    # 无号形态 = 常量逐字（号码是唯一差异）
+    plain = build_refusal_handoff_content("会员生日礼怎么领？")
+    assert plain.splitlines()[1] == _REFUSAL_HANDOFF_LINE.format(no="")
 
 
 def test_handoff_summary_truncates_and_masks() -> None:
