@@ -17,6 +17,7 @@ dependencies = [
     "openai>=1.60,<2",  # 厂商生成（第 7 刀）：官方包配 base_url，流式与错误语义成熟
     "prometheus-fastapi-instrumentator>=7.0",
     "structlog>=24.4",
+    "pillow>=11",  # 封面文字卡流水线（第 115 刀 W15b）：确定性排版（圆角卡/换行/高亮），非 AI
 ]
 
 [tool.uv.sources]

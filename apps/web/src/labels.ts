@@ -23,13 +23,15 @@ export const MATERIAL_TEMPLATE_LABEL: Record<string, string> = {
   short_video: '短视频口播稿',
 }
 
-/** 配图步状态（第 98 刀）：标签用于任务详情的配图行如实标注。 */
+/** 配图步状态（第 98 刀；第 115 刀 W15 增「无实拍图跳过」）：标签用于任务
+ * 详情的配图行如实标注。 */
 export const MATERIAL_IMAGE_STATUS_LABEL: Record<MaterialImageStatus, string> = {
   none: '未请求',
   requested: '待生成',
   pending: '已生成',
   registered: '已登记',
   skipped_no_key: '跳过',
+  skipped_no_image: '无实拍图跳过',
   failed: '生成失败',
 }
 

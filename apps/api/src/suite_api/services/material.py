@@ -25,29 +25,38 @@
   有没有矛盾/夸大/编造）——不过线=failed（last_error 记 LLM 闸原因，文案
   保留供人看，可重试）；两闸**独立记录**（规则项进 last_error、LLM 判定进
   ``qc_llm_passed`` 列）。第三道仍是人抽检（approve 才登记）。
-- **配图（ADR 0055）**：with_image 请求时按模板派生 prompt 调文生图
-  （services/imggen）。**无 IMGGEN key=诚实跳过**（image_status=
-  skipped_no_key，任务不 fail——配图是增值项不是任务本体）；生成失败=
-  image_status=failed（同样不 fail 任务）；成功=字节暂存对象存储 material/
-  前缀（不是资产，同 clip_recordings 先例），抽检通过才登记为独立 image
-  资产（source_kind=material_generated）。**生成图=素材成品非知识证据**：
-  不回写商品规格、描述走 94a 人洗治理。
+- **配图（ADR 0055；第 115 刀 W15 语义重构）**：三模板三种配图语义——
+  站内投放=**美化产品图**（真实商品图 → 指令式图像编辑，商品主体来自原图，
+  imggen.edit_image；该商品没有图片资产=诚实跳过 skipped_no_image，
+  不退回文生图冒充）；小红书=**封面文字卡**（确定性流水线渲染，cover_card，
+  无 AI 无 key 无真图依赖）；短视频口播=**文生图背景图**（98 刀原语义不变：
+  背景不含商品主张）。**无 IMGGEN key=诚实跳过**（skipped_no_key，任务不
+  fail——配图是增值项不是任务本体）；生成失败=image_status=failed（同样
+  不 fail 任务）；成功=字节暂存对象存储 material/ 前缀（不是资产，同
+  clip_recordings 先例），抽检通过才登记为独立 image 资产（source_kind=
+  material_generated）。**生成图=素材成品非知识证据**：不回写商品规格、
+  描述走 94a 人洗治理。美化产品图所基于的真实图片记 image_reference_asset_id
+  （迁移 0035，血缘锚）。
 """
 
 import asyncio
 import hashlib
 import json
+import logging
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from suite_api.models import MaterialTask, Product
-from suite_api.services import imggen, llm
+from suite_api.models import Asset, AssetVersion, MaterialTask, Product
+from suite_api.services import cover_card, imggen, llm
 from suite_api.services.machine_wash import redact, strip_code_fence
 from suite_api.services.registration import image_suffix, register_asset
 from suite_platform.storage import ObjectStorage
+
+logger = logging.getLogger(__name__)
 
 # 任务五态（0038）：与 asset 三态无关，不共用词表
 QUEUED = "queued"
@@ -64,27 +73,41 @@ TASK_STATUSES = (QUEUED, RUNNING, PENDING_QC, REGISTERED, FAILED)
 # 规则质检阈值（0038 锁死：非空/总长≤2000/标题非空/正文含商品名）
 MAX_TOTAL_CHARS = 2000
 
-# 配图步六态（第 98 刀，ADR 0055；取值由本模块收口，无 DB CHECK 同 status 风格）。
-# ``requested`` 兼作**请求标志**：建任务带 with_image 时落此值（无独立 with_image
-# 列）——重试按它重跑配图步（旧暂存字节被新字节覆盖清理）。
+# 配图步七态（第 98 刀 ADR 0055；第 115 刀 W15a 增 skipped_no_image）。
+# 取值由本模块收口，无 DB CHECK 同 status 风格。``requested`` 兼作**请求标志**：
+# 建任务带 with_image 时落此值（无独立 with_image 列）——重试按它重跑配图步
+# （旧暂存字节被新字节覆盖清理）。
 IMAGE_NONE = "none"  # 未请求配图
 IMAGE_REQUESTED = "requested"  # 请求了配图，尚未生成（建任务时的初值）
 IMAGE_PENDING = "pending"  # 已生成，字节暂存待抽检后登记
 IMAGE_REGISTERED = "registered"  # 抽检通过，已登记为 image 资产
-IMAGE_SKIPPED_NO_KEY = "skipped_no_key"  # 无 IMGGEN_API_KEY，诚实跳过
-IMAGE_FAILED = "failed"  # 文生图失败（不 fail 任务）
+IMAGE_SKIPPED_NO_KEY = "skipped_no_key"  # 无 IMGGEN_API_KEY，诚实跳过（编辑/文生图路径）
+# 第 115 刀：该商品没有任何图片资产——「美化产品图」没有真图可美化，诚实跳过
+# （值宽 ≤20：列是 String(20)，skipped_no_image=16）
+# （不退回文生图：探针实证过「参考图里没有商品时走编辑=凭空画商品」）
+IMAGE_SKIPPED_NO_IMAGE = "skipped_no_image"
+IMAGE_FAILED = "failed"  # 配图失败（编辑/文生图/渲染任一环节；不 fail 任务）
+
+# 可补配图的 image_status 集合（第 115 刀 retry-image 端点闸）：待抽检任务的
+# 配图没成或没出（跳过/失败），先补前置条件（传商品图/配 key）后**只重跑配图步**，
+# 不动已过双闸的文案。
+IMAGE_RETRYABLE = (IMAGE_REQUESTED, IMAGE_SKIPPED_NO_KEY, IMAGE_SKIPPED_NO_IMAGE, IMAGE_FAILED)
 
 # ---------------------------------------------------------------- 内容模板（第 98 刀）
 
 # 三模板（ADR 0055：prompt 模板参数，不是 Agent）：gen_style 进生成 system
-# prompt；image_prompt/image_size 派生配图（小红书=封面图竖版、口播=竖版背景、
-# 站内=商品横图——FLUX 档位内取 1024x1024 方图）。
+# prompt；image_prompt/image_size 只服务文生图路径（第 115 刀起仅口播背景图
+# 在用——站内配图走图像编辑、小红书走文字卡流水线，见 _run_image_step 分派）。
+# 第 115 刀 W16：gen_style 按爆款结构调研显式化（标题公式/段落结构/标签配比），
+# 事实纪律不变（只写规格事实面，双闸照拦）。
 TEMPLATES: dict[str, dict[str, str]] = {
     "station": {
         "name": "站内投放文案",
         "gen_style": (
-            "正文分行写卖点，每行一条，突出商品名称；商品有规格事实（如净含量、"
-            "材质）时，用「字段：值」的行文在正文中带出，便于后续结构化。"
+            "标题不超过 16 字且必须包含商品名。正文分行写卖点，每行一条、每条"
+            "只讲一个卖点，突出商品名称；商品有规格事实（如净含量、材质）时，用"
+            "「字段：值」的行文在正文中带出，便于后续结构化。不用感叹号轰炸，"
+            "不写事实里没有的承诺。"
         ),
         "image_prompt": (
             "电商商品横图：商品居中完整呈现，干净浅色背景，柔和棚拍光，"
@@ -95,9 +118,17 @@ TEMPLATES: dict[str, dict[str, str]] = {
     "xhs": {
         "name": "小红书笔记体",
         "gen_style": (
-            "用小红书笔记的口吻写：口语化种草语气、短句分段、每段适当用 emoji "
-            "点缀（每行 1-2 个，不过量），像真实用户分享体验；结尾单独一行给 "
-            "2-4 个以 # 开头的话题标签；商品名与真实规格仍须自然带入。"
+            "用小红书笔记的口吻写，按爆款结构组织：\n"
+            "1. 标题 ≤20 字、前 10 字内出现商品词，采用钩子式写法（痛点+方案 / "
+            "数字+结果 / 对比+反转 三选一），不用「上新/满减促销」式直卖标题，"
+            "也不用极限词（最好/第一/国家级）。\n"
+            "2. 正文按「场景共鸣（1-2 句，描述真实使用情境）→ 痛点/冲突 → "
+            "解决方案（3-5 个短段，每段只讲一个卖点，带具体规格数字）→ 行动"
+            "引导（1-2 句）」推进；每段开头用 1-2 个 emoji 作段落标记，短句"
+            "分段，像真实用户分享体验。\n"
+            "3. 结尾单独一行给 3-5 个 # 开头的话题标签：1 个泛流量话题 + 2 个"
+            "垂直细分话题 + 1 个长尾话题，不与正文重复堆词。\n"
+            "商品名与真实规格仍须自然带入，不得编造事实里没有的参数或功效。"
         ),
         "image_prompt": (
             "小红书风格封面图：明亮通透的生活场景氛围，暖色调，清新干净的构图，"
@@ -108,9 +139,10 @@ TEMPLATES: dict[str, dict[str, str]] = {
     "short_video": {
         "name": "短视频口播稿",
         "gen_style": (
-            "写成 15-30 秒口播量的短视频口播稿：按「开场钩子 → 卖点分镜 → "
-            "行动号召」三段推进，每段一行、以「【分镜 N】」开头，口播词口语化、"
-            "有节奏感、可直接照读；商品名与真实规格仍须自然带入。"
+            "写成 15-30 秒口播量的短视频口播稿：按「开场钩子（前 3 秒抓人，"
+            "疑问或反差开场）→ 卖点分镜 → 行动号召」三段推进，每段一行、以"
+            "「【分镜 N】」开头；口播词口语化、每句 8-15 字、有节奏感、可直接"
+            "照读，不堆长句；商品名与真实规格仍须自然带入，不编造。"
         ),
         "image_prompt": (
             "竖版短视频背景图：色彩饱和、动感氛围、视觉重心居中且四周留白，"
@@ -195,8 +227,10 @@ def _product_facts(product: Product) -> list[str]:
 
 
 def build_image_prompt(product: Product, template: str = DEFAULT_TEMPLATE) -> str:
-    """配图 prompt（纯函数，模板派生）：风格行 + 商品事实 + 禁文字水印。
+    """文生图 prompt（纯函数，模板派生）：风格行 + 商品事实 + 禁文字水印。
 
+    第 115 刀起只服务**口播背景图**（背景不含商品主张，文生图语义成立）；
+    站内配图走图像编辑（build_edit_instruction）、小红书走文字卡流水线。
     商品名/类目过 redact（0038 出口必掩——prompt 是进程边界）；文生图模型
     渲染文字易糊，显式要求画面不出现文字。
     """
@@ -204,6 +238,57 @@ def build_image_prompt(product: Product, template: str = DEFAULT_TEMPLATE) -> st
     return (
         f"{style}。商品：{redact(product.name)}（类目：{redact(product.category)}）。"
         "画面中不要出现任何文字、水印或 logo。"
+    )
+
+
+def pick_reference_image(db: Session, product_id: int) -> tuple[Asset, AssetVersion] | None:
+    """「美化产品图」的参考图解析：该商品挂载的图片资产，**已发布优先**。
+
+    取值口径：kind=image、未废弃；先取有已发布指针的（线上口径、人洗核过），
+    没有则最新登记的一张（待人洗草稿也是真图——用它做**生成输入**不构成
+    「引用未发布口径」，产出仍走独立治理）。返回 (资产, 取字节用的版本)；
+    商品没有任何图片资产 → None（调用方落 skipped_no_image）。
+    """
+    rows = db.scalars(
+        select(Asset)
+        .where(
+            Asset.product_id == product_id,
+            Asset.kind == "image",
+            Asset.discarded_at.is_(None),
+        )
+        .order_by(Asset.current_published_version_id.desc().nullslast(), Asset.id.desc())
+    ).all()
+    for asset in rows:
+        if asset.current_published_version_id is not None:
+            version = db.get(AssetVersion, asset.current_published_version_id)
+            if version is not None:
+                return asset, version
+    for asset in rows:  # 无已发布：最新一版的字节（草稿也是真图）
+        version = db.scalar(
+            select(AssetVersion)
+            .where(AssetVersion.asset_id == asset.id)
+            .order_by(AssetVersion.version_no.desc())
+            .limit(1)
+        )
+        if version is not None:
+            return asset, version
+    return None
+
+
+def build_edit_instruction(product: Product) -> str:
+    """美化产品图的编辑指令（纯函数，站内模板）。
+
+    指令模式按调研口径：动词前置（「将背景替换为…」）+ **保留项必申明**（商品
+    外观/颜色/材质/细节完全不变——不申明模型会「自作主张优化」商品）+ 光照一致
+    + 构图具象 + 禁止项。商品名过 redact（prompt 是进程边界）。
+    """
+    return (
+        "将背景替换为干净明亮的浅色影棚场景：柔和棚拍光、浅色渐变底，"
+        f"构图以{redact(product.name)}为绝对主体、商品居中完整可见、不裁切。"
+        "保持商品的外观、颜色、材质、比例与所有细节完全不变，"
+        "不要改变商品本身（不改形、不换色、不增减部件），"
+        "新背景的光照方向与原图一致、投影自然。"
+        "不要在画面中添加任何文字、水印或 logo。"
     )
 
 
@@ -355,44 +440,142 @@ def _fail(task: MaterialTask, reason: str) -> MaterialTask:
     return task
 
 
-# ---------------------------------------------------------------- 配图步（三态收口）
+# ---------------------------------------------------------------- 配图步（W15 三路分派）
 
 
-def _run_image_step(storage: ObjectStorage | None, task: MaterialTask, product: Product) -> None:
-    """配图步（with_image 请求才进来）：三态落 image_status，永不 fail 任务。
-
-    - 无 key：``skipped_no_key``（诚实跳过——fail-closed 不 fail 任务，ADR 0055）；
-    - 成功：字节暂存 ``material/`` 键（不是资产），``pending`` 等抽检后登记；
-    - 失败（超时/坏字节）：``failed``（原因只进服务端日志；任务照常待抽检，
-      纯文案成品，可整任务重试再要配图）。
-
-    暂存写只碰对象存储不碰 DB（P1#2：60s 厂商等待不持有写事务——属性赋值
-    不开事务，commit 收口在调用方）。旧暂存键（重试覆盖）顺手清理，防孤儿
-    堆积；登记路径的键清理在 approve_task。
-    """
-    template = task.template or DEFAULT_TEMPLATE
-    prompt = build_image_prompt(product, template)
-    try:
-        image_bytes = imggen.generate_image(prompt, size=image_size_for(template))
-    except imggen.ImggenNotConfigured:
-        task.image_status = IMAGE_SKIPPED_NO_KEY
-        task.image_object_key = None
-        return
-    except imggen.ImggenError:
-        # 原因类型名进日志；任务面只记「配图生成失败」事实（通用文案，0033 纪律）
-        task.image_status = IMAGE_FAILED
-        task.image_object_key = None
-        return
-    if storage is None:  # pragma: no cover - 路由恒带 storage；防御替身调用面
-        task.image_status = IMAGE_FAILED
-        return
+def _stage_image(storage: ObjectStorage, task: MaterialTask, image_bytes: bytes) -> None:
+    """配图字节落暂存键 + 清旧键（三路共用）：写只碰对象存储不碰 DB（P1#2：
+    厂商/渲染等待不持有写事务，commit 收口在调用方）。"""
     old_key = task.image_object_key
     key = _stage_image_key(image_bytes)
     storage.put_bytes(key, image_bytes)
     if old_key and old_key != key:
         storage.delete(old_key)
-    task.image_status = IMAGE_PENDING
     task.image_object_key = key
+    task.image_status = IMAGE_PENDING
+
+
+def _run_image_step(db: Session, storage: ObjectStorage | None, task: MaterialTask, product: Product) -> None:
+    """配图步（with_image 请求才进来）：**三模板三路分派**（第 115 刀 W15），
+    三态收口（pending / skipped_* / failed），永不 fail 任务。
+
+    - **小红书 = 封面文字卡流水线**（cover_card，确定性渲染）：不调 AI、
+      不需要 IMGGEN key、不需要商品真图——标题/商品名/类目都是任务已有事实。
+      字体缺失=failed（不产豆腐块图）；同 spec 逐字节可复现。
+    - **站内投放 = 美化产品图**（真实商品图 → imggen.edit_image 指令式编辑，
+      商品主体来自原图）：无 key=skipped_no_key；**商品没有任何图片资产=
+      skipped_no_image**（诚实跳过——探针实证过参考图里没有商品时走
+      编辑等于凭空画商品，不退回文生图冒充）；编辑失败=failed。参考图
+      （已发布优先）落 image_reference_asset_id（血缘锚）。
+    - **口播 = 文生图背景图**（98 刀原语义不变：背景不含商品主张，文生图
+      成立）：无 key=skipped_no_key；失败=failed。
+
+    原因只进服务端日志；任务面只记状态事实（通用文案，0033 纪律）。
+    """
+    template = task.template or DEFAULT_TEMPLATE
+
+    if template == "xhs":
+        try:
+            card = cover_card.render_cover_card(
+                cover_card.CardSpec(
+                    title=task.title or product.name,
+                    product_name=product.name,
+                    category=product.category,
+                    palette_index=task.id,
+                )
+            )
+        except cover_card.CoverCardError as exc:
+            logger.warning("配图步失败: what=封面文字卡渲染 task=%s err=%s", task.id, exc)
+            task.image_status = IMAGE_FAILED
+            task.image_object_key = None
+            task.image_reference_asset_id = None
+            return
+        if storage is None:  # pragma: no cover - 路由恒带 storage；防御替身调用面
+            task.image_status = IMAGE_FAILED
+            return
+        _stage_image(storage, task, card)
+        return
+
+    if template == "station":
+        if not imggen.is_configured():
+            task.image_status = IMAGE_SKIPPED_NO_KEY
+            task.image_object_key = None
+            task.image_reference_asset_id = None
+            return
+        reference = pick_reference_image(db, product.id)
+        if reference is None:
+            task.image_status = IMAGE_SKIPPED_NO_IMAGE
+            task.image_object_key = None
+            task.image_reference_asset_id = None
+            return
+        asset, version = reference
+        if storage is None:  # pragma: no cover - 同上
+            task.image_status = IMAGE_FAILED
+            return
+        try:
+            ref_bytes = storage.get_bytes(version.object_key)
+        except FileNotFoundError as exc:
+            logger.warning("配图步失败: what=参考图字节缺失 task=%s err=%s", task.id, exc)
+            task.image_status = IMAGE_FAILED
+            task.image_object_key = None
+            task.image_reference_asset_id = None
+            return
+        try:
+            image_bytes = imggen.edit_image(build_edit_instruction(product), ref_bytes)
+        except imggen.ImggenError as exc:
+            logger.warning("配图步失败: what=美化产品图编辑 task=%s err=%s", task.id, type(exc).__name__)
+            task.image_status = IMAGE_FAILED
+            task.image_object_key = None
+            task.image_reference_asset_id = None
+            return
+        _stage_image(storage, task, image_bytes)
+        task.image_reference_asset_id = asset.id
+        return
+
+    # short_video：文生图背景图（原路径）
+    if not imggen.is_configured():
+        task.image_status = IMAGE_SKIPPED_NO_KEY
+        task.image_object_key = None
+        return
+    prompt = build_image_prompt(product, template)
+    try:
+        image_bytes = imggen.generate_image(prompt, size=image_size_for(template))
+    except imggen.ImggenError:
+        logger.warning("配图步失败: what=文生图背景 task=%s", task.id)
+        task.image_status = IMAGE_FAILED
+        task.image_object_key = None
+        return
+    if storage is None:  # pragma: no cover - 同上
+        task.image_status = IMAGE_FAILED
+        return
+    _stage_image(storage, task, image_bytes)
+
+
+def retry_image_step(db: Session, storage: ObjectStorage | None, task: MaterialTask) -> MaterialTask:
+    """补配图（第 115 刀）：待抽检任务的配图没成/没出时**只重跑配图步**。
+
+    闸门：只有 pending_qc 且 image_status ∈ IMAGE_RETRYABLE 才放行（409 由
+    HTTPException 语义给出——文案已过双闸，重跑生成是「重试」端点的事，这里
+    不动文案）。前置条件补齐（传了商品图 / 配了 key）后用本端点闭环：
+    「先传图 → 补配图 → 预览 → 抽检」。
+    """
+    if task.status != PENDING_QC:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"只有待抽检的任务可以补配图，当前状态: {task.status}",
+        )
+    if task.image_status not in IMAGE_RETRYABLE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"配图当前不可补（image_status={task.image_status}）：未请求配图或已有待抽检配图",
+        )
+    product = db.get(Product, task.product_id)
+    if product is None:  # pragma: no cover - FK 保证行存在；防御替身调用面
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="商品不存在")
+    _run_image_step(db, storage, task, product)
+    db.commit()
+    db.refresh(task)
+    return task
 
 
 # ---------------------------------------------------------------- 任务状态机
@@ -475,16 +658,19 @@ def run_generation_task(
         db.commit()
         return task
 
-    # 双闸过线：配图步（建任务带 with_image → image_status 非 none 才跑；
-    # 重试同条件重跑，旧暂存字节由 _run_image_step 覆盖清理；三态永不 fail 任务）
-    if task.image_status != IMAGE_NONE:
-        _run_image_step(storage, task, product)
-
+    # 双闸过线：文案先落任务行（第 115 刀——小红书封面文字卡要拿**文案标题**做
+    # 大字；此前赋值在配图步之后，卡只能拿到商品名兜底），再跑配图步（建任务带
+    # with_image → image_status 非 none 才跑；重试同条件重跑，旧暂存字节由
+    # _run_image_step 覆盖清理；skipped/failed 永不 fail 任务，抽检后可走
+    # retry-image 补配图）。commit 仍在最后收口。
     task.title = title
     task.content = content
     task.qc_llm_passed = True
     task.last_error = None
     task.status = PENDING_QC
+    if task.image_status != IMAGE_NONE:
+        _run_image_step(db, storage, task, product)
+
     db.commit()
     return task
 

@@ -22,14 +22,17 @@
 - imggen status 端点：configured=false（conftest 强制空 key）。
 """
 
+import io
 import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from sse_helpers import parse_sse_events
 
+from suite_api.services import cjk_font
 from suite_api.services import imggen as imggen_module
 from suite_api.services import llm as llm_module
 
@@ -376,17 +379,19 @@ def test_redact_in_reflow_qa_pipeline(api: ApiFixture, monkeypatch: pytest.Monke
 # ---------- 第 98 刀：三模板 + 配图跳过（无 key 形态） ----------
 
 
-def test_xhs_template_with_image_no_key_skips_honestly(
+def test_xhs_template_with_image_renders_cover_card_without_key(
     api: ApiFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """小红书模板 + 请求配图，但无 IMGGEN key：任务照常 pending_qc，配图步
-    诚实跳过（skipped_no_key），approve 登记单资产。"""
+    """第 115 刀 W15b：小红书配图=封面文字卡**流水线**——不调 AI、不需要
+    IMGGEN key、不需要商品真图：无 key 环境照样出 pending 配图（可预览），
+    approve 双资产登记。文生图替身一次都不该被调用。"""
+    font = cjk_font.find_cjk_font()
+    if font is None:  # 容器/CI 已装 fonts-noto-cjk；裸环境跳过渲染用例
+        pytest.skip("封面文字卡渲染需要 CJK 字体（fonts-noto-cjk / 系统字体）")
     client, _ = api
     _login(client)
-    calls = _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
-    # 替身抛 ImggenNotConfigured：复现无 key 环境的 client 闸（conftest 已强制
-    # 空 key，真实 generate_image 同样抛——替身只是不让测试依赖 settings 时序）
-    img_calls = _patch_imggen(monkeypatch, error=imggen_module.ImggenNotConfigured("未配置"))
+    _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
+    img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)  # 哨兵：不应被调用
 
     task = client.post(
         "/api/material/tasks",
@@ -394,18 +399,122 @@ def test_xhs_template_with_image_no_key_skips_honestly(
     ).json()
     assert task["status"] == "pending_qc"
     assert task["template"] == "xhs"
-    assert task["template_name"] == "小红书笔记体"
-    assert task["image_status"] == "skipped_no_key"  # 诚实跳过，不 fail 任务
-    assert task["image_asset_id"] is None
-    # 生成 system prompt 按模板派生（小红书风格行）
-    assert "小红书" in calls[0]["system"]
-    # 配图步确实跑到了（调用一次、如实跳过）——不是被入口闸拦掉
-    assert len(img_calls) == 1
+    assert task["image_status"] == "pending"  # 流水线渲染成功，与 key 无关
+    assert task["image_reference_asset_id"] is None  # 文字卡不基于商品图
+    assert len(img_calls) == 0  # 无 AI 调用（流水线的本质）
+
+    preview = client.get(f"/api/material/tasks/{task['id']}/image")
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/png"
+    with Image.open(io.BytesIO(preview.content)) as card:
+        assert card.size == (1080, 1440)  # 3:4 竖版封面
 
     approved = client.post(f"/api/material/tasks/{task['id']}/approve").json()
     assert approved["status"] == "registered"
     assert approved["asset_id"] is not None
-    assert approved["image_asset_id"] is None  # 跳过形态=单资产
+    assert approved["image_asset_id"] is not None  # 文字卡也是配图资产（双资产）
+
+
+def test_station_image_without_key_skips_honestly(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """第 115 刀 W15a：站内配图=美化产品图（编辑路径）——无 IMGGEN key 诚实
+    跳过（skipped_no_key，任务照常待抽检），文生图/编辑都不被调用。"""
+    client, _ = api
+    _login(client)
+    _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
+    img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)  # 哨兵：不应被调用
+
+    task = client.post(
+        "/api/material/tasks",
+        json={"product_id": _cup_id(client), "template": "station", "with_image": True},
+    ).json()
+    assert task["status"] == "pending_qc"
+    assert task["image_status"] == "skipped_no_key"  # conftest 强制空 key
+    assert task["image_reference_asset_id"] is None
+    assert len(img_calls) == 0
+
+
+def test_station_beautify_pipeline_reference_skip_and_retry(
+    api: ApiFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """第 115 刀 W15a 全链：站内模板美化产品图——
+
+    1. 有 key 但商品**没有图片资产** → skipped_no_image（诚实跳过，
+       不文生图冒充）；
+    2. 给商品登记一张真图（productId 表单）→ **补配图端点**只重跑配图步：
+       编辑指令带保留项、参考图字节来自真图版本、image_reference_asset_id
+       落锚、配图可预览（不动已过闸文案）；
+    3. 闸门：已 pending 的配图再补 409。
+    """
+    client, _ = api
+    _login(client)
+    monkeypatch.setattr(imggen_module, "is_configured", lambda: True)
+    edit_calls: list[dict[str, object]] = []
+
+    def fake_edit(instruction: str, image_bytes: bytes) -> bytes:
+        edit_calls.append({"instruction": instruction, "bytes": image_bytes})
+        return PNG_BYTES
+
+    monkeypatch.setattr(imggen_module, "edit_image", fake_edit)
+
+    # 新建商品做「无图起点」——共享库里保温杯已被前序用例的 approve 挂上
+    # 文字卡/配图资产（pick_reference_image 会命中），本用例要钉的是「无图跳过」
+    fresh = client.post(
+        "/api/products", json={"name": "美化管线测试杯", "category": "器皿"}
+    )
+    assert fresh.status_code in (200, 201), fresh.text
+    cup = int(fresh.json()["id"])
+
+    # 替身文案按新商品名生成（规则闸要求正文含商品名）；四次调用=两次建任务
+    gen = _material_json(
+        title="美化管线测试杯：一杯守住温度",
+        content=GOOD_CONTENT.replace("钛钢保温杯", "美化管线测试杯"),
+    )
+    _patch_complete_chat(monkeypatch, script=[gen, QC_PASS, gen, QC_PASS])
+
+    task = client.post(
+        "/api/material/tasks",
+        json={"product_id": cup, "template": "station", "with_image": True},
+    ).json()
+    assert task["status"] == "pending_qc"
+    assert task["image_status"] == "skipped_no_image"  # 新商品无图片资产
+    assert edit_calls == []
+
+    # 补前置条件：给商品登记一张真图（登记抽屉同款 productId 表单字段）
+    registered = client.post(
+        "/api/assets/register",
+        files={"file": ("cup.png", PNG_BYTES, "image/png")},
+        data={"title": "美化管线测试杯实拍图", "productId": str(cup)},
+    )
+    assert registered.status_code == 201, registered.text
+    reference_id = int(registered.json()["id"])
+
+    # 补配图：只重跑配图步（文案不动），编辑路径吃到真图字节
+    retried = client.post(f"/api/material/tasks/{task['id']}/retry-image").json()
+    assert retried["image_status"] == "pending"
+    assert retried["title"] == task["title"]  # 文案原样（补配图不重新生成）
+    assert retried["image_reference_asset_id"] == reference_id
+    assert len(edit_calls) == 1
+    assert "保持商品的外观、颜色、材质、比例与所有细节完全不变" in edit_calls[0]["instruction"]
+    assert "美化管线测试杯" in edit_calls[0]["instruction"]
+    assert edit_calls[0]["bytes"] == PNG_BYTES  # 参考图字节 = 真图版本字节
+
+    preview = client.get(f"/api/material/tasks/{task['id']}/image")
+    assert preview.status_code == 200 and preview.content == PNG_BYTES
+
+    # 闸门：配图已 pending 再补 → 409；未请求配图的任务补 → 409
+    assert client.post(f"/api/material/tasks/{task['id']}/retry-image").status_code == 409
+    plain = client.post("/api/material/tasks", json={"product_id": cup}).json()
+    assert plain["image_status"] == "none"
+    assert client.post(f"/api/material/tasks/{plain['id']}/retry-image").status_code == 409
+
+    # 收尾 approve：双资产登记（含美化图）并清暂存——共享存储目录不留
+    # material/ 残留（下游用例对暂存清洁度有全局断言）
+    approved = client.post(f"/api/material/tasks/{task['id']}/approve").json()
+    assert approved["status"] == "registered"
+    assert approved["image_asset_id"] is not None
+    assert approved["image_reference_asset_id"] == reference_id  # 血缘锚随回执可见
 
 
 def test_imggen_status_endpoint(api: ApiFixture) -> None:
@@ -464,6 +573,9 @@ def test_image_full_path_staged_preview_and_double_asset(
     client, _ = api
     _login(client)
     _patch_complete_chat(monkeypatch, script=[_material_json(), QC_PASS])
+    # 第 115 刀起配图步有 is_configured 入口闸（conftest 强制空 key）——口播
+    # 文生图路径的替身要配「有 key」才走得到 generate_image
+    monkeypatch.setattr(imggen_module, "is_configured", lambda: True)
     img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)
 
     task = client.post(

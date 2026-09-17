@@ -530,15 +530,18 @@ export type MaterialTaskStatus =
  * xhs=小红书笔记体 / short_video=短视频口播稿——prompt 模板参数，非 Agent。 */
 export type MaterialTemplate = 'station' | 'xhs' | 'short_video'
 
-/** 配图步六态（第 98 刀）：none=未请求 / requested=请求待生成 /
- * pending=已生成待登记（暂存字节可预览）/ registered=已登记（image_asset_id
- * 回执锚）/ skipped_no_key=无 IMGGEN key 诚实跳过 / failed=生成失败（不 fail 任务）。 */
+/** 配图步七态（第 98 刀；第 115 刀 W15 增 skipped_no_image）：
+ * none=未请求 / requested=请求待生成 / pending=已生成待登记（暂存字节可预览）/
+ * registered=已登记（image_asset_id 回执锚）/ skipped_no_key=无 IMGGEN key 诚实
+ * 跳过（编辑/文生图路径）/ skipped_no_image=商品没有图片资产，美化产品图
+ * 无真图可美化，诚实跳过（第 115 刀）/ failed=生成失败（不 fail 任务）。 */
 export type MaterialImageStatus =
   | 'none'
   | 'requested'
   | 'pending'
   | 'registered'
   | 'skipped_no_key'
+  | 'skipped_no_image'
   | 'failed'
 
 export interface MaterialTask {
@@ -556,6 +559,8 @@ export interface MaterialTask {
   qc_llm_passed: boolean | null
   image_status: MaterialImageStatus
   image_asset_id: number | null
+  /** 美化产品图所基于的真实图片资产（第 115 刀 W15a 血缘锚）；其余路径 null。 */
+  image_reference_asset_id: number | null
   created_at: string
 }
 

@@ -22,9 +22,11 @@ import pytest
 from fastapi import HTTPException
 
 from suite_api.models import MaterialTask, Product
+from suite_api.services import cover_card as cover_card_module
 from suite_api.services import imggen as imggen_module
 from suite_api.services import llm as llm_module
 from suite_api.services import material as material_module
+from suite_api.services.cover_card import sanitize_title
 from suite_api.services.machine_wash import (
     build_qa_prompt,
     extract_document_fields,
@@ -37,6 +39,7 @@ from suite_api.services.material import (
     IMAGE_NONE,
     IMAGE_PENDING,
     IMAGE_REQUESTED,
+    IMAGE_SKIPPED_NO_IMAGE,
     IMAGE_SKIPPED_NO_KEY,
     MAX_TOTAL_CHARS,
     PENDING_QC,
@@ -46,6 +49,7 @@ from suite_api.services.material import (
     TEMPLATES,
     MaterialGenError,
     approve_task,
+    build_edit_instruction,
     build_generation_prompt,
     build_image_prompt,
     build_qc_prompt,
@@ -66,7 +70,8 @@ from suite_api.services.material import (
 
 
 class _FakeDB:
-    """只喂 run_generation_task 用到的最小会话面：get(Product)/commit 记账。"""
+    """只喂 run_generation_task 用到的最小会话面：get(Product)/commit 记账；
+    scalars 恒空（第 115 刀站内美化路径的参考图解析走「无图片资产」分支）。"""
 
     def __init__(self, product: Product) -> None:
         self.product = product
@@ -78,6 +83,13 @@ class _FakeDB:
 
     def commit(self) -> None:
         self.commits += 1
+
+    def scalars(self, _stmt: Any) -> Any:
+        class _Empty:
+            def all(self) -> list[Any]:
+                return []
+
+        return _Empty()
 
 
 class _FakeStorage:
@@ -632,21 +644,25 @@ def test_llm_qc_fail_skips_image_step(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_image_step_no_key_skips_honestly(monkeypatch: pytest.MonkeyPatch) -> None:
-    """无 IMGGEN key：配图步诚实跳过（不 fail 任务）——纯文案套件。"""
+    """无 IMGGEN key：配图步诚实跳过（不 fail 任务）——纯文案套件。
+    第 115 刀起站内路径由 is_configured 入口闸拦截（替身补丁只是哨兵）。"""
     _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
-    _patch_imggen(monkeypatch, error=imggen_module.ImggenNotConfigured("未配置"))
-    task = _task(QUEUED, image=IMAGE_REQUESTED)
+    img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)  # 哨兵：不应被调用
+    task = _task(QUEUED, template="station", image=IMAGE_REQUESTED)
     run_generation_task(_FakeDB(_product()), _FakeStorage(), task)  # type: ignore[arg-type]
     assert task.status == PENDING_QC  # 任务不 fail
     assert task.image_status == IMAGE_SKIPPED_NO_KEY
     assert task.image_object_key is None
+    assert img_calls == []
 
 
 def test_image_step_success_stages_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """口播模板=文生图背景图（第 115 刀后唯一文生图路径）：替身成功暂存字节。"""
     _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
+    monkeypatch.setattr(imggen_module, "is_configured", lambda: True)
     img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)
     storage = _FakeStorage()
-    task = _task(QUEUED, template="xhs", image=IMAGE_REQUESTED)
+    task = _task(QUEUED, template="short_video", image=IMAGE_REQUESTED)
     run_generation_task(_FakeDB(_product()), storage, task)  # type: ignore[arg-type]
     assert task.status == PENDING_QC
     assert task.image_status == IMAGE_PENDING
@@ -654,16 +670,64 @@ def test_image_step_success_stages_bytes(monkeypatch: pytest.MonkeyPatch) -> Non
     assert task.image_object_key is not None
     assert task.image_object_key.startswith("material/") and task.image_object_key.endswith(".png")
     assert storage.objects[task.image_object_key] == PNG_BYTES
-    # 配图 prompt/尺寸由模板派生（小红书=封面竖版）
+    assert task.image_reference_asset_id is None  # 文生图背景无参考锚
+    # 配图 prompt/尺寸由模板派生（口播=竖版背景 768x1024）
     assert len(img_calls) == 1
     assert img_calls[0]["size"] == "768x1024"
-    assert "小红书" in img_calls[0]["prompt"] and "钛钢保温杯" in img_calls[0]["prompt"]
+    assert "竖版" in img_calls[0]["prompt"] and "钛钢保温杯" in img_calls[0]["prompt"]
+
+
+def test_image_step_xhs_renders_cover_card_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """第 115 刀 W15b：小红书配图=文字卡流水线——不调 imggen（无 key 也出图）、
+    CardSpec 带文案标题与商品事实。"""
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
+    img_calls = _patch_imggen(monkeypatch, result=PNG_BYTES)  # 哨兵：不应被调用
+    card_calls: list[Any] = []
+
+    def fake_card(spec: Any) -> bytes:
+        card_calls.append(spec)
+        return PNG_BYTES
+
+    monkeypatch.setattr(cover_card_module, "render_cover_card", fake_card)
+    storage = _FakeStorage()
+    task = _task(QUEUED, template="xhs", image=IMAGE_REQUESTED)
+    run_generation_task(_FakeDB(_product()), storage, task)  # type: ignore[arg-type]
+    assert task.status == PENDING_QC
+    assert task.image_status == IMAGE_PENDING  # 无 key 照样出（流水线不是 AI）
+    assert len(img_calls) == 0
+    assert len(card_calls) == 1
+    assert card_calls[0].title == json.loads(GOOD_OUTPUT)["title"]  # 标题进封面
+    assert card_calls[0].product_name == "钛钢保温杯"
+    assert card_calls[0].category == "器皿"
+    assert task.image_reference_asset_id is None  # 文字卡不基于商品图
+
+
+def test_image_step_station_without_real_image_skips(monkeypatch: pytest.MonkeyPatch) -> None:
+    """第 115 刀 W15a：站内模板有 key 但商品没有图片资产——诚实跳过
+    skipped_no_image（不文生图冒充商品），编辑调用不发生。"""
+    _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
+    monkeypatch.setattr(imggen_module, "is_configured", lambda: True)
+    edit_calls: list[Any] = []
+
+    def fake_edit(instruction: str, image_bytes: bytes) -> bytes:
+        edit_calls.append((instruction, image_bytes))
+        return PNG_BYTES
+
+    monkeypatch.setattr(imggen_module, "edit_image", fake_edit)
+    task = _task(QUEUED, template="station", image=IMAGE_REQUESTED)
+    run_generation_task(_FakeDB(_product()), _FakeStorage(), task)  # type: ignore[arg-type]
+    assert task.status == PENDING_QC  # 跳过不 fail 任务
+    assert task.image_status == IMAGE_SKIPPED_NO_IMAGE
+    assert task.image_object_key is None
+    assert task.image_reference_asset_id is None
+    assert edit_calls == []  # 没有真图就不进编辑（探针实证：否则凭空画商品）
 
 
 def test_image_step_failure_does_not_fail_task(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS])
+    monkeypatch.setattr(imggen_module, "is_configured", lambda: True)
     _patch_imggen(monkeypatch, error=imggen_module.ImggenUnavailable("文生图服务暂时不可用"))
-    task = _task(QUEUED, image=IMAGE_REQUESTED)
+    task = _task(QUEUED, template="short_video", image=IMAGE_REQUESTED)
     run_generation_task(_FakeDB(_product()), _FakeStorage(), task)  # type: ignore[arg-type]
     assert task.status == PENDING_QC  # 配图失败不影响文案任务
     assert task.image_status == IMAGE_FAILED
@@ -683,9 +747,10 @@ def test_image_step_not_requested_never_called(monkeypatch: pytest.MonkeyPatch) 
 def test_image_step_retry_replaces_stale_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
     """重试重跑配图：旧暂存字节被清理（防孤儿堆积），键换新。"""
     _patch_llm(monkeypatch, script=[GOOD_OUTPUT, QC_PASS, GOOD_OUTPUT, QC_PASS])
+    monkeypatch.setattr(imggen_module, "is_configured", lambda: True)
     _patch_imggen(monkeypatch, result=PNG_BYTES)
     storage = _FakeStorage()
-    task = _task(QUEUED, image=IMAGE_REQUESTED)
+    task = _task(QUEUED, template="short_video", image=IMAGE_REQUESTED)
     task.status = FAILED  # 直接从 failed 重试（retry 放行 failed）
     retry_task(_FakeDB(_product()), storage, task)  # type: ignore[arg-type]
     first_key = task.image_object_key
@@ -711,3 +776,34 @@ def test_retry_reruns_failed_task(monkeypatch: pytest.MonkeyPatch) -> None:
     assert task.status == PENDING_QC
     assert task.last_error is None  # 复位：旧故障原因清空
     assert "钛钢保温杯" in (task.content or "")
+
+
+# ---------- 第 115 刀 W15/W16：编辑指令 / 标题清洗 / 模板升级 ----------
+
+
+def test_build_edit_instruction_keeps_product_unchanged() -> None:
+    """美化产品图的编辑指令：动词前置 + 保留项申明（探针调研口径）+ 禁文字。"""
+    instruction = build_edit_instruction(_product())
+    assert instruction.startswith("将背景替换为")  # 动词前置
+    assert "保持商品的外观、颜色、材质、比例与所有细节完全不变" in instruction
+    assert "不要改变商品本身" in instruction
+    assert "光照方向与原图一致" in instruction
+    assert "钛钢保温杯" in instruction
+    assert "不要在画面中添加任何文字、水印或 logo" in instruction
+
+
+def test_sanitize_title_strips_emoji_and_caps_length() -> None:
+    assert sanitize_title("🍵钛钢保温杯也太会装了吧！") == "钛钢保温杯也太会装了吧！"
+    assert sanitize_title("  多个   空格\n换行  ") == "多个 空格 换行"
+    assert len(sanitize_title("字" * 40)) == 24  # 截断保形
+    assert sanitize_title("") == ""
+
+
+def test_xhs_gen_style_has_viral_structure() -> None:
+    """W16：小红书模板升级为显式爆款结构（标题公式/SCQA/标签配比）。"""
+    style = TEMPLATES["xhs"]["gen_style"]
+    assert "标题" in style and "20 字" in style
+    assert "痛点+方案" in style and "数字+结果" in style and "对比+反转" in style
+    assert "场景共鸣" in style and "行动引导" in style
+    assert "3-5 个" in style and "泛流量" in style and "长尾" in style
+    assert "极限词" in style  # 广告法边界进生成纪律

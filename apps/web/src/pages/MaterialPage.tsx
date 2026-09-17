@@ -28,7 +28,6 @@ import { useApiData } from '../hooks/useApiData'
 import { useEscapeClose } from '../hooks/useEscapeClose'
 import {
   MATERIAL_IMAGE_STATUS_LABEL,
-  MATERIAL_TEMPLATE_LABEL,
   formatAssetId,
   formatDateTime,
   formatTaskId,
@@ -84,6 +83,10 @@ function CreateTaskDrawer({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // 第 115 刀 W15：配图开关的可用性按模板分派——小红书=文字卡流水线（无 AI，
+  // 不需要 key）；站内=美化产品图/口播=文生图背景（都要 IMGGEN key）。
+  const imageAvailable = template === 'xhs' || imggenConfigured
+
   // 提交中不可中断：Esc 与遮罩同一门禁（走查实录 A1：此前 Esc 无响应）
   useEscapeClose(open, onClose, !submitting)
 
@@ -99,7 +102,7 @@ function CreateTaskDrawer({
     setSubmitting(true)
     try {
       // 同步就地执行：请求返回即稳定态（pending_qc 或 failed），无轮询
-      await api.createMaterialTask(Number(productId), template, withImage && imggenConfigured)
+      await api.createMaterialTask(Number(productId), template, withImage && imageAvailable)
       onCreated()
       onClose()
       setProductId('')
@@ -173,23 +176,22 @@ function CreateTaskDrawer({
               <input
                 type="checkbox"
                 className="mt-0.5"
-                checked={withImage && imggenConfigured}
-                disabled={submitting || !imggenConfigured}
+                checked={withImage && imageAvailable}
+                disabled={submitting || !imageAvailable}
                 onChange={(e) => setWithImage(e.target.checked)}
               />
               <span className="flex-1">
-                <span className="block text-[13px] font-medium leading-5 text-ink">生成配图（文生图）</span>
+                <span className="block text-[13px] font-medium leading-5 text-ink">生成配图</span>
                 <span className="block text-xs leading-4 text-ink-3">
-                  {imggenConfigured ? (
-                    <>
-                      按模板风格派生配图（{MATERIAL_TEMPLATE_LABEL[template]} · 生成 ≤60s）；配图失败不影响文案，
-                      抽检通过后登记为独立图片资产。
-                    </>
-                  ) : imggenQ.state.phase === 'loading' ? (
-                    '正在检查文生图配置…'
-                  ) : (
-                    '未配置 IMGGEN_API_KEY：配图步会诚实跳过（纯文案套件照常可用）。'
-                  )}
+                  {template === 'xhs'
+                    ? '封面文字卡：按文案标题确定性排版渲染（色块+大字+高亮，无 AI、无需 key）。'
+                    : template === 'station'
+                      ? imggenConfigured
+                        ? '美化产品图：基于该商品的实拍图做 AI 场景化编辑（商品主体来自原图；商品没有实拍图会诚实跳过，可传图后补生成）。'
+                        : '未配置 IMGGEN_API_KEY：美化产品图不可用（小红书封面文字卡不受影响）。'
+                      : imggenConfigured
+                        ? '竖版背景图（文生图，不含商品主张）；生成 ≤60s。'
+                        : '未配置 IMGGEN_API_KEY：背景图跳过（纯文案照常）。'}
                 </span>
               </span>
             </label>
@@ -212,8 +214,18 @@ function CreateTaskDrawer({
 
 // ---------- 任务详情抽屉 ----------
 
-/** 配图行（第 98 刀）：按 image_status 如实呈现——预览/跳过/失败/登记回执。 */
-function TaskImageBlock({ task }: { task: MaterialTask }) {
+/** 配图行（第 98 刀；第 115 刀 W15 重构语义）：按 image_status 如实呈现——
+ * 文字卡/美化产品图预览、跳过原因（无 key / 无实拍图）、失败、登记回执。
+ * 补配图按钮只在「待抽检 + 配图没成/没出」时有意义（站内模板要先给商品传图）。 */
+function TaskImageBlock({
+  task,
+  onRetryImage,
+  retryingImage,
+}: {
+  task: MaterialTask
+  onRetryImage: (() => void) | null
+  retryingImage: boolean
+}) {
   let body: ReactNode
   if (task.image_status === 'pending') {
     body = (
@@ -225,13 +237,79 @@ function TaskImageBlock({ task }: { task: MaterialTask }) {
           alt={`${task.product_name} 配图预览`}
           className="max-h-64 w-auto rounded-[8px] border border-line-2 object-contain"
         />
-        <p className="text-xs leading-4 text-ink-3">配图已生成，抽检通过后与文案一起登记。</p>
+        <p className="text-xs leading-4 text-ink-3">
+          {task.template === 'xhs'
+            ? '封面文字卡（确定性排版渲染，非 AI 生成）；抽检通过后与文案一起登记。'
+            : task.image_reference_asset_id !== null
+              ? `基于实拍图美化生成（AI 场景化编辑，商品主体来自原图）；抽检通过后与文案一起登记。`
+              : '配图已生成，抽检通过后与文案一起登记。'}
+        </p>
+        {task.image_reference_asset_id !== null ? (
+          <Link
+            to={`/platform/assets/${task.image_reference_asset_id}`}
+            className="inline-flex items-center gap-1 font-mono text-xs text-accent-strong transition-colors duration-150 hover:underline"
+            title="查看配图所基于的真实商品图（治理台）"
+          >
+            参考实拍图 A-{String(task.image_reference_asset_id).padStart(4, '0')}
+          </Link>
+        ) : null}
       </div>
     )
   } else if (task.image_status === 'skipped_no_key') {
-    body = <p className="text-[13px] leading-5 text-ink-3">配图：未配置 IMGGEN_API_KEY，跳过（纯文案套件）。</p>
+    body = (
+      <div className="space-y-1.5">
+        <p className="text-[13px] leading-5 text-ink-3">
+          配图：未配置 IMGGEN_API_KEY，跳过（纯文案套件；小红书封面文字卡不受影响）。
+        </p>
+        {onRetryImage !== null ? (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={retryingImage}
+            onClick={onRetryImage}
+          >
+            {retryingImage ? '补生成中…' : '补生成配图'}
+          </button>
+        ) : null}
+      </div>
+    )
+  } else if (task.image_status === 'skipped_no_image') {
+    body = (
+      <div className="space-y-1.5">
+        <p className="text-[13px] leading-5 text-ink-3">
+          配图跳过：这个商品还没有实拍图。「美化产品图」基于真实商品图做场景化
+          编辑（不凭空生成商品）——先在治理台给商品登记一张图片资产，再回来补配图。
+        </p>
+        {onRetryImage !== null ? (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={retryingImage}
+            onClick={onRetryImage}
+          >
+            {retryingImage ? '补生成中…' : '传图后补生成配图'}
+          </button>
+        ) : null}
+      </div>
+    )
   } else if (task.image_status === 'failed') {
-    body = <p className="text-[13px] leading-5 text-warning">配图生成失败（不影响文案；重试生成会重新配图）。</p>
+    body = (
+      <div className="space-y-1.5">
+        <p className="text-[13px] leading-5 text-warning">
+          配图生成失败（不影响文案；重试生成会重新配图）。
+        </p>
+        {onRetryImage !== null ? (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={retryingImage}
+            onClick={onRetryImage}
+          >
+            {retryingImage ? '补生成中…' : '补生成配图'}
+          </button>
+        ) : null}
+      </div>
+    )
   } else if (task.image_status === 'registered' && task.image_asset_id !== null) {
     body = (
       <p className="text-[13px] leading-5">
@@ -267,7 +345,7 @@ function TaskDetailDrawer({
   onClose: () => void
   onActioned: () => void
 }) {
-  const [busy, setBusy] = useState<null | 'approve' | 'reject' | 'retry'>(null)
+  const [busy, setBusy] = useState<null | 'approve' | 'reject' | 'retry' | 'retry_image'>(null)
   const [error, setError] = useState<string | null>(null)
   // 第 48 刀：打回理由（可选，≤200 字）——写进任务 last_error 的详情段，运营
   // 与生成方都能看到「为什么被打回」；不填等价于旧口径「人工打回」。
@@ -294,6 +372,27 @@ function TaskDetailDrawer({
       setBusy(null)
     }
   }
+
+  // 补配图（第 115 刀）：只重跑配图步（不动已过闸文案）；仅待抽检 + 配图
+  // 没成/没出时有意义——后端同口径闸（409），这里只做按钮显隐。
+  const retryImage = async () => {
+    if (busy !== null) return
+    setBusy('retry_image')
+    setError(null)
+    try {
+      await api.retryMaterialImage(task.id)
+      onActioned()
+    } catch (err) {
+      setError(detailText(err))
+    } finally {
+      setBusy(null)
+    }
+  }
+  const canRetryImage =
+    task.status === 'pending_qc' &&
+    (task.image_status === 'skipped_no_key' ||
+      task.image_status === 'skipped_no_image' ||
+      task.image_status === 'failed')
 
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={`素材任务 ${formatTaskId(task.id)}`}>
@@ -344,7 +443,11 @@ function TaskDetailDrawer({
             )}
           </div>
 
-          <TaskImageBlock task={task} />
+          <TaskImageBlock
+            task={task}
+            onRetryImage={canRetryImage ? () => void retryImage() : null}
+            retryingImage={busy === 'retry_image'}
+          />
 
           {task.status === 'registered' && task.asset_id !== null ? (
             <div className="rounded-[6px] border border-[rgba(30,107,69,0.22)] bg-[rgba(30,107,69,0.05)] px-3 py-2 text-[13px] leading-5">

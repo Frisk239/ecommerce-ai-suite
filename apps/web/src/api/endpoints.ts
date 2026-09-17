@@ -157,7 +157,8 @@ export const api = {
   // 素材中心（第 17 刀/ADR 0038；第 98 刀内容套件/ADR 0055）：任务不是中台对象；
   // 建任务请求内同步执行 LLM 生成+双闸质检+配图，返回即稳定态。全部操作者鉴权。
   // 建任务/重试的等待面必须宽于默认 15s 超时：文案 ≤20s + LLM 质检 ≤20s +
-  // 配图 ≤60s，给 120s（要配图时才用满，纯文案远低于此）。
+  // 配图 ≤60s（口播文生图）或编辑 ≤180s（站内美化产品图，第 115 刀），给 220s
+  // （要配图时才用满，纯文案远低于此）。
   createMaterialTask: (productId: number, template: string = 'station', withImage: boolean = false) =>
     request<MaterialTask>(
       '/material/tasks',
@@ -165,7 +166,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ product_id: productId, template, with_image: withImage }),
       },
-      120_000,
+      220_000,
     ),
   listMaterialTasks: () => request<MaterialTask[]>('/material/tasks'),
   getMaterialTask: (taskId: number) => request<MaterialTask>(`/material/tasks/${taskId}`),
@@ -183,7 +184,11 @@ export const api = {
       body: JSON.stringify({ reason }),
     }),
   retryMaterialTask: (taskId: number) =>
-    request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 120_000),
+    request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 220_000),
+  // 补配图（第 115 刀 W15a）：只重跑配图步不动已过闸文案。等待面同建任务
+  // ——站内模板的「美化产品图」走图像编辑（edit 预算 180s），给 200s。
+  retryMaterialImage: (taskId: number) =>
+    request<MaterialTask>(`/material/tasks/${taskId}/retry-image`, { method: 'POST' }, 200_000),
 
   // 内容成片（第 98b 刀/ADR 0056）：AI 选材+排版出时间线候选+预览成片+剪映
   // 草稿，人审改后 publish 经双闸复用登记 material 资产。plan 是同步请求

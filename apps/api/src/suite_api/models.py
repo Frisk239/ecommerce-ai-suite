@@ -377,6 +377,10 @@ class MaterialTask(Base):
     image_object_key: Mapped[str | None] = mapped_column(String(500))
     # 抽检通过登记出的配图资产（kind=image, source_kind=material_generated）
     image_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    # 第 115 刀（W15a）：美化产品图所基于的真实图片资产（已发布优先解析）——
+    # 「配图是真实商品图的美化版」的血缘锚（UI 展示 + 治理可追溯）；文字卡/
+    # 文生图背景/跳过态为 NULL
+    image_reference_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

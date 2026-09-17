@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     imggen_api_key: str = ""
     imggen_base_url: str = "https://api.siliconflow.cn/v1"
     imggen_model: str = "black-forest-labs/FLUX.1-schnell"
+    # 指令式图像编辑模型（第 115 刀 W15a「美化产品图」）：同端点的 ``image``
+    # 参数形态（真实商品图 + 编辑指令，商品主体来自原图）。与文生图模型分开
+    # 配置——两者能力与用途不同（生成 vs 编辑），默认走硅基流动的 Qwen 编辑档。
+    imggen_edit_model: str = "Qwen/Qwen-Image-Edit-2509"
 
     # 连接层 Bearer（ADR 0032）。空则 MCP 全部 401；与操作者会话无关。
     mcp_bearer_token: str = ""
