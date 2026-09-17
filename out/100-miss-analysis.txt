@@ -1,0 +1,41 @@
+OK  pos-001 expect=245
+MISS pos-003 'Chocolate n3的销售国家是什么' expect=227(Jeff de Bruges 规格（OFF）)  got=[239, 239, 238] ['Coca-Cola 规格（OFF）', 'Coca-Cola 规格（OFF）']
+MISS pos-004 'Farandole de madeleine的净含量是多少' expect=239(Coca-Cola 规格（OFF）)  got=[235, 239, 238] ['Apple bandit 规格（OFF）', 'Coca-Cola 规格（OFF）']
+MISS pos-006 'Volle yoghurt 规格（OFF）怎么样' expect=241(Zuivelmeester 规格（OFF）)  got=[232, 239, 235] ['xxx 规格（OFF）', 'Coca-Cola 规格（OFF）']
+OK  pos-007 expect=244
+OK  pos-009 expect=226
+MISS pos-010 'Paleta gran reserva - Sierra nevada-的品牌是什么' expect=228(AdvoCare 规格（OFF）)  got=[235, 223, 223] ['Apple bandit 规格（OFF）', 'shipping_issue/missing · Hi, I never received my order.']
+OK  pos-011 expect=237
+MISS pos-012 'Besan chilla with stuffed chciken 规格（OFF）怎么样' expect=233(Toneop 规格（OFF）)  got=[239, 234, 226] ['Coca-Cola 规格（OFF）', 'Pbfit 规格（OFF）']
+OK  pos-015 expect=242
+OK  pos-019 expect=240
+OK  pos-022 expect=237
+OK  pos-023 expect=229
+OK  pos-027 expect=232
+MISS pos-028 'Chocolate n3 规格（OFF）怎么样' expect=227(Jeff de Bruges 规格（OFF）)  got=[239, 238, 239] ['Coca-Cola 规格（OFF）', 'Nestlé 规格（OFF）']
+MISS pos-030 'Nesquik moins de sucre的品牌是什么' expect=238(Nestlé 规格（OFF）)  got=[232, 235, 239] ['xxx 规格（OFF）', 'Apple bandit 规格（OFF）']
+MISS pos-034 'granola Bio le Chocolaté的品牌是什么' expect=230(Mg ricarica 规格（OFF）)  got=[239, 239, 239] ['Coca-Cola 规格（OFF）', 'Coca-Cola 规格（OFF）']
+MISS pos-036 'Cardiofitmd的销售国家是什么' expect=245(1MD Nutrition 规格（OFF）)  got=[234, 244, 235] ['Pbfit 规格（OFF）', 'Nestle Carnation 规格（OFF）']
+MISS syn-001 '请问Collagen For Her 参数（OFF）值得入手吗' expect=236(Bodylab 规格（OFF）)  got=[239, 239, 232] ['Coca-Cola 规格（OFF）', 'Coca-Cola 规格（OFF）']
+MISS syn-003 'granola Bio le Chocolaté的容量有多少' expect=230(Mg ricarica 规格（OFF）)  got=[239, 239, 9] ['Coca-Cola 规格（OFF）', 'Coca-Cola 规格（OFF）']
+MISS syn-004 'Madeleines ChocoLait的条码是00000015，对吧' expect=235(Apple bandit 规格（OFF）)  got=[239, 235, 238] ['Coca-Cola 规格（OFF）', 'Apple bandit 规格（OFF）']
+MISS syn-006 'xytitol pastilles的容量有多少' expect=231(xylimgxyling 规格（OFF）)  got=[9, 9, 244] ['保温杯的净含量是多少？', '保温杯的净含量是多少？']
+MISS syn-007 'xxx的容量有多少' expect=232(xxx 规格（OFF）)  got=[9, 9, 9] ['保温杯的净含量是多少？', '保温杯的净含量是多少？']
+MISS syn-009 'M&M white的配料是多少' expect=226(Fitpiggy 规格（OFF）)  got=[234, 228, 235] ['Pbfit 规格（OFF）', 'AdvoCare 规格（OFF）']
+MISS syn-010 'Paleta gran reserva - Sierra nevada-的销售国家是多少' expect=228(AdvoCare 规格（OFF）)  got=[235, 244, 237] ['Apple bandit 规格（OFF）', 'Nestle Carnation 规格（OFF）']
+OK  syn-011 expect=235
+OK  syn-013 expect=243
+OK  syn-014 expect=238
+OK  syn-015 expect=243
+OK  syn-019 expect=242
+MISS syn-024 'Powdered peanut butter的容量是300g，对吧' expect=234(Pbfit 规格（OFF）)  got=[9, 9, 9] ['保温杯的净含量是多少？', '保温杯的净含量是多少？']
+MISS syn-025 'Powdered peanut butter的销售国家是多少' expect=234(Pbfit 规格（OFF）)  got=[237, 240, 245] ['Erdbeeren 规格（OFF）', 'Frog Fuel Power Protein 规格（OFF）']
+OK  conf-003 expect=226
+OK  conf-004 expect=226
+OK  conf-005 expect=226
+OK  conf-006 expect=226
+MISS conf-007 '条码怎么样' expect=226(Fitpiggy 规格（OFF）)  got=[230, 231, 226] ['Mg ricarica 规格（OFF）', 'xylimgxyling 规格（OFF）']
+MISS conf-008 '来源怎么样' expect=226(Fitpiggy 规格（OFF）)  got=[230, 231, 226] ['Mg ricarica 规格（OFF）', 'xylimgxyling 规格（OFF）']
+OK  conf-009 expect=226
+MISS conf-010 '品牌怎么样' expect=226(Fitpiggy 规格（OFF）)  got=[232, 497, 268] ['xxx 规格（OFF）', 'LK201 规格（Wikidata）']
+MISS conf-011 '配料怎么样' expect=228(AdvoCare 规格（OFF）)  got=[234, 228, 245] ['Pbfit 规格（OFF）', 'AdvoCare 规格（OFF）']

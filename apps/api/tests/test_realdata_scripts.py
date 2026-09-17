@@ -747,3 +747,87 @@ def test_digital_only_default_limit_constant_is_200() -> None:
     assert fwp.DEFAULT_DIGITAL_LIMIT == 200
     args = fwp.parse_args(["--digital-only"])
     assert args.digital_limit == 200 and args.limit == fwp.DEFAULT_LIMIT == 200
+
+
+# ------------------------------------- OFF 错配订正（第 100 刀）：判据纯函数与表形状
+
+import correct_off_mismatch as com  # noqa: E402
+
+
+def test_off_mismatch_verdicts_on_demo_db_pairs() -> None:
+    """判据对演示库实测形态的判定（阈值 4 的定标锚全部钉死）。
+
+    - 真错配（token 交集空）：M&M white/Fitpiggy；
+    - 相等词互证：xxx、Frog Fuel Power Protein/Frog Fuel；
+    - 词干互证（≥4 公共子串）：Erdbeeren/BeerenBrüder 共享 beeren——README 主推
+      演示问句，订正面不得波及；
+    - 3 字符碰撞**不**互证：Graines de Chia/Nestle Carnation 共享 nes（把阈值
+      立在 4 而非 3 的实证——3 会让这件完全无关的错配漏判）。
+    """
+    assert com.judge_mismatch("M&M white 规格（OFF）", "Fitpiggy") == com.VERDICT_MISMATCH
+    assert com.judge_mismatch("xxx 规格（OFF）", "xxx") == com.VERDICT_MATCH
+    assert com.judge_mismatch("Frog Fuel Power Protein 规格（OFF）", "Frog Fuel") == com.VERDICT_MATCH
+    assert com.judge_mismatch("Erdbeeren 规格（OFF）", "BeerenBrüder") == com.VERDICT_MATCH
+    assert com.judge_mismatch("Graines de Chia 规格（OFF）", "Nestle Carnation") == com.VERDICT_MISMATCH
+
+
+def test_off_mismatch_empty_title_or_brand_is_unjudgeable() -> None:
+    """边界：空标题（None/空串/纯后缀）与空品牌（None/空白）都不可判——不订正不猜。"""
+    for title in (None, "", "   ", " 规格（OFF）"):
+        assert com.judge_mismatch(title, "Fitpiggy") == com.VERDICT_NO_BRAND
+    for brand in (None, "", "  "):
+        assert com.judge_mismatch("M&M white 规格（OFF）", brand) == com.VERDICT_NO_BRAND
+
+
+def test_off_subject_from_title_suffix_forms() -> None:
+    assert com.subject_from_title("M&M white 规格（OFF）") == "M&M white"
+    assert com.subject_from_title("X 规格(OFF)") == "X"  # 半角括号历史形态
+    assert com.subject_from_title("钛钢保温杯 · 规格") == "钛钢保温杯 · 规格"  # 非 OFF 不剥
+    assert com.subject_from_title(None) == ""
+    assert com.subject_from_title("规格（OFF）") == ""  # 纯后缀=无商品名
+
+
+def test_off_longest_common_substring() -> None:
+    assert com.longest_common_substring("erdbeeren", "beerenbr") == len("beeren")
+    assert com.longest_common_substring("nesquik", "nestl") == 3  # nes
+    assert com.longest_common_substring("m", "fitpiggy") == 0
+    assert com.longest_common_substring("", "abc") == 0
+    assert com.longest_common_substring("abc", "abc") == 3
+
+
+def test_off_corrected_title_keeps_suffix_shape() -> None:
+    """订正标题恒带全角「 规格（OFF）」后缀（来源补写与标题锚依赖它），截到列宽。"""
+    assert com.corrected_title("Fitpiggy") == "Fitpiggy 规格（OFF）"
+    long = "b" * 300
+    assert com.corrected_title(long) == (long + com.FULL_SUFFIX)[: com.TITLE_MAX]
+    assert len(com.corrected_title(long)) == com.TITLE_MAX  # assets.title String(200)
+
+
+def test_off_diagnose_row_and_table_shape() -> None:
+    """诊断表契约：行六键（new_title 只在 mismatch），表含表头/汇总/mismatch 行的新标题。
+
+    diagnose 吃 load_off_assets 产出的**品牌值**（「品牌：」块前缀已在读取层剥掉）。"""
+    rows = com.diagnose(
+        [
+            {"id": 1, "title": "M&M white 规格（OFF）", "brand": "Fitpiggy"},
+            {"id": 2, "title": "xxx 规格（OFF）", "brand": "xxx"},
+            {"id": 3, "title": "Confiture 规格（OFF）", "brand": ""},
+        ]
+    )
+    by_id = {row["asset_id"]: row for row in rows}
+    assert set(by_id[1]) == {"asset_id", "title", "subject", "brand", "verdict", "new_title"}
+    assert by_id[1]["verdict"] == com.VERDICT_MISMATCH
+    assert by_id[1]["new_title"] == "Fitpiggy 规格（OFF）"
+    assert by_id[2]["verdict"] == com.VERDICT_MATCH and by_id[2]["new_title"] is None
+    assert by_id[3]["verdict"] == com.VERDICT_NO_BRAND and by_id[3]["new_title"] is None
+    table = com.format_diagnosis_table(rows)
+    assert "资产" in table.splitlines()[0] and "判定" in table.splitlines()[0]
+    assert "共 3 份：mismatch=1, no_brand=1, match=1" in table
+    assert "Fitpiggy 规格（OFF）" in table
+
+
+def test_off_brand_from_chunk_field_line_only() -> None:
+    assert com.brand_from_chunk("品牌：Fitpiggy") == "Fitpiggy"
+    assert com.brand_from_chunk("品牌: 半角冒号") == "半角冒号"
+    assert com.brand_from_chunk("净含量：250g") == ""
+    assert com.brand_from_chunk("品牌：") == ""

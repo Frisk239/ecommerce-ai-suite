@@ -1,0 +1,23 @@
+   资产  标题商品名                                     正文品牌                  判定          订正标题
+  226  M&M white                                 Fitpiggy              mismatch    Fitpiggy 规格（OFF）
+  227  Chocolate n3                              Jeff de Bruges        mismatch    Jeff de Bruges 规格（OFF）
+  228  Paleta gran reserva - Sierra nevada-      AdvoCare              mismatch    AdvoCare 规格（OFF）
+  229  Confiture extra citron de Menton                                no_brand    -
+  230  granola Bio le Chocolaté                  Mg ricarica           mismatch    Mg ricarica 规格（OFF）
+  231  xytitol pastilles                         xylimgxyling          mismatch    xylimgxyling 规格（OFF）
+  232  xxx                                       xxx                   match       -
+  233  Besan chilla with stuffed chciken         Toneop                mismatch    Toneop 规格（OFF）
+  234  Powdered peanut butter                    Pbfit                 mismatch    Pbfit 规格（OFF）
+  235  Madeleines ChocoLait                      Apple bandit          mismatch    Apple bandit 规格（OFF）
+  236  Collagen For Her                          Bodylab               mismatch    Bodylab 规格（OFF）
+  237  Erdbeeren                                 BeerenBrüder          match       -
+  238  Nesquik moins de sucre                    Nestlé                mismatch    Nestlé 规格（OFF）
+  239  Farandole de madeleine                    Coca-Cola             mismatch    Coca-Cola 规格（OFF）
+  240  Frog Fuel Power Protein                   Frog Fuel             match       -
+  241  Volle yoghurt                             Zuivelmeester         mismatch    Zuivelmeester 规格（OFF）
+  242  Hershey’s Syrup                           Hershey’s             match       -
+  243  Lindt Vollmilch Schokolade                Lindt                 match       -
+  244  Graines de Chia                           Nestle Carnation      mismatch    Nestle Carnation 规格（OFF）
+  245  Cardiofitmd                               1MD Nutrition         mismatch    1MD Nutrition 规格（OFF）
+共 20 份：mismatch=14, no_brand=1, match=5
+已订正 14 份标题（audit 手动备注 action=title_correct 同事务落账）
