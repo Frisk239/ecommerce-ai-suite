@@ -1,0 +1,17 @@
+目标库：postgresql://suite:***@localhost:5433/suite（dry-run，只读）
+探针盘点（dry-run）：
+  empty_sessions: 0
+  probe_assets: 0
+  failed_material_tasks: 2
+  stale_compose_tasks: 0
+  probe_recordings: 0
+  probe_recording_candidates: 0
+  probe_recordings_retained: 3
+  open_gaps: 22
+  pending_tickets: 39
+  sessions_total: 367
+  audit_rows: 1377
+  published_without_title: 0
+  注：3 条探针/测试录像有已登记资产依赖（血缘证据链）——留存不动。
+
+只报告（未写库）。要清跑：--apply

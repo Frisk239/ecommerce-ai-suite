@@ -1,0 +1,28 @@
+目标库：postgresql://suite:***@localhost:5433/suite（就绪检查，只读不写）
+  [PASS] 数码店商品: 179（口径 ≥179，第 90 刀灌入）
+  [PASS] 已发布 Wikidata 规格: 10（口径 ≥10）
+  [PASS] 政策文档: 3/3（数码外设保修政策、退换货政策、发票与配送口径）
+  [PASS] 缺口 G-80（白色款·幕 11 素材）: G-80 open（期望 open）
+  [PASS] 刻字口径资产 A-492: A-492 published/document（期望 published/document）
+  [PASS] 缺口 G-78 已随发布解决: G-78 ('resolved', 492)（期望 resolved → A-492）
+  [PASS] 回流对话资产 A-493: A-493 pending_review/dialogue（期望 pending_review/dialogue）
+  [PASS] LK201 全链资产 A-497: A-497 published/document（期望 published/document）
+  [PASS] A-497 confirm+publish 双审计行: audit 行 2（期望 ≥2）
+  [PASS] 显示器商品图 A-501: A-501 published/image（期望 published/image）
+  [PASS] 版本指针资产 A-501: A-501 published/线上 v3，已发布版 3（期望 published/线上 ≥v2/≥2 版）
+  [PASS] 洗帧资产 A-505: A-505 ('published', 'image', 'clip_frame', 2)（期望 published/image/clip_frame）
+  [PASS] 耳机商品图 A-516: A-516 published/image（期望 published/image）
+  [PASS] 键盘商品图 A-517: A-517 published/image（期望 published/image）
+  [PASS] 已发布图片描述（VLM 复核后确认）: 4/4 在位
+  [PASS] 缺口池 13 保留项: 13/13 open；全池 open 22（期望 22：13 keep + G-80 + 8 弱命中）
+  [PASS] 演示会话 #199: 主线会话（上班口径已答）：在库（active）
+  [PASS] 演示会话 #331: 92 刀缺口实录（能刻字吗→G-78）：在库（active）
+  [PASS] 演示会话 #332: 92 刀 OOV 实录（白色款/分期）：在库（active）
+  [PASS] 演示会话 #344: 再问命中实录（引 A-492）：在库（active）
+  [PASS] 演示会话 #350: 94b 双图直出实录：在库（ended）
+  [PASS] 演示会话 #353: 94c 真帧实录（引 A-505）：在库（active）
+  [PASS] 回流会话 #345: ('registered', 493)（期望 registered → A-493）
+  [PASS] 直播切片源 A-264: A-264 published/video（期望 published/video）
+  [PASS] ASR 转写候选（cloud）: 6 条（期望 ≥3，93 刀实录三句）
+
+演示库就绪：十五幕素材全部在位。下一步可跑 demo_reset 清探针噪音（默认 dry-run）。

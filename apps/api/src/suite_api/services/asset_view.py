@@ -101,12 +101,30 @@ class AssetOut(BaseModel):
     revising: bool  # 指针已设且存在未发布版本（修订中；线上仍服务指针版）
 
 
+class WashVerifyOut(BaseModel):
+    """第 111 刀护栏：图片描述人洗时的 VLM 一致性复核附注（版本读视图）。
+
+    ``skipped`` 非空=未复核（disabled/no_key/vlm_failed/object_missing），
+    此时 passed/overlap/vlm_summary 恒 null——前端据 skipped 决定不亮徽章
+    （fail-open：没复核不等于没通过，不写假结论）。复核完成时 skipped=null，
+    passed=关键词交集是否 ≥2 词。**只是附注**：不参与 PATCH 的成败判定。
+    """
+
+    passed: bool | None = None
+    overlap: int | None = None
+    vlm_summary: str | None = None
+    skipped: str | None = None
+
+
 class VersionOut(BaseModel):
     version_no: int
     object_key: str
     extracted_fields: dict[str, Any]
     confirmed_fields: dict[str, Any]
     published_at: datetime | None
+    # 人洗 PATCH 的响应附注（图片描述且复核跑过时非空）；读视图（AssetDetail）
+    # 不带——复核是对「这次确认」的第二眼，不是版本的常驻属性。
+    verify: WashVerifyOut | None = None
 
 
 class Publishability(BaseModel):

@@ -2,8 +2,8 @@
 
 ## 为什么
 
-《体系闭环演示手册》（docs/demo-system-loop.md）的 12 幕全部依赖演示库里的
-**既有素材**（数码店数据、演示资产 A-492/493/497/501/502/505、演示会话
+《体系闭环演示手册》（docs/demo-system-loop.md）的十五幕依赖演示库里的
+**既有素材**（数码店数据、演示资产 A-492/493/497/501/502/505/516/517、演示会话
 #199/#331/#344/#345/#350/#353）。演示前若素材被误清/漂移，现场才发现就晚了——
 本脚本在 demo_reset 之上做「演示就绪」盘点：**只核验、只报告缺失，不自动重建**。
 
@@ -17,10 +17,13 @@
 
 1. **数码店数据**（第 90 刀灌入）：商品 179 / 已发布 Wikidata 规格 10（109 刀退役冗余份 A-484 后）/
    政策文档 3（数码外设保修/退换货/发票与配送）。
-2. **演示资产**：A-492（刻字口径，G-78 已随发布解决）、A-493（回流对话，
-   待人洗）、A-497（LK201 必填闸全链，confirm+publish 双审计行）、A-501
-   （图片治理 + **版本指针 v1→v3**——第 110 刀重灌真图后接幕 2）、A-505
-   （洗帧，clip_frame；110 换真画面）。
+2. **演示资产**（第 111 刀适配治理终态）：A-492（刻字口径，G-78 已随发布解决）、
+   A-493（回流对话，待人洗）、A-497（LK201 必填闸全链，confirm+publish 双审计行）、
+   A-501（图片治理 + **版本指针 v1→v3**——第 110 刀重灌真图后接幕 2）、
+   A-505（洗帧，clip_frame；110 换真画面）、**A-516/A-517**（110 刀补充的耳机/键盘
+   商品图，线上 v2）、**已发布图片描述在位**（VLM 复核后人确认的检索面；
+   A-502 按 110 口径无描述=不增块）、**缺口池终态**（open 22：13 keep + G-80 +
+   8 条弱命中——本检查只核 13 keep 在位与 G-80 保留，不查弱命中）。
 3. **演示会话与直播线**：#199 主线（上班口径）、#331/#332（92 刀缺口与 OOV
    实录）、#344（再问命中）、#345（已回流→A-493）、#350（94b 双图直出）、
    #353（94c 真帧）、A-264（直播切片源）与转写候选（cloud 来源）。
@@ -53,6 +56,16 @@ from typing import Any
 EXPECTED_PRODUCTS = 179
 EXPECTED_WIKIDATA_SPECS = 10
 POLICY_TITLES = ("数码外设保修政策", "退换货政策", "发票与配送口径")
+
+# 缺口池终态（第 109 刀清理后、第 111 刀核对）：open 22 = 13 正常待补（keep）
+# + G-80（OOV 误落但 96 刀明示保留、幕 11 素材）+ 8 条重问后仍被引擎层拒答的
+# 弱命中（G-16/23/33/62/64/74/77/92，如实保留）。本检查**只核 13 keep 在位**，
+# 不把弱命中当缺失（它们是引擎层拒答的实证，不是待修项）。
+GAP_KEEP_IDS = (7, 10, 11, 13, 14, 15, 17, 21, 28, 52, 79, 82, 88)
+EXPECTED_OPEN_GAPS = 22
+# 有确认「图片描述」的已发布图片资产（第 110 刀重灌后）：A-501/505/516/517 各 1；
+# A-502 按 110 刀口径维持「无描述=不增块」，不计入。
+DESCRIBED_IMAGE_IDS = (501, 505, 516, 517)
 
 
 @dataclass
@@ -235,6 +248,57 @@ def _check_demo_assets(session: Any) -> list[Check]:
             "A-264 详情「洗帧到素材库」→ 勾选候选确认登记 → 人洗描述 → 发布（94c）",
         )
     )
+
+    # 第 110 刀补充的数码店商品图（第 111 刀纳入检查）：耳机 A-516（挂商品 166）、
+    # 键盘 A-517（挂商品 118）——线上 v2（真 IMGGEN 图 + 人洗描述二洗后发布）。
+    expect_asset("耳机商品图 A-516", 516, "published", "image", "IMGGEN 生成 → 登记挂 Xperia Ear → 人洗描述 → 发布（110 刀）")
+    expect_asset("键盘商品图 A-517", 517, "published", "image", "IMGGEN 生成 → 登记挂 LK201 → 人洗描述 → 发布（110 刀）")
+
+    # 已发布图片描述在位（VLM 复核后的检索面）：线上版 confirmed「图片描述」非空。
+    # A-502 无描述是 110 刀定下的「不增块」口径，不在本检查里（expected 只 4 份）。
+    described_rows = session.execute(
+        _text(
+            """
+            SELECT a.id FROM assets a JOIN asset_versions v ON v.id = a.current_published_version_id
+            WHERE a.status = 'published' AND a.kind = 'image' AND a.discarded_at IS NULL
+              AND btrim(coalesce(v.confirmed_fields -> '图片描述' ->> 'value', '')) <> ''
+            """
+        )
+    )
+    described = {int(r[0]) for r in described_rows}
+    missing_described = sorted(set(DESCRIBED_IMAGE_IDS) - described)
+    checks.append(
+        Check(
+            "已发布图片描述（VLM 复核后确认）",
+            not missing_described,
+            f"{len(described & set(DESCRIBED_IMAGE_IDS))}/{len(DESCRIBED_IMAGE_IDS)} 在位"
+            + (f"，缺 {missing_described}" if missing_described else ""),
+            "对缺失的图片资产：开修订→人洗 PATCH「图片描述」→发布（111 刀起 PATCH 会回 VLM 复核附注徽章）",
+        )
+    )
+
+    # 缺口池终态（第 111 刀）：只核 13 keep 在位（弱命中 8 条/ G-80 均如实保留，不查）
+    gap_rows = session.execute(
+        _text(
+            "SELECT id, status FROM knowledge_gaps WHERE id = ANY(:ids)"
+        ),
+        {"ids": list(GAP_KEEP_IDS)},
+    )
+    gap_status = {int(r[0]): r[1] for r in gap_rows}
+    missing_keep = [gid for gid in GAP_KEEP_IDS if gap_status.get(gid) != "open"]
+    open_total = int(
+        _one(session, "SELECT count(*) FROM knowledge_gaps WHERE status = 'open'") or 0
+    )
+    checks.append(
+        Check(
+            "缺口池 13 保留项",
+            not missing_keep,
+            f"{len(GAP_KEEP_IDS) - len(missing_keep)}/{len(GAP_KEEP_IDS)} open"
+            + (f"，缺 {missing_keep}" if missing_keep else "")
+            + f"；全池 open {open_total}（期望 {EXPECTED_OPEN_GAPS}：13 keep + G-80 + 8 弱命中）",
+            "13 keep 是「正常待补」演示素材（补文档后发布即收口）；缺的按缺口 tab 逐条恢复",
+        )
+    )
     return checks
 
 
@@ -351,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
     if failed:
         print(f"\n演示库未就绪：{failed} 项缺失（{'加 --fix-hint 看补救命令' if not args.fix_hint else '见上'}；不自动重建——治理动作不自动）")
         return 1
-    print("\n演示库就绪：12 幕素材全部在位。下一步可跑 demo_reset 清探针噪音（默认 dry-run）。")
+    print("\n演示库就绪：十五幕素材全部在位。下一步可跑 demo_reset 清探针噪音（默认 dry-run）。")
     return 0
 
 

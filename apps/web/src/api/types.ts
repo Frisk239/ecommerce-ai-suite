@@ -83,12 +83,24 @@ export type FieldEntry =
   | { value: string | QaPair[]; source: 'machine' | 'human'; inherited?: boolean }
   | { abstained: true }
 
+/** 第 111 刀护栏：图片「图片描述」人洗 PATCH 的 VLM 一致性复核附注。
+ * skipped 非空=未复核（disabled/no_key/vlm_failed/object_missing/error），
+ * 此时其余字段恒 null——前端只对复核跑过的结果亮徽章（不写假结论）。 */
+export interface WashVerify {
+  passed: boolean | null
+  overlap: number | null
+  vlm_summary: string | null
+  skipped: string | null
+}
+
 export interface AssetVersion {
   version_no: number
   object_key: string
   extracted_fields: Record<string, FieldEntry>
   confirmed_fields: Record<string, FieldEntry>
   published_at: string | null
+  /** 人洗 PATCH 响应附注（图片描述且复核跑过时非空）；读视图不带。 */
+  verify?: WashVerify | null
 }
 
 export interface Publishability {

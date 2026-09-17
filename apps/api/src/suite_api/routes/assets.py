@@ -18,6 +18,7 @@ source_kind（0025）与补文档/修订缺口关联（0024/0031）都在本路�
 
 import base64
 import copy
+import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -39,12 +40,14 @@ from suite_api.models import (
     RetrievalChunk,
 )
 from suite_api.services import frames as frames_service
+from suite_api.services import image_verify as image_verify_service
 from suite_api.services import vlm as vlm_service
 from suite_api.services.asset_view import (
     AssetDetail,
     AssetOut,
     VersionOut,
     VersionTextError,
+    WashVerifyOut,
     load_products,
     published_version_nos,
     read_version_text,
@@ -56,6 +59,7 @@ from suite_api.services.csv_import import CsvImportFormatError, parse_import_csv
 from suite_api.services.knowledge_gaps import load_attachable_gap, resolve_gaps_for_asset
 from suite_api.services.lineage import AssetLineageOut, fetch_asset_lineage
 from suite_api.services.machine_wash import (
+    IMAGE_DESCRIPTION_FIELD,
     QA_FIELD,
     MachineWashError,
     redact,
@@ -85,6 +89,8 @@ from suite_api.services.retrieval import (
 from suite_platform.storage import ObjectStorage
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
+
+logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 # 图片上限（第 94a 刀）：文本 2MB 的尺子量不了真实商品图（手机拍一张常 3–5MB），
@@ -737,6 +743,37 @@ def _mask_confirmed_value(field: str, value: Any) -> Any:
     return redact(value)
 
 
+def _verify_image_patch(
+    asset: Asset,
+    version: AssetVersion,
+    patched_keys: Sequence[str],
+    merged: dict[str, Any],
+    storage: ObjectStorage,
+) -> WashVerifyOut | None:
+    """第 111 刀护栏：图片描述人洗 PATCH 的 VLM 一致性复核附注。
+
+    只在「资产是图片 + 本次 PATCH 的键含「图片描述」」时触发（其余字段/种类
+    不花 VLM 调用）。**永不抛**：拿不到字节/服务异常都收敛成 skipped 附注——
+    复核是第二眼不是闸门，绝不能把一次合法人洗变 500（治理权在人）。
+    """
+    if asset.kind != "image" or IMAGE_DESCRIPTION_FIELD not in patched_keys:
+        return None
+    entry = merged.get(IMAGE_DESCRIPTION_FIELD)
+    description = entry.get("value") if isinstance(entry, dict) else None
+    if not isinstance(description, str) or not description.strip():
+        return None
+    reason = image_verify_service.SKIP_OBJECT_MISSING
+    try:
+        image_bytes = storage.get_bytes(version.object_key)
+        outcome = image_verify_service.verify_description(image_bytes, description)
+    except FileNotFoundError:
+        outcome = image_verify_service.skipped(reason)
+    except Exception:  # noqa: BLE001 - 附注 fail-open：任何异常都只落 skipped
+        logger.warning("图片描述复核异常（按未复核返回，不拦人洗）", exc_info=True)
+        outcome = image_verify_service.skipped("error")
+    return WashVerifyOut(**outcome.as_payload())
+
+
 @router.patch("/{asset_id}/versions/{version_no}/fields", response_model=VersionOut)
 def confirm_fields(
     asset_id: int,
@@ -744,12 +781,17 @@ def confirm_fields(
     body: dict[str, Any],
     operator: Annotated[Operator, Depends(get_current_operator)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
 ) -> VersionOut:
     """人洗：确认机洗值/补填弃权字段。闸门看版本未发布；已接入仍拒绝。
 
     合法字段集按种类分派（ADR 0035）：dialogue -> qa_pairs（数组值，逐项
     q/a 禁空串，空数组=确认没有 QA）；文档 -> 所挂商品 spec_schema keys
     （字符串值，禁空串仍沿用）。确认值一律 source=human。
+
+    图片描述的 VLM 一致性复核（第 111 刀护栏）在**落库之后**跑：人洗先成事实
+    （复核是附注不参与成败），复核结果只进响应（``verify``）。次序也避免 VLM
+    的 20s 等待占着写事务（与机洗「先 commit 再调模型」同纪律）。
     """
     asset = _get_asset_or_404(db, asset_id)
     version = db.scalar(
@@ -814,12 +856,15 @@ def confirm_fields(
     )
     db.commit()
     db.refresh(version)
+    # 护栏复核放在写事务之后（见 docstring）：人洗已落库，复核只影响本次响应。
+    verify = _verify_image_patch(asset, version, sorted(body), merged, storage)
     return VersionOut(
         version_no=version.version_no,
         object_key=version.object_key,
         extracted_fields=dict(version.extracted_fields),
         confirmed_fields=dict(version.confirmed_fields),
         published_at=version.published_at,
+        verify=verify,
     )
 
 

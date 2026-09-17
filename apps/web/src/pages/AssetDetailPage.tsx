@@ -28,7 +28,7 @@ import {
 import { ApiError, detailText, parsePublishGate, type PublishGateDetail } from '../api/client'
 import { api } from '../api/endpoints'
 import { resolveFieldValue, toFieldView, type FieldView } from '../api/fields'
-import type { AssetVersion, Product, QaPair } from '../api/types'
+import type { AssetVersion, Product, QaPair, WashVerify } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { formatDateTime, formatAssetId, isStale, sourceKindLabel } from '../labels'
 import { ErrorBanner, InfoBanner, SuccessBanner } from '../components/Banner'
@@ -44,6 +44,7 @@ function FieldRow({
   view,
   editable,
   onSaved,
+  onResponse,
   abstainedLabel = '弃权 · 原文未找到',
 }: {
   assetId: number
@@ -51,6 +52,8 @@ function FieldRow({
   view: FieldView
   editable: boolean
   onSaved: () => void
+  /** PATCH 成功后的完整响应（第 111 刀：图片描述带 VLM 复核附注，供徽章）。 */
+  onResponse?: (updated: AssetVersion) => void
   /** 弃权态的说明文案：文档/素材是「原文未找到」；图片是 VLM 未出草稿。 */
   abstainedLabel?: string
 }) {
@@ -63,9 +66,10 @@ function FieldRow({
     setSaving(true)
     setError(null)
     try {
-      await api.confirmFields(assetId, versionNo, { [view.field]: value })
+      const updated = await api.confirmFields(assetId, versionNo, { [view.field]: value })
       setEditing(false)
       onSaved()
+      onResponse?.(updated)
     } catch (err) {
       setError(detailText(err))
     } finally {
@@ -583,6 +587,44 @@ function validateUploadFile(file: File, kind: string): string | null {
   return null
 }
 
+/** 第 111 刀护栏徽章：图片描述人洗后的 VLM 一致性复核结果。
+ *
+ * 只有复核真跑过（skipped 为 null）才亮——跳过（未配置 key/看图失败/开关关）
+ * 不亮徽章，也不暗示「没通过」（fail-open：人洗兜底照旧）。疑似不符只警示
+ * 不阻止：人仍是最终裁决者，重洗或确认改写后再存一次即可刷新徽章。 */
+function ImageVerifyBadge({ verify }: { verify: WashVerify }) {
+  if (verify.skipped !== null || verify.passed === null) return null
+  const ok = verify.passed
+  return (
+    <div
+      role="status"
+      className={
+        ok
+          ? 'mx-4 mt-3 flex items-start gap-2 rounded-[6px] border border-[rgba(30,107,69,0.22)] bg-[rgba(30,107,69,0.05)] px-3 py-2 text-xs leading-5 text-ok'
+          : 'mx-4 mt-3 flex items-start gap-2 rounded-[6px] border border-[rgba(146,88,10,0.28)] bg-[rgba(217,119,6,0.08)] px-3 py-2 text-xs leading-5 text-warn'
+      }
+    >
+      {ok ? (
+        <CheckCircle aria-hidden size={14} weight="fill" className="mt-0.5 shrink-0" />
+      ) : (
+        <Warning aria-hidden size={14} weight="bold" className="mt-0.5 shrink-0" />
+      )}
+      <div className="min-w-0 flex-1">
+        <span className="font-medium">
+          {ok ? '✓ VLM 复核一致' : '⚠ VLM 复核疑似不符，请对照画面再核一遍'}
+        </span>
+        <span className="ml-1.5 text-ink-3">关键词交集 {verify.overlap} 词</span>
+        {verify.passed === false ? (
+          <span className="ml-1.5">（只是提醒，不阻止确认——你仍是最终裁决者）</span>
+        ) : null}
+        {verify.vlm_summary !== null ? (
+          <div className="mt-0.5 text-ink-3">VLM 独立描述：{verify.vlm_summary}</div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export default function AssetDetailPage() {
   const { id } = useParams()
   const assetId = Number(id)
@@ -679,6 +721,12 @@ export default function AssetDetailPage() {
   // 无 key 时后端候选端点也 409（fail-closed，后端是唯一闸）。
   const [frameWashOpen, setFrameWashOpen] = useState(false)
   const [frameWashConfigured, setFrameWashConfigured] = useState<boolean | null>(null)
+  // 第 111 刀护栏：图片描述上一次 PATCH 的 VLM 复核附注（只对本次确认亮徽章）。
+  // 记版本号做归属：换工作版本/换资产后旧附注自然失配（渲染侧判 version_no），
+  // 不做 effect 清态——它在语义上是「这次确认的第二眼」，不是版本常驻属性。
+  const [imageVerify, setImageVerify] = useState<{ versionNo: number; verify: WashVerify } | null>(
+    null,
+  )
 
   const reloadDetail = useCallback(() => {
     reloadDetailData()
@@ -1177,12 +1225,23 @@ export default function AssetDetailPage() {
                 图片字节是原图（本身不可检索）——顾客问图片内容词（如「有没有带支架的显示器」）
                 命中的是这里的描述。请对照图上内容核过或改写后再确认。
               </p>
+              {/* 第 111 刀护栏：确认/改写的响应带回 VLM 复核附注即亮徽章
+                  （仅归属当前工作版本的附注才显示；换版本/刷新自然失配）。 */}
+              {imageVerify !== null && imageVerify.versionNo === activeVersion.version_no ? (
+                <ImageVerifyBadge verify={imageVerify.verify} />
+              ) : null}
               <FieldRow
                 assetId={detail.id}
                 versionNo={activeVersion.version_no}
                 view={imageView}
                 editable={editable}
                 onSaved={reloadDetail}
+                onResponse={(updated) =>
+                  setImageVerify({
+                    versionNo: updated.version_no,
+                    verify: updated.verify ?? { passed: null, overlap: null, vlm_summary: null, skipped: 'error' },
+                  })
+                }
                 abstainedLabel="未出草稿 · VLM 未配置或调用失败，请人工补写"
               />
             </div>
