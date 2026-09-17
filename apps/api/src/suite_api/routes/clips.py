@@ -25,11 +25,13 @@ GET /asr/status 给前端「无 key 时禁用按钮并提示」的判据。
 
 import logging
 import time
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -37,6 +39,7 @@ from sqlalchemy.orm import Session
 from suite_api.deps import get_current_operator, get_db, get_storage
 from suite_api.models import ClipCandidate, ClipRecording, Operator, Product
 from suite_api.services import asr as asr_service
+from suite_api.services import frames as frames_service
 from suite_api.services import vlm as vlm_service
 from suite_api.services.asset_view import (
     AssetOut,
@@ -47,7 +50,9 @@ from suite_api.services.asset_view import (
     to_asset_out,
 )
 from suite_api.services.clips import (
+    ClipCutError,
     bind_candidates,
+    parse_timecode_seconds,
     pick_candidates,
     register_recording,
     split_pending_ids,
@@ -444,3 +449,86 @@ def pick(
     version_nos = published_version_nos(db, assets)
     revising_ids = revising_asset_ids(db, assets)
     return [to_asset_out(a, products, version_nos, revising_ids) for a in assets]
+
+
+# ---------- 候选帧缩略（第 114 刀 C，W11）：绑了源录像的候选出真画面 ----------
+
+# 进程内缩略缓存：(recording_id, timecode_start) -> jpeg。两要素都不可变（候选
+# 时间码不编辑、录像字节不覆写；改绑换 recording_id 自然换键），键含两要素则
+# 永不陈旧。条数收口：每张 ≤480px jpeg 几十 KB，52 卡全量也就几 MB。
+_FRAME_CACHE_LIMIT = 128
+_FRAME_CACHE: OrderedDict[tuple[int, str], bytes] = OrderedDict()
+
+
+def _frame_response(jpeg: bytes) -> Response:
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        # 派生视图（不落库不进对象存储）：浏览器缓一天；改绑场景前端用 ?r= 换键
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
+@router.get("/candidates/{candidate_id}/frame")
+def candidate_frame(
+    candidate_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> Response:
+    """候选帧缩略（W11）：``timecode_start`` 处抽一帧 jpeg（≤480px，洗帧同规格）。
+
+    动机：0039「不用假截图」的前提对绑了录像的候选已不成立（46 刀起拣选真切
+    mp4，源录像字节就在库里）——占位从「诚实」变「功能缺失」。无源录像的 demo
+    候选 409 如实说（占位对它们仍是诚实设计）。鉴权=操作者 cookie（<img> src
+    同源自动带）。失败口径：候选不存在 404 / 未绑录像 409 / 时间码坏 422 /
+    录像字节缺失 404 / ffmpeg 抽不出帧 422（前端 onError 回退占位框）。
+    """
+    del operator  # 读接口要求登录
+    candidate = db.get(ClipCandidate, candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="切片候选不存在")
+    if candidate.recording_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该候选未绑定源录像（demo 候选没有视频字节），无真帧可出",
+        )
+    recording = db.get(ClipRecording, candidate.recording_id)
+    if recording is None:  # pragma: no cover - 绑定路径写的就是外键
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="绑定的源录像不存在")
+
+    try:
+        at_second = parse_timecode_seconds(candidate.timecode_start)
+    except ClipCutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    cache_key = (recording.id, candidate.timecode_start)
+    cached = _FRAME_CACHE.get(cache_key)
+    if cached is not None:
+        _FRAME_CACHE.move_to_end(cache_key)
+        return _frame_response(cached)
+
+    # 快照后收口事务再动 ffmpeg（P1#2 纪律，同 transcribe/frame-candidates 先例）
+    db.rollback()
+    try:
+        video_bytes = storage.get_bytes(recording.object_key)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"源录像字节不存在: {recording.object_key}",
+        ) from exc
+    try:
+        jpeg = frames_service.extract_frame_jpeg(
+            video_bytes, at_second, max_width=frames_service.THUMB_MAX_WIDTH
+        )
+    except frames_service.FrameExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    _FRAME_CACHE[cache_key] = jpeg
+    while len(_FRAME_CACHE) > _FRAME_CACHE_LIMIT:
+        _FRAME_CACHE.popitem(last=False)
+    return _frame_response(jpeg)
