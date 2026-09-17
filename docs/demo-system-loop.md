@@ -314,11 +314,18 @@ open；工单 tab 两类都有单。
 - 可指测试：`apps/api/tests/test_coaching*.py`（题源锚断言）。
 - 演示提示：题库薄（数据面：多发布对话即可，56 刀口径）。
 
+### 幕 14：SFT 数据集导出（可溯源微调数据供给）
+
+- 操作：登录操作者 → `curl -X POST -b cookie http://localhost:8000/api/exports/sft -o sft.jsonl`（或脚本调用）。
+- 预期画面：JSONL 附件——首行头注释（generated_at/asset_count/sample_count/exported_by/license_note 五字段），其后每条 `{"instruction","output","meta":{asset_id,version_no,source_kind,title}}`——**逐条血缘可追回**。
+- 主张：中台是微调数据的生产线（只出人工确认过的问答对）；本产品不做训练。
+- 可指测试：`apps/api/tests/test_exports_sft.py`（血缘钉/未发布不出现/audit 本人）。
+- 演示提示：演示库 4 份已发布 dialogue 出 6 样本；audit 留痕 action=export_sft。
+
 ## 在途幕（不写「已实现」话术，演示时明说「下一刀」）
 
 | 幕 | 刀号 | 一句话口径 |
 | --- | --- | --- |
-| SFT 血缘 | 97 | 训练样本的血缘追溯（哪条回答喂了哪个模型）——素材链已有血缘锚，训练面未通 |
 | 质检双闸 | 98 | 回答质量的机器质检+人工复核双闸——现为负反馈进复审队列（39 刀 unverify）单闸 |
 | 内容成片 | 98b | 直播内容自动成片（切片→成片→分发）——现为切片+洗帧两段人工拣选 |
 | MCP 活状态 | 99 | 连接层暴露受控活状态工具（订单/库存带闸）——现为四只读工具（E3 反向断言） |

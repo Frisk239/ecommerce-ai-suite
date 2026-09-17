@@ -29,6 +29,7 @@ from suite_api.routes import (
     clips,
     coach,
     customer,
+    exports,
     health,
     knowledge_gaps,
     material,
@@ -139,6 +140,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 顾客通道（ADR 0021/0033）：无操作者鉴权，Bearer 令牌 + 两级限流在路由内；
     # 限流器挂 app.state（测试可替换为小阈值/假时钟实例）
     app.include_router(customer.router)
+    # 微调数据集导出（第 97 刀/ADR 0054）：SFT 形态 JSONL 经治理台，只出已发布
+    # 对话的人确认问答对；不进 MCP（「恰四工具」不动），本产品不做训练
+    app.include_router(exports.router)
     app.state.customer_rate_limits = CustomerRateLimits()
     # 登录 IP 闸（10/60s，成功也计；测试可换成大阈值/假时钟）。只信 TCP 对端。
     app.state.login_limiter = SlidingWindowLimiter(LOGIN_IP_LIMIT, LOGIN_WINDOW_SECONDS)

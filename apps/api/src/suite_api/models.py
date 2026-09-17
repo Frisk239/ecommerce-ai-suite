@@ -160,6 +160,7 @@ class AuditLog(Base):
     version_no: Mapped[int | None] = mapped_column()
     # publish | confirm | rollback | verify | discard_revision | discard_asset
     # | export | price_change（第 41 刀：改价产品档，asset 侧两列为 NULL）
+    # | export_sft（第 97 刀/ADR 0054：治理台 SFT 导出，operator=登录者本人）
     action: Mapped[str] = mapped_column(String(20))
     # 第 41 刀改价留痕指向的商品（资产留痕行为 NULL）
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
