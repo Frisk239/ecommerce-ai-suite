@@ -25,6 +25,8 @@
 docker compose up --build
 ```
 
+> 部署到自有服务器（IP + HTTP 演示栈：env 清单、安全 checklist、数据灌入、故障处置）见 [`ops/deploy.md`](ops/deploy.md)；LLM 端点更换三步与备用免费端点见 [`ops/runbook-llm.md`](ops/runbook-llm.md)。数码外设店宿主页示例：`/storefront.html`。
+
 打开 <http://localhost:5173>：健康卡应显示 API 与数据库双绿（页面真实调用 API 的 `GET /health`）。
 api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者、两个商品与三笔 mock 订单），无需手工迁移。
 
@@ -108,7 +110,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 
 做三件事：Shadow DOM 里的启动钮（样式与宿主页完全隔离）、首次点按才注入 iframe（`<控制台>/widget`，不给宿主首屏加负担）、postMessage 开关（面板内「收起」发消息回来；宿主也可用 `window.EcomAiWidget.open()/close()`）。访客身份是**宿主域第一方 localStorage 里的 uuid**，随 iframe 传入并落到会话上——操作者在客服页能看到「访客 xxxxxxxx」，商家可用自己那边的标识对账。**宿主站点也落库**（第 54 刀）：过闸的来源归一值记进会话，客服页会话行显示「站点 shop.example.com」——商家把 widget 挂在自己多个站点时，靠它分辨每条会话来自哪个站（独立访问没有宿主，两个字段都为空）。
 
-**能否嵌入由服务端白名单判定（唯一闸）**：`WIDGET_ALLOWED_ORIGINS` 逗号分隔宿主 origin，**空 = 未启用嵌入**；被嵌入的页面在建会话时会带上宿主来源，**不在白名单一律 403**（本地演示默认放行了 `http://localhost:5173`，即仓库里的演示宿主页 `apps/web/public/embed-demo.html`）。样例与端到端验收就是打开那个页面。
+**能否嵌入由服务端白名单判定（唯一闸）**：`WIDGET_ALLOWED_ORIGINS` 逗号分隔宿主 origin，**空 = 未启用嵌入**；被嵌入的页面在建会话时会带上宿主来源，**不在白名单一律 403**（本地演示默认放行了 `http://localhost:5173`，即仓库里的两个演示宿主页：`embed-demo.html`（通用示例）与 `storefront.html`（数码外设店，第 91 刀））。端到端验收就是打开后者。
 
 「被嵌入」不只看 `/widget` 这一个路由：**任何被框住的上下文**（`window.self !== window.top`）都会带来源，所以第三方直接 iframe `/customer` 同样过不了闸；宿主若用 `no-referrer` 剥掉来源，客服页会**直接拒绝建会话**（fail-closed），不会静默退回独立访问。
 

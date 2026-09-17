@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 注意：不要设 Referrer-Policy: no-referrer —— 来源取自 document.referrer，
+         剥掉它客服会直接拒绝建会话（fail-closed，见 README「可嵌入客服小组件」节） -->
+    <title>数码外设专营店 · 首页</title>
+    <style>
+      body {
+        margin: 0;
+        background: #fff;
+        color: #0f1115;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        padding: 14px 24px;
+      }
+      header b { font-size: 15px }
+      header span { color: #81858c; font-size: 12px }
+      main { max-width: 720px; margin: 0 auto; padding: 40px 24px }
+      h1 { font-size: 24px; margin: 0 0 8px }
+      p.sub { color: #61666b; line-height: 1.7; margin: 0 0 8px }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-top: 22px }
+      .card { border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; padding: 14px 16px }
+      .card b { font-size: 14px; display: block; margin-bottom: 4px }
+      .card span { color: #61666b; font-size: 12px; line-height: 1.6 }
+      .card i { font-style: normal; font-size: 13px; color: #0f1115 }
+      .note { font-size: 12px; color: #81858c; margin-top: 28px; line-height: 1.8 }
+      .note code { background: #ebeef2; border-radius: 4px; padding: 1px 5px; font-size: 11px }
+    </style>
+  </head>
+  <body>
+    <header>
+      <b>数码外设专营店</b>
+      <span>键盘 · 鼠标 · 显示器 · 耳机</span>
+    </header>
+    <main>
+      <h1>经营多年的外设小店</h1>
+      <p class="sub">商品知识、保修与退换口径均由本店治理发布；有疑问点右下角「在线客服」，
+        AI 只回答有已发布证据的问题——答不上会转人工留工单，不编造。</p>
+      <div class="grid">
+        <div class="card"><b>Xperia Ear</b><span>耳机 · 索尼移動 · 2016 年上市</span><i>¥599</i></div>
+        <div class="card"><b>Xperia Ear Duo</b><span>耳机 · 索尼移動 · 2018 年上市</span><i>¥599</i></div>
+        <div class="card"><b>显示器专区</b><span>22 款在售 · 以耳机/显示器为主力类目</span><i>¥1499 起</i></div>
+        <div class="card"><b>机械键盘专区</b><span>14 款在售</span><i>¥399 起</i></div>
+      </div>
+      <p class="note">
+        这是「商家自己的站点」示例页：与客服控制台无关，整页只多了一行
+        <code>&lt;script src="/embed.js" data-label="在线客服"&gt;&lt;/script&gt;</code>。
+        页面商品数据为演示种子（Wikidata CC0 + 类目演示价，非真实售价）。
+      </p>
+    </main>
+    <!-- 宿主页唯一需要的东西：加载控制台的 embed.js（右下角圆形客服钮，Shadow DOM 隔离，首按才注入 iframe） -->
+    <script src="/embed.js" data-label="在线客服"></script>
+  </body>
+</html>
