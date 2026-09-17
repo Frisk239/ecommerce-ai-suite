@@ -69,6 +69,16 @@ class Settings(BaseSettings):
     # 预置音色（厂商公开音色名，非声音克隆）；SiliconFlow 形态 ``{model}:{voice}``
     tts_voice: str = "FunAudioLLM/CosyVoice2-0.5B:alex"
 
+    # 云 Embedding（第 105 刀，向量基础设施 A1）：OpenAI 兼容
+    # ``POST {base}/embeddings``（``{model, input:[...]}`` -> ``data[].embedding``）。
+    # 默认硅基流动 bge-m3（免费档，1024 维）。密钥纪律同 0033/ASR/VLM：只从 .env
+    # 读、不入库、不进日志与异常文案；**空 key = 不建客户端、不发请求**——发布
+    # 照常（块落库、embedding 留 NULL），检索词法主路不受影响（fail-closed 不
+    # fail 发布）；存量/漏网块由 scripts/realdata/backfill_embeddings.py 兜底。
+    embed_api_key: str = ""
+    embed_base_url: str = "https://api.siliconflow.cn/v1"
+    embed_model: str = "BAAI/bge-m3"
+
     # 云文生图（第 98 刀，ADR 0055）：OpenAI 兼容 ``POST {base}/images/generations``
     # （``{prompt, model, size, response_format:"b64_json"}`` → ``data[0].b64_json``）。
     # 默认硅基流动（有免费 FLUX 档；任意 OpenAI 兼容图像端点可换 base）。密钥纪律

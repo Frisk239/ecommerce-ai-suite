@@ -56,6 +56,13 @@ services:
       TTS_BASE_URL: ${TTS_BASE_URL:-https://api.siliconflow.cn/v1}
       TTS_MODEL: ${TTS_MODEL:-FunAudioLLM/CosyVoice2-0.5B}
       TTS_VOICE: ${TTS_VOICE:-FunAudioLLM/CosyVoice2-0.5B:alex}
+      # 云 Embedding（第 105 刀，向量基础设施 A1）：切块语义坐标（OpenAI 兼容
+      # embeddings，默认硅基流动 bge-m3 免费档 1024 维）。空 key = 不建客户端、
+      # 不发请求——发布照常（块落库、embedding 留 NULL），词法检索主路不受影响；
+      # 存量/漏网块由 scripts/realdata/backfill_embeddings.py 回填。
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-https://api.siliconflow.cn/v1}
+      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-m3}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
       CUSTOMER_TRUST_PROXY: ${CUSTOMER_TRUST_PROXY:-}  # 空=直连模式忽略 XFF；反代部署设 true（settings 空串回落默认）
       # 可嵌入小组件的宿主白名单（第 45b 刀）：逗号分隔 origin，空=未启用嵌入。

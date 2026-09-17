@@ -23,22 +23,32 @@
   current_published_version_id 指针（0006）。待人洗/已接入不出现由 join
   语义保证而非事后过滤（0017：索引=已发布的派生视图，指针前移命中集合
   跟着走）。空查询/纯停用词 -> 空。
+- 切块嵌入写端（第 105 刀，向量基础设施 A1）：``embed_version_chunks`` 在发布
+  事务**提交后**补写 ``retrieval_chunks.embedding``（迁移 0034 的 pgvector 列，
+  只备料不动检索——retrieve 打分路径一行不改，融合是 106 刀）。未配置/失败 =
+  块照写、embedding NULL+日志，发布不被云调用阻塞。
 """
 
 import hashlib
+import json
+import logging
 import math
 import os
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, Product, RetrievalChunk
 from suite_api.services.machine_wash import QA_FIELD, redact
 from suite_api.services.synonyms import apply_synonyms
 from suite_platform.storage import ObjectStorage
+
+logger = logging.getLogger(__name__)
 
 # ---------- 评论证据的适用域（第 66 刀，审计刀 13 P0-2） ----------
 # 顾客评论（review_import）是**商品体验**证物，不是**服务状态**的证据：实测
@@ -285,6 +295,77 @@ def index_chunks_for_version(
         if value is not None:
             chunks.append(f"{field}：{value}")
     return chunks[:MAX_CHUNKS]
+
+
+# ---------- 切块嵌入写端（第 105 刀，向量基础设施 A1：只备料不动检索） ----------
+
+
+def set_chunk_embeddings(db: Session, rows: Sequence[tuple[int, Sequence[float]]]) -> int:
+    """把 ``(块 id, 向量)`` 批量写进 retrieval_chunks.embedding（裸 SQL——pgvector
+    类型非 sa 内建，ORM 不映射该列，0025 迁移同族的 sa.text 口径）。
+
+    向量序列化为 pgvector 字面量（json.dumps 对 float 往返安全）。不 commit：
+    调用方（发布补写/回填脚本）决定事务边界。返回实际更新行数。
+    """
+    if not rows:
+        return 0
+    result = db.execute(
+        sa_text(
+            "UPDATE retrieval_chunks SET embedding = CAST(:vector AS vector)"
+            " WHERE id = :chunk_id"
+        ),
+        [{"chunk_id": chunk_id, "vector": json.dumps(list(vector))} for chunk_id, vector in rows],
+    )
+    return int(result.rowcount or 0)
+
+
+def embed_version_chunks(db: Session, asset_id: int, version_no: int, chunks: Sequence[str]) -> int:
+    """发布**事务提交后**的 embedding 补写（发布切块入口的第二步）。
+
+    事务纪律（裁决）：块行在发布事务内落库（CONTEXT「已发布」：切块入索引是
+    发布本体），但 embedding 是**云调用产物**——外部 IO 不进发布事务（占连接
+    等外网 + 任何失败都会回滚发布，而 embedding 是增值项不是发布本体）。故
+    本函数只在 commit 之后被调用：按 (asset_id, version_no, seq) 对位查回块行
+    id，批量 embed（services/embedding，≤64/批），UPDATE 回填，独立小事务收口。
+
+    三态（发布一律不被 embedding 阻塞）：
+    - 未配置（无 EMBED_API_KEY）：直接返回 0，零云调用（fail-closed 不建客户端）；
+    - 失败（超时/维度不符/DB 写失败）：logger.warning 后返回 0——块照写、
+      embedding NULL，``scripts/realdata/backfill_embeddings.py`` 可重跑兜底；
+    - 成功：返回写入条数。
+    """
+    from suite_api.services import embedding
+
+    if not chunks:
+        return 0
+    if not embedding.is_configured():
+        return 0
+    try:
+        vectors = embedding.embed_texts(list(chunks))
+        chunk_rows = db.execute(
+            select(RetrievalChunk.id, RetrievalChunk.seq)
+            .where(
+                RetrievalChunk.asset_id == asset_id,
+                RetrievalChunk.version_no == version_no,
+            )
+            .order_by(RetrievalChunk.seq)
+        ).all()
+        updated = set_chunk_embeddings(
+            db,
+            [(chunk_id, vectors[seq]) for chunk_id, seq in chunk_rows if seq < len(vectors)],
+        )
+        db.commit()
+    except Exception as exc:  # noqa: BLE001 - 发布不被 embedding 失败阻塞
+        db.rollback()
+        logger.warning(
+            "资产 %s v%s 的切块 embedding 补写失败（块已入库，embedding 留 NULL，"
+            "回填脚本可重跑兜底）: %s",
+            asset_id,
+            version_no,
+            type(exc).__name__,
+        )
+        return 0
+    return updated
 
 
 # ---------- 词法打分（纯函数，便于单测） ----------

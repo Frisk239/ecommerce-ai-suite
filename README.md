@@ -327,6 +327,23 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 - **与 ASR/VLM 的 409 同样刻意不同级**：口播是增值项不是成片本体——无 key/失败都只是无声预览（fail-closed 不 fail 任务），整任务重发可再要口播。`GET /api/video-compose/tts/status` 供前端提示。
 - **Out**：批量成片；自动 publish；多模板 DSL；数字人/声音克隆；成片自动分发。
 
+## 向量基础设施（第 105 刀，A1：只备料不动检索）
+
+给检索切块备语义坐标，**词法检索仍是唯一主路**——本节改动对发布/检索行为零影响（embedding 列当前无读消费者，混合检索融合是后续刀的裁决）。
+
+- **形态**：`retrieval_chunks.embedding`（迁移 0034，pgvector `vector(1024)` nullable + HNSW cosine 索引——compose 的 db 本就是 `pgvector/pgvector:pg16` 镜像，无需换）。无 embedding 的块 NULL，NULL 不影响词法检索。
+- **写端**：发布事务**提交后**补写（云调用不进事务：不占发布事务、失败不回滚发布）。未配 key/云失败 = 块照写、embedding NULL + 日志，发布不被阻塞；存量块由回填脚本兜底。
+- **EMBED 三 env**（同 ASR/VLM/IMGGEN/TTS 风格；默认硅基流动 bge-m3 免费档，1024 维）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `EMBED_API_KEY` | 嵌入密钥；**为空时不建客户端、不发请求 = 发布照常、embedding 留 NULL**（检索零影响）。密钥只写本机 `.env` |
+| `EMBED_BASE_URL` | OpenAI 兼容端点（默认 `https://api.siliconflow.cn/v1`） |
+| `EMBED_MODEL` | 模型名（默认 `BAAI/bge-m3`，1024 维；换模型须同维，维度自检不符当次失败不落错维数据） |
+
+- **存量回填**：`uv run python scripts/realdata/backfill_embeddings.py --db postgresql://suite:suite@localhost:5433/suite`——只扫当前已发布指针版的 NULL 块（幂等，重跑只补漏），64 条/批，进度输出，批失败即中止（重跑从断点续上）。未配 key 诚实退出。
+- **Out**：混合检索融合与查询端向量化（106 刀裁决）；`retrieve()` 打分路径零改动。
+
 ## 数据来源与演示价（第 50 / 55 刀）
 
 演示库里有**四份真实数据集**，它们在产品面上的来源是可见的（资产来源列 / 商品来源 chip）：
@@ -395,7 +412,7 @@ web 构建校验：`cd apps/web && npm run build && npm run lint`
 
 ## 环境变量
 
-见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`（云转写，OpenAI 兼容 `POST {base}/audio/transcriptions`；**空 key = 不建客户端、不发请求**，切片页「自动转写」如实 409——见「自动转写」节）、`VLM_API_KEY` / `VLM_BASE_URL` / `VLM_MODEL`（看图出「图片描述」草稿，OpenAI 兼容 `POST {base}/chat/completions` 带 `image_url` 内联 base64；**空 key = 不建客户端、不发请求** = 无草稿，人洗补写兜底——见「图片资产」节）、`IMGGEN_API_KEY` / `IMGGEN_BASE_URL` / `IMGGEN_MODEL`（素材任务文生图配图，OpenAI 兼容 `POST {base}/images/generations`；**空 key = 配图步诚实跳过**（任务不 fail）——见「自媒体内容套件」节）、`TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL`（内容成片口播，OpenAI 兼容 `POST {base}/audio/speech`；**空 key = 预览无音轨**（任务不 fail，`with_tts=false` 如实标注）——见「内容成片」节）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM/ASR 密钥只落到 `.env`。
+见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`（云转写，OpenAI 兼容 `POST {base}/audio/transcriptions`；**空 key = 不建客户端、不发请求**，切片页「自动转写」如实 409——见「自动转写」节）、`VLM_API_KEY` / `VLM_BASE_URL` / `VLM_MODEL`（看图出「图片描述」草稿，OpenAI 兼容 `POST {base}/chat/completions` 带 `image_url` 内联 base64；**空 key = 不建客户端、不发请求** = 无草稿，人洗补写兜底——见「图片资产」节）、`IMGGEN_API_KEY` / `IMGGEN_BASE_URL` / `IMGGEN_MODEL`（素材任务文生图配图，OpenAI 兼容 `POST {base}/images/generations`；**空 key = 配图步诚实跳过**（任务不 fail）——见「自媒体内容套件」节）、`TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL`（内容成片口播，OpenAI 兼容 `POST {base}/audio/speech`；**空 key = 预览无音轨**（任务不 fail，`with_tts=false` 如实标注）——见「内容成片」节）、`EMBED_API_KEY` / `EMBED_BASE_URL` / `EMBED_MODEL`（切块语义坐标，OpenAI 兼容 `POST {base}/embeddings`；**空 key = 发布照常、embedding 留 NULL**（检索零影响），存量由回填脚本兜底——见「向量基础设施」节）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM/ASR 密钥只落到 `.env`。
 
 ## 仓库布局
 

@@ -77,7 +77,11 @@ from suite_api.services.registration import (
     make_object_key,
     register_asset,
 )
-from suite_api.services.retrieval import ChunkingError, index_chunks_for_version
+from suite_api.services.retrieval import (
+    ChunkingError,
+    embed_version_chunks,
+    index_chunks_for_version,
+)
 from suite_platform.storage import ObjectStorage
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
@@ -892,6 +896,11 @@ def publish(
     db.commit()
     db.refresh(asset)
     db.refresh(version)
+    # 第 105 刀：发布事务已收口——embedding 云调用不进事务（外部 IO 不占发布
+    # 事务，失败也不回滚发布），提交后补写切块向量；未配置/失败=块照写、
+    # embedding NULL+日志（scripts/realdata/backfill_embeddings.py 可重跑兜底）。
+    # 响应不含 embedding 面：对外契约零变化。
+    embed_version_chunks(db, asset.id, version.version_no, index_chunks)
     return to_asset_detail(db, asset)
 
 
