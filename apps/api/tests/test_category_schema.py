@@ -15,11 +15,31 @@ def test_known_categories_have_required_fields() -> None:
         "洗衣机",
         "图书",
         "家具",
+        "键盘",
+        "鼠标",
+        "显示器",
+        "耳机",
     ):
         schema = schema_for_category(category)
         assert schema, category
         assert any(rule.get("required") for rule in schema.values()), category
         assert schema == SCHEMA_BY_CATEGORY[category]
+
+
+def test_digital_peripherals_brand_required_others_optional() -> None:
+    """第 90 刀：数码四类品牌（P176）必填；高/宽/上市年份覆盖稀疏不设闸。"""
+    assert schema_for_category("键盘") == {"品牌": {"required": True}}
+    assert schema_for_category("鼠标") == {"品牌": {"required": True}}
+    monitor = schema_for_category("显示器")
+    assert monitor["品牌"] == {"required": True}
+    assert monitor["高度"] == {"required": False}
+    assert monitor["宽度"] == {"required": False}
+    headphone = schema_for_category("耳机")
+    assert headphone["品牌"] == {"required": True}
+    assert headphone["上市年份"] == {"required": False}
+    # 品牌缺失拦发布；可选字段缺失/未确认不拦（evaluate_publish_gate 只看必填）
+    missing, unconfirmed = evaluate_publish_gate(monitor, {}, {})
+    assert missing == ["品牌"] and unconfirmed == []
 
 
 def test_unknown_category_empty_schema() -> None:

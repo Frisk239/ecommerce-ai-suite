@@ -53,6 +53,15 @@ uv run python scripts/realdata/load_openfoodfacts.py --n 80 --load --register --
 # 1b. Wikidata：SPARQL 拉取 → out/products.csv（--load 同时直连灌库，幂等可重跑）
 uv run python scripts/realdata/fetch_wikidata_products.py
 uv run python scripts/realdata/fetch_wikidata_products.py --load \
+    --db postgresql://suite:suite@localhost:5433/suite
+# 1c. 数码外设四类（第 90 刀，QID 2026-09-16 实测修正）：--digital-only 只拉
+#     键盘/鼠标/显示器/耳机（attrs 含 P176 品牌/P571 年份/P2048-P2049 高宽）；
+#     WDQS outage 时 429 按 Retry-After 退避（可达 1000s/查询），逐查询缓存续跑
+uv run python scripts/realdata/fetch_wikidata_products.py --digital-only --load \
+    --db postgresql://suite:suite@localhost:5433/suite
+# 1d. 数码规格文档（第 90 刀）：有品牌的耳机/显示器 → 治理通道登记→人洗确认→
+#     发布写回（顾客问「X 什么品牌」可命中）；幂等锚 (title, product_id)
+uv run python scripts/realdata/publish_digital_specs.py \
     --db postgresql://suite:suite@localhost:5433/suite   # 宿主连 compose db
 #   compose 容器内网络则用 --db postgresql://suite:suite@db:5432/suite
 #   也可不传 --db，直接 export DATABASE_URL=... 后 --load
@@ -84,8 +93,10 @@ uv run python scripts/realdata/load_wands_clips.py --n 30 --load \
 | 脚本参数 | 说明 |
 |---|---|
 | `fetch_wikidata_products.py --limit/--per-category/--seed/--out` | 总行数上限（默认 200）/每类上限（40）/stock 种子（42）/CSV 路径 |
+| `fetch_wikidata_products.py --digital-only/--timeout` | 只拉数码四类（第 90 刀 QID 常量）/ 单查询超时秒 |
+| `publish_digital_specs.py --csv/--api/--user/--pass/--db` | 规格文档治理发布（第 90 刀）：fetch 输出的 products.csv / API 基址 / 操作者凭证 / 演示库 URL（默认 .env/DATABASE_URL） |
 | `load_reviews.py --src/--zip-file/--cache` | zip 下载地址覆盖 / 本地 zip 直读 / 缓存路径 |
-| `load_reviews.py --n/--seed/--import/--publish/--api/--user/--pass` | 抽样条数（默认 2000）/种子 / 登录批量导入 / 发布 N 条（须与 --import 同跑）/ API 基址（默认 `http://localhost:8000`）/ 操作者凭证（默认 operator/operator123，开发种子） |
+| `load_reviews.py --n/--seed/--import/--publish/--api/--user/--pass/--db/--cats` | 抽样条数（默认 2000）/种子 / 登录批量导入 / 发布 N 条（须与 --import 同跑）/ API 基址（默认 `http://localhost:8000`）/ 操作者凭证（默认 operator/operator123，开发种子）/ 目标库 URL（默认 .env/DATABASE_URL）/ 类目白名单逗号分隔（第 90 刀，空=不过滤） |
 | `load_abcd_dialogues.py --n/--seed/--cache/--out` | 抽样会话数（默认 60）/种子（42）/gzip 缓存 / 转写输出路径 |
 | `load_abcd_dialogues.py --register/--db/--storage-root/--env-file` | 直调 register_asset 登记对话资产 / 目标库 URL（默认 .env/DATABASE_URL）/ 对象存储根（默认 .env/STORAGE_ROOT 或 ./data/objects，须与 API 容器一致）/ 启动前载入的 .env（默认仓库根，LLM 机洗凭证来源） |
 | `load_abcd_dialogues.py --publish/--api/--user/--pass` | 对最新 K 个登记资产经 API 确认 QA+发布（须与 --register 同跑）/ API 基址 / 操作者凭证 |
@@ -104,6 +115,7 @@ transcript = `顾客问 {query} —— {product_name}（标注：Exact）`）。
 | 写路径 | 重跑行为 |
 |---|---|
 | Wikidata `--load` | 幂等，可重跑（name+category 已存在跳过） |
+| `publish_digital_specs.py` | 幂等，可重跑（(title, product_id) 锚：已发布跳过、未发布续走确认+发布；单行 HTTP 失败不拖垮整跑，重跑自愈） |
 | OFF `--load` | 幂等，可重跑（name+category 已存在跳过） |
 | WANDS `--load` | 幂等，可重跑（timecode+transcript 幂等键，全跳过） |
 | **reviews `--import`** | **重跑重复——import-csv 不做内容去重，同一 csv 重跑再建一批新资产** |
@@ -112,16 +124,17 @@ transcript = `顾客问 {query} —— {product_name}（标注：Exact）`）。
 
 ## 测试
 
-`apps/api/tests/test_realdata_scripts.py`（29 例，离线）：转换纯函数 + `samples/`
+`apps/api/tests/test_realdata_scripts.py`（38 例，离线）：转换纯函数 + `samples/`
 fixture 断言，含交叉验证——脚本产的批字节能被既有 `parse_import_csv` 直接受理；
-ABCD 转写与回流端点同构、WANDS 候选形状与模型列宽对齐。网络/DB 路径不在单测
-范围（实跑即验）。
+ABCD 转写与回流端点同构、WANDS 候选形状与模型列宽对齐；第 90 刀起含数码
+QID 映射、米→厘米换算边界、--cats 类目筛选、规格文档候选/正文/标题形状。网络/DB
+路径不在单测范围（实跑即验）。
 
 ## 边界（后续刀再动）
 
 JDDC（注册门槛）、评论类目→商品挂接、WANDS 视频本体与真时间码、Open Food
 Facts 连接层登记、直播数据集（观察项）、定期同步。
 
-> 商品规格文档接线（Wikidata 属性→中台规格资产）记入 roadmap 待办——本仓
-> SPARQL 属性（P176/P2067）覆盖稀疏且无消费者，相关死路径已于 2026-09-09
-> 交接修复删除；属性覆盖补齐后再接线。
+> 商品规格文档接线：**已接线（第 90 刀）**——P176 品牌等属性经 `publish_digital_
+> specs.py` 走治理通道登记发布（2026-09-09 交接时删除的死路径不复用；P2067 质量
+> 等覆盖率≈0 的属性仍不接，见 `docs/research/real-store-data-sources.md` §①）。

@@ -17,6 +17,12 @@ SCHEMA_BY_CATEGORY: dict[str, dict[str, dict[str, bool]]] = {
     "洗衣机": {"容量": {"required": True}},
     "图书": {"作者": {"required": True}},
     "家具": {"材质": {"required": True}},
+    # 数码外设店主力类目（第 90 刀）：品牌是 Wikidata P176 抽出的必填锚，
+    # 其余字段（显示器高/宽、耳机上市年份）覆盖稀疏（实测 22–28%），不设必填。
+    "键盘": {"品牌": {"required": True}},
+    "鼠标": {"品牌": {"required": True}},
+    "显示器": {"品牌": {"required": True}, "高度": {"required": False}, "宽度": {"required": False}},
+    "耳机": {"品牌": {"required": True}, "上市年份": {"required": False}},
 }
 
 

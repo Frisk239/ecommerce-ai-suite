@@ -16,6 +16,8 @@ zip 内 csv 编码 utf-8 → gb18030（GB2312 超集）兜底。
     uv run python scripts/realdata/load_reviews.py --n 2000          # 下载→抽样→out/reviews.csv
     uv run python scripts/realdata/load_reviews.py --n 200 --import  # 转 CSV 后登录批量导入
     uv run python scripts/realdata/load_reviews.py --n 200 --import --publish 20
+    uv run python scripts/realdata/load_reviews.py --cats 平板,计算机,手机 --n 200 --import \
+        --publish 20                                                 # 数码店三类目白名单（第 90 刀）
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ import csv
 import http.cookiejar
 import io
 import json
+import os
 import random
 import sys
 import urllib.error
@@ -95,6 +98,22 @@ def read_reviews_from_zip(zip_bytes: bytes) -> list[tuple[str, str, str]]:
     if text is None:
         raise ValueError("评论 csv 既非 UTF-8 也非 GB18030（已含 GB2312/GBK）")
     return parse_reviews_csv(text)
+
+
+def filter_by_cats(
+    rows: list[tuple[str, str, str]], cats: str | list[str] | None
+) -> list[tuple[str, str, str]]:
+    """按类目白名单过滤（纯函数，第 90 刀）：cats 空/全空白 → 不过滤（默认行为不变）。
+
+    接受逗号分隔字符串（CLI 原样）或列表，项剥首尾空白；不在名单的类目整行丢弃。
+    """
+    if not cats:
+        return rows
+    raw = cats.split(",") if isinstance(cats, str) else cats
+    allow = {item.strip() for item in raw if item.strip()}
+    if not allow:
+        return rows
+    return [row for row in rows if row[0] in allow]
 
 
 def sample_reviews(
@@ -259,6 +278,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="中文电商评论下载/抽样/批量导入（研究用途）")
     parser.add_argument("--n", type=int, default=DEFAULT_N, help=f"抽样条数（默认 {DEFAULT_N}）")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="抽样随机种子（默认 42）")
+    parser.add_argument(
+        "--cats",
+        default="",
+        help="类目白名单（逗号分隔，如 平板,计算机,手机）；默认不过滤（第 90 刀）",
+    )
     parser.add_argument("--src", default=DEFAULT_ZIP_URL, help="zip 下载地址（默认线上源）")
     parser.add_argument("--zip-file", type=Path, help="直接用本地 zip（跳过下载/缓存）")
     parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE_ZIP, help="zip 缓存路径")
@@ -269,6 +293,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--user", default="operator", help="操作者用户名（默认 operator）")
     parser.add_argument("--pass", dest="password", default="operator123", help="操作者密码")
+    parser.add_argument(
+        "--db",
+        default=os.environ.get("DATABASE_URL"),
+        help="演示库 URL（默认取 DATABASE_URL 环境变量）；--import 后来源补写用",
+    )
     parser.add_argument(
         "--publish",
         type=int,
@@ -287,6 +316,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.n < 1:
         print("错误：--n 须 ≥ 1", file=sys.stderr)
         return 2
+    if args.do_import and not args.db:
+        print("错误：--import 需要 --db 或 DATABASE_URL 环境变量（来源补写用）", file=sys.stderr)
+        return 2
 
     if args.zip_file is not None:
         zip_bytes = args.zip_file.read_bytes()
@@ -296,8 +328,11 @@ def main(argv: list[str] | None = None) -> int:
 
     rows = read_reviews_from_zip(zip_bytes)
     print(f"解析评论：{len(rows)} 行")
+    rows = filter_by_cats(rows, args.cats)
+    if args.cats:
+        print(f"类目筛选（{args.cats}）：剩 {len(rows)} 行")
     if not rows:
-        print("错误：zip 内未解析出任何评论行", file=sys.stderr)
+        print("错误：筛选后未解析出任何评论行", file=sys.stderr)
         return 1
     sampled = sample_reviews(rows, args.n, args.seed)
     converted = [review_to_title_content(cat, review) for cat, _, review in sampled]
