@@ -302,3 +302,51 @@ def test_upgrade_0028_splits_open_dataset_by_shape(backfill_db_url: str) -> None
         assert cur.fetchone()[0] == 0
         cur.execute("SELECT count(*) FROM products WHERE source_kind = 'open_dataset'")
         assert cur.fetchone()[0] == 3
+
+
+# 第 93 刀（云 ASR 转写）：0030 加 clip_candidates.transcript_source（存量一律
+# 回填 'manual'——非 ASR 通道产出）并放开 product_id NOT NULL（转写候选句子里
+# 没有商品归属，不编造）。
+def test_upgrade_0030_backfills_manual_and_allows_null_product(backfill_db_url: str) -> None:
+    cfg = _alembic_config(backfill_db_url)
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0029")  # 回到 0029：还没有 transcript_source 列
+
+    # 0029 旧结构裸 SQL 插一行商品 + 一行存量候选（旧结构 product_id 必填、无来源列）
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO products (name, category, spec_schema, spec_values)"
+            " VALUES ('旧结构候选商品', '食品', '{}', '{}') RETURNING id"
+        )
+        product_id = cur.fetchone()[0]
+        cur.execute(
+            "INSERT INTO clip_candidates (product_id, status, timecode_start, timecode_end,"
+            " transcript, source_video_label) VALUES (%s, 'pending', '00:00:01', '00:00:05',"
+            " '存量种子候选', '旧录像')",
+            (product_id,),
+        )
+
+    # **升到 0030 为止**（不升 head：后来刀若再动这张表，本用例不该跟着变红）
+    command.upgrade(cfg, "0030")
+
+    with psycopg.connect(backfill_db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("SELECT transcript_source, product_id FROM clip_candidates WHERE transcript = '存量种子候选'")
+        source, kept_product = cur.fetchone()
+        assert source == "manual"  # 存量非 ASR 通道：一律 manual（含 WANDS 自带转写）
+        assert kept_product == product_id  # 存量归属原样
+        # 列默认值：不写 transcript_source 的新行也落 manual（种子/导入路径不变）
+        cur.execute(
+            "INSERT INTO clip_candidates (product_id, status, timecode_start, timecode_end,"
+            " transcript, source_video_label) VALUES (NULL, 'pending', '00:01:00', '00:01:05',"
+            " '云转写候选', '新录像')"
+        )
+        cur.execute("SELECT transcript_source, product_id FROM clip_candidates WHERE transcript = '云转写候选'")
+        assert cur.fetchone() == ("manual", None)  # product_id 已放开 NOT NULL（归属不编造）
+        # ASR 通道显式写自己的来源词
+        cur.execute(
+            "INSERT INTO clip_candidates (product_id, status, timecode_start, timecode_end,"
+            " transcript, transcript_source, source_video_label) VALUES (NULL, 'pending',"
+            " '00:02:00', '00:02:05', '云端点候选', 'cloud', '新录像')"
+        )
+        cur.execute("SELECT count(*) FROM clip_candidates WHERE transcript_source = 'cloud'")
+        assert cur.fetchone()[0] == 1

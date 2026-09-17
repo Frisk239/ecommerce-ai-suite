@@ -7,7 +7,7 @@ MIT 可入仓库演示，保留出处链接。
 通道映射：走「切片拣选通道」——clip_candidates 是切片模块自有种子（ADR 0014，
 无写端点），脚本直连 DB 幂等灌入（timecode+transcript 已存在跳过）。真视频
 本体与切出是部署刀的事（0039）：登记字节=带时间码头的转写文本，本脚本只铺
-「源录像上有这么一段值得拣选」的候选。ClipCandidate.product_id 不可空
+「源录像上有这么一段值得拣选」的候选。ClipCandidate.product_id 本脚本必填（第 93 刀起可空——云转写候选无商品归属）
 （模型实测），故幂等造一个专属商品行「WANDS 家具（演示）」（category=家具）
 承载全部候选；相关性档位没有独立列，拼进 transcript 尾注「（标注：Exact）」。
 
@@ -48,7 +48,7 @@ USER_AGENT = "ecommerce-ai-suite-realdata/1.0 (demo data script; local repo)"
 DEFAULT_N = 30
 DEFAULT_SEED = 42
 EXACT_LABEL = "Exact"
-# 专属承载商品（clip_candidates.product_id 不可空）：幂等键 name+category
+# 专属承载商品（本脚本形态必填，第 93 刀起列可空）：幂等键 name+category
 WANDS_PRODUCT_NAME = "WANDS 家具（演示）"
 WANDS_PRODUCT_CATEGORY = "家具"
 SOURCE_VIDEO_LABEL = "WANDS · wayfair 家具检索基准"

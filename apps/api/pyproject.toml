@@ -22,6 +22,17 @@ dependencies = [
 [tool.uv.sources]
 suite-platform = { workspace = true }
 
+# 本地兜底转写（第 93 刀，ADR 0050）：**可选组，绝不进 api 运行时依赖与镜像**
+# （Dockerfile 的 `uv sync --frozen --no-dev` 不带 --extra，不会装到它）。funasr
+# 拖 torch（CPU 包 GB 级），转写 3–5 分钟录像按 RTF ~17x 也要数十秒——只服务
+# `scripts/transcribe_local.py`（无云 key 时的脚本级兜底）。
+# 安装：`uv sync --extra asr-local`（仓库根）。
+[project.optional-dependencies]
+asr-local = [
+    "funasr>=1.2",
+    "torch>=2.2",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
