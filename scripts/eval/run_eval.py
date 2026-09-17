@@ -7,6 +7,21 @@
 重试，重试尽该条记未评上并继续（第 87 刀：此前单条失败会终止整列，judge
 从未跑全过），失败条目在报告注明。
 
+--judge-llm（第 102 刀）：**生成路径**忠实度观察——87 刀的 judge 只评模板
+路径（runner 直调 compose_answer），本模式评真 LLM 生成的回答：
+- 存量：service_messages 里 kind='answer' 且带 citations 的 agent 消息，
+  剔除降级模板形状（compose_answer 两类前缀=模板路径指纹；fallback 布尔
+  是运行时键不落消息表，形状判定是唯一判据），配同会话前一条顾客问句，
+  (问句, 回答) 全同的重复只留首条；
+- 新问：FRESH_QUESTIONS 现场走线上 run_ask 真生成（新鲜度优先：观察应评
+  当前引擎行为，不是历史快照），answer+生成的入评；
+- 证据面：该消息 citations 指向 (asset_id, version_no) 的**全部**切块
+  （retrieval_chunks 发布留档，比模型 prompt 实际可见的 top-2 证据宽——
+  判的是「答案 vs 引用源」的忠实度）；判卷复用 87 刀 judge_with_retry 的
+  重试纪律与 _supported_verdict 解析，同款严格协议 prompt（输出多要一句
+  reason 供逐条留档）。
+一次性观察：非确定性不进 CI、不进可复现评测尺（口径声明随报告输出）。
+
 指标（docs/research/rag-accuracy-engineering.md §3 协议）：
 - recall@1/@3：cite 组（positive/paraphrase/confusion/oov_syn）期望资产进 top-1/top-3；
 - 拒答率：refusal 组实际拒答比例（kind=refusal）；
@@ -23,6 +38,7 @@
 用法（仓库根目录）：
     uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
     uv run python scripts/eval/run_eval.py --db ... --judge --report scripts/eval/out/report.md
+    uv run python scripts/eval/run_eval.py --db ... --judge-llm --report scripts/eval/out/report-judge-102.md
 """
 
 from __future__ import annotations
@@ -32,10 +48,10 @@ import asyncio
 import json
 import re
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from suite_api.services.retrieval import retrieve
 
@@ -57,6 +73,42 @@ JUDGE_SYSTEM_PROMPT = (
     "「有没有编证据外的东西」；不同句子可以来自不同证据条（各自有依据即可），"
     "多条证据之间内容不同不构成违规。任一陈述在证据里找不到原文依据 => false。"
     '只输出 JSON：{"supported": true} 或 {"supported": false}。'
+)
+
+# 第 102 刀生成路径观察：严格协议判据与 87 刀逐字相同，只有输出格式多要一句
+# reason（供逐条 verdict 留档「原因首句」）；解析仍走 _supported_verdict。
+JUDGE_LLM_SYSTEM_PROMPT = (
+    "你是严格的检索增强问答评审。给定问题、检索证据与回答，逐句评答案忠实度"
+    "（faithfulness）：回答的每条陈述都必须在证据里有原文依据（数值、实体、"
+    "措辞一致或直接可导出）。注意：回答是否切题、是否完整不在评审范围——只评"
+    "「有没有编证据外的东西」；不同句子可以来自不同证据条（各自有依据即可），"
+    "多条证据之间内容不同不构成违规。任一陈述在证据里找不到原文依据 => false。"
+    '只输出 JSON：{"supported": true/false, "reason": "一句中文：不支持的那句'
+    '陈述或整体判定依据"}。'
+)
+
+# 现场真问清单（第 102 刀）：数码店（规格/图片描述/政策/刻字）+ 存量金标问句
+# 各取其半——全部是纯 RAG 问法（不带订单号/库存词/转人工，避免工具步事实进
+# 答案造成证据外陈述的观察噪音；那类混合形态由存量样本自然携带）。
+FRESH_QUESTIONS: tuple[str, ...] = (
+    "Vivo Y300 是什么品牌",
+    "Xperia Ear Duo 什么时候上市的",
+    "显示器支架能调节吗",
+    "蓝牙耳机电池保修多久",
+    "塑料外壳的键盘能刻字吗",
+    "退货运费多少钱",
+    "发票怎么开具",
+    "保温杯的净含量是多少",
+    "钛钢保温壶的材质是什么",
+    "羊绒围巾起球怎么处理",
+)
+
+# compose_answer 的两类固定前缀=模板路径（降级回落）的形状指纹：fallback 布尔
+# 是 SSE 运行时键不落消息表（ADR 0033「消息表不加列」），存量生成样本只能按
+# 形状判。真 LLM 生成不会稳定复现这两个前缀（系统提示要求直接给结论）。
+TEMPLATE_ANSWER_PREFIXES: tuple[str, ...] = (
+    "根据已发布的规格文档《",
+    "根据已发布的客服对话记录",
 )
 
 
@@ -170,40 +222,229 @@ def build_judge_prompt(question: str, chunks: Sequence[str], answer: str) -> str
     return f"问题：{question}\n检索证据：\n{evidence}\n回答：{answer}"
 
 
-def judge_one(question: str, chunks: Sequence[str], answer: str) -> bool:
-    """单条 faithfulness 评审（走线上同款 complete_chat；LLMError 上抛给重试层）。"""
-    from suite_api.services.llm import LLMError, complete_chat
+def _judge_raw(question: str, chunks: Sequence[str], answer: str, system_prompt: str) -> str:
+    """一次 judge 调用的原始输出（87 刀与 102 刀共用；LLMError 上抛给重试层）。"""
+    from suite_api.services.llm import complete_chat
 
     async def _run() -> str:
         return await complete_chat(
-            JUDGE_SYSTEM_PROMPT, build_judge_prompt(question, chunks, answer)
+            system_prompt, build_judge_prompt(question, chunks, answer)
         )
 
-    raw = asyncio.run(_run())
-    verdict = _supported_verdict(raw)
+    return asyncio.run(_run())
+
+
+def judge_one(question: str, chunks: Sequence[str], answer: str) -> bool:
+    """单条 faithfulness 评审（走线上同款 complete_chat；LLMError 上抛给重试层）。"""
+    from suite_api.services.llm import LLMError
+
+    verdict = _supported_verdict(_judge_raw(question, chunks, answer, JUDGE_SYSTEM_PROMPT))
     if verdict is None:
         raise LLMError("judge 输出不可解析") from None
     return verdict
 
 
-def judge_with_retry(
-    question: str, chunks: Sequence[str], answer: str, *, attempts: int = JUDGE_ATTEMPTS
-) -> bool | None:
-    """单条评审 × 有限重试；重试尽仍失败返回 None（fail-soft，不终止整列）。
+_T = TypeVar("_T")
 
-    线上 llm 契约刻意 20s/0 重试（0018/0033），脚本层的韧性放这里，不动
-    services/llm。None 计入「未评上」，分母只算评上的，失败条目由调用方
-    收集进报告注记。
-    """
+
+def _with_retry(call: Callable[[], _T], *, attempts: int) -> _T | None:
+    """judge 单条 × 有限重试（87 刀纪律，两条 judge 路共用）：重试尽返回 None
+    （fail-soft，不终止整列）。线上 llm 契约刻意 20s/0 重试（0018/0033），
+    脚本层的韧性放这里，不动 services/llm。"""
     from suite_api.services.llm import LLMError
 
     for attempt in range(attempts):
         try:
-            return judge_one(question, chunks, answer)
+            return call()
         except LLMError:
             if attempt < attempts - 1:
                 time.sleep(JUDGE_RETRY_WAIT_SECONDS)
     return None
+
+
+def judge_with_retry(
+    question: str, chunks: Sequence[str], answer: str, *, attempts: int = JUDGE_ATTEMPTS
+) -> bool | None:
+    """87 刀模板路径 judge：返回 None 计入「未评上」，分母只算评上的，失败条目
+    由调用方收集进报告注记。"""
+    return _with_retry(
+        lambda: judge_one(question, chunks, answer), attempts=attempts
+    )
+
+
+# ---------------------------------------------------------------- 生成路径观察（--judge-llm，第 102 刀）
+
+
+def _reason_from_raw(raw: str) -> str:
+    """judge 原始输出 -> reason 句（JSON 里的 reason 字段；回落首个非空行）。"""
+    match = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+    if match:
+        try:
+            value = json.loads(match.group()).get("reason")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        except ValueError:
+            pass
+    line = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
+    return line
+
+
+def reason_first_sentence(reason: str) -> str:
+    """原因首句（。！？与换行切；无终止符整段即首句）。"""
+    match = re.match(r"[^。！？\n]*[。！？]?", reason.strip())
+    return match.group() if match else reason.strip()
+
+
+def judge_llm_one(question: str, chunks: Sequence[str], answer: str) -> tuple[bool, str]:
+    """生成路径单条评审：87 刀同款严格协议（JUDGE_LLM_SYSTEM_PROMPT 只多要一句
+    reason），解析复用 _supported_verdict；LLMError 上抛给重试层。"""
+    from suite_api.services.llm import LLMError
+
+    raw = _judge_raw(question, chunks, answer, JUDGE_LLM_SYSTEM_PROMPT)
+    verdict = _supported_verdict(raw)
+    if verdict is None:
+        raise LLMError("judge 输出不可解析") from None
+    return verdict, _reason_from_raw(raw)
+
+
+def judge_llm_with_retry(
+    question: str, chunks: Sequence[str], answer: str, *, attempts: int = JUDGE_ATTEMPTS
+) -> tuple[bool, str] | None:
+    """生成路径 judge × 87 刀同款重试纪律：返回 (verdict, reason) 或 None。"""
+    return _with_retry(
+        lambda: judge_llm_one(question, chunks, answer), attempts=attempts
+    )
+
+
+def is_template_answer(content: str) -> bool:
+    """降级模板（compose_answer）形状判定：两类固定前缀。"""
+    return content.startswith(TEMPLATE_ANSWER_PREFIXES)
+
+
+def build_generated_samples(messages: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """消息行（时序）-> 生成路径样本（纯函数，第 102 刀）。
+
+    messages 形状 {id, session_id, role, content, kind, citations}：
+    - 取 kind='answer' 且 citations 非空的 agent 消息（RAG 路径；citations 空的
+      answer 是工具/目录模板面，不在生成路径）；
+    - 剔除模板回落形状（is_template_answer——fallback 不落消息表，前缀是唯一
+      判据）；
+    - 配同会话该回答**前一条**顾客问句（多轮语境下即触发它的那句）；
+    - (问句, 回答) 全同的重复只留首条（重复探针不重复计票）。
+    """
+    last_question: dict[Any, str] = {}
+    samples: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for msg in messages:
+        if msg["role"] == "customer":
+            last_question[msg["session_id"]] = msg["content"]
+            continue
+        if msg["role"] != "agent" or msg["kind"] != "answer":
+            continue
+        citations = msg["citations"] or []
+        if not citations or is_template_answer(msg["content"]):
+            continue
+        question = last_question.get(msg["session_id"])
+        if not question:
+            continue
+        key = (question, msg["content"])
+        if key in seen:
+            continue
+        seen.add(key)
+        samples.append(
+            {
+                "source": "存量",
+                "message_id": msg["id"],
+                "session_id": msg["session_id"],
+                "question": question,
+                "answer": msg["content"],
+                "citations": citations,
+            }
+        )
+    return samples
+
+
+def judge_llm_summary(
+    total: int, verdicts: Sequence[tuple[bool, str] | None]
+) -> dict[str, Any]:
+    """汇总（纯函数）：judged=评上数、supported_rate 分母只算评上的（87 刀口径）。"""
+    judged = [v for v in verdicts if v is not None]
+    supported = sum(1 for verdict, _reason in judged if verdict)
+    return {
+        "samples": total,
+        "judged": len(judged),
+        "supported": supported,
+        "failed": total - len(judged),
+        "supported_rate": round(supported / len(judged), 4) if judged else None,
+    }
+
+
+def _format_fresh_stats(fresh_stats: dict[str, int]) -> str:
+    parts = [f"问 {fresh_stats.get('asked', 0)} 条"]
+    if fresh_stats.get("generated"):
+        parts.append(f"生成作答 {fresh_stats['generated']}")
+    if fresh_stats.get("fallback"):
+        parts.append(f"模板回落 {fresh_stats['fallback']}")
+    if fresh_stats.get("refusal"):
+        parts.append(f"拒答 {fresh_stats['refusal']}")
+    if fresh_stats.get("handoff"):
+        parts.append(f"转人工 {fresh_stats['handoff']}")
+    return "、".join(parts)
+
+
+def judge_llm_report(
+    samples: Sequence[dict[str, Any]],
+    verdicts: Sequence[tuple[bool, str] | None],
+    *,
+    fresh_stats: dict[str, int],
+    db_url: str,
+) -> str:
+    """逐条 verdict + 汇总 + 口径声明（纯函数；stdout 与 --report 工件共用）。"""
+    lines: list[str] = []
+    summary = judge_llm_summary(len(samples), verdicts)
+    stock_n = sum(1 for s in samples if s["source"] == "存量")
+    lines.append(f"演示库：{db_url}")
+    lines.append(
+        f"样本：存量生成消息 {stock_n} 条（去重后）+ 现场真问 "
+        f"{len(samples) - stock_n} 条（{_format_fresh_stats(fresh_stats)}）"
+    )
+    lines.append("")
+    for idx, (sample, verdict) in enumerate(zip(samples, verdicts, strict=True), start=1):
+        cites = ",".join(f"{c['asset_id']}/v{c['version_no']}" for c in sample["citations"])
+        head = (
+            f"{idx}. [{sample['source']}|msg {sample['message_id']}] "
+            f"问：{sample['question']}\n   答：{sample['answer']}\n   引用：{cites}"
+        )
+        if verdict is None:
+            lines.append(f"{head}\n   判定：未评上（重试尽，不计入分母）")
+        else:
+            supported, reason = verdict
+            lines.append(
+                f"{head}\n   判定：{'supported' if supported else 'False'}"
+                f"——{reason_first_sentence(reason)}"
+            )
+    lines.append("")
+    rate = summary["supported_rate"]
+    rate_text = "-" if rate is None else f"{rate * 100:.1f}%"
+    lines.append(
+        f"汇总：评上 {summary['judged']}/{summary['samples']}"
+        f"（未评上 {summary['failed']}），supported {summary['supported']} 条，"
+        f"supported 率 {rate_text}"
+    )
+    lines.append("")
+    lines.append("口径声明（87 刀同款）：")
+    lines.append("- 生成与判卷均走当日同一网关（LLM_BASE_URL）；跨网关未测，引用数字应带跑全日期。")
+    lines.append("- LLM 输出非确定性：本报告是一次性观察，不进 CI、不进可复现评测尺。")
+    lines.append(
+        "- 证据面=citations 指向 (asset_id, version_no) 的全部切块（比模型 prompt "
+        "实际可见的 top-2 证据宽——判「答案 vs 引用源」的忠实度）；"
+        "工具步/多轮语境带入的证据外陈述会被严格协议判 false，逐条原因留档。"
+    )
+    lines.append(
+        "- 存量样本按模板前缀指纹剔除降级回落（fallback 布尔不落消息表）；"
+        "87 刀模板路径 10.0% 是「框架语越界」基线，本列不可与之直接当幻觉率比。"
+    )
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------- 报告骨架（--report 可选路）
@@ -224,6 +465,138 @@ def report_markdown(
         f"{table}\n"
         "```\n"
     )
+
+
+# ---------------------------------------------------------------- 生成路径观察主流程（--judge-llm）
+
+
+def load_stock_samples(db: Any) -> list[dict[str, Any]]:
+    """存量：service_messages 全量（时序）-> build_generated_samples。"""
+    from sqlalchemy import select
+
+    from suite_api.models import ServiceMessage
+
+    messages = [
+        {
+            "id": m.id,
+            "session_id": m.session_id,
+            "role": m.role,
+            "content": m.content,
+            "kind": m.kind,
+            "citations": m.citations,
+        }
+        for m in db.scalars(select(ServiceMessage).order_by(ServiceMessage.id))
+    ]
+    return build_generated_samples(messages)
+
+
+async def ask_fresh_samples(db: Any) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """现场真问：FRESH_QUESTIONS 逐条走线上 run_ask（真检索+真生成+真闸）。
+
+    单会话顺序问（真实使用形态；问句均无代词，多轮记忆不进检索词）。answer 且
+    带引用且非模板回落形状的入评（与存量同判据）；refusal/handoff/工具面只进
+    计数——87 刀口径只评 answered。
+    """
+    from collections import Counter
+
+    from suite_api.models import ServiceSession
+    from suite_api.services.chat_engine import run_ask
+
+    session = ServiceSession(status="active")
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    stats: Counter[str] = Counter(asked=len(FRESH_QUESTIONS))
+    samples: list[dict[str, Any]] = []
+    for question in FRESH_QUESTIONS:
+        outcome = await run_ask(db, session, question, expose_gap_id=False)
+        message = outcome.agent_message
+        stats[message.kind or "none"] += 1
+        if outcome.generated:
+            stats["generated"] += 1
+        elif message.kind == "answer":
+            stats["fallback"] += 1
+        if (
+            message.kind == "answer"
+            and message.citations
+            and not is_template_answer(message.content)
+        ):
+            samples.append(
+                {
+                    "source": "新问",
+                    "message_id": message.id,
+                    "session_id": session.id,
+                    "question": question,
+                    "answer": message.content,
+                    "citations": message.citations,
+                }
+            )
+    return samples, dict(stats)
+
+
+def evidence_chunks(db: Any, citations: Sequence[dict[str, Any]]) -> list[str]:
+    """样本证据面：citations 指向 (asset_id, version_no) 的全部切块（按 seq）。"""
+    from sqlalchemy import select
+
+    from suite_api.models import RetrievalChunk
+
+    chunks: list[str] = []
+    for cite in citations:
+        chunks.extend(
+            db.scalars(
+                select(RetrievalChunk.chunk)
+                .where(
+                    RetrievalChunk.asset_id == cite["asset_id"],
+                    RetrievalChunk.version_no == cite["version_no"],
+                )
+                .order_by(RetrievalChunk.seq)
+            ).all()
+        )
+    return chunks
+
+
+def run_judge_llm(args: argparse.Namespace) -> int:
+    """--judge-llm 主流程：存量样本 + 现场真问 -> 逐条 judge -> 报告。"""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from suite_api.db import to_sqlalchemy_url
+    from suite_api.settings import get_settings
+
+    if not get_settings().llm_api_key:
+        print("--judge-llm 需要真 LLM key（.env LLM_API_KEY）：现场生成与判卷都走网关")
+        return 2
+
+    engine = create_engine(to_sqlalchemy_url(args.db))
+    with sessionmaker(bind=engine)() as db:
+        stock = load_stock_samples(db)
+        fresh, fresh_stats = asyncio.run(ask_fresh_samples(db))
+        samples = [*stock, *fresh]
+        for sample in samples:
+            sample["evidence"] = evidence_chunks(db, sample["citations"])
+        # 引用版本切块已不存在的样本（发布沿革极端形态）不评——空证据会全判 false
+        dropped = [s for s in samples if not s["evidence"]]
+        samples = [s for s in samples if s["evidence"]]
+        if dropped:
+            print(f"跳过 {len(dropped)} 条引用切块已不存在的样本（msg {[s['message_id'] for s in dropped]}）")
+
+    verdicts = [
+        judge_llm_with_retry(sample["question"], sample["evidence"], sample["answer"])
+        for sample in samples
+    ]
+    report = judge_llm_report(samples, verdicts, fresh_stats=fresh_stats, db_url=args.db)
+    print(report)
+    if args.report:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(
+            f"# 第 102 刀：生成路径忠实度观察（--judge-llm，{date.today().isoformat()}）\n\n"
+            + report
+            + "\n",
+            encoding="utf-8",
+        )
+        print(f"\n报告工件 -> {args.report}")
+    return 0
 
 
 # ---------------------------------------------------------------- 主流程
@@ -259,9 +632,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="评测尺 runner（分层指标，可复现）")
     parser.add_argument("--db", default=DEFAULT_DB, help="演示库 Postgres URL")
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN, help="golden JSON 路径")
-    parser.add_argument("--judge", action="store_true", help="启用 LLM faithfulness 评审列")
+    parser.add_argument("--judge", action="store_true", help="启用 LLM faithfulness 评审列（模板路径，87 刀）")
+    parser.add_argument(
+        "--judge-llm",
+        action="store_true",
+        help="生成路径忠实度观察（第 102 刀）：存量生成消息+现场真问，一次性报告不进 CI",
+    )
     parser.add_argument("--report", type=Path, default=None, help="另写 md 骨架到该路径")
     args = parser.parse_args(argv)
+    if args.judge and args.judge_llm:
+        parser.error("--judge（模板路径）与 --judge-llm（生成路径观察）互斥")
+
+    if args.judge_llm:
+        return run_judge_llm(args)
 
     from sqlalchemy import create_engine, select
     from sqlalchemy.orm import sessionmaker
