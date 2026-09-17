@@ -48,6 +48,7 @@ from suite_api.observability import record_chat_request, record_session_transiti
 from suite_api.services import return_tools
 from suite_api.services.asset_view import AssetDetail, to_asset_detail
 from suite_api.services.chat_engine import run_ask, sse_event_stream
+from suite_api.services.conversation_memory import backflow_transcript_messages
 from suite_api.services.handoff_tickets import (
     resolve_ticket,
     ticket_no,
@@ -541,11 +542,21 @@ def register_session(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="会话没有消息，转写为空，不能登记",
         )
+    # 第 108B 刀债务（第 109 刀修）：拒答/转人工轮**整轮**不进转写——W4 拒答
+    # 四段式是模板话术，回流后会变成检索语料里的弱命中噪音（bigram 拉偏）；
+    # 规则与记忆面 recent_turns 的整轮跳同源，纯拒答会话的兜底见
+    # conversation_memory.backflow_transcript_messages。
+    transcript_messages = backflow_transcript_messages(messages)
+    if not transcript_messages:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="会话没有可回流的转写内容，不能登记",
+        )
 
-    # 转写：全部消息按时间拼「顾客：…/客服：…」（检索切块按行/轮消费同一格式）
+    # 转写：可回流消息按时间拼「顾客：…/客服：…」（检索切块按行/轮消费同一格式）
     speaker = {"customer": "顾客", "agent": "客服"}
-    transcript = "\n".join(f"{speaker[m.role]}：{m.content}" for m in messages)
-    first_customer = next((m for m in messages if m.role == "customer"), None)
+    transcript = "\n".join(f"{speaker[m.role]}：{m.content}" for m in transcript_messages)
+    first_customer = next((m for m in transcript_messages if m.role == "customer"), None)
     title = _first_question(first_customer.content) if first_customer else "客服对话转写"
 
     try:

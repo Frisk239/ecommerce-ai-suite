@@ -1,0 +1,106 @@
+目标库：postgresql://suite:***@localhost:5433/suite（--apply 将写库）
+已从 .env 载入 18 个环境变量（操作者密码/LLM 等默认值）
+对象存储根：E:\code\ecommerce-ai-suite\data\objects
+
+[retire_assets] retire：资产软删（discarded_at）
+  计划 24 条 · 执行 24 条 · 已执行
+  · skip（施工单/红线明示不动）：A-501（110 刀换字节对象（显示器商品图实拍帧））；A-502（110 刀换字节对象（待发布实拍帧））；A-503（110 刀换字节对象；94b 版本指针幕素材（demo_prepare/手册第二幕依赖））
+    - A-4 ← 「保温杯的净含量是多少？」重题副本（保 A-9）
+    - A-5 ← 「保温杯的净含量是多少？」重题副本（保 A-9）
+    - A-6 ← 退货/退换冗余副本（主份 A-479）
+    - A-13 ← 退货/退换冗余副本（主份 A-479）
+    - A-221 ← 与数码店语境不匹配的英文回流对话
+    - A-222 ← 与数码店语境不匹配的英文回流对话
+    - A-223 ← 与数码店语境不匹配的英文回流对话（已发布）
+    - A-224 ← 与数码店语境不匹配的英文回流对话（已发布）
+    - A-225 ← 与数码店语境不匹配的英文回流对话（已发布）
+    - A-272 ← 「保温杯保修多久？」重题副本（保 A-270）
+    - A-273 ← 「保温杯的净含量是多少？」重题副本（保 A-9）
+    - A-275 ← 「保温杯的净含量是多少？」重题副本（保 A-9）
+    - A-276 ← mcp 探针资产（demo_reset 同判据）
+    - A-277 ← mcp 探针资产（evidence probe）
+    - A-484 ← A-483 同字节冗余份（正文同为未解析 QID）
+    - A-494 ← mcp 探针资产（demo_reset 同判据）
+    - A-495 ← mcp 探针资产（evidence probe）
+    - A-504 ← 标题乱码 + 1x1 PNG 占位字节（第 1/3/4 类）
+    - A-508 ← mcp 探针资产（demo_reset 同判据）
+    - A-509 ← mcp 探针资产（evidence probe）
+    - A-510 ← mcp 探针资产（demo_reset 同判据）
+    - A-511 ← mcp 探针资产（evidence probe）
+    - A-514 ← VLM 真跑探针图（验收残留）
+    - A-515 ← VLM 真跑探针图2（验收残留）
+
+[stale_tickets] fix：陈旧 pending 工单 resolved（>24h）
+  计划 63 条 · 执行 63 条 · 已执行
+    - H-* 陈旧 pending：2-22,28-32,45-81
+
+[gaps_surgical] fix：缺口外科 resolved（G-148/149/150）
+  计划 2 条 · 执行 2 条 · 已执行
+  · 已非 open（幂等）：148
+    - G-80 保留 open（held，不在本刀收口）：OOV 演示素材：手册第十一幕 + demo_prepare 检查点依赖 open（108 审计明示先确认）
+
+[gaps_reask] fix：缺口池漏网重问（auto-close）
+  计划 22 条 · 执行 8 条 · 已执行
+    - G-16 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-22 closed（重问即答，auto-close 生效）
+    - G-25 closed（重问即答，auto-close 生效）
+    - G-23 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-33 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-41 closed（重问即答，auto-close 生效）
+    - G-29 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-53 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-30 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-62 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-64 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-74 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-75 closed（重问即答，auto-close 生效）
+    - G-76 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-77 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-81 closed（重问即答，auto-close 生效）
+    - G-83 closed（重问即答，auto-close 生效）
+    - G-84 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-85 closed（重问即答，auto-close 生效）
+    - G-86 closed（重问即答，auto-close 生效）
+    - G-87 仍 open（弱命中/拒答：refusal——保留待补）
+    - G-92 仍 open（弱命中/拒答：refusal——保留待补）
+
+[probe_sessions] retire：108B 探针会话 + 工单 + 缺口
+  计划 13 条 · 执行 13 条 · 已执行
+  · 目标会话（108B 亲验窗口 2026-09-17）：506-518
+    - H-0121 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+    - H-0122 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+    - H-0123 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+    - H-0124 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+    - H-0125 随会话删除（FK：handoff_tickets.session_id NOT NULL）
+    - 缺口 resolved + session_id 置 NULL（148-150）
+    - 删除行数：handoff_tickets=5、session_ratings=0、service_messages=50、service_sessions=13
+
+[material_tasks] retire：僵死素材任务终止（M-9/M-10）
+  计划 2 条 · 执行 2 条 · 已执行
+
+[compose_tasks] retire：成片任务残留（C-2）
+  计划 1 条 · 执行 1 条 · 已执行
+    - C-2 删任务行 + preview/draft 暂存字节
+
+[recordings] retire：ASR 验收探针录像（R-5/R-6）
+  计划 2 条 · 执行 2 条 · 已执行
+    - R-5（asr_probe.mp4）删录像行 + 挂其上的候选
+    - R-6（asr_probe2.mp4）删录像行 + 挂其上的候选
+    - 删除行数：clip_recordings=2、clip_candidates=1（对象字节留档：红线只许删非中台行）
+
+[brand_fix] fix：A-483 品牌 QID 修订（→Fairphone）
+  计划 1 条 · 执行 1 条 · 已执行
+  · 正文仍为 QID 形态
+    - A-483：v1→v2 换字节「品牌：Q5019402→Fairphone」+ confirm + publish（双审计行）
+
+汇总（计划/执行）：
+类别                                   计划  执行  状态
+retire：资产软删（discarded_at）            24    24  已执行
+fix：陈旧 pending 工单 resolved（>24h）     63    63  已执行
+fix：缺口外科 resolved（G-148/149/150）      2     2  已执行
+fix：缺口池漏网重问（auto-close）              22     8  已执行
+retire：108B 探针会话 + 工单 + 缺口           13    13  已执行
+retire：僵死素材任务终止（M-9/M-10）             2     2  已执行
+retire：成片任务残留（C-2）                    1     1  已执行
+retire：ASR 验收探针录像（R-5/R-6）            2     2  已执行
+fix：A-483 品牌 QID 修订（→Fairphone）       1     1  已执行

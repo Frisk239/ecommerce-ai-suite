@@ -1,0 +1,9 @@
+golden：E:\code\ecommerce-ai-suite\scripts\eval\out\golden_large.json（236 条）  检索 top-3
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       80     98.8%    100.0%  0.9938   0.9954    39.2%       -    0.0%       -
+paraphrase     58     91.4%     98.3%  0.9483   0.9573    31.0%       -       -       -
+confusion      25     72.0%     92.0%  0.8133   0.8409    60.0%       -       -   72.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     86.7%     93.3%  0.9000   0.9087    40.0%       -       -       -
+sem_neg        28     78.6%     92.9%  0.8452   0.8665    35.7%       -       -       -
+overall       236     89.8%     97.1%  0.9320   0.9421    39.0%   86.7%    0.0%   72.0%

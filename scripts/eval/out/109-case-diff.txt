@@ -1,0 +1,53 @@
+逐位归属（230 条；命中集合/位次变化 40 条；其中 recall@1 变化 5 条）:
+  conf-012         [confusion ] expect=29 r1 True->True mrr 1.000->1.000 top [29, 225, 223] -> [29, 441, 129]
+  exp-conf-003     [confusion ] expect=481 r1 True->True mrr 1.000->1.000 top [481, 482, 484] -> [481, 482, 485]
+  exp-conf-004     [confusion ] expect=481 r1 True->True mrr 1.000->1.000 top [481, 482, 484] -> [481, 482, 485]
+  exp-conf-009     [confusion ] expect=485 r1 True->True mrr 1.000->1.000 top [485, 225, 226] -> [485, 226, 242]
+  exp-conf-010     [confusion ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 301, 13] -> [479, 301, 129]
+  exp-oovsyn-005   [oov_syn   ] expect=480 r1 True->True mrr 1.000->1.000 top [480, 78, 223] -> [480, 78, 29]
+  exp-oovsyn-008   [oov_syn   ] expect=237 r1 True->True mrr 1.000->1.000 top [237, 223, 237] -> [237, 237, 237]
+  exp-pos-001      [positive  ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 6, 479] -> [479, 479, 479]
+  exp-pos-002      [positive  ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 13, 6] -> [479, 479, 479]
+  exp-pos-004      [positive  ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 479, 6] -> [479, 479, 479]
+  exp-pos-007      [positive  ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 6, 479] -> [479, 479, 479]
+  exp-pos-008      [positive  ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 13, 6] -> [479, 479, 479]
+  exp-pos-013      [positive  ] expect=17 r1 True->True mrr 1.000->1.000 top [17, 11, 223] -> [17, 11]
+  exp-pos-026      [positive  ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 13, 6] -> [479, 479, 479]
+  exp-pos-032      [positive  ] expect=237 r1 True->True mrr 1.000->1.000 top [237, 237, 223] -> [237, 237, 237]
+  exp-syn-001      [paraphrase] expect=479 r1 True->False mrr 1.000->0.500 top [479, 301, 6] -> [301, 479, 479]  <== @1 退步
+  exp-syn-003      [paraphrase] expect=479 r1 True->True mrr 1.000->1.000 top [479, 13, 479] -> [479, 479, 479]
+  exp-syn-004      [paraphrase] expect=479 r1 True->True mrr 1.000->1.000 top [479, 6, 479] -> [479, 479, 479]
+  exp-syn-011      [paraphrase] expect=479 r1 True->True mrr 1.000->1.000 top [479, 479, 6] -> [479, 479, 479]
+  exp-syn-012      [paraphrase] expect=478 r1 True->True mrr 1.000->1.000 top [478, 478, 479] -> [478, 478, 478]
+  exp-syn-014      [paraphrase] expect=481 r1 True->True mrr 1.000->1.000 top [481, 482, 484] -> [481, 482, 485]
+  exp-syn-018      [paraphrase] expect=479 r1 True->True mrr 1.000->1.000 top [479, 301, 6] -> [479, 301, 479]
+  exp-syn-025      [paraphrase] expect=479 r1 True->True mrr 1.000->1.000 top [479, 13, 479] -> [479, 479, 479]
+  exp-syn-030      [paraphrase] expect=480 r1 True->True mrr 1.000->1.000 top [480, 223, 223] -> [480, 478, 480]
+  exp-syn-033      [paraphrase] expect=479 r1 True->False mrr 1.000->0.500 top [479, 301, 6] -> [301, 479, 479]  <== @1 退步
+  pos-008          [positive  ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 13, 6] -> [479, 479, 479]
+  pos-022          [positive  ] expect=237 r1 True->True mrr 1.000->1.000 top [237, 237, 223] -> [237, 237, 237]
+  pos-023          [positive  ] expect=229 r1 True->False mrr 1.000->0.500 top [229, 228, 235] -> [228, 229, 235]  <== @1 退步
+  ref-001          [positive  ] expect=480 r1 True->True mrr 1.000->1.000 top [480, 480, 224] -> [480, 480]
+  ref-004          [refusal   ] expect=None r1 None->None mrr -->- top [479, 478, 29] -> [479, 29, 479]
+  sneg-nb-002      [sem_neg   ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 9, 13] -> [479, 9, 479]
+  sneg-nb-011      [sem_neg   ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 6, 479] -> [479, 301, 479]
+  sneg-nb-013      [sem_neg   ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 479, 6] -> [479, 479, 478]
+  sneg-nb-014      [sem_neg   ] expect=480 r1 True->True mrr 1.000->1.000 top [480, 480, 6] -> [480, 480, 480]
+  sneg-neg-001     [sem_neg   ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 479, 6] -> [479, 479, 479]
+  sneg-neg-004     [sem_neg   ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 6, 479] -> [479, 479, 479]
+  sneg-neg-005     [sem_neg   ] expect=479 r1 True->False mrr 1.000->0.500 top [479, 301, 6] -> [301, 479, 479]  <== @1 退步
+  sneg-neg-007     [sem_neg   ] expect=479 r1 True->False mrr 1.000->0.500 top [479, 492, 479] -> [492, 479, 479]  <== @1 退步
+  sneg-neg-010     [sem_neg   ] expect=479 r1 True->True mrr 1.000->1.000 top [479, 479, 6] -> [479, 479, 479]
+  syn-005          [paraphrase] expect=479 r1 True->True mrr 1.000->1.000 top [479, 6, 301] -> [479, 301, 479]
+
+分分布 recall@1/@3（before -> after，仅 cite 组）：
+  positive    @1 75/76->74/76 (-1)   @3 76/76->76/76 (+0)
+  paraphrase  @1 52/56->50/56 (-2)   @3 55/56->55/56 (+0)
+  confusion   @1 18/25->18/25 (+0)   @3 23/25->23/25 (+0)
+  oov_syn     @1 13/15->13/15 (+0)   @3 14/15->14/15 (+0)
+  sem_neg     @1 22/28->20/28 (-2)   @3 26/28->26/28 (+0)
+  overall     @1 180/200->175/200 (-5)   @3 194/200->194/200 (+0)
+
+拒答/误拒（refusal 组与 positive 组，不变预期）：
+  before: refusal answered(未拒)=4/30
+  after: refusal answered(未拒)=4/30

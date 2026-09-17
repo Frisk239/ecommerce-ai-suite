@@ -11,6 +11,8 @@ from typing import Any
 
 from suite_api.services.conversation_memory import (
     PRONOUN_RE,
+    backflow_excluded_ids,
+    backflow_transcript_messages,
     recent_turns,
     retrieval_query,
 )
@@ -215,3 +217,42 @@ def test_last_tool_subject_picks_latest_answered_tool_turn(api: object) -> None:
         assert last_tool_subject(db, sid) == "瓶装水"
         ask("到货了吗")  # 澄清伪工具 need_order_no（arg="-"）跳过
         assert last_tool_subject(db, sid) == "瓶装水"
+
+
+# ---------- backflow_excluded_ids：回流转写排除拒答/转人工轮（108B 债，109 修） ----------
+
+
+def test_backflow_excludes_refusal_turn_with_its_question() -> None:
+    """拒答轮整轮排除（含配对问句）；工具轮与普通轮保留（工具答案是实质对话）。"""
+    normal = _turn(2, "保温杯净含量多少", 3, "净含量500ml")
+    refusal = _turn(4, "南极科考站怎么申请参观", 5, "抱歉，这个问题我暂时没有查到…", kind="refusal")
+    handoff = _turn(6, "我要转人工", 7, "已记录工单 H-0124", kind="handoff")
+    tool = _turn(8, "保温杯有货吗", 9, "钛钢保温杯有货，当前库存 42 件。", tool={"name": "get_stock"})
+    messages = [*normal, *refusal, *handoff, *tool]  # 正序（created_at 序）
+    assert backflow_excluded_ids(messages) == {4, 5, 6, 7}
+    assert backflow_excluded_ids(messages) == backflow_excluded_ids(tuple(messages))  # 序列两种入参
+
+
+def test_backflow_transcript_drops_refusal_turn_keeps_others() -> None:
+    """混会话：拒答轮整轮不落转写，普通轮逐条保留（登记端点的最终消息列表）。"""
+    refusal = _turn(2, "南极科考站怎么申请参观", 3, "抱歉，这个问题我暂时没有查到…", kind="refusal")
+    normal = _turn(4, "保温杯净含量多少", 5, "净含量500ml")
+    kept = backflow_transcript_messages([*refusal, *normal])
+    assert [m.content for m in kept] == ["保温杯净含量多少", "净含量500ml"]
+
+
+def test_backflow_transcript_all_refusal_keeps_question_only() -> None:
+    """整会话只有拒答/转人工轮：兜底只排客服侧话术，顾客问句保留（转写非空）。"""
+    refusal = _turn(2, "南极科考站怎么申请参观", 3, "抱歉…已转人工（工单 H-0007）", kind="refusal")
+    handoff = _turn(4, "我要转人工", 5, "已记录工单 H-0008", kind="handoff")
+    kept = backflow_transcript_messages([*refusal, *handoff])
+    assert [m.content for m in kept] == ["南极科考站怎么申请参观", "我要转人工"]  # 问句留、话术排
+
+
+def test_backflow_keeps_unpaired_and_residue_messages() -> None:
+    """尾部残问（无 agent 答）不进排除集；无配对问句的 agent 拒答只排自己。"""
+    residue = _msg(11, "customer", "没答上的问句")
+    orphan_agent = _msg(12, "agent", "无配对的 agent 消息", kind="refusal")
+    normal = _turn(13, "问", 14, "答")
+    assert backflow_excluded_ids([residue, *normal]) == set()  # 残问不成轮，保留
+    assert backflow_excluded_ids([orphan_agent, *normal]) == {12}  # 拒答 agent 只排自己

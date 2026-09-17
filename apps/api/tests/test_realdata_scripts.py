@@ -994,3 +994,114 @@ def test_health_stale_buckets_and_compact_ids() -> None:
     assert dhc.stale_bucket(2) == "24h 内"
     assert dhc.compact_id_ranges([4, 2, 3, 7], "H") == "H-0002–H-0004、H-0007"
     assert dhc.compact_id_ranges([], "H") == ""
+
+
+# --------------------------- 数据清理（第 109 刀）：施工单分组/幂等纯函数
+
+import data_cleanup as dc  # noqa: E402
+
+
+def test_cleanup_retire_plan_four_groups_and_idempotency() -> None:
+    """软删计划四分组：待清/已废弃（幂等）/库中不存在/施工单 skip。
+
+    幂等判据=discarded_at 非空——重跑时同批 id 全落 already（执行数归 0）。
+    """
+    retire_ids = {10: "r10", 11: "r11", 12: "r12", 13: "r13"}
+    skip_ids = {20: "s20"}
+    rows = [
+        (10, None),  # 待清
+        (11, dc.datetime(2026, 9, 1, tzinfo=dc.UTC)),  # 已废弃
+        # 12 不在库（missing）；13 不在库（missing）
+    ]
+    plan = dc.plan_asset_retire(rows, retire_ids=retire_ids, skip_ids=skip_ids)
+    assert plan.to_retire == (10,)
+    assert plan.already == (11,)
+    assert plan.missing == (12, 13)
+    assert plan.skipped == (20,)
+    # 幂等复跑：同一批行第二次全落 already
+    after = dc.plan_asset_retire(
+        [(10, dc.datetime(2026, 9, 17, tzinfo=dc.UTC)), (11, None)],
+        retire_ids=retire_ids,
+        skip_ids=skip_ids,
+    )
+    assert after.to_retire == (11,)  # 只看本批：12/13 缺、10 已废弃
+    assert after.already == (10,)
+
+
+def test_cleanup_work_order_lists_contract() -> None:
+    """施工单常量与 108 报告对齐：24 条 retire、3 条 skip（含 A-503）、22 条漏网、
+    G-80 保留（不进重问/外科列表）。"""
+    assert len(dc.RETIRE_ASSETS) == 24
+    assert set(dc.RETIRE_ASSETS) & set(dc.SKIP_ASSETS) == set()
+    assert set(dc.SKIP_ASSETS) == {501, 502, 503}
+    # 点名的三类都有：探针组主份、英文对话、重题副本、口径冗余主份
+    assert {276, 494, 508, 510} <= set(dc.RETIRE_ASSETS)
+    assert {221, 222, 223, 224, 225} <= set(dc.RETIRE_ASSETS)
+    assert {4, 5, 273, 275, 272} <= set(dc.RETIRE_ASSETS)
+    assert {6, 13} <= set(dc.RETIRE_ASSETS)
+    assert len(dc.GAP_REASK_IDS) == 22
+    assert 80 not in dc.GAP_REASK_IDS and 80 not in dc.GAP_SURGICAL_IDS
+    assert set(dc.GAP_HELD) == {80}
+    assert dc.PROBE_SESSION_IDS == tuple(range(506, 519))
+    assert dc.STALE_MATERIAL_TASK_IDS == (9, 10)
+    assert dc.STALE_COMPOSE_TASK_IDS == (2,)
+    assert dc.PROBE_RECORDING_IDS == (5, 6)
+
+
+def test_cleanup_stale_ticket_rule_boundary() -> None:
+    """陈旧工单=仅 pending 且 created_at < now-24h（边界 24h 整不算陈旧）。"""
+    now = dc.datetime(2026, 9, 17, 8, 0, tzinfo=dc.UTC)
+    rows = [
+        (1, "pending", now - dc.timedelta(hours=25)),  # 陈旧
+        (2, "pending", now - dc.timedelta(hours=24)),  # 边界：不算
+        (3, "pending", now - dc.timedelta(hours=2)),  # 新
+        (4, "resolved", now - dc.timedelta(hours=100)),  # 已关：不进（幂等）
+    ]
+    assert dc.stale_pending_ticket_ids(rows, now=now) == (1,)
+
+
+def test_cleanup_brand_fix_content_replaces_qid_line_only() -> None:
+    """A-483 正文修订：整行「品牌：Q…」换标签；非整行形态保守不动。"""
+    content = "品牌：Q5019402\n类目：耳机"
+    fixed = dc.brand_fix_content(content)
+    assert fixed == "品牌：Fairphone\n类目：耳机"
+    assert dc.brand_fix_needed(content) and not dc.brand_fix_needed(fixed)  # 幂等
+    # 同行带尾巴的 QID（非整行）不动——那是另一类修订，但幂等闸仍报「待人工核」
+    other = "品牌：Q5019402 说明"
+    assert dc.brand_fix_content(other) == other
+    assert dc.brand_fix_needed(other)  # 仍需人工核（形态未解）
+
+
+def test_cleanup_brand_fix_plan_skips_clean_and_dirty_revision() -> None:
+    """修订前置判定：正文洁净→不修（幂等）；有未发布修订→不抢（先人工）。"""
+    dirty = "品牌：Q5019402"
+    assert dc.brand_fix_plan(dirty, published_version_no=1, has_unpublished=False).needed
+    clean = dc.brand_fix_plan("品牌：Fairphone", published_version_no=2, has_unpublished=False)
+    assert not clean.needed and "幂等" in clean.reason
+    blocked = dc.brand_fix_plan(dirty, published_version_no=1, has_unpublished=True)
+    assert not blocked.needed and "未发布修订" in blocked.reason
+
+
+def test_cleanup_reask_verdict_three_states() -> None:
+    """重问归宿三态：收口成功 / 答而未收（人工核）/ 弱命中保留 open。"""
+    assert "closed" in dc.reask_verdict(16, status_after="resolved", answer_kind="answer")
+    assert "人工核" in dc.reask_verdict(16, status_after="open", answer_kind="answer")
+    assert "保留待补" in dc.reask_verdict(16, status_after="open", answer_kind="refusal")
+
+
+def test_cleanup_compact_and_summary_shape() -> None:
+    """id 压缩（连续段折叠）与汇总表（计划/执行两列都在）。"""
+    assert dc._compact([2, 3, 4, 7, 9]) == "2-4,7,9"
+    assert dc._compact([]) == "—"
+    steps = [
+        dc.StepResult("a", "retire：资产软删", planned=24, executed=24),
+        dc.StepResult("b", "fix：重问", planned=0, executed=0),
+    ]
+    table = dc.summarize_steps(steps)
+    assert "24" in table and "幂等（无待清）" in table
+
+
+def test_cleanup_missing_db_arg_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(dc, "load_env_file", lambda _path: 0)
+    assert dc.main(["--env-file", "E:/nonexistent/.env"]) == 2

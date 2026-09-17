@@ -1,0 +1,21 @@
+目标库：postgresql://suite:***@localhost:5433/suite（--apply 将写库）
+探针盘点（dry-run）：
+  empty_sessions: 11
+  probe_assets: 0
+  open_gaps: 22
+  pending_tickets: 39
+  sessions_total: 378
+  audit_rows: 1362
+  published_without_title: 1
+
+已清理：
+  deleted_empty_sessions: 11
+  discarded_probe_assets: 0
+清理后：
+  empty_sessions: 0
+  probe_assets: 0
+  open_gaps: 22
+  pending_tickets: 39
+  sessions_total: 367
+  audit_rows: 1362
+  published_without_title: 1
