@@ -36,8 +36,14 @@
   评分/反馈/联系方式等善后通道照常放行；已回流登记（registered）的会话不能
   再结束（409）。操作者仍可把 ended 会话回流登记为 registered。
 
-顾客没有 GET/列表/回流端点（0021：回流登记仍是操作者动作，顾客接口不能
-发布；拉历史属本刀 Out）。限流三道闸见 services/rate_limit（ADR 0033）。
+- ``GET /api/customer/sessions/current/messages``（第 95 刀，widget 会话续接）：
+  「current」= Bearer 令牌所指的那条会话——顾客端把令牌+会话 id 存进
+  localStorage，重开页面时先打这里：active 则恢复会话态（消息重放+继续问），
+  ended/registered 则只回放历史（前端锁输入、评分反馈照旧），401（过期/无效/
+  无令牌）则清存档走新会话。消息形状复用操作者详情端点（单一出处）。
+
+顾客没有列表/回流端点（0021：回流登记仍是操作者动作，顾客接口不能发布）。
+限流三道闸见 services/rate_limit（ADR 0033）。
 """
 
 import logging
@@ -68,6 +74,7 @@ from suite_api.observability import (
     record_csat_rating,
     record_session_transition,
 )
+from suite_api.routes.service import MessageOut, _session_messages, _to_message_out
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.handoff_tickets import submit_contact, ticket_no
 from suite_api.services.media import RangeNotSatisfiable, media_mime, parse_single_range
@@ -436,17 +443,15 @@ def _media_customer_token(request: Request) -> str | None:
     return query_token or None
 
 
-def _media_token_session(db: Session, request: Request) -> ServiceSession | None:
-    """媒体端点的顾客通道鉴权：令牌有效且未过期（TTL 口径与发问一致）。
+def _session_by_customer_token(db: Session, token: str | None) -> ServiceSession | None:
+    """按令牌等值查会话（第 94b/95 刀共用）：无令牌/查无会话/无过期时刻/已过期 -> None。
 
     **不**走 `_authorize_customer_session`（那个按 session_id 查 + 恒定时间比对，
-    形态是「操作已鉴权的会话」）；媒体只有令牌没有会话 id，故按令牌等值查行。
-    取舍（ADR 0052）：DB 索引等值查没有恒定时间比对，但端点对「令牌错/过期/
-    不存在」统一 401 同文案、且响应内容只依赖 asset_id（与令牌身份无关）——
-    探测面为零；换来的是 ``<img src>`` 能带凭证。会话状态不作闸（active/ended
-    都放行）：附件是「本次会话已经收到的回答」的一部分，结束会话不该让图裂。
+    形态是「操作已鉴权的会话」）；本函数服务两个「只有令牌没有会话 id」的端点
+    ——媒体字节出口与会话续接（``current`` 即令牌所指）。取舍（ADR 0052）：DB
+    索引等值查没有恒定时间比对，但调用端对「令牌错/过期/不存在」统一 401 同
+    文案（`_unauthorized`），探测面为零。TTL 口径与发问一致（NULL 视为不可用）。
     """
-    token = _media_customer_token(request)
     if token is None:
         return None
     session = db.scalar(select(ServiceSession).where(ServiceSession.customer_token == token))
@@ -455,6 +460,19 @@ def _media_token_session(db: Session, request: Request) -> ServiceSession | None
     if datetime.now(UTC) > session.customer_token_expires_at:
         return None
     return session
+
+
+def _media_token_session(db: Session, request: Request) -> ServiceSession | None:
+    """媒体端点的顾客通道鉴权：令牌有效且未过期（TTL 口径与发问一致）。
+
+    ``<img>``/``<video>`` 的 src 带不了请求头（浏览器规范），query 令牌是这个
+    场景的唯一出路——**边界只开在本端点**：别处一概只认 Bearer 头（发问/反馈/
+    评分/联系方式/会话续接），query 形态不接受（ADR 0052 写明权衡与泄漏面：URL
+    会进访问日志，故日志侧对 ``token=`` 参数脱敏，见 observability）。会话状态
+    不作闸（active/ended 都放行）：附件是「本次会话已经收到的回答」的一部分，
+    结束会话不该让图裂。
+    """
+    return _session_by_customer_token(db, _media_customer_token(request))
 
 
 @router.get("/assets/{asset_id}/media")
@@ -715,6 +733,83 @@ def rate_session(
         comment=row.comment,
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+# ---------- 会话续接（第 95 刀：widget/顾客页重开后恢复进行中的咨询） ----------
+
+
+class ResumeTicketOut(BaseModel):
+    """续接回执里的工单锚（第 42 刀工单在重载后的回放锚点）。
+
+    顾客面只需要「工单 id（handoff 消息挂联系方式表单用）+ 是否已留联系方式」；
+    name/note 等原文不随本端点回显（顾客 ack 端点回执口径一致——不借操作者
+    掩码视图，也不多给字段）。
+    """
+
+    id: int
+    contact_at: datetime | None
+
+
+class CustomerSessionResume(BaseModel):
+    """续接回执：令牌所指会话的当前态 + 全量消息（消息形状=操作者详情端点）。"""
+
+    session_id: int
+    # active=可恢复对话流；ended/registered=只回放（前端锁输入，评分反馈照旧）
+    status: str
+    messages: list[MessageOut]
+    # 既有评分（未评为 None）：前端据此回显星星与留言（71 刀改评语义跨重载不丢）
+    rating: RatingOut | None = None
+    # 本会话工单（一会话一单，无则 None）：handoff 消息回放时挂表单/已记录态
+    ticket: ResumeTicketOut | None = None
+
+
+@router.get("/sessions/current/messages", response_model=CustomerSessionResume)
+def current_session_messages(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> CustomerSessionResume:
+    """会话续接（第 95 刀）：``current`` = Bearer 令牌所指的那条会话。
+
+    顾客端把令牌+会话 id 存 localStorage，重开页面先打这里再决定恢复还是新建：
+    - **active** -> 恢复会话态（消息重放 + 继续问，不建新会话）；
+    - **ended / registered** -> 200 照回（已结束会话不复活，但历史/评分/反馈
+      这些善后通道照旧——80 刀「关对话流不关善后」跨重载成立）；
+    - **401**（无令牌/令牌无效/**令牌过期**）-> 与发问同口径（统一文案 +
+      WWW-Authenticate），前端清存档走新会话。
+
+    鉴权按**令牌等值查**（`_session_by_customer_token`，与媒体端点共用）而不是
+    `_authorize_customer_session`：路径里没有会话 id，「current」的语义就是令牌
+    本身；存档里的 (token, session_id) 对不上也不影响——响应的 session_id 以
+    库内为准，前端用它覆盖存档。**无限流闸**（与媒体 GET 同口径）：本端点是
+    只读回放，每次打开页面调一次，挂上发问 IP 闸会让顾客反复开关 widget 消耗
+    自己的发问配额；等值查走唯一索引，狂刷面与媒体端点同级。
+    """
+    session = _session_by_customer_token(db, _bearer_token(request))
+    if session is None:
+        raise _unauthorized()
+    rating_row = db.scalar(select(SessionRating).where(SessionRating.session_id == session.id))
+    ticket = db.scalar(select(HandoffTicket).where(HandoffTicket.session_id == session.id))
+    return CustomerSessionResume(
+        session_id=session.id,
+        status=session.status,
+        # 消息形状复用操作者详情端点（content/citations/media_citations/kind/
+        # tool/handoff/created_at + id/role，升序全量）——单一出处，两通道不漂移
+        messages=[_to_message_out(m) for m in _session_messages(db, session.id)],
+        rating=(
+            RatingOut(
+                session_id=rating_row.session_id,
+                score=rating_row.score,
+                comment=rating_row.comment,
+                created_at=rating_row.created_at,
+                updated_at=rating_row.updated_at,
+            )
+            if rating_row is not None
+            else None
+        ),
+        ticket=ResumeTicketOut(id=ticket.id, contact_at=ticket.contact_at)
+        if ticket is not None
+        else None,
     )
 
 

@@ -20,6 +20,7 @@ import type {
   CustomerAnswerComplete,
   CustomerSessionCreated,
   CustomerSessionEnded,
+  CustomerSessionResume,
   CsvImportReport,
   FeedbackResult,
   FrameCandidatesResult,
@@ -288,6 +289,13 @@ export const api = {
   endCustomerSession: (sessionId: number, token: string) =>
     request<CustomerSessionEnded>(`/customer/sessions/${sessionId}/end`, {
       method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  // 会话续接（第 95 刀）：「current」= Bearer 令牌所指会话。active 恢复对话流
+  //（消息重放+继续问）；ended/registered 只回放（锁输入，善后照旧）；401
+  //（过期/无效）由页面清存档走新会话。
+  getCustomerCurrentMessages: (token: string) =>
+    request<CustomerSessionResume>('/customer/sessions/current/messages', {
       headers: { Authorization: `Bearer ${token}` },
     }),
   askCustomer: (
