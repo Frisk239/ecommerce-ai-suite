@@ -1,0 +1,17 @@
+E:\code\ecommerce-ai-suite\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+=== 1. 已发布资产 A-501（线上版字节 + 人洗描述，真 VLM） ===
+对象键 documents/578a97258cd7477981e6b4a5458d7c64/6c67e546db31db7f.png（md5 前缀 09709338cb4b，1157750 B）
+人洗描述：显示器商品图：黑色窄边框显示器，斜侧角度，带可调节支架与底座，屏幕关闭，置于桌面，旁有花瓶和杯子。
+复核结果：{'passed': True, 'overlap': 15, 'vlm_summary': '黑色窄边框显示器，搭配可调节支架和宽大底座，屏幕处于倾斜状态，置于白色桌面，旁有花瓶与白瓷杯。', 'skipped': None}
+
+登记草稿（真 VLM 看图）：{'图片描述': {'value': '黑色窄边框显示器，配有可调节支架和底座，屏幕呈倾斜状态置于白色桌面上，旁边有花瓶和咖啡杯。', 'source': 'machine'}}
+
+=== 2. HTTP 全链（隔离库 suite_test，真 VLM） ===
+PATCH 响应 verify 附注：{'passed': True, 'overlap': 13, 'vlm_summary': '黑色窄边框显示器，配有可调节支架和宽大底座，屏幕处于关闭状态，置于白色桌面上。', 'skipped': None}
+confirmed 落库：{'value': '显示器商品图：黑色窄边框显示器，带可调节支架与宽底座，置于桌面，旁有花瓶与杯子。', 'source': 'human'}
+
+--- 附：fail-open 实测（真 VLM 400 时 PATCH 照常） ---
+首轮用 1×1 占位 PNG 走 HTTP 全链：厂商端 400（小图被拒）→ 草稿弃权、
+PATCH 仍 200，verify 附注 = {'passed': None, 'overlap': None, 'vlm_summary': None,
+'skipped': 'vlm_failed'}，confirmed 照常落库——「复核失败不拦人洗」的真实形态。

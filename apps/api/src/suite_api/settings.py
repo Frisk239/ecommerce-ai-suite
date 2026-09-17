@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     vlm_base_url: str = "https://api.openai.com/v1"
     vlm_model: str = "gpt-4o-mini"
 
+    # 图片描述人洗复核开关（第 111 刀护栏，W7 防复发）：人 PATCH「图片描述」时
+    # 读版本字节调 VLM 独立描述、与人的值做关键词交集（≥2 词=一致），结果作为
+    # 响应附注回前端亮徽章。**默认 on**；显式置 false/0/off 关掉省一次 VLM 调用。
+    # **不拦人**：疑似不符只警示不阻止（治理权在人）；key 空/调用失败=跳过
+    # （fail-open 到人洗兜底，见 services/image_verify.py）。
+    image_verify_on_wash: bool = True
+
     # 云 TTS 口播（第 98b 刀，ADR 0056）：OpenAI 兼容 ``POST {base}/audio/speech``
     # （``{model, input, voice}`` → 音频字节）。默认硅基流动（CosyVoice2 免费档；
     # 任意 OpenAI 兼容语音端点换 base 即可）。voice 用厂商**预置音色**（非克隆，
@@ -112,6 +119,13 @@ class Settings(BaseSettings):
         """compose 以 ``${CUSTOMER_TRUST_PROXY:-}`` 传空串占位：bool 解析空串会
         ValidationError 拒启动，空串语义=回落直连默认（fail-closed）。"""
         return False if value == "" else value
+
+    @field_validator("image_verify_on_wash", mode="before")
+    @classmethod
+    def _image_verify_empty_str(cls, value: object) -> object:
+        """compose 以 ``${IMAGE_VERIFY_ON_WASH:-}`` 传空串占位：空串语义=默认 on
+        （护栏默认就位；显式写 false/0/off 才关）。"""
+        return True if value == "" else value
 
 
 @lru_cache

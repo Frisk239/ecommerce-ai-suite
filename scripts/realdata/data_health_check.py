@@ -79,6 +79,13 @@ if str(_REALDATA_DIR) not in sys.path:
 
 import correct_off_mismatch as off_mismatch  # noqa: E402
 
+# 关键词交集口径（第 111 刀起唯一定义在 app 服务层：同一函数既守本审计，也守
+# 人洗时的实时复核护栏——services/image_verify.py；禁止两处各写一套）
+from suite_api.services.image_verify import (  # noqa: E402
+    IMAGE_VERIFY_MIN_OVERLAP,
+    keyword_overlap,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REPORT_PATH = REPO_ROOT / "docs" / "research" / "data-health-report.md"
 
@@ -93,7 +100,8 @@ PROBE_LABEL_MARKERS = ("探针", "probe")
 
 MAX_MD5_BYTES = 5 * 1024 * 1024  # 只对 ≤5MB 的文件做 md5（大视频跳过）
 VLM_INTERVAL_DEFAULT = 1.0  # 真 VLM 串行限流间隔（秒）
-DESCRIPTION_MIN_OVERLAP = 2  # 关键词交集 ≥2 词=一致（0–1=疑似不符）
+# 关键词交集阈值（≥2 词=一致；0–1=疑似不符）——唯一定义在 services/image_verify
+DESCRIPTION_MIN_OVERLAP = IMAGE_VERIFY_MIN_OVERLAP
 # 施工单动作优先级（同一对象被多类检查发现时取最强者，见 AuditReport.all_actions）
 ACTION_PRIORITY = {"retire": 0, "fix": 1, "keep": 2}
 
@@ -141,23 +149,12 @@ DEMO_ASSET_KEEP: dict[int, str] = {
     501: "94a 图片治理幕素材（显示器官图；110 刀重灌真图）",
 }
 
-# 关键词提取的停用字（bigram 里含这些字的不算关键词——中文启发式的降噪）
-_STOP_CHARS = frozenset("的了是在有和与及也就都还这那我你他她它请问一下一个什么怎么怎样多少哪吗呢吧啊呀哦嗯很挺太真个只把被给对能会要又没不")
-# 描述句的套话（图/画面结构词，不是「画的是什么」——A-505 实测：「画面」「背景」
-# 让测试图与瓶装水描述交集凑到 2 词误判「一致」；剥掉后交集归零=疑似不符）
-_BOILERPLATE = frozenset(
-    {
-        "画面", "背景", "图片", "照片", "图像", "主体", "居中", "清晰", "整体",
-        "拍摄", "实拍", "一张", "这张", "下方", "上方", "中央", "中间", "可见",
-        "呈现", "显示", "周围", "环境", "部分", "位置", "颜色", "色彩",
-    }
-)
-_ASCII_TOKEN_RE = re.compile(r"[0-9a-z]+")
-_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
 # 标题乱码检测：Latin-1 符号区（GBK 字节被当 Latin-1 存进来的典型形态）里
 # 出现 ≥3 个符号才判——「Nestlé」这类单重音品牌名不误伤（实测仅 1 个）
 _MOJIBAKE_RE = re.compile(r"[\u00a1-\u00ff]")
 _MOJIBAKE_MIN = 3
+# 汉字连续串（问句/库内名的中文片段切分用，offers_known_product 的保守判定）
+_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
 
 
 # ---------- 纯函数（离线可测；第 108 刀单测覆盖点） ----------
@@ -179,32 +176,6 @@ def group_duplicates(entries: Iterable[tuple[str, str]]) -> dict[str, list[str]]
         groups[digest].append(label)
     dup = {digest: sorted(labels) for digest, labels in groups.items() if len(labels) > 1}
     return dict(sorted(dup.items(), key=lambda item: item[1][0]))
-
-
-def keywords_of(text: str | None) -> set[str]:
-    """文本 → 关键词集（中文 bigram + ASCII 词；停用字/套话剔除）。
-
-    简单启发的降噪口径：图片描述是短句，bigram 交集对「同一件事物」敏感
-    （显示器/支架/边框），对「不同事物」几乎为零（咖啡胶囊/厨房）；「画面/
-    背景/清晰」这类结构套话先剔掉——它们任何两张图都可能共有（A-505 实证）。
-    """
-    lowered = (text or "").lower()
-    tokens: set[str] = {match.group() for match in _ASCII_TOKEN_RE.finditer(lowered)}
-    for run in _CJK_RUN_RE.finditer(lowered):
-        chars = run.group()
-        for i in range(len(chars) - 1):
-            bigram = chars[i : i + 2]
-            if bigram[0] in _STOP_CHARS or bigram[1] in _STOP_CHARS:
-                continue
-            if bigram in _BOILERPLATE:
-                continue
-            tokens.add(bigram)
-    return tokens
-
-
-def keyword_overlap(left: str | None, right: str | None) -> int:
-    """两段文本的关键词交集大小（判定用的计数，暴露给报告与测试）。"""
-    return len(keywords_of(left) & keywords_of(right))
 
 
 # 图片一致性判定值（表形状的稳定枚举）

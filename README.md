@@ -225,7 +225,7 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
   uv run python scripts/demo_reset.py --db postgresql://suite:suite@localhost:5433/suite --apply    # 真清
   ```
 
-  它清**两类特征行**（空会话：无消息/工单/评分/缺口/回流锚；探针资产：`mcp_registered` 且标题 `^mcp-smoke|^evidence probe`（大小写不敏感，与前端判据对齐）→ 置 discarded 不删行）。**请在演示开始前跑**：顾客刚创建、还没发第一问的会话也符合「空会话」判据，会被一并删掉（其下一问会 401）。**知识缺口与工单只报告不清**——那些是「拒答留缺口 → 去补 → 再问命中」与「转人工闭环」的演示素材。默认 dry-run、必须显式 `--apply`。
+  它清**五类特征行**（空会话：无消息/工单/评分/缺口/回流锚；探针资产：`mcp_registered` 且标题 `^mcp-smoke|^evidence probe`（大小写不敏感，与前端判据对齐）→ 置 discarded 不删行；**素材失败任务** `material_tasks.status='failed'` 清行；**成片残留** `compose_tasks` 非 registered 且超 1h（含暂存字节）；**录像探针** label 命中 `探针|probe|test|acceptance|rebind` **且无已登记资产依赖**——有 registered 候选的录像（A-263/264/265/267 的血缘证据链）与 live93 素材一律留存）。**请在演示开始前跑**：顾客刚创建、还没发第一问的会话也符合「空会话」判据，会被一并删掉（其下一问会 401）。**知识缺口与工单只报告不清**——那些是「拒答留缺口 → 去补 → 再问命中」与「转人工闭环」的演示素材；第十幕还要用 failed 素材任务当证据时别 `--apply`。默认 dry-run、必须显式 `--apply`。
 
 - **自动转写要有 ASR key**（第 93 刀）：切片页「自动转写」按钮在后端 `ASR_API_KEY` 为空时禁用（服务端也 409，见「自动转写」节）；演示前把 key 写进本机 `.env` 再 `PG_PORT=5433 docker compose up -d --build api` 带上它。
 
@@ -258,9 +258,11 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 | `VLM_API_KEY` | 看图密钥；**为空时不建客户端、不发请求** = 无草稿（人洗补写兜底）。密钥只写本机 `.env`，禁止提交 |
 | `VLM_BASE_URL` | OpenAI 兼容端点（默认 `https://api.openai.com/v1`；任意视觉端点同形可换） |
 | `VLM_MODEL` | 模型名（默认 `gpt-4o-mini`） |
+| `IMAGE_VERIFY_ON_WASH` | 图片描述人洗复核开关（第 111 刀护栏）；**默认 on**（有 key 时），显式 `false` 关掉省一次 VLM 调用。key 空/看图失败=自动跳过（fail-open：无 key 环境零影响） |
 
 - **VLM 只出草稿**：登记请求内同步看图（≤20s、0 重试），草稿写进机洗面（`extracted_fields["图片描述"]`，标注「VLM 草稿」）；**人确认才生效**——索引只认 confirmed，未确认的草稿不进索引、顾客面前不出现。失败/超时 = 无草稿，**不阻断登记**（照常进待人洗）。
 - **人洗**：资产详情页「图片描述」面板——草稿一键确认、或对照图上内容改写后确认（PATCH `图片描述`）；确认过的值发布时按句成块入索引。无 VLM key 时面板显示「未出草稿」，直接补写。
+- **人洗护栏（第 111 刀，W7 防复发）**：PATCH「图片描述」时后端读该版字节调 VLM 出**独立描述**，与人的值做关键词交集（≥2 词=一致），结果随响应回前端亮徽章——`✓ VLM 复核一致（关键词交集 N 词）` / `⚠ VLM 复核疑似不符，请对照画面再核一遍`。**只警示不阻止**：PATCH 照常 200、值照常落库（人仍是最终裁决者；改写后再存一次即刷新徽章）。VLM 未配置/调用失败/`IMAGE_VERIFY_ON_WASH=false` = 跳过复核（响应附注 `verify.skipped` 如实标注，不写假结论）。判据与 108 数据审计同一函数（`services/image_verify.py`，交集口径单一定义）。
 - **无描述的图片**照常可发布，只是没有正文块、检索不到；按 ID 取该版正文（`GET /api/assets/{id}/versions/{n}/text`）返回 409——不静默给空串。
 - **换图**：待人洗版可「上传新正文」换一张图（旧键字节删除、重跑 VLM 草稿、已确认字段保留）；视频资产仍不支持换字节（正文由转写字段承载，见 ADR 0047）。
 - **商品素材聚合**：商品卡展开「素材」段——该商品挂载的图/视频/文案/文档按组铺开（`GET /api/products/{id}/assets`，懒加载）；**只有已发布是权威**（已发布排前、未发布灰标），素材库不另建页。
@@ -414,7 +416,7 @@ web 构建校验：`cd apps/web && npm run build && npm run lint`
 
 ## 环境变量
 
-见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`（云转写，OpenAI 兼容 `POST {base}/audio/transcriptions`；**空 key = 不建客户端、不发请求**，切片页「自动转写」如实 409——见「自动转写」节）、`VLM_API_KEY` / `VLM_BASE_URL` / `VLM_MODEL`（看图出「图片描述」草稿，OpenAI 兼容 `POST {base}/chat/completions` 带 `image_url` 内联 base64；**空 key = 不建客户端、不发请求** = 无草稿，人洗补写兜底——见「图片资产」节）、`IMGGEN_API_KEY` / `IMGGEN_BASE_URL` / `IMGGEN_MODEL`（素材任务文生图配图，OpenAI 兼容 `POST {base}/images/generations`；**空 key = 配图步诚实跳过**（任务不 fail）——见「自媒体内容套件」节）、`TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL`（内容成片口播，OpenAI 兼容 `POST {base}/audio/speech`；**空 key = 预览无音轨**（任务不 fail，`with_tts=false` 如实标注）——见「内容成片」节）、`EMBED_API_KEY` / `EMBED_BASE_URL` / `EMBED_MODEL`（切块语义坐标，OpenAI 兼容 `POST {base}/embeddings`；**空 key = 发布照常、embedding 留 NULL**（检索零影响），存量由回填脚本兜底——见「向量基础设施」节）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM/ASR 密钥只落到 `.env`。
+见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`（云转写，OpenAI 兼容 `POST {base}/audio/transcriptions`；**空 key = 不建客户端、不发请求**，切片页「自动转写」如实 409——见「自动转写」节）、`VLM_API_KEY` / `VLM_BASE_URL` / `VLM_MODEL`（看图出「图片描述」草稿，OpenAI 兼容 `POST {base}/chat/completions` 带 `image_url` 内联 base64；**空 key = 不建客户端、不发请求** = 无草稿，人洗补写兜底——见「图片资产」节）、`IMAGE_VERIFY_ON_WASH`（图片描述人洗复核开关，默认 on；显式关掉省一次 VLM 调用，key 空/失败=跳过复核——见「图片资产」节护栏段）、`IMGGEN_API_KEY` / `IMGGEN_BASE_URL` / `IMGGEN_MODEL`（素材任务文生图配图，OpenAI 兼容 `POST {base}/images/generations`；**空 key = 配图步诚实跳过**（任务不 fail）——见「自媒体内容套件」节）、`TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL`（内容成片口播，OpenAI 兼容 `POST {base}/audio/speech`；**空 key = 预览无音轨**（任务不 fail，`with_tts=false` 如实标注）——见「内容成片」节）、`EMBED_API_KEY` / `EMBED_BASE_URL` / `EMBED_MODEL`（切块语义坐标，OpenAI 兼容 `POST {base}/embeddings`；**空 key = 发布照常、embedding 留 NULL**（检索零影响），存量由回填脚本兜底——见「向量基础设施」节）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM/ASR 密钥只落到 `.env`。
 
 ## 仓库布局
 

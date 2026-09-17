@@ -6,55 +6,308 @@
     <!-- 注意：不要设 Referrer-Policy: no-referrer —— 来源取自 document.referrer，
          剥掉它客服会直接拒绝建会话（fail-closed，见 README「可嵌入客服小组件」节） -->
     <title>数码外设专营店 · 首页</title>
+    <!-- 观感对齐控制台 v3 扁平语言（docs/ui-ux-plan.md §UW-E）：白底近黑字、
+         无渐变、1px 墨线、圆角 4/6/8；商品图为 110 刀真 IMGGEN 生成并发布进
+         中台的同一批实拍图（apps/web/public/storefront-img/，与 A-501/505/516/517
+         线上字节同源）。本页是「商家自己的站点」示例，与客服控制台无关。 -->
     <style>
+      :root {
+        --ink: #0f1115;
+        --ink-2: #61666b;
+        --ink-3: #81858c;
+        --line-1: rgba(0, 0, 0, 0.04);
+        --line-2: rgba(0, 0, 0, 0.1);
+        --fill: #ebeef2;
+        --accent: #4176e6;
+        --ok: #166b45;
+        --warn: #92580a;
+      }
+      * { box-sizing: border-box }
       body {
         margin: 0;
         background: #fff;
-        color: #0f1115;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
       }
-      header {
+      a { color: inherit }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px }
+
+      /* 导航栏：品牌 + 类目锚（演示页的假锚，只做「像真店」的骨架） */
+      header.nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: #fff;
+        border-bottom: 1px solid var(--line-2);
+      }
+      .nav-inner {
         display: flex;
         align-items: center;
-        gap: 10px;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-        padding: 14px 24px;
+        gap: 22px;
+        height: 56px;
       }
-      header b { font-size: 15px }
-      header span { color: #81858c; font-size: 12px }
-      main { max-width: 720px; margin: 0 auto; padding: 40px 24px }
-      h1 { font-size: 24px; margin: 0 0 8px }
-      p.sub { color: #61666b; line-height: 1.7; margin: 0 0 8px }
-      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-top: 22px }
-      .card { border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; padding: 14px 16px }
-      .card b { font-size: 14px; display: block; margin-bottom: 4px }
-      .card span { color: #61666b; font-size: 12px; line-height: 1.6 }
-      .card i { font-style: normal; font-size: 13px; color: #0f1115 }
-      .note { font-size: 12px; color: #81858c; margin-top: 28px; line-height: 1.8 }
-      .note code { background: #ebeef2; border-radius: 4px; padding: 1px 5px; font-size: 11px }
+      .brand { display: flex; align-items: center; gap: 8px; text-decoration: none }
+      .brand-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        background: var(--ink);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .brand b { font-size: 15px; font-weight: 600 }
+      nav.cats { display: flex; gap: 18px; margin-left: 6px }
+      nav.cats a {
+        color: var(--ink-2);
+        text-decoration: none;
+        font-size: 13px;
+        padding: 6px 0;
+        border-bottom: 1px solid transparent;
+      }
+      nav.cats a:hover { color: var(--ink); border-bottom-color: var(--ink) }
+      .nav-spacer { flex: 1 }
+      .nav-hint { color: var(--ink-3); font-size: 12px }
+
+      /* 首屏 */
+      .hero { padding: 40px 0 8px }
+      .hero h1 { font-size: 26px; margin: 0 0 10px; letter-spacing: -0.01em }
+      .hero p { margin: 0; color: var(--ink-2); max-width: 640px }
+      .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px }
+      .fact {
+        border: 1px solid var(--line-2);
+        border-radius: 4px;
+        padding: 3px 8px;
+        font-size: 12px;
+        color: var(--ink-2);
+        background: #fff;
+      }
+
+      h2.section { font-size: 16px; margin: 34px 0 4px }
+      p.section-sub { margin: 0 0 14px; color: var(--ink-3); font-size: 12.5px }
+
+      /* 商品卡：白底 + 1px 墨线 + 圆角 8；图 1:1 实拍，无渐变无阴影位移 */
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 14px }
+      .card {
+        border: 1px solid var(--line-2);
+        border-radius: 8px;
+        overflow: hidden;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+      }
+      .card .shot { position: relative; aspect-ratio: 1 / 1; background: var(--fill) }
+      .card .shot img { width: 100%; height: 100%; object-fit: cover; display: block }
+      .card .chip {
+        position: absolute;
+        left: 8px;
+        top: 8px;
+        background: #fff;
+        border: 1px solid var(--line-2);
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-size: 11px;
+        color: var(--ink-2);
+      }
+      .card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px }
+      .card .name { font-size: 14px; font-weight: 600 }
+      .card .desc { font-size: 12px; color: var(--ink-2) }
+      .card .row { display: flex; align-items: baseline; gap: 8px; margin-top: 4px }
+      .card .price { font-size: 13px; font-variant-numeric: tabular-nums }
+      .card .from { font-size: 12px; color: var(--ink-3) }
+      .card .q { font-size: 12px; color: var(--accent); text-decoration: none }
+      .card .q:hover { text-decoration: underline }
+
+      /* 政策口径：真实已发布文档摘录（A-478 保修 / A-479 退换 / A-480 发票与配送） */
+      .policies { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px }
+      .policy { border: 1px solid var(--line-2); border-radius: 8px; padding: 14px 16px }
+      .policy b { display: block; font-size: 13.5px; margin-bottom: 6px }
+      .policy p { margin: 0; font-size: 12.5px; color: var(--ink-2) }
+      .policy .src { display: block; margin-top: 8px; font-size: 11px; color: var(--ink-3) }
+
+      /* 页脚 */
+      footer {
+        margin-top: 44px;
+        border-top: 1px solid var(--line-2);
+        background: #fff;
+      }
+      .foot { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 22px; padding: 26px 0 8px }
+      .foot h3 { font-size: 12.5px; margin: 0 0 8px; color: var(--ink) }
+      .foot p, .foot li { font-size: 12.5px; color: var(--ink-2); margin: 0 0 6px }
+      .foot ul { list-style: none; padding: 0; margin: 0 }
+      .foot a { text-decoration: none }
+      .foot a:hover { text-decoration: underline }
+      .foot .note { grid-column: 1 / -1; color: var(--ink-3); font-size: 11.5px; padding: 10px 0 20px; border-top: 1px solid var(--line-1) }
+      .foot code { background: var(--fill); border-radius: 4px; padding: 1px 5px; font-size: 11px }
+      @media (max-width: 720px) {
+        .foot { grid-template-columns: 1fr }
+        nav.cats { display: none }
+      }
     </style>
   </head>
   <body>
-    <header>
-      <b>数码外设专营店</b>
-      <span>键盘 · 鼠标 · 显示器 · 耳机</span>
-    </header>
-    <main>
-      <h1>经营多年的外设小店</h1>
-      <p class="sub">商品知识、保修与退换口径均由本店治理发布；有疑问点右下角「在线客服」，
-        AI 只回答有已发布证据的问题——答不上会转人工留工单，不编造。</p>
-      <div class="grid">
-        <div class="card"><b>Xperia Ear</b><span>耳机 · 索尼移動 · 2016 年上市</span><i>¥599</i></div>
-        <div class="card"><b>Xperia Ear Duo</b><span>耳机 · 索尼移動 · 2018 年上市</span><i>¥599</i></div>
-        <div class="card"><b>显示器专区</b><span>22 款在售 · 以耳机/显示器为主力类目</span><i>¥1499 起</i></div>
-        <div class="card"><b>机械键盘专区</b><span>14 款在售</span><i>¥399 起</i></div>
+    <!-- 导航栏：品牌名 + 类目锚（假锚只在本页滚动；真店可换成类目路由） -->
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="#top">
+          <span class="brand-mark" aria-hidden="true">数</span>
+          <b>数码外设专营店</b>
+        </a>
+        <nav class="cats" aria-label="类目">
+          <a href="#monitor">显示器</a>
+          <a href="#audio">耳机</a>
+          <a href="#keyboard">键盘</a>
+          <a href="#water">瓶装水</a>
+          <a href="#policy">保修与退换</a>
+        </nav>
+        <span class="nav-spacer"></span>
+        <span class="nav-hint">有疑问点右下角「在线客服」</span>
       </div>
-      <p class="note">
-        这是「商家自己的站点」示例页：与客服控制台无关，整页只多了一行
-        <code>&lt;script src="/embed.js" data-label="在线客服"&gt;&lt;/script&gt;</code>。
-        页面商品数据为演示种子（Wikidata CC0 + 类目演示价，非真实售价）。
-      </p>
+    </header>
+
+    <main class="wrap" id="top">
+      <section class="hero">
+        <h1>经营多年的外设小店</h1>
+        <p>
+          在售商品的知识、保修与退换口径都由本店治理发布后才会被回答；有疑问点右下角
+          「在线客服」——<strong>AI 只回答有已发布证据的问题</strong>，答不上会转人工留工单，
+          不编造。
+        </p>
+        <div class="facts">
+          <span class="fact">整机保修 1 年</span>
+          <span class="fact">7 天无理由退货</span>
+          <span class="fact">现货 48 小时内发货</span>
+          <span class="fact">电子发票 24 小时内开具</span>
+        </div>
+      </section>
+
+      <h2 class="section" id="monitor">本店实拍</h2>
+      <p class="section-sub">以下商品图为店铺实拍，与客服知识库中的同名商品一一对应；问图片里的细节，客服能带着图回答。</p>
+      <div class="grid">
+        <article class="card">
+          <div class="shot">
+            <span class="chip">显示器</span>
+            <img src="/storefront-img/monitor.png" alt="黑色窄边框显示器，带可调节支架与底座" loading="lazy" />
+          </div>
+          <div class="body">
+            <span class="name">窄边框显示器 · 视频图形阵列</span>
+            <span class="desc">黑色窄边框，可调节支架与宽底座；键盘鼠标在外设区。</span>
+            <span class="row">
+              <span class="price">¥1499</span>
+              <a class="q" href="#policy">保修与退换？</a>
+            </span>
+          </div>
+        </article>
+
+        <article class="card" id="audio">
+          <div class="shot">
+            <span class="chip">耳机</span>
+            <img src="/storefront-img/earphone.png" alt="真无线耳机充电盒与耳机本体" loading="lazy" />
+          </div>
+          <div class="body">
+            <span class="name">Xperia Ear 真无线耳机</span>
+            <span class="desc">充电盒内含入耳式耳机，黑色硅胶耳塞；电池属耗材保修 6 个月。</span>
+            <span class="row">
+              <span class="price">¥599</span>
+              <a class="q" href="#policy">能连手机吗？</a>
+            </span>
+          </div>
+        </article>
+
+        <article class="card" id="keyboard">
+          <div class="shot">
+            <span class="chip">键盘</span>
+            <img src="/storefront-img/keyboard.png" alt="黑色机械键盘，键帽印有白色字符" loading="lazy" />
+          </div>
+          <div class="body">
+            <span class="name">LK201 机械键盘</span>
+            <span class="desc">黑色机械键盘，键帽印字符，部分按键为双字符设计。</span>
+            <span class="row">
+              <span class="price">¥399</span>
+              <a class="q" href="#policy">有现货吗？</a>
+            </span>
+          </div>
+        </article>
+
+        <article class="card" id="water">
+          <div class="shot">
+            <span class="chip">瓶装水</span>
+            <img src="/storefront-img/water.png" alt="透明瓶装水，蓝色瓶盖与蓝白波浪标签" loading="lazy" />
+          </div>
+          <div class="body">
+            <span class="name">瓶装饮用水</span>
+            <span class="desc">透明瓶装水，保质期 12 个月，常温避光存放；整箱更划算。</span>
+            <span class="row">
+              <span class="price">¥3</span>
+              <a class="q" href="#policy">怎么配送？</a>
+            </span>
+          </div>
+        </article>
+      </div>
+
+      <h2 class="section" id="policy">服务口径</h2>
+      <p class="section-sub">以下为已发布口径文档的原文要点（中台里的文档是唯一权威，客服按它回答）。</p>
+      <div class="policies">
+        <div class="policy">
+          <b>保修</b>
+          <p>自签收之日起整机保修 1 年，凭订单号办理，无需纸质凭证；人为损坏不在范围，维修周期 7–15 个工作日、往返运费商家承担。</p>
+          <span class="src">摘录自《数码外设保修政策》</span>
+        </div>
+        <div class="policy">
+          <b>退换货</b>
+          <p>7 天无理由退货（商品完好、附件齐全）；15 天质量问题换新。质量问题运费商家承担，无理由退货运费买家承担；退款 48 小时内原路退回。</p>
+          <span class="src">摘录自《退换货政策》</span>
+        </div>
+        <div class="policy">
+          <b>发票与配送</b>
+          <p>支持电子增值税普通发票，订单完成后 24 小时内开具至预留邮箱；默认顺丰发货、偏远地区 EMS，现货 48 小时内发出。</p>
+          <span class="src">摘录自《发票与配送口径》</span>
+        </div>
+      </div>
     </main>
+
+    <footer>
+      <div class="wrap foot">
+        <div>
+          <h3>联系我们</h3>
+          <ul>
+            <li>在线客服：本页右下角「在线客服」（工作时间 4 小时内回复）</li>
+            <li>人工转接：客服答不上会自动建工单，可留下联系方式</li>
+            <li>发票邮箱：订单完成后开具至预留邮箱，无需另行索取</li>
+          </ul>
+        </div>
+        <div>
+          <h3>工作时间</h3>
+          <ul>
+            <li>在线客服：每天 9:00–21:00 营业</li>
+            <li>21:00 后留言次日 9:00 回复；节假日不休息</li>
+            <li>物流发货：现货 48 小时内发出（预售以商品页标注为准）</li>
+          </ul>
+        </div>
+        <div>
+          <h3>店铺信息</h3>
+          <ul>
+            <li>主营：显示器 / 耳机 / 键盘 / 瓶装水</li>
+            <li>发货：默认顺丰快递，偏远地区 EMS</li>
+            <li>保修：整机 1 年，凭订单号办理，无需纸质凭证</li>
+          </ul>
+        </div>
+        <p class="note">
+          这是「商家自己的站点」示例页（演示宿主）：与客服控制台无关，整页只多了一行
+          <code>&lt;script src="/embed.js" data-label="在线客服"&gt;&lt;/script&gt;</code>。
+          商品图与描述来自本店治理台已发布的商品图资产（A-501/505/516/517 同源实拍）；
+          商品价格与库存为演示数据（Wikidata CC0 + 类目演示价，非真实售价）；
+          政策要点与营业时间摘自已发布的《数码外设保修政策》《退换货政策》
+          《发票与配送口径》《补口径 · 你们几点上班》原文。
+        </p>
+      </div>
+    </footer>
     <!-- 宿主页唯一需要的东西：加载控制台的 embed.js（右下角圆形客服钮，Shadow DOM 隔离，首按才注入 iframe） -->
     <script src="/embed.js" data-label="在线客服"></script>
   </body>
