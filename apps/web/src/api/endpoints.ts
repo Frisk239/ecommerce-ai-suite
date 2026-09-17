@@ -234,14 +234,15 @@ export const api = {
     return request<ClipRecording>('/clips/recordings', { method: 'POST', body: form }, 120_000)
   },
   // 第 93 刀（ADR 0050）：自动转写 + 配置状态。
-  // 转写是**同步**请求（提音轨 + 云 ASR，服务端单请求超时 120s）——前端超时给到
-  // 150s，别在服务端还在跑时先断（断了操作者只会看到「网络失败」而库里候选照落）。
+  // 转写是**同步**请求（提音轨 + 逐块云 ASR，服务端总预算 300s——审计 19 起
+  // 多块串行共享硬上限，超限服务端先停并保留部分候选）——前端超时给到
+  // 320s，别在服务端还在跑时先断（断了操作者只会看到「网络失败」而库里候选照落）。
   getClipAsrStatus: () => request<ClipAsrStatus>('/clips/asr/status'),
   transcribeClipRecording: (recordingId: number, productId: number | null = null) =>
     request<ClipTranscribeResult>(
       `/clips/recordings/${recordingId}/transcribe`,
       { method: 'POST', body: JSON.stringify({ product_id: productId }) },
-      150_000,
+      320_000,
     ),
   pickClips: (ids: number[]) =>
     request<AssetListItem[]>('/clips/candidates/pick', {

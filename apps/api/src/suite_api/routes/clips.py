@@ -358,10 +358,13 @@ def transcribe_recording(
     不发请求**——诚实拒绝，人工填 transcript 的现状不变）；该录像已有未拣选的
     cloud 候选 409（带现有条数：重跑不是追加，避免重复堆候选；全部拣选/登记后
     可再生成一批）；``product_id`` 给了但不存在 404；录像无音轨 422；云转写
-    失败/无句级时间戳 502。成功 200 + 真值回执。
+    失败/无句级时间戳 502；**转写超总预算 300s** 502（审计 19——已成功块的
+    部分候选已落库，重跑被既有候选 409 挡住：先拣选再整段重转或切段上传）。
+    成功 200 + 真值回执。
 
     同步执行（路由是同步 def，跑在线程池：ffmpeg 与云请求都是阻塞调用，不占
-    事件循环）；单请求云超时 120s（超过转 502，可再点一次）。
+    事件循环）；单块云超时 120s，提音轨+逐块合计总预算 300s（超限转 502 带
+    已转块数，可再点一次）。
     """
     del operator  # 写接口仅要求登录，401 口径同既有写端点
     recording = db.get(ClipRecording, recording_id)
@@ -403,6 +406,10 @@ def transcribe_recording(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
     except asr_service.ASRUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except asr_service.TranscribeBudgetExceeded as exc:
+        # 总预算闸（审计 19）：已成功块的部分候选已先行落库（重跑会被既有
+        # cloud 候选 409 挡住并带条数——先拣选，再整段重转或切段上传）
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     duration_ms = int((time.monotonic() - started) * 1000)
     logger.info(

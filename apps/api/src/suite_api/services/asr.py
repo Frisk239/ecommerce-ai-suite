@@ -13,6 +13,9 @@
    ``response_format=verbose_json`` 取 ``segments[].{start,end,text}``（句级时间戳）。
    **没给 segments 就当失败**——没有时间戳就聚合不出候选，宁可 502 也不编时间码。
    无语音（segments 与 text 皆空）= 0 段，合法结果（回执如实说「未识别到语音」）。
+   逐块串行共享**总预算 300s**（审计 19）：每块开转前判「累计已耗时+下一块预
+   估」，超限即停——已成功块的部分候选先落库再抛 ``TranscribeBudgetExceeded``
+   （路由 502 带已转块数，重跑被既有候选 409 挡住：先拣选再整段重转或切段上传）。
 4. **停顿聚合**（``aggregate_segments``，纯函数）：句间 gap ≥1.2s 断段；段累计
    时长 ≥20s 后下一句强切另起；每候选 = {start, end, transcript(句文本连接)}；
    候选段数 ≤60 保护（超出把相邻段按序合并到 60 条，回执如实说明合并过）。
@@ -29,6 +32,7 @@ import math
 import subprocess
 import tempfile
 import threading
+import time
 import wave
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -67,6 +71,15 @@ CHUNK_SECONDS = 600.0
 # ASR 请求超时（秒）：spec 的「同步执行超时 120s」——超时转 ASRUnavailable，
 # 不重试（重试只会把操作者的等待翻倍；失败可再点一次）
 ASR_TIMEOUT_SECONDS = 120.0
+# 转写总预算（秒，审计 19）：提音轨 + 逐块云请求的**服务端硬上限**。块数 ×
+# 单块 120s 超时在长录像上无界（多块串行可达十分钟级），而前端只在超时处先断
+# ——操作者只看到「网络失败」。每块开转前判「累计已耗时 + 下一块预估」，超限
+# 即停：已成功块聚合出的部分候选**先落库再抛错**（TranscribeBudgetExceeded，
+# 路由转 502 带已转块数）。前端转写超时 320s 略宽于此值。
+TRANSCRIBE_TOTAL_BUDGET_SECONDS = 300.0
+# 时钟缝（默认真单调钟）：预算判定只读这一个符号——测试注入假钟即可模拟
+# 「慢转写穿预算」，不必真等 300s
+_now_seconds = time.monotonic
 # ffmpeg 提音轨超时（秒）：本地流拷贝级操作是秒级；畸形输入不许挂死请求线程
 _FFMPEG_TIMEOUT = 120
 # 16kHz 单声道 16bit：ffmpeg 输出参数与 split_wav_chunks 的偏移换算同源
@@ -89,6 +102,23 @@ class ASRUnavailable(ASRError):
 
 class AudioExtractionError(ASRError):
     """提音轨失败（录像无音轨/字节损坏/ffmpeg 不可用）：路由转 422。"""
+
+
+class TranscribeBudgetExceeded(ASRError):
+    """转写超总预算（审计 19）：停在已成功块处，**已聚合的部分候选已先行落库**
+    （部分成果保留）。异常携带 ``{已转块数}/{总块数}`` 与保留候选条数，路由转
+    502。落库后的重跑会被「已有未拣选 cloud 候选」409 挡住（带现有条数）——
+    操作者先拣选这批部分候选，再整段重转或把录像切段上传；「重跑不是追加」
+    的幂等口径不因部分失败破例。"""
+
+    def __init__(self, transcribed: int, total: int, candidates_saved: int) -> None:
+        self.transcribed_chunks = transcribed
+        self.total_chunks = total
+        self.candidates_saved = candidates_saved
+        super().__init__(
+            f"转写超总预算（{TRANSCRIBE_TOTAL_BUDGET_SECONDS:.0f}s），已转 {transcribed}/{total} 块，"
+            f"已保留 {candidates_saved} 条部分候选；可先拣选候选再整段重跑，或把录像切段上传"
+        )
 
 
 # 进程级单例（同步客户端线程安全：路由跑在线程池，多个请求共享一份连接池）。
@@ -526,6 +556,27 @@ class TranscribeOutcome:
         return None
 
 
+def _save_partial_candidates(
+    db: Session,
+    *,
+    recording: RecordingRef,
+    chunk_results: Sequence[tuple[float, Sequence[dict[str, Any]]]],
+    product_id: int | None,
+) -> int:
+    """预算超限时把已成功块的聚合结果先落 pending 候选（部分成果保留）。
+
+    语义自洽注记（审计 19）：部分落库后重跑 = 409 带现有条数（pending_count
+    只看未拣选 cloud 候选）——操作者先拣选，全部拣选/登记后可再生成一批；
+    与全量成功路径的幂等口径完全同形，不因部分失败追加堆候选。
+    """
+    if not chunk_results:
+        return 0
+    outcome = aggregate_segments(merge_segments(chunk_results))
+    return create_candidates(
+        db, recording=recording, segments=outcome.segments, product_id=product_id
+    )
+
+
 def transcribe_recording(
     db: Session,
     storage: ObjectStorage,
@@ -533,12 +584,18 @@ def transcribe_recording(
     *,
     product_id: int | None = None,
 ) -> TranscribeOutcome:
-    """整段源录像 → 云 ASR → 停顿聚合 → 落 pending 候选（同步，最长 ~120s）。
+    """整段源录像 → 云 ASR → 停顿聚合 → 落 pending 候选（同步，总预算 300s）。
 
     调用方（路由）负责：key 未配置 409、已有未拣选 cloud 候选 409、商品 404，
     以及**在调本函数前收口事务**（P1#2 纪律：合成调用不许占着池连接等外网）。
     本函数只抛 ASRError 子类（路由分派 422/502）。
+
+    总预算（审计 19）：提音轨 + 逐块云请求共享 ``TRANSCRIBE_TOTAL_BUDGET_SECONDS``
+    ——每块开转前判「累计已耗时 + 下一块预估」（无实测节奏按单块超时上限估，
+    有节奏按已完成块均速估），超限即停：已成功块的部分候选先落库，再抛
+    ``TranscribeBudgetExceeded``（路由 502 带已转块数与保留条数）。
     """
+    started = _now_seconds()
     try:
         video_bytes = storage.get_bytes(recording.object_key)
     except FileNotFoundError as exc:
@@ -549,10 +606,20 @@ def transcribe_recording(
     chunks = split_wav_chunks(wav_bytes)
     if not chunks:
         raise AudioExtractionError("录像没有可提取的音轨（提取结果为空）")
-    chunk_results = [
-        (offset, transcribe_audio(payload, filename=f"chunk-{index + 1}.wav"))
-        for index, (offset, payload) in enumerate(chunks)
-    ]
+    chunk_results: list[tuple[float, list[dict[str, Any]]]] = []
+    for index, (offset, payload) in enumerate(chunks):
+        elapsed = _now_seconds() - started
+        estimate = (
+            elapsed / len(chunk_results) if chunk_results else ASR_TIMEOUT_SECONDS
+        )
+        if elapsed + estimate > TRANSCRIBE_TOTAL_BUDGET_SECONDS:
+            saved = _save_partial_candidates(
+                db, recording=recording, chunk_results=chunk_results, product_id=product_id
+            )
+            raise TranscribeBudgetExceeded(len(chunk_results), len(chunks), saved)
+        chunk_results.append(
+            (offset, transcribe_audio(payload, filename=f"chunk-{index + 1}.wav"))
+        )
     segments = merge_segments(chunk_results)
     outcome = aggregate_segments(segments)
     created = create_candidates(
