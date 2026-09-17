@@ -1103,3 +1103,171 @@ uv run python scripts/eval/fusion_matrix.py --db postgresql://suite:suite@localh
 uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
 EMBED_API_KEY= uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite  # 无 key 零漂移复核
 ```
+
+## 第 107b 刀：三级消融终表（2026-09-17，第五阶段收官——检索代码零改动）
+
+**定位**：检索增强三级（词法 bigram+同义 → 实体亲和重排 → 稠密稀疏融合）的
+**消融终表**——236 条六分布 golden 在三级配置下各跑一次全分布三指标，六分布
+×三指标×三级全表 + 每级增量归因（简历核心资产）。实验脚本
+`scripts/eval/ablation.py`，工件 `scripts/eval/out/107b-ablation.txt`
+（stdout 同内容 `107b-ablation-stdout.txt`）；纯函数单测 16 枚进
+`test_ablation_tools`。
+
+**三级定义（roadmap「词法→+同义→+向量」的落地修订）**：同义词不单独成级——
+104 刀收词是**数据进表**（synonyms 规则表的对组），与词法口径在数据面不可分
+割、运行时无从关（其 before/after 已由第 104 刀逐词对照在档），故「词法」在
+当前库上的诚实含义即「词法+同义」：
+
+- **L1 词法+同义**（亲和关/融合关）：打分 × stale × 评论闸 × 去重稳定降序 +
+  查询侧同义并集；
+- **L2 L1+实体亲和重排**（79 刀 α=3 乘数，融合关）= 106 刀前的生产形态；
+- **L3 L2+稠密稀疏融合**（106 刀 w=0.5+TAU 0.60+lexgate，affinity_before）
+  = 当前生产配置。
+
+实现纪律：`retrieve()` 没有 feature 开关（四出口单点语义，不留运行时开关），
+消融只在脚本层——词法级复用 services 纯函数（与生产逐位同口径），**L3 直接
+调用现役生产函数** `dense_candidates`+`fuse_dense_sparse`；脚本内置
+`verify_production` 对 236 问逐位复核 **L3 == retrieve()：逐位一致**（同进程
+LRU 命中零额外云调用）。查询向量走生产 LRU：236 问每问只调一次云 API，三级
+共用；judge 口径与 run_eval 生产一致（compose_answer 定 kind、融合输出截
+top-3 再判定）。
+
+### 三级终表（摘要；工件机械粘贴）
+
+```
+golden：scripts/eval/out/golden_large.json（236 条）  候选资产 95 个  候选块 598  检索 top-3
+level             pos@1  par@1  conf@1  oov@1  sneg@1   ref%  ovr@1  ovr@3      MRR   nDCG@3     噪声@3      红线
+L1-词法+同义           90.0   81.0    56.0   73.3    67.9   86.7   79.1   88.8   0.8374   0.8506     51.5  BROKEN
+L2-+亲和重排           98.8   91.4    64.0   86.7    78.6   86.7   88.8   96.6   0.9248   0.9354     39.3      OK
+L3-+稠密稀疏融合         98.8   91.4    72.0   86.7    78.6   86.7   89.8   97.1   0.9320   0.9421     39.0      OK
+L3 == 生产复核（retrieve() 逐位对照 236 问）: 逐位一致
+```
+
+### 三级全表（六分布×全指标，机械粘贴）
+
+```
+=== L1-词法+同义（六分布全表） ===
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       80     90.0%     92.5%  0.9125   0.9158    52.1%       -    0.0%       -
+paraphrase     58     81.0%     94.8%  0.8764   0.8951    44.8%       -       -       -
+confusion      25     56.0%     72.0%  0.6267   0.6505    69.3%       -       -   56.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     73.3%     93.3%  0.8333   0.8595    44.4%       -       -       -
+sem_neg        28     67.9%     78.6%  0.7321   0.7462    51.2%       -       -       -
+overall       236     79.1%     88.8%  0.8374   0.8506    51.5%   86.7%    0.0%   56.0%
+
+=== L2-+亲和重排（六分布全表） ===
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       80     98.8%    100.0%  0.9938   0.9954    38.3%       -    0.0%       -
+paraphrase     58     91.4%     98.3%  0.9454   0.9550    29.3%       -       -       -
+confusion      25     64.0%     96.0%  0.7867   0.8314    60.0%       -       -   64.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     86.7%     93.3%  0.9000   0.9087    40.0%       -       -       -
+sem_neg        28     78.6%     85.7%  0.8214   0.8308    44.0%       -       -       -
+overall       236     88.8%     96.6%  0.9248   0.9354    39.3%   86.7%    0.0%   64.0%
+
+=== L3-+稠密稀疏融合（六分布全表） ===
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       80     98.8%    100.0%  0.9938   0.9954    39.2%       -    0.0%       -
+paraphrase     58     91.4%     98.3%  0.9483   0.9573    31.0%       -       -       -
+confusion      25     72.0%     92.0%  0.8133   0.8409    60.0%       -       -   72.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     86.7%     93.3%  0.9000   0.9087    40.0%       -       -       -
+sem_neg        28     78.6%     92.9%  0.8452   0.8665    35.7%       -       -       -
+overall       236     89.8%     97.1%  0.9320   0.9421    39.0%   86.7%    0.0%   72.0%
+```
+
+L2 全表与 107a 基线、L3 全表与 106 实现后基线**逐格一致**（脚本级复现=
+生产形态的实测钉，两级分别锚回两份在档基线）。
+
+### 每级一句话归因
+
+- **L1（词法+同义）——诚实的底线，也是正例红线的破口**：79.1@1/拒答 86.7，
+  正例 90.0 破红线——跨商品同文字段块（品牌：/净含量：…）词法并列、点名
+  资产无信号破开（75 刀病根在终表上的直接投影：confusion@3 仅 72.0、噪声@3
+  51.5% 全场最脏）。
+- **L2（+亲和重排）——救「点名资产的并列」**：正例 90.0→98.8（pos-017/
+  pos-023/exp-pos-015 等 7 条上 top1——正例红线由这一级拉起）、混淆@3
+  72.0→96.0（conf-001/002、exp-conf-001/006/007/009 六条进榜）、oov_syn
+  73.3→86.7（exp-oovsyn-004「雕字」/009 撞回活词）、overall@1 +9.7pp；代价
+  −3 条（syn-012、exp-conf-002、exp-conf-005——标题含字段词时纯字段问也被
+  亲和拉偏，ADR 0048 已知取舍）。
+- **L3（+稠密稀疏融合）——救「意图资产被实体挤位」**：混淆@1 64.0→72.0
+  （exp-conf-002 top1 501 显示器图片帧→478 政策资产、exp-conf-010 301→479）
+  与语义近邻@3 +7.2pp（sneg-nb-005 发票/nb-006 刻字进 top3）；近邻 @1 的
+  6 miss 救回 0（nb-003/004 保温杯三连问 top3 仍被保温杯语料占据——向量也
+  救不动，留给下一阶段的靶子）；代价 conf-007 @3 被挤出（−4.0pp，本刀族
+  唯一退步格，106 已归属）。
+
+### 增量归因（逐条 case 对照，工件机械粘贴）
+
+```
+=== L2-+亲和重排 − L1-词法+同义 ===
+  positive   @1   +8.8pp  @3   +7.5pp  MRR   +8.1pp  nDCG   +8.0pp  噪声  -13.8pp
+  paraphrase @1  +10.3pp  @3   +3.4pp  MRR   +6.9pp  nDCG   +6.0pp  噪声  -15.5pp
+  confusion  @1   +8.0pp  @3  +24.0pp  MRR  +16.0pp  nDCG  +18.1pp  噪声   -9.3pp
+  oov_syn    @1  +13.3pp  @3   +0.0pp  MRR   +6.7pp  nDCG   +4.9pp  噪声   -4.4pp
+  sem_neg    @1  +10.7pp  @3   +7.1pp  MRR   +8.9pp  nDCG   +8.5pp  噪声   -7.1pp
+  overall    @1   +9.7pp  @3   +7.8pp  MRR   +8.7pp  nDCG   +8.5pp  噪声  -12.1pp
+  拒答率 +0.0pp
+  recall1: +23(pos-017,pos-023,syn-008,syn-015,conf-001,conf-002,exp-pos-015,exp-pos-016,exp-pos-017,exp-pos-027,exp-pos-029,exp-syn-001,exp-syn-009,exp-syn-018,exp-syn-028,exp-syn-033,exp-conf-001,exp-conf-009,exp-oovsyn-004,exp-oovsyn-009,sneg-neg-001,sneg-neg-005,sneg-neg-007) / -3(syn-012,exp-conf-002,exp-conf-005)
+  recall3: +16(pos-017,pos-023,syn-005,conf-001,conf-002,exp-pos-015,exp-pos-016,exp-pos-017,exp-pos-027,exp-syn-028,exp-conf-001,exp-conf-006,exp-conf-007,exp-conf-009,sneg-nb-007,sneg-nb-008) / -0
+
+=== L3-+稠密稀疏融合 − L2-+亲和重排 ===
+  positive   @1   +0.0pp  @3   +0.0pp  MRR   +0.0pp  nDCG   +0.0pp  噪声   +0.8pp
+  paraphrase @1   +0.0pp  @3   +0.0pp  MRR   +0.3pp  nDCG   +0.2pp  噪声   +1.7pp
+  confusion  @1   +8.0pp  @3   -4.0pp  MRR   +2.7pp  nDCG   +0.9pp  噪声   +0.0pp
+  oov_syn    @1   +0.0pp  @3   +0.0pp  MRR   +0.0pp  nDCG   +0.0pp  噪声   +0.0pp
+  sem_neg    @1   +0.0pp  @3   +7.2pp  MRR   +2.4pp  nDCG   +3.6pp  噪声   -8.3pp
+  overall    @1   +1.0pp  @3   +0.5pp  MRR   +0.7pp  nDCG   +0.7pp  噪声   -0.3pp
+  拒答率 +0.0pp
+  recall1: +2(exp-conf-002,exp-conf-010) / -0
+  recall3: +2(sneg-nb-005,sneg-nb-006) / -1(conf-007)
+```
+
+（mrr/ndcg3/noise3 的逐条清单在工件里——L2−L1 噪声改善 63 条/退步 3 条、
+L3−L2 改善 16/退步 15，横移主要来自 top2/3 位换块。）
+
+### 红线检查（如实报）
+
+- **拒答红线 86.7（26/30）三级恒定**——拒答语义完全由词法路决定（lexgate：
+  词法零命中三级全空手出；ref-004/007 两条词法命中的误答形态三级不变）。
+  「L1 拒答更高」未发生：融合不触碰空手路径，亲和不改变命中集合。
+- **正例红线 98.8@1：L2/L3 保持，L1 破（90.0）**——正例红线正是**实体亲和
+  重排**拉起来的（L2−L1 +8.8pp）；融合在其上加而不损（+0.0pp）。
+- 误拒率 0.0 三级恒定。
+
+### 可复现
+
+同库跑两遍 stdout diff 仅剩首跑的工件路径回显一行（全表数字逐位相同；查询
+向量两次独立走云 API——bge-m3 同文同向量，融合分逐位稳定）；L2/L3 全表分别
+与 107a/106 在档基线逐格一致，L3 与当日生产 retrieve() 236 问逐位一致。
+
+### 复现命令（仓库根目录）
+
+```
+uv run python scripts/eval/ablation.py --db postgresql://suite:suite@localhost:5433/suite --out scripts/eval/out/107b-ablation.txt
+```
+
+### 第五阶段收官（104–107b，2026-09-17）
+
+第五阶段「检索增强」（评估门放行立项：101 刀 oov_syn 40.0%<70 → C+A 组合、
+B 否决）五刀全交付：
+
+- **104 数据驱动同义表**：真实问句池挖词收 9 对组，oov_syn 40.0→86.7、
+  其余四分布逐位不变（零漂移收词）；
+- **105 向量基础设施**：pgvector embedding 列+HNSW+EMBED_* env+发布事务外
+  补写+598 块全量回填（只备料，检索零漂移）；
+- **106 稠密稀疏融合**：661 配置矩阵三轮迭代定案加权线性 w=0.5+TAU 0.60+
+  lexgate 两闸，overall@1 88.8→89.8、正例/拒答双红线保持；
+- **107a 评测集六分布+三指标**：sem_neg 28 条入集（208→236，否定语义/语义
+  近邻——稠密弱向先钉靶）+ MRR/nDCG@3/噪声率@3 进 runner；
+- **107b 三级消融终表**：本节——L1 79.1 / L2 88.8 / L3 89.8@1 的三级全表
+  与每级归因在档。
+
+**终态**：overall@1 89.8 / @3 97.1 / MRR 0.9320 / nDCG@3 0.9421 / 噪声@3
+39.0%，正例 98.8@1、拒答 86.7、误拒 0.0（三级阶梯里 L2 拉起正例红线、L3
+加融合分——每级贡献可指、每步 before/after 同报告在档）。遗留：oov_syn
+15 条未扩 30+（分级裁决已够用，长尾扩容记债）；sneg 近邻 @1 6 miss
+（nb-003/004 语料占据型——向量救不动，形态留档）；conf@3 −4.0（conf-007）。
+

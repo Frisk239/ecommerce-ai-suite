@@ -1,6 +1,6 @@
 # Ecommerce AI Suite
 
-商家侧电商 AI 套件：FastAPI 单体 + Vite React 控制台 + Postgres。检索默认是中文词法 bigram（ADR 0023）；compose 用 `pgvector/pgvector:pg16` 镜像，**未建向量列、未跑 embedding**。
+商家侧电商 AI 套件：FastAPI 单体 + Vite React 控制台 + Postgres。检索=中文词法 bigram（ADR 0023）+ 实体亲和重排（79 刀）+ 稠密稀疏融合（106 刀，ADR 0058；compose 的 `pgvector/pgvector:pg16` 镜像自 105 刀起真用——embedding 列+HNSW+查询侧向量并联）。
 领域决策见 `CONTEXT.md` 与 `docs/adr/`（表结构唯一依据：ADR 0022/0023）；范围与排期见 `docs/slices.md`。
 
 ## 3 分钟口述稿（演示主线）
@@ -407,6 +407,8 @@ SUITE_TEST_DATABASE_URL=postgresql://suite:suite@localhost:5432/suite_test uv ru
 锚定口径是**标题不锚 id**：测试库每个 module 独立自建 `suite_test` 库，资产 id 随发布顺序漂移，只有标题跨运行稳定可复现；runner 在 fixture 内记录 `{标题: asset_id}` 再把 JSON 里的标题解析成 id 断言引用。
 
 另一层是**动态大集**（`scripts/eval/out/golden_large.json`，不进 CI）：236 条六分布（positive 80 / paraphrase 58 / confusion 25 / refusal 30 / oov_syn 表外同义探针 15 / **sem_neg 语义负例 28**——否定语义 12 + 语义近邻 16，第 107a 刀入集：稠密检索已知弱向的提前钉死，每条期望实跑核验；第 101 刀从 96 条四分布扩到 208），runner `scripts/eval/run_eval.py` 直调 retrieve+compose（零 LLM 依赖、可复现），指标=分层 recall/拒答/误拒/混淆 + **排序三指标 MRR / nDCG@3 / 噪声率@3**（对全部 cite 组；第 107a 刀起），数字入档 `docs/research/rag-eval-report.md`；上游问法回流半自动脚本 `scripts/eval/collect_questions.py`（会话表抽问+去重+预分类提示，期望人审手工定）。
+
+**三级消融终表（第 107b 刀，`scripts/eval/ablation.py`，第五阶段收官）**：236 条在三级配置下全指标对照——L1 词法+同义 79.1@1（正例红线破 90.0——亲和正是拉起红线的一级）/ L2 +实体亲和重排 88.8@1 / L3 +稠密稀疏融合 89.8@1（=当前生产配置，脚本对 236 问逐位复核 L3==retrieve()）；拒答 86.7 三级恒定（lexgate：拒答语义全由词法路决定）；消融只在脚本层（services 不留运行时开关），终表+每级增量归因（逐条 case id）入 rag-eval-report 第 107b 刀节，工件 `scripts/eval/out/107b-ablation.txt`。
 
 web 构建校验：`cd apps/web && npm run build && npm run lint`
 
