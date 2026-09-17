@@ -247,6 +247,12 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 - **落库形状**：`status=pending`、`transcript_source='cloud'`、**直接带 `recording_id`**（第 46 刀「上传即绑无源候选」只圈 `recording_id IS NULL`——转写候选不会被后续上传误绑；第 49 刀改绑仍可把它们改走）；`product_id` 缺省为空（句子里没有商品归属——归属是人/治理动作，不编造；请求体可带 `product_id` 显式归属）。
 - **本地兜底（脚本级，不进 api 镜像）**：`uv sync --extra asr-local` 后 `uv run python scripts/transcribe_local.py --db postgresql://suite:suite@localhost:5433/suite --recording-id <N>`——funasr paraformer-zh 本地转写，落 `transcript_source='local'` 的候选（同一套聚合口径）。依赖在 `apps/api` 的可选组 `asr-local`，Dockerfile 的 `uv sync --no-dev` 不带它（torch GB 级，不进运行时）。
 
+## 切片候选页（第 114 刀 W11/W13/W14）
+
+- **真帧预览（W11）**：绑了源录像的候选卡向 `GET /api/clips/candidates/{id}/frame` 取 `timecode_start` 处的真画面（≤480px，与洗帧同一套 `extract_frame_jpeg`；进程内 LRU，键=(recording_id, 时间码) 两要素不可变故永不陈旧）。**无源录像的 demo 候选保持灰底占位**——0039「不用假截图」对没有视频字节的候选仍是诚实设计（帧端点 409 如实说）；帧加载失败前端回退占位框。
+- **三维筛选（W13）**：状态（全部/待拣/已登记带计数）+ 源录像（含「未绑定（demo 候选）」）+ 关键词（商品/转写/源录像名/ID，多词空格 AND）——客户端过滤不进 URL，与资产/商品页同一搜索口径。
+- **候选详情（W14）**：卡片头「详情」钮（不抢勾选手势——卡片点击仍是拣选高频动作）→ 抽屉：大帧、完整转写全文、绑定的源录像（哪份/大小）、时间码、商品归属、已登记资产外链。
+
 ## 图片资产（第 94a 刀，ADR 0051）
 
 **运营上传一张商品图 → 机器出草稿 → 人确认 → 顾客问图上的话命中带引用。**
@@ -265,6 +271,7 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 - **人洗护栏（第 111 刀，W7 防复发）**：PATCH「图片描述」时后端读该版字节调 VLM 出**独立描述**，与人的值做关键词交集（≥2 词=一致），结果随响应回前端亮徽章——`✓ VLM 复核一致（关键词交集 N 词）` / `⚠ VLM 复核疑似不符，请对照画面再核一遍`。**只警示不阻止**：PATCH 照常 200、值照常落库（人仍是最终裁决者；改写后再存一次即刷新徽章）。VLM 未配置/调用失败/`IMAGE_VERIFY_ON_WASH=false` = 跳过复核（响应附注 `verify.skipped` 如实标注，不写假结论）。判据与 108 数据审计同一函数（`services/image_verify.py`，交集口径单一定义）。
 - **无描述的图片**照常可发布，只是没有正文块、检索不到；按 ID 取该版正文（`GET /api/assets/{id}/versions/{n}/text`）返回 409——不静默给空串。
 - **换图**：待人洗版可「上传新正文」换一张图（旧键字节删除、重跑 VLM 草稿、已确认字段保留）；视频资产仍不支持换字节（正文由转写字段承载，见 ADR 0047）。
+- **控制台对照（第 114 刀 W8）**：资产详情页图片资产出「原图」面板（人洗对照：描述必须与画面一致——111 刀护栏的现场有了图可看）、视频资产出 `<video>` 播放器（Range 流式、可拖动）；资产列表图片行出真缩略图（最新版字节、懒加载）。字节走操作者面端点 `GET /api/assets/{id}/versions/{n}/media` 与 `GET /api/assets/{id}/media`（后者服务端取最新版）——与顾客面媒体端点共用同一份 200/206/416 装配（`services.media.media_stream_response`），但**版本语义相反**：顾客面只出已发布指针版，操作者面未发布版本也可读（治理面语义，同版本正文端点）。
 - **商品素材聚合**：商品卡展开「素材」段——该商品挂载的图/视频/文案/文档按组铺开（`GET /api/products/{id}/assets`，懒加载）；**只有已发布是权威**（已发布排前、未发布灰标），素材库不另建页。
 - **Out**：AI 生图**作知识证据**（证据要能核：图要么人拍人传、要么来自可追溯素材源；第 98 刀起生图可作**素材成品**，见「自媒体内容套件」节的分层红线）；Pexels 辅轨拉图（直播洗帧已由 94c 落地，见「直播洗帧」节）。
 
