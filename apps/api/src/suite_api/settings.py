@@ -37,6 +37,48 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://opencode.ai/zen/go/v1"
     llm_model: str = "qwen3.8-flash"
 
+    # 云 ASR（第 93 刀，ADR 0050）：OpenAI 兼容 ``POST {base}/audio/transcriptions``
+    # （``response_format=verbose_json`` 取句级时间戳）。默认 Groq turbo（89 刀定案：
+    # 带时间戳的免费档）；DashScope/本地网关同形可换 base。密钥纪律同 0033/LLM：
+    # 只从 .env 读、不入库、不进日志与异常文案；**空 key = 不建客户端、不发请求**
+    # ——自动转写端点据此 409 诚实拒绝（fail-closed），人工填 transcript 现状不变。
+    asr_api_key: str = ""
+    asr_base_url: str = "https://api.groq.com/openai/v1"
+    asr_model: str = "whisper-large-v3-turbo"
+
+    # 云 VLM 看图出描述草稿（第 94a 刀，ADR 0051）：OpenAI 兼容
+    # ``POST {base}/chat/completions``，messages 带 ``image_url``（data URL 内联
+    # base64，不依赖外网可取的图片地址）。**只出草稿**——写进 extracted 待人洗
+    # 确认，确认后才进检索索引（人洗生效）。密钥纪律同 0033/ASR：只从 .env 读、
+    # 不入库、不进日志与异常文案；**空 key = 不建客户端、不发请求**（无草稿，
+    # 纯人洗补写兜底）。
+    vlm_api_key: str = ""
+    vlm_base_url: str = "https://api.openai.com/v1"
+    vlm_model: str = "gpt-4o-mini"
+
+    # 云 TTS 口播（第 98b 刀，ADR 0056）：OpenAI 兼容 ``POST {base}/audio/speech``
+    # （``{model, input, voice}`` → 音频字节）。默认硅基流动（CosyVoice2 免费档；
+    # 任意 OpenAI 兼容语音端点换 base 即可）。voice 用厂商**预置音色**（非克隆，
+    # ADR 0056 红线④：数字人/声音克隆 Out）。密钥纪律同 0033/ASR/VLM/IMGGEN：
+    # 只从 .env 读、不入库、不进日志与异常文案；**空 key = 不建客户端、不发请求
+    # **——预览成片无音轨，任务详情诚实标注「TTS 未配置，预览无声」（fail-closed
+    # 不 fail 任务：口播是增值项不是成片本体，同 IMGGEN 的跳过级）。
+    tts_api_key: str = ""
+    tts_base_url: str = "https://api.siliconflow.cn/v1"
+    tts_model: str = "FunAudioLLM/CosyVoice2-0.5B"
+    # 预置音色（厂商公开音色名，非声音克隆）；SiliconFlow 形态 ``{model}:{voice}``
+    tts_voice: str = "FunAudioLLM/CosyVoice2-0.5B:alex"
+
+    # 云文生图（第 98 刀，ADR 0055）：OpenAI 兼容 ``POST {base}/images/generations``
+    # （``{prompt, model, size, response_format:"b64_json"}`` → ``data[0].b64_json``）。
+    # 默认硅基流动（有免费 FLUX 档；任意 OpenAI 兼容图像端点可换 base）。密钥纪律
+    # 同 0033/ASR/VLM：只从 .env 读、不入库、不进日志与异常文案；**空 key = 不建
+    # 客户端、不发请求**——素材任务的配图步**诚实跳过不 fail 任务**（配图是增值项
+    # 不是任务本体，与 ASR/VLM 的 409 fail-closed 刻意不同级），任务详情如实标注。
+    imggen_api_key: str = ""
+    imggen_base_url: str = "https://api.siliconflow.cn/v1"
+    imggen_model: str = "black-forest-labs/FLUX.1-schnell"
+
     # 连接层 Bearer（ADR 0032）。空则 MCP 全部 401；与操作者会话无关。
     mcp_bearer_token: str = ""
 

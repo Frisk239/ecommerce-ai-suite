@@ -23,7 +23,12 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from suite_api.models import Asset, AssetVersion, Product
-from suite_api.services.machine_wash import QA_FIELD, MachineWashError, run_machine_wash
+from suite_api.services.machine_wash import (
+    IMAGE_DESCRIPTION_FIELD,
+    QA_FIELD,
+    MachineWashError,
+    run_machine_wash,
+)
 from suite_api.services.publishing import schema_field_names
 from suite_platform.storage import ObjectStorage
 
@@ -32,18 +37,22 @@ INGESTED = "ingested"
 PENDING_REVIEW = "pending_review"
 PUBLISHED = "published"
 
-# 来源八枚举（0025/ADR 0030）：登记端点语义定值，调用方不可自由填报。
+# 来源枚举（0025/ADR 0030）：登记端点语义定值，调用方不可自由填报。
 # 第 50 刀增两值——真实数据集导入不再被压成「上传」（来源只活在脚本常量里的
 # 那些数据，产品面上看不出「这不是我们自己传的」）：
 #   review_import = 评论数据集导入（在线购物评论 200 条）
 #   open_dataset  = 开放数据集（**通用类**：将来又接一个数据集时先用它兜底）
 # 第 55 刀再拆细：四份数据集在产品面「逐个可见」——Wikidata / OpenFoodFacts /
 # WANDS 各有自己的词（原来三者都叫 open_dataset，界面上分不出是哪一份）。
+# 第 94c 刀增 clip_frame = 直播洗帧确认帧（从已发布切片视频抽出的一帧登记为
+# 图片资产，ADR 0053）——与 clip_pick（切片段登记）同族：来源是「从自己的
+# 直播里洗」，不是上传也不是生成。
 # 无 DB CHECK（应用层枚举），加值零 DDL；回填走迁移 0026 → 0028。
 SOURCE_KINDS = (
     "upload",
     "session_backflow",
     "clip_pick",
+    "clip_frame",
     "material_generated",
     "mcp_registered",
     "seed",
@@ -55,13 +64,25 @@ SOURCE_KINDS = (
 )
 
 
-def make_object_key(kind: str, content_bytes: bytes, *, suffix: str | None = None) -> str:
-    """对象键 = {documents|dialogue|clips}/{uuid}/{sha256前16}.{txt|mp4}（ADR 0003 每版一把键）。
+# 图片上传闸（第 94a 刀）：MIME → 对象键后缀。**content_type 与 MIME 同值**，
+# 一份表两处用——上传端点据此判「这是不是图片」，键后缀与发给厂商的 data URL
+# MIME 同源；字节真相仍以魔数为准（image_suffix，content_type 只做入口闸）。
+IMAGE_SUFFIX_BY_MIME: dict[str, str] = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+}
 
-    扩展名**跟实际字节走**（第 46 刀裁决 4；评审 P1 修正）：`suffix` 显式给定时
-    以它为准——切片的真 mp4 路径传 `.mp4`、**无源录像的旧文本路径传 `.txt`**
-    （否则会出现「键说 mp4、字节是文本」的不一致）。不给 suffix 时按 kind 兜底
-    （video→mp4，其余→txt）。前缀照旧：video 走 clips/（ADR 0039）。
+
+def make_object_key(kind: str, content_bytes: bytes, *, suffix: str | None = None) -> str:
+    """对象键 = {documents|dialogue|clips}/{uuid}/{sha256前16}.{txt|mp4|png|jpg|webp}（ADR 0003 每版一把键）。
+
+    扩展名**跟实际字节走**（第 46 刀裁决 4；第 94a 刀推广到图片；评审 P1 修正）：
+    `suffix` 显式给定时以它为准——切片的真 mp4 路径传 `.mp4`、**无源录像的旧
+    文本路径传 `.txt`**（否则会出现「键说 mp4、字节是文本」的不一致）。不给
+    suffix 时按 kind 兜底：video→mp4，image→**魔数嗅探**（png/jpeg/webp；嗅不
+    出来退 `bin`，不拿假后缀冒充），其余→txt。前缀照旧：video 走 clips/
+    （ADR 0039），image 同其余种类走 documents/（图片是治理资产不是切片产物）。
     """
     if kind == "dialogue":
         prefix = "dialogue"
@@ -69,9 +90,28 @@ def make_object_key(kind: str, content_bytes: bytes, *, suffix: str | None = Non
         prefix = "clips"
     else:
         prefix = "documents"
-    extension = suffix if suffix is not None else ("mp4" if kind == "video" else "txt")
+    if suffix is not None:
+        extension = suffix
+    elif kind == "video":
+        extension = "mp4"
+    elif kind == "image":
+        extension = image_suffix(content_bytes) or "bin"
+    else:
+        extension = "txt"
     digest = hashlib.sha256(content_bytes).hexdigest()[:16]
     return f"{prefix}/{uuid4().hex}/{digest}.{extension}"
+
+
+def image_suffix(content_bytes: bytes) -> str | None:
+    """图片字节魔数 → 键后缀（png/jpg/webp）；不是这三种返回 None。
+
+    走 ``services.vlm.image_mime`` 的同一张魔数表（单一真源：键后缀与发给厂商的
+    data URL MIME 不能各判一套），只做 MIME→后缀的末尾映射。
+    """
+    from suite_api.services.vlm import image_mime  # 延迟导入：仅此处用到，避免顶层耦合
+
+    mime = image_mime(content_bytes)
+    return IMAGE_SUFFIX_BY_MIME.get(mime) if mime is not None else None
 
 
 def validate_source_kind(source_kind: str) -> str:
@@ -89,9 +129,17 @@ def machine_wash_field_names(kind: str, product: Product | None) -> list[str]:
 
     第 18 刀（ADR 0039）加 video 分支：切片登记的字节是口语转写文本，跑商品
     规格正则会误抽——字段集恒空（即便挂了商品），弃权直接推进待人洗，与
-    dialogue 无 QA 时同形。"""
+    dialogue 无 QA 时同形。
+
+    第 94a 刀（ADR 0051）加 image 分支：图片的唯一治理字段是 ``图片描述``（VLM
+    看图出草稿，见 run_machine_wash 的 image 分派），与是否挂商品无关——图片
+    资产不跑商品规格正则（字节是二进制）。**这个字段集同时是**：登记/重试/换
+    字节时「要不要跑机洗」的判据，以及人洗 PATCH 的合法字段集合（图片描述必须
+    可确认，否则人洗补写无路可走）。"""
     if kind == "dialogue":
         return [QA_FIELD]
+    if kind == "image":
+        return [IMAGE_DESCRIPTION_FIELD]
     if kind == "video":
         return []
     if product is None:
@@ -117,10 +165,14 @@ def register_asset(
     - source_kind 必填（0025），入口先校验——坏值在任何字节落库前失败。
     - 字节先落对象存储，对象键 = {documents|dialogue|clips}/{uuid}/{sha256前16}；
       filename 不参与键（ADR 0003 每版一把键），仅作为登记入口的来源信息保留
-      在签名里。扩展名按 kind 分派（第 46 刀：video=.mp4，其余=.txt）。
+      在签名里。扩展名按 kind 分派（第 46 刀：video=.mp4；第 94a 刀：image=
+      魔数嗅探 png/jpg/webp，其余=.txt）；显式 key_suffix 优先（上传端按真实
+      字节给，见 routes/assets）。
     - 机洗字段集按种类分派（machine_wash_field_names）：dialogue -> qa_pairs
       （LLM 抽 QA 草稿；未配置模型=弃权降级照常待人洗，失败=停已接入可重试）；
-      文档挂商品 -> spec_schema keys；文档不挂商品 -> 空集直接待人洗。
+      文档挂商品 -> spec_schema keys；文档不挂商品 -> 空集直接待人洗；
+      image -> 图片描述（VLM 看图出草稿，失败/未配置恒弃权照常待人洗，
+      第 94a 刀 ADR 0051）。
     - preset_fields（第 46 刀）：登记时就已知的正文来源（如切片候选的转写），
       {字段: 值} 在机洗之后并入 extracted_fields（source=machine，值不被机洗
       覆盖：setdefault）。video 字段集恒空（machine_wash_field_names），且有源
@@ -174,7 +226,12 @@ def register_asset(
         else:
             extracted = run_machine_wash(storage, object_key, field_names, kind)
         for name, value in (preset_fields or {}).items():
-            extracted.setdefault(name, {"value": value, "source": "machine"})
+            # 预置字段是**兜底**：字段缺失或机洗弃权时生效；机洗真抽到值则优先
+            # （第 98 刀 image 路径：VLM 看图草稿 > 文案首句预填 > 弃权——图片
+            # 描述只有一个字段，setdefault 会被弃权条目挡住，预填永远进不来）。
+            current = extracted.get(name)
+            if current is None or "value" not in current:
+                extracted[name] = {"value": value, "source": "machine"}
         version.extracted_fields = extracted  # JSONB 整体赋值，确保变更可追踪
         asset.status = PENDING_REVIEW
     except (MachineWashError, FileNotFoundError) as exc:

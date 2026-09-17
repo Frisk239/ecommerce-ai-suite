@@ -211,6 +211,62 @@ def test_index_chunks_document_still_reads_bytes() -> None:
     assert chunks == ["产品说明"]
 
 
+# ---------- 第 94a 刀：image 正文只来自「图片描述」字段（ADR 0051） ----------
+
+
+def test_index_chunks_image_body_comes_from_confirmed_description() -> None:
+    """图片字节是 png/jpeg/webp，解 UTF-8 必失败——正文只从「图片描述」字段进，
+    永不读字节（_ExplodingStorage 任何一次读都炸出来）。"""
+    confirmed = {
+        "图片描述": {"value": "显示器侧面带可调节支架，正面三边窄边框", "source": "human"}
+    }
+    chunks = index_chunks_for_version(
+        _ExplodingStorage(), "documents/x/1.png", "image", confirmed
+    )
+    assert chunks == ["显示器侧面带可调节支架，正面三边窄边框"]
+
+
+def test_index_chunks_image_confirmed_wins_over_draft_and_is_not_duplicated() -> None:
+    """confirmed 优先（0010：人确认才进索引），且正文供体字段**不再**补一块
+    「字段名：值」——否则同一句描述在索引里存两份（第 94a 刀收口）。"""
+    confirmed = {"图片描述": {"value": "带支架的黑色显示器", "source": "human"}}
+    extracted = {"图片描述": {"value": "显示器（VLM 草稿，未确认）", "source": "machine"}}
+    chunks = index_chunks_for_version(
+        _ExplodingStorage(), "documents/x/2.png", "image", confirmed, extracted
+    )
+    assert chunks == ["带支架的黑色显示器"]  # 草稿不进；也没有「图片描述：…」重复块
+    assert not any(chunk.startswith("图片描述：") for chunk in chunks)
+
+
+def test_index_chunks_image_draft_alone_never_enters_index() -> None:
+    """「VLM 只出草稿、人确认生效」（ADR 0051 口径）：extracted 里的草稿即便
+    发布也不进索引——顾客面前不出现未经人确认的模型文本（与 video 允许回落
+    extracted 的 46 刀口径刻意不同级，理由见 index_chunks_for_version）。"""
+    extracted = {"图片描述": {"value": "VLM 草稿：一个带支架的显示器", "source": "machine"}}
+    assert (
+        index_chunks_for_version(_ExplodingStorage(), "documents/x/6.png", "image", {}, extracted)
+        == []
+    )
+
+
+def test_index_chunks_image_without_description_has_empty_body() -> None:
+    """没有描述（未填）的图片照常可发布，只是没有正文块——不回落读字节。"""
+    assert index_chunks_for_version(_ExplodingStorage(), "documents/x/3.png", "image", {}) == []
+    abstained = {"图片描述": {"abstained": True}}
+    assert (
+        index_chunks_for_version(_ExplodingStorage(), "documents/x/4.png", "image", {}, abstained)
+        == []
+    )
+
+
+def test_index_chunks_video_confirmed_transcript_block_not_duplicated() -> None:
+    """第 94a 刀同款收口在 video 上的回归钉子：确认字段里的 transcript 是正文
+    供体，不再另补「transcript：…」块（罕见路径，一并收口）。"""
+    confirmed = {"transcript": {"value": "内胆是316不锈钢", "source": "human"}}
+    chunks = index_chunks_for_version(_ExplodingStorage(), "clips/x/5.mp4", "video", confirmed)
+    assert chunks == ["内胆是316不锈钢"]
+
+
 # ---------- 查询词法单元 ----------
 
 

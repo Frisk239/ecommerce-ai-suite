@@ -16,6 +16,7 @@
 source_kind（0025）与补文档/修订缺口关联（0024/0031）都在本路由按端点语义定值。
 """
 
+import base64
 import copy
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -23,7 +24,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -37,6 +38,8 @@ from suite_api.models import (
     Product,
     RetrievalChunk,
 )
+from suite_api.services import frames as frames_service
+from suite_api.services import vlm as vlm_service
 from suite_api.services.asset_view import (
     AssetDetail,
     AssetOut,
@@ -64,10 +67,12 @@ from suite_api.services.publishing import (
     publishable_values,
 )
 from suite_api.services.registration import (
+    IMAGE_SUFFIX_BY_MIME,
     INGESTED,
     PENDING_REVIEW,
     PUBLISHED,
     SOURCE_KINDS,
+    image_suffix,
     machine_wash_field_names,
     make_object_key,
     register_asset,
@@ -78,7 +83,13 @@ from suite_platform.storage import ObjectStorage
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
+# 图片上限（第 94a 刀）：文本 2MB 的尺子量不了真实商品图（手机拍一张常 3–5MB），
+# 图片给 10MB——多模态入口的字节是原图，不是正文。
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_CONTENT_TYPES = {"text/plain", "text/markdown"}
+# 图片三种（第 94a 刀 ADR 0051）：content_type 与 MIME 同值，表在 registration
+# （键后缀与 data URL 同源）；入口只按它判种类，字节真相另按魔数验（见下）。
+IMAGE_CONTENT_TYPES = frozenset(IMAGE_SUFFIX_BY_MIME)
 
 _VALID_STATUSES = {INGESTED, PENDING_REVIEW, PUBLISHED}
 
@@ -89,6 +100,183 @@ class OpenRevisionIn(BaseModel):
 
 class RollbackIn(BaseModel):
     version_no: int
+
+
+# ---------- 洗帧（第 94c 刀，ADR 0053）：请求态候选 + 确认即登记 ----------
+
+
+class FrameCandidateOut(BaseModel):
+    """一个候选帧：秒位 + mm:ss + VLM 分数/一句话 + base64 缩略图（宽 ≤480px）。
+
+    候选是**请求态**不落库——刷新即重算；这里没有 id（确认时前端只回传
+    ``at_second``，服务器从已发布版字节重新抽帧，不信任请求里的图）。"""
+
+    at_second: float
+    at_time: str  # mm:ss（展示用；权威是 at_second）
+    score: int
+    note: str
+    thumbnail_data_url: str  # data:image/jpeg;base64,...（打分用的同一张缩略图）
+
+
+class FrameCandidatesOut(BaseModel):
+    duration_seconds: float
+    sampled: int  # 采样帧数（含被 VLM 判低分淘汰的——回执如实）
+    candidates: list[FrameCandidateOut]
+
+
+class FrameRegisterIn(BaseModel):
+    at_second: float = Field(ge=0)  # 候选帧秒位（越上界由 ffmpeg 如实失败 422）
+    vlm_note: str | None = None  # 候选阶段的打分附注（只进日志，不冒充描述草稿）
+
+
+class FrameRegisterOut(BaseModel):
+    asset: AssetOut  # 新登记的图片资产（id 供前端跳治理台）
+    cut_from: str  # 血缘锚「A-xxxx · vN」：切自哪份视频资产的哪个已发布版
+
+
+def _frame_wash_ref(db: Session, asset_id: int) -> tuple[Asset, frames_service.VideoRef]:
+    """洗帧两端点共用的校验+快照：404/422(非视频)/409(未发布)/422(非 mp4 字节)。
+
+    返回 (asset, VideoRef)——快照含已发布指针版对象键与标题基名（挂商品用商品
+    名，否则资产标题），调用方据此收口事务再动 ffmpeg/VLM（P1#2 纪律）。
+    旧时间码文本切片（键 .txt）在这里被拒：ffmpeg 对文本字节抽不出帧，与其让
+    它在深处炸一个含糊的 422，不如入口说清「这不是可切帧的 mp4」。
+    """
+    asset = _get_asset_or_404(db, asset_id)
+    if asset.kind != "video":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"只有视频资产可以洗帧，该资产种类: {asset.kind}",
+        )
+    if asset.current_published_version_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"只有已发布的视频资产可以洗帧，当前状态: {asset.status}",
+        )
+    published = db.get(AssetVersion, asset.current_published_version_id)
+    if published is None:  # pragma: no cover - 指针完整性由发布事务保证
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="当前已发布版本缺失，无法洗帧"
+        )
+    if _key_suffix(published.object_key) != "mp4":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="该视频资产的字节不是可切帧的 mp4（旧时间码文本切片不可洗帧）",
+        )
+    product = _product_or_none(db, asset)
+    base_name = product.name if product is not None else (asset.title or "").strip()
+    return asset, frames_service.VideoRef(
+        asset_id=asset.id,
+        version_no=published.version_no,
+        object_key=published.object_key,
+        product_id=asset.product_id,
+        base_name=base_name,
+    )
+
+
+@router.post("/{asset_id}/frame-candidates", response_model=FrameCandidatesOut)
+def list_frame_candidates(
+    asset_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> FrameCandidatesOut:
+    """洗帧候选（第 94c 刀，ADR 0053）：已发布视频 → 均匀采样 → VLM 打分 → 回
+    过线候选（≥6 分，上限 8）。候选是请求态：不落库、缩略图 base64 回传，刷新
+    即重算（幂等只由确认登记承载）。
+
+    判定次序与码位：资产不存在 404；非视频 422；未发布 409；``VLM_API_KEY``
+    为空 409（**不建客户端、不发请求**——打分没有本地兜底，无 key 就没有候选，
+    fail-closed 同 ASR）；字节不是 mp4 422；时长探测/抽帧失败 422；VLM 请求
+    失败 502。同步执行（ffprobe/ffmpeg/逐帧 VLM 串行，最长分钟级）。
+    """
+    del operator  # 写接口仅要求登录，401 口径同既有写端点
+    _asset, ref = _frame_wash_ref(db, asset_id)
+    if not vlm_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="VLM 未配置（VLM_API_KEY 为空）：无法给帧打分，洗帧不可用",
+        )
+    # 快照后收口事务再动合成（P1#2 纪律，同 transcribe/pick 先例）
+    db.rollback()
+    try:
+        video_bytes = storage.get_bytes(ref.object_key)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"源视频字节不存在: {ref.object_key}",
+        ) from exc
+    try:
+        outcome = frames_service.generate_candidates(video_bytes)
+    except vlm_service.VLMNotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="VLM 未配置（VLM_API_KEY 为空）：无法给帧打分，洗帧不可用",
+        ) from exc
+    except frames_service.FrameExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except vlm_service.VLMUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+    return FrameCandidatesOut(
+        duration_seconds=outcome.duration_seconds,
+        sampled=outcome.sampled,
+        candidates=[
+            FrameCandidateOut(
+                at_second=frame.at_second,
+                at_time=frames_service.frame_timecode(frame.at_second),
+                score=frame.score,
+                note=frame.note,
+                thumbnail_data_url=(
+                    "data:image/jpeg;base64,"
+                    + base64.b64encode(frame.thumbnail).decode("ascii")
+                ),
+            )
+            for frame in outcome.candidates
+        ],
+    )
+
+
+@router.post("/{asset_id}/frames", response_model=FrameRegisterOut, status_code=status.HTTP_201_CREATED)
+def register_frame(
+    asset_id: int,
+    body: FrameRegisterIn,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> FrameRegisterOut:
+    """确认登记一帧（第 94c 刀，ADR 0053）：从已发布指针版字节抽该秒**全尺寸**
+    jpg，登记为独立图片资产（kind=image、source_kind=clip_frame、挂同商品），
+    走 94a 治理（VLM 出「图片描述」草稿 → 人洗确认 → 发布）。
+
+    操作者是闸（全自动被否——发布权在人）：这里登记的只是「待人洗的图片资产」，
+    不自动发布、不自动确认描述。抽帧失败 422（不落半个资产）；秒位越界由
+    ffmpeg 如实失败（0047：不做 ffprobe 时长硬闸）。不判 VLM key——确认动作
+    不打分（描述草稿无 key 恒弃权，人洗兜底）。
+    """
+    del operator  # 写接口仅要求登录，401 口径同既有写端点
+    _asset, ref = _frame_wash_ref(db, asset_id)
+    # 快照后收口事务再动 ffmpeg（P1#2 纪律）：抽帧秒级、登记走 register_asset
+    db.rollback()
+    try:
+        asset = frames_service.register_frame_asset(
+            db, storage, ref, at_second=body.at_second, vlm_note=body.vlm_note
+        )
+    except frames_service.FrameExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    db.commit()
+    db.refresh(asset)
+    products = load_products(db, [asset])
+    version_nos = published_version_nos(db, [asset])
+    return FrameRegisterOut(
+        asset=to_asset_out(asset, products, version_nos),
+        cut_from=ref.cut_from,
+    )
 
 
 class CsvCreatedRow(BaseModel):
@@ -242,12 +430,21 @@ def _can_discard_asset(asset: Asset, *, has_published_version: bool) -> bool:
 
 
 def _swap_version_bytes(
-    storage: ObjectStorage, kind: str, version: AssetVersion, data: bytes
+    storage: ObjectStorage,
+    kind: str,
+    version: AssetVersion,
+    data: bytes,
+    *,
+    suffix: str | None = None,
 ) -> str:
     """换字节的对象存储侧（0003 键不复用 + 0042 孤儿清理首接线）：新键先写、
     旧键后删（未发布版的旧键从此无引用），版本行改指新键。副作用收口在
-    一个函数里，便于单测钉死「新键写、旧键删」调用序。"""
-    new_key = make_object_key(kind, data)
+    一个函数里，便于单测钉死「新键写、旧键删」调用序。
+
+    suffix（第 94a 刀）：调用方按上传字节的魔数给（png/jpg/webp），键后缀不
+    跟着 kind 兜底——图片换字节时若按兜底走会写出「.png 键装 jpeg」。
+    """
+    new_key = make_object_key(kind, data, suffix=suffix)
     storage.put_bytes(new_key, data)
     storage.delete(version.object_key)
     version.object_key = new_key
@@ -274,11 +471,70 @@ def _delete_version_bytes(storage: ObjectStorage, versions: Sequence[AssetVersio
         storage.delete(v.object_key)
 
 
+def _read_upload(file: UploadFile, kind: str, *, empty_detail: str) -> tuple[bytes, str]:
+    """读上传字节并按 **kind** 校验（登记与换正文共用），返回 (data, 键后缀)。
+
+    判序：空文件 -> 图片魔数 -> 大小。空文件先判（否则空字节会先在魔数闸或
+    大小闸上以更含糊的理由被拒）；图片魔数再判（content_type 可能谎报：浏览器
+    按扩展名猜、改名文件会带错类型，键后缀与后续解码都得跟**字节**走）；大小
+    最后（图片 10MB / 文本 2MB，见两个常量）。
+    """
+    data = file.file.read()
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=empty_detail
+        )
+    suffix = "txt"
+    if kind == "image":
+        sniffed = image_suffix(data)
+        if sniffed is None:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="图片字节不是可识别的 png/jpeg/webp（按魔数判定，与上报类型不符）",
+            )
+        suffix = sniffed
+    max_bytes = MAX_IMAGE_BYTES if kind == "image" else MAX_UPLOAD_BYTES
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"图片超过 {MAX_IMAGE_BYTES // (1024 * 1024)}MB 上限"
+                if kind == "image"
+                else "文档超过 2MB 上限"
+            ),
+        )
+    return data, suffix
+
+
+def _classify_upload(content_type: str | None) -> str | None:
+    """上传 content_type -> kind（document / image）；不在允许集 -> None（415）。
+
+    文本两种（text/plain / text/markdown）-> document；图片三种（png/jpeg/webp，
+    第 94a 刀 ADR 0051）-> image。**对象键后缀不在这里定**——由 ``_read_upload``
+    按字节魔数给（第 46 刀裁决 4「扩展名跟实际字节走」的第 94a 刀延伸）：
+    content_type 只是入口闸，不是真相。
+    """
+    if content_type in IMAGE_SUFFIX_BY_MIME:
+        return "image"
+    if content_type in ALLOWED_CONTENT_TYPES:
+        return "document"
+    return None
+
+
+def _upload_type_error(content_type: str | None = None) -> HTTPException:
+    accepted = " / ".join(sorted(ALLOWED_CONTENT_TYPES | IMAGE_CONTENT_TYPES))
+    received = f"，收到: {content_type}" if content_type else ""
+    return HTTPException(
+        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        detail=f"仅接受 {accepted}{received}",
+    )
+
+
 # ---------- 写接口（全部要求登录，401 未登录） ----------
 
 
 @router.post("/register", response_model=AssetDetail, status_code=status.HTTP_201_CREATED)
-async def register(
+def register(
     file: Annotated[UploadFile, File()],
     productId: Annotated[int | None, Form()] = None,
     title: Annotated[str | None, Form()] = None,
@@ -296,21 +552,22 @@ async def register(
     同一缺口同一时间只挂一份，否则二次登记静默覆盖指向，首份发布时
     resolve_gaps_for_asset 按 resolved_by_asset_id 查不到该缺口，永不解决；
     登记后 resolved_by_asset_id 指向本资产（缺口仍 open，发布事务内才置 resolved）。
+
+    种类按上传类型分派（第 94a 刀）：文本 -> document（机洗跑商品规格正则）；
+    png/jpeg/webp -> **image**（机洗走 VLM 看图出「图片描述」草稿，见 ADR 0051）。
+    图片字节按魔数复验（报 png 传 jpeg 的键不跟着谎报走），上限 10MB（原图比
+    正文大，2MB 的文档尺子量不了手机拍的商品图）。
+
+    **同步 def**（第 94a 刀从 async 改为 sync）：图片机洗会进 VLM 看图（阻塞
+    HTTP，≤20s）。事件循环线程上不许有阻塞调用（同切片真切的纪律），FastAPI
+    丢线程池跑——`file.file.read()` 与既有的 CSV 批量导入同款，multipart 已由
+    框架解析完，同步读不阻塞事件循环。
     """
-    if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"仅接受 {' / '.join(sorted(ALLOWED_CONTENT_TYPES))}，收到: {file.content_type}",
-        )
-    data = await file.read()
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="文档超过 2MB 上限"
-        )
-    if not data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能登记"
-        )
+    classified = _classify_upload(file.content_type)
+    if classified is None:
+        raise _upload_type_error(file.content_type)
+    kind = classified
+    data, suffix = _read_upload(file, kind, empty_detail="空文件不能登记")
 
     # 缺口关联先校验（在字节落库前失败）；预填的标题/商品只是前端便利，后端不强制
     gap = load_attachable_gap(db, knowledgeGapId) if knowledgeGapId is not None else None
@@ -319,12 +576,13 @@ async def register(
         asset = register_asset(
             db,
             storage,
-            kind="document",
+            kind=kind,
             title=title,
             content_bytes=data,
             filename=file.filename,
             product_id=productId,
             source_kind="upload",
+            key_suffix=suffix,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -822,29 +1080,34 @@ def replace_version_bytes(
     确认值不逼重存）。上传校验对齐登记（类型/2MB/空文件），**类型闸在 video 闸
     之前**：给视频资产传 mp4 会先吃 415，传文本才 409。
 
-    同步 def（同 CSV/重试先例）：dialogue 重跑机洗含 LLM（asyncio.run，≤20s），
-    必须跑在线程池线程而非事件循环；字节换序在 commit 后、机洗窗口外（P1#2
-    不 idle-in-transaction）。机洗失败不停在半换状态：字节已换是事实，资产按
-    登记同口径停 ingested 存 last_error（修订中资产 status/指针不动，线上
-    继续 v1，可重传或重试）。
+    第 94a 刀：类型闸改成**按资产种类分派**——文档资产只收文本（口径不变），
+    图片资产只收 png/jpeg/webp（换错图上错了可以直接换，重跑 VLM 草稿，人洗
+    确认值保留）；种类不匹配 415。新键后缀仍按魔数走（registration.make_object_key）。
+
+    同步 def（同 CSV/重试先例）：dialogue 重跑机洗含 LLM（asyncio.run，≤20s）、
+    image 重跑含 VLM 看图（阻塞 HTTP ≤20s），必须跑在线程池线程而非事件循环；
+    字节换序在 commit 后、机洗窗口外（P1#2 不 idle-in-transaction）。机洗失败不
+    停在半换状态：字节已换是事实，资产按登记同口径停 ingested 存 last_error
+    （修订中资产 status/指针不动，线上继续 v1，可重传或重试；图片的 VLM 失败
+    恒弃权——不进这条，照常推进待人洗，见 machine_wash）。
     """
     del operator  # 写接口仅要求登录，401 口径同既有写端点
-    if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"仅接受 {' / '.join(sorted(ALLOWED_CONTENT_TYPES))}，收到: {file.content_type}",
-        )
-    data = file.file.read()
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="文档超过 2MB 上限"
-        )
-    if not data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空文件不能上传"
-        )
-
     asset = _get_asset_or_404(db, asset_id)
+    if asset.kind == "video":
+        # 第 94a 刀评审修：video 闸**先于类型闸**——否则 _classify_upload 对
+        # mp4 恒 None 会先撞 415「类型不收」，把「不支持换字节」说成「类型白名单」
+        # （文案误导；原第 46 刀的 409 分支成了死代码）。
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="视频资产不支持替换字节（正文由 transcript 字段承载，要别的片段去切片页重拣）",
+        )
+    kind = _classify_upload(file.content_type)
+    if kind is None or kind != asset.kind:
+        # 种类不匹配（文档只收文本 / 图片只收 png|jpeg|webp）与类型不在白名单同码：
+        # 这台端点换的是「同一种字节」，换种类是别的事（重建资产）。
+        raise _upload_type_error(file.content_type)
+    data, suffix = _read_upload(file, kind, empty_detail="空文件不能上传")
+
     version = db.scalar(
         select(AssetVersion).where(
             AssetVersion.asset_id == asset.id, AssetVersion.version_no == version_no
@@ -852,16 +1115,6 @@ def replace_version_bytes(
     )
     if version is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资产版本不存在")
-    if asset.kind == "video":
-        # 第 46 刀（ADR 0047）：视频资产的正文由 transcript 字段承载、字节是切出的
-        # mp4 片段。换字节在这里有两重坏处：①上传的是文本，而 video 的对象键按
-        # kind 走 .mp4——键与字节不一致；②video 机洗字段集恒空，重算会把预置的
-        # transcript 整体覆盖成空集，检索块静默归零。故直接拒绝（想要别的片段，
-        # 去切片页重拣）。
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="视频资产的正文来自转写字段、字节是切片，不支持换正文；请回切片页重拣",
-        )
     if not _can_replace_version_bytes(asset, version):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -871,7 +1124,7 @@ def replace_version_bytes(
     # 字段集在 commit 前算完（读 spec_schema 会 autobegin，别把只读事务
     # 留进机洗窗口）；confirmed 不动——重跑只重算 extracted
     field_names = machine_wash_field_names(asset.kind, product)
-    _swap_version_bytes(storage, asset.kind, version, data)
+    _swap_version_bytes(storage, asset.kind, version, data, suffix=suffix)
     db.commit()  # P1#2：字节换序先落库，机洗（dialogue 含 LLM ≤20s）不持事务
 
     try:

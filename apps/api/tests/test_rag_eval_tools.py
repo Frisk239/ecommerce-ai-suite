@@ -9,6 +9,8 @@ import random
 import sys
 from pathlib import Path
 
+import pytest
+
 from suite_api.services.retrieval import query_terms, score_chunk
 from suite_api.services.synonyms import SYNONYM_GROUPS, apply_synonyms
 
@@ -213,6 +215,30 @@ def _case(dist: str, expect: dict) -> dict:
     return {"id": f"{dist}-x", "distribution": dist, "question": "q", "expect": expect}
 
 
+def test_distributions_include_oov_syn() -> None:
+    """第 101 刀：第五分布（表外同义探针）进统计词表与表格。"""
+    assert "oov_syn" in runner.DISTRIBUTIONS
+    hit = {"asset_id": 1, "version_no": 1, "chunk": "c", "score": 1.0}
+    rows = [
+        runner.judge_case(_case("oov_syn", {"cite": {"asset_id": 1, "version_no": 1}}), [hit], "answer"),
+        runner.judge_case(_case("oov_syn", {"cite": {"asset_id": 2, "version_no": 1}}), [], "refusal"),
+    ]
+    agg = runner.aggregate(rows)
+    assert agg["oov_syn"]["n"] == 2
+    assert agg["oov_syn"]["recall1"] == 0.5
+    assert agg["oov_syn"]["confusion_top1"] is None  # 混淆@1 只对 confusion 组
+    table = runner.format_table(agg, judge_on=False)
+    assert "oov_syn" in table
+
+
+def test_aggregate_cite_groups_share_recall_columns() -> None:
+    """positive/paraphrase/confusion/oov_syn 四个 cite 组统一走 recall 判定。"""
+    hit = {"asset_id": 5, "version_no": 2, "chunk": "c", "score": 1.0}
+    for dist in ("positive", "paraphrase", "confusion", "oov_syn"):
+        row = runner.judge_case(_case(dist, {"cite": {"asset_id": 5, "version_no": 2}}), [hit], "answer")
+        assert row["recall1"] is True and row["recall3"] is True
+
+
 def test_judge_case_recall_and_refusal() -> None:
     cite = _case("positive", {"cite": {"asset_id": 1, "version_no": 2}})
     row = runner.judge_case(cite, [{"asset_id": 1, "version_no": 2, "chunk": "c", "score": 1.0}], "answer")
@@ -331,3 +357,217 @@ def test_judge_with_retry_no_sleep_on_last_attempt(monkeypatch) -> None:
     monkeypatch.setattr(runner.time, "sleep", lambda s: sleeps.append(s))
     assert runner.judge_with_retry("Q", ["证据"], "回答") is None
     assert sleeps == [runner.JUDGE_RETRY_WAIT_SECONDS] * (runner.JUDGE_ATTEMPTS - 1)
+
+
+# ---------------------------------------------------------------- golden schema 自检（第 101 刀）
+
+
+# 表外同义探针的改写词（golden oov_syn 组里被改写的目标词）。它们**不得**出现在
+# 同义词表成员里——若未来 synonyms 表扩容吃掉其中任何一个，探针即失效，本测试
+# 变红提示维护（把该条挪分布或换词）。
+OOV_SYN_REWRITE_WORDS = (
+    "邮资", "给修", "票据", "雕字", "寄出", "退回去", "存放", "商品编码",
+    "哪一年出", "哪家厂", "毛球", "退掉", "发出来", "开门", "保温壶",
+)
+
+
+def test_golden_schema_five_distributions() -> None:
+    """golden_large.json 形状自检（纯文件检查，不连 DB）：五分布键合法、
+    id/问句唯一、oov_syn 改写词不在同义词表内。"""
+    golden = EVAL_DIR / "out" / "golden_large.json"
+    if not golden.exists():
+        pytest.skip("golden 大集文件不在本环境（生成见 scripts/eval/generate_golden.py）")
+    cases = json.loads(golden.read_text(encoding="utf-8"))
+
+    valid = {"positive", "paraphrase", "confusion", "refusal", "oov_syn"}
+    ids = [c["id"] for c in cases]
+    questions = [c["question"] for c in cases]
+    assert len(ids) == len(set(ids)), "case id 必须唯一"
+    assert len(questions) == len(set(questions)), "问句分布间不得重复"
+    assert {c["distribution"] for c in cases} <= valid, "分布词表外的键"
+
+    for case in cases:
+        expect = case["expect"]
+        if case["distribution"] == "refusal":
+            assert expect == {"refuse": True}, f"{case['id']} 拒答期望形状"
+        else:
+            assert set(expect) == {"cite"}, f"{case['id']} cite 期望只有 cite 键"
+            assert set(expect["cite"]) == {"asset_id", "version_no"}
+            assert isinstance(expect["cite"]["asset_id"], int)
+            assert isinstance(expect["cite"]["version_no"], int)
+
+    # 第五分布必须在场（第 101 刀起大集含表外同义探针 10-20 条）
+    oov_cases = [c for c in cases if c["distribution"] == "oov_syn"]
+    assert 10 <= len(oov_cases) <= 20, f"表外同义探针 10-20 条，实际 {len(oov_cases)}"
+
+
+def test_golden_oov_syn_words_outside_synonym_table() -> None:
+    """oov_syn 组的改写词必须仍在同义词表之外（表内词会被检索侧并集扩展救回，
+    探针就不再测「表外泛化」）。"""
+    members = {m for group in SYNONYM_GROUPS for m in group}
+    members |= {"折扣券", "优惠券"}
+    for word in OOV_SYN_REWRITE_WORDS:
+        assert word not in members, f"{word!r} 已进同义词表——表外探针失效，需换词"
+
+
+# ---------------------------------------------------------------- 第 102 刀：--judge-llm 生成路径观察
+
+
+def _msg(
+    mid: int, sid: int, role: str, content: str, kind: str | None = None, citations=None
+) -> dict:
+    return {
+        "id": mid,
+        "session_id": sid,
+        "role": role,
+        "content": content,
+        "kind": kind,
+        "citations": citations,
+    }
+
+
+def test_is_template_answer_matches_fallback_prefixes() -> None:
+    """降级模板形状判定：compose_answer 两类前缀是模板路径指纹。"""
+    assert runner.is_template_answer("根据已发布的规格文档《钛钢保温杯 · 规格》：净含量：500ml。")
+    assert runner.is_template_answer("根据已发布的客服对话记录：顾客：您好")
+    assert not runner.is_template_answer("净含量为500ml。")
+    assert not runner.is_template_answer("")
+
+
+def test_build_generated_samples_pairs_filters_and_dedupes() -> None:
+    """存量样本构造：answer+引用入集、模板形状剔除、同问同答去重、跨会话配对。"""
+    messages = [
+        _msg(1, 1, "customer", "保温杯的净含量是多少"),
+        _msg(2, 1, "agent", "净含量为500ml。", "answer", [{"asset_id": 9, "version_no": 1}]),
+        # 同问同答的重复探针：只留首条
+        _msg(3, 1, "customer", "保温杯的净含量是多少"),
+        _msg(4, 1, "agent", "净含量为500ml。", "answer", [{"asset_id": 9, "version_no": 1}]),
+        # 同问不同答（LLM 非确定性）：两条都留
+        _msg(5, 1, "customer", "保温杯的净含量是多少"),
+        _msg(6, 1, "agent", "该保温杯的净含量是 500ml。", "answer", [{"asset_id": 9, "version_no": 1}]),
+        # 模板回落形状（fallback 指纹）：剔除
+        _msg(7, 1, "customer", "材质是什么"),
+        _msg(
+            8, 1, "agent", "根据已发布的规格文档《钛钢保温杯 · 规格》：材质：316不锈钢。",
+            "answer", [{"asset_id": 3, "version_no": 1}],
+        ),
+        # citations 空（工具/目录模板面）：剔除
+        _msg(9, 1, "customer", "你们卖什么"),
+        _msg(10, 1, "agent", "本店在售商品共 3 件", "answer", []),
+        # refusal：剔除（87 刀口径只评 answered）
+        _msg(11, 1, "customer", "有赠品吗"),
+        _msg(12, 1, "agent", "抱歉，已发布资产里没有能回答这个问题的证据。", "refusal", []),
+        # 跨会话：会话 2 的问句配会话 2 的回答（不受会话 1 末问污染）
+        _msg(13, 2, "customer", "退货政策是什么"),
+        _msg(14, 2, "agent", "支持7天无理由退货。", "answer", [{"asset_id": 479, "version_no": 1}]),
+    ]
+    samples = runner.build_generated_samples(messages)
+    assert [(s["message_id"], s["question"]) for s in samples] == [
+        (2, "保温杯的净含量是多少"),
+        (6, "保温杯的净含量是多少"),
+        (14, "退货政策是什么"),
+    ]
+    assert all(s["source"] == "存量" and s["citations"] for s in samples)
+
+
+def test_judge_llm_summary_denominator_only_judged() -> None:
+    """汇总口径与 87 刀一致：分母只算评上的，未评上单列。"""
+    summary = runner.judge_llm_summary(3, [(True, "依据齐全。"), (False, "编造。"), None])
+    assert summary == {
+        "samples": 3,
+        "judged": 2,
+        "supported": 1,
+        "failed": 1,
+        "supported_rate": 0.5,
+    }
+    assert runner.judge_llm_summary(0, [])["supported_rate"] is None
+
+
+def test_reason_first_sentence() -> None:
+    assert runner.reason_first_sentence("「支持7天无理由」未在证据出现。另有第二句。") == (
+        "「支持7天无理由」未在证据出现。"
+    )
+    assert runner.reason_first_sentence("只有一句没有终止符") == "只有一句没有终止符"
+    assert runner.reason_first_sentence("第一行\n第二行") == "第一行"
+
+
+def test_reason_from_raw_json_and_fallback() -> None:
+    assert runner._reason_from_raw('{"supported": false, "reason": "第二句编造"}') == "第二句编造"
+    assert runner._reason_from_raw("没有 JSON 的原始输出\n第二行") == "没有 JSON 的原始输出"
+
+
+def test_judge_llm_with_retry_recovers_and_fails_soft(monkeypatch) -> None:
+    """87 刀同款重试纪律：抖动内恢复 -> (verdict, reason)；重试尽 -> None。"""
+    from suite_api.services.llm import LLMUnavailable
+
+    calls: list[int] = []
+
+    def fake_judge_llm_one(question: str, chunks, answer: str) -> tuple[bool, str]:
+        calls.append(1)
+        if len(calls) < runner.JUDGE_ATTEMPTS:
+            raise LLMUnavailable("网关抖动")
+        return (False, "首句无原文依据。")
+
+    monkeypatch.setattr(runner, "judge_llm_one", fake_judge_llm_one)
+    monkeypatch.setattr(runner.time, "sleep", lambda _s: None)
+    assert runner.judge_llm_with_retry("Q", ["证据"], "回答") == (False, "首句无原文依据。")
+    assert len(calls) == runner.JUDGE_ATTEMPTS
+
+    def always_fail(question: str, chunks, answer: str) -> tuple[bool, str]:
+        raise LLMUnavailable("网关持续不可用")
+
+    monkeypatch.setattr(runner, "judge_llm_one", always_fail)
+    assert runner.judge_llm_with_retry("Q", ["证据"], "回答") is None
+
+
+def test_judge_llm_report_lines_verdicts_and_caveats() -> None:
+    """报告装配（纯函数）：逐条 verdict 带原因首句、未评上注记、口径声明在案。"""
+    samples = [
+        {
+            "source": "存量",
+            "message_id": 2,
+            "session_id": 1,
+            "question": "净含量是多少",
+            "answer": "净含量为500ml。",
+            "citations": [{"asset_id": 9, "version_no": 1}],
+        },
+        {
+            "source": "新问",
+            "message_id": 900,
+            "session_id": 77,
+            "question": "退货运费多少钱",
+            "answer": "运费由商家承担。",
+            "citations": [{"asset_id": 479, "version_no": 1}],
+        },
+        {
+            "source": "存量",
+            "message_id": 5,
+            "session_id": 2,
+            "question": "会员积分怎么兑换",
+            "answer": "100积分抵1元。",
+            "citations": [{"asset_id": 106, "version_no": 1}],
+        },
+    ]
+    verdicts = [
+        (True, "每句均有原文依据。"),
+        (False, "「运费由商家承担」未在证据出现。第二句另有问题。"),
+        None,
+    ]
+    report = runner.judge_llm_report(
+        samples, verdicts, fresh_stats={"asked": 10, "generated": 8, "refusal": 2}, db_url="pg://x"
+    )
+    assert "存量生成消息 2 条" in report and "现场真问 1 条" in report
+    assert "问 10 条" in report and "生成作答 8" in report and "拒答 2" in report
+    assert "supported——每句均有原文依据。" in report
+    assert "False——「运费由商家承担」未在证据出现。" in report
+    assert "未评上（重试尽，不计入分母）" in report
+    assert "汇总：评上 2/3（未评上 1），supported 1 条，supported 率 50.0%" in report
+    assert "当日同一网关" in report and "不进 CI" in report
+
+
+def test_fresh_questions_are_rag_path_shapes() -> None:
+    """现场真问清单形状自检：8-10 条、无订单号/库存词/转人工（纯 RAG 问法）。"""
+    assert 8 <= len(runner.FRESH_QUESTIONS) <= 10
+    for question in runner.FRESH_QUESTIONS:
+        assert "SO-" not in question
+        assert "人工" not in question and "转接" not in question

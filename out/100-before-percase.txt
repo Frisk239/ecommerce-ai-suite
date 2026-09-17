@@ -1,0 +1,2 @@
+before miss: 11 ['conf-007', 'conf-008', 'conf-010', 'conf-011', 'pos-006', 'pos-012', 'pos-028', 'pos-038', 'syn-005', 'syn-007', 'syn-012']
+恢复校验（应为 2）： 2

@@ -1,0 +1,35 @@
+M&M #1: refusal - | 抱歉，已发布资产里没有能回答这个问题的证据。
+问句摘要：M&M white的条码是多少
+M&M #2: answer [{'asset_id': 235, 'version_no': 1}, {'asset_id': 234, 'version_no': 1}] | 现有证据包含 Apple bandit 规格信息和 Pbfit 规格条码，未包含 M&M white 的条码。[1][2
+M&M #3: refusal - | 抱歉，已发布资产里没有能回答这个问题的证据。
+问句摘要：M&M white的条码是多少
+M&M #4: answer [{'asset_id': 235, 'version_no': 1}, {'asset_id': 234, 'version_no': 1}] | 证据中的条码“00000013”对应的是“Pbfit 规格（OFF）”。[1][2]
+M&M #5: refusal - | 抱歉，已发布资产里没有能回答这个问题的证据。
+问句摘要：M&M white的条码是多少
+Traceback (most recent call last):
+  File "<stdin>", line 9, in <module>
+  File "probe", line 15, in ask_once
+  File "C:\Users\a2691\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\a2691\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\a2691\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\a2691\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\a2691\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Users\a2691\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 429: Too Many Requests
+M&M #6: refusal - | 抱歉，已发布资产里没有能回答这个问题的证据。
+问句摘要：M&M white的条码是多少
+Erdbeeren #1: answer [{'asset_id': 237, 'version_no': 1}] | Erdbeeren 的条码是 00000019。[2]
+Erdbeeren #2: answer [{'asset_id': 237, 'version_no': 1}] | Erdbeeren 的条码是 00000019。[2]
+Fitpiggy #1: answer [{'asset_id': 226, 'version_no': 1}] | Fitpiggy的条码是000000000063[2]。
+Fitpiggy #2: answer [{'asset_id': 226, 'version_no': 1}] | Fitpiggy 的条码是 000000000063。[2]

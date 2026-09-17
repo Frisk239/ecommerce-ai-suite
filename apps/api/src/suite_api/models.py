@@ -81,7 +81,9 @@ class Asset(Base):
     __table_args__ = (Index("ix_assets_status", "status"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    kind: Mapped[str] = mapped_column(String(20))  # 本刀仅 "document"
+    # 种类词表（CONTEXT「资产种类」）：document/dialogue/material/video/image；
+    # 无 DB CHECK（应用层按 kind 分派机洗与切块，同 status/source_kind 风格）
+    kind: Mapped[str] = mapped_column(String(20))
     # ingested=已接入 / pending_review=待人洗 / published=已发布
     status: Mapped[str] = mapped_column(String(20))
     # 0025 来源=资产进入中台的通道，登记端点语义定值（枚举校验在应用层），
@@ -158,6 +160,7 @@ class AuditLog(Base):
     version_no: Mapped[int | None] = mapped_column()
     # publish | confirm | rollback | verify | discard_revision | discard_asset
     # | export | price_change（第 41 刀：改价产品档，asset 侧两列为 NULL）
+    # | export_sft（第 97 刀/ADR 0054：治理台 SFT 导出，operator=登录者本人）
     action: Mapped[str] = mapped_column(String(20))
     # 第 41 刀改价留痕指向的商品（资产留痕行为 NULL）
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
@@ -239,6 +242,11 @@ class ServiceMessage(Base):
     不连带缺口），customer 消息为 NULL；handoff 与 refusal 同消息
     显性标记（0018：无证据拒答时一并转人工）。同一会话旧消息的引用不随
     后续发布漂移（回放按当时版本，ADR 0023）。
+
+    第 94b 刀（ADR 0052）：``media_citations = [{asset_id, version_no, mime}]``
+    是 citations 的**姊妹键**（服务端按同一份证据派生的媒体附件，模型无决定权）
+    ——随消息落列，重载会话照样出图/出播放器（与 citations 同寿命，不是 gap_id
+    那种运行时键）。仅 agent 消息为列表（无媒体恒 ``[]``），customer 消息 NULL。
     """
 
     __tablename__ = "service_messages"
@@ -257,6 +265,9 @@ class ServiceMessage(Base):
     # 回放完整性——重载会话也要还原灰底工具条（与 gap_id 的「运行时返回」口径
     # 不同：工具条是已发生动作的留档，随消息落列，迁移 0007）
     tool: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # 第 94b 刀（迁移 0031，ADR 0052）：媒体引用 [{asset_id, version_no, mime}]
+    # ——citations 的姊妹键（同一份证据派生；image/video 命中才有条目，恒列表）。
+    media_citations: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     # 第 40 刀（ADR 0044 §四）：顾客 thumbs-down 反馈 {"helpful": false, "at": iso}
     # ——一条消息至多一次（非空即已反馈，应用层 409 幂等）；分诊在代码：
     # kind=answer 且 citations 非空的消息收到负反馈 -> 逐 citation 资产撤销
@@ -325,6 +336,16 @@ class MaterialTask(Base):
     （0029）：failed 不登记任何字节，registered 才有 asset_id 指向登记出的
     素材资产。title/content 是生成文案本体（抽检通过前只住本行，不入对象
     存储）；last_error 记规则项/生成失败/人工打回原因，重试时清空。
+
+    第 98 刀（ADR 0055，迁移 0032）四组列：``template`` 内容模板（站内投放/
+    小红书笔记体/短视频口播稿，默认站内——prompt 模板参数非 Agent）；
+    ``qc_llm_passed`` LLM 事实性质检二道闸结果（None=未跑到，与规则闸独立
+    记录）；``image_status`` 配图步状态（none=未请求/requested=请求待生成/
+    pending=已生成待登记/registered=已登记/skipped_no_key=无 key 诚实跳过/
+    failed=生成失败不 fail 任务——requested 兼作建任务的 with_image 请求
+    标志，无独立列）；``image_asset_id`` 抽检通过登记出的配图图片资产（回执
+    锚，同 asset_id 先例）。配图字节抽检前住对象存储的 material/ 暂存键
+    （image_object_key，不是资产——同 clip_recordings 先例），登记时转正。
     """
 
     __tablename__ = "material_tasks"
@@ -338,6 +359,66 @@ class MaterialTask(Base):
     last_error: Mapped[str | None] = mapped_column(String(500))
     # 抽检通过登记出的资产（kind=material, source_kind=material_generated）；
     # UI 跳转治理台详情的锚，未登记为 NULL
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    # 第 98 刀：内容模板（services.material.TEMPLATES 的键，应用层枚举无 CHECK）
+    template: Mapped[str] = mapped_column(
+        String(20), server_default=text("'station'"), nullable=False
+    )
+    # LLM 事实性质检二道闸：None=未跑到（生成/规则闸先失败）、True/False=已判（LLM 失败/坏输出也记 False，last_error 可辨）
+    qc_llm_passed: Mapped[bool | None] = mapped_column(Boolean)
+    # 配图步状态（none/pending/registered/skipped_no_key/failed，取值由服务层收口）
+    image_status: Mapped[str] = mapped_column(
+        String(20), server_default=text("'none'"), nullable=False
+    )
+    # 配图字节的对象存储暂存键（抽检通过前不是资产；登记后删除）
+    image_object_key: Mapped[str | None] = mapped_column(String(500))
+    # 抽检通过登记出的配图资产（kind=image, source_kind=material_generated）
+    image_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ComposeTask(Base):
+    """第 98b 刀（ADR 0056）：内容成片任务=成片模块自有的候选留档，不是中台对象。
+
+    plan 请求内同步完成「选材→时间线→预览成片+剪映草稿」后落一行 planned
+    （AI 排版结果是**候选**：预览/草稿供人看人改，不是成品资产——字节住
+    对象存储 ``compose/`` 暂存前缀，同配图/录像先例）；publish 是人闸门确认
+    （可带剪映导出的成品 mp4），把文案要点串联经**双闸复用**（material 的
+    规则+LLM 质检，红线③）登记 material 资产后转 registered（终态）。
+
+    timeline 是排版结果的完整留档（``[{type, asset_id, start, dur, text?}]``
+    JSONB）；``with_tts`` 如实记预览有无口播（无 TTS key=无声预览，诚实标注）；
+    ``note`` 记选材口径的回执事实（如「素材不足，以图+文案补足」）。
+    final_video_object_key：publish 时操作者上传的成品 mp4 暂存键（可选——
+    不传则登记用的文案即预览时间线的串联；字节只是留档不是资产，ADR 0056）。
+    """
+
+    __tablename__ = "compose_tasks"
+    __table_args__ = (Index("ix_compose_tasks_status", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    # planned=已出时间线+预览+草稿（待人审）/ registering=publish 占位瞬态（审计 19
+    # CAS：防并发双登记；双闸失败回 planned）/ registered=已登记 material 资产（终态）
+    status: Mapped[str] = mapped_column(String(16))
+    template: Mapped[str] = mapped_column(String(20))
+    # 排版时间线候选（services.video_compose 的输出形状，JSONB 留档可回放）
+    timeline: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    duration_seconds: Mapped[float]
+    with_tts: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    note: Mapped[str | None] = mapped_column(String(500))
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    # 预览成片 / 剪映草稿包的对象存储暂存键（compose/ 前缀，不是资产）
+    preview_object_key: Mapped[str] = mapped_column(String(500))
+    draft_object_key: Mapped[str] = mapped_column(String(500))
+    # publish 上传的成品 mp4 暂存键（无上传为 NULL）
+    final_video_object_key: Mapped[str | None] = mapped_column(String(500))
+    # publish 登记出的素材资产（kind=material、source_kind=upload；UI 跳治理台锚）
     asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -377,17 +458,26 @@ class ClipCandidate(Base):
     录像经 recording_id 指向 clip_recordings（不存资产语义）。
     registered_asset_id 只在 registered 后指向登记出的视频资产（回执锚，
     UI 跳治理台的锚，同 MaterialTask.asset_id 先例）。
+
+    第 93 刀（0030）两处：``transcript_source`` 是候选的**只读通道标注**
+    （cloud=云端点转写 / local=本地兜底脚本 / manual=非 ASR 通道，含种子与
+    WANDS 数据自带）——来源是既成事实，运营改不了；``product_id`` 放开
+    NOT NULL：云转写按录像整段生成，句子里没有商品归属，归属是人/治理动作
+    （不编造），未归属候选在拣选时登记出 product 为空的资产。
     """
 
     __tablename__ = "clip_candidates"
     __table_args__ = (Index("ix_clip_candidates_status", "status"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     status: Mapped[str] = mapped_column(String(16))
     timecode_start: Mapped[str] = mapped_column(String(8))
     timecode_end: Mapped[str] = mapped_column(String(8))
     transcript: Mapped[str] = mapped_column(Text)
+    # 转写来源（第 93 刀）：String(10) 无 CHECK，取值由 services/asr 常量收口；
+    # server_default 让种子/导入等非 ASR 插入自动落 'manual'（0030 存量回填同值）。
+    transcript_source: Mapped[str] = mapped_column(String(10), server_default=text("'manual'"))
     source_video_label: Mapped[str] = mapped_column(String(120))
     # 源录像（第 46 刀）：上传即绑待拣候选；无上传为 NULL=走时间码文本旧路径。
     # 已登记候选的绑定不随新上传改写（回执锚已定，裁决 2）。

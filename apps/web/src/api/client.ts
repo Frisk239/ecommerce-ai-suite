@@ -47,6 +47,17 @@ export function detailText(err: unknown): string {
   return '请求失败，请重试'
 }
 
+/** 媒体附件 URL（第 94b 刀，ADR 0052）：GET /api/customer/assets/{id}/media。
+ *
+ * `<img>`/`<video>` 的 src 带不了 `Authorization` 请求头（浏览器规范），顾客
+ * 通道因此走 **query 令牌**——服务端只在这一个端点接受 `?token=`（Bearer 头
+ * 与操作者 cookie 两条既有通道不变；URL 进访问日志的面由服务端日志脱敏收口）。
+ * 操作者客服页不传 token（同源请求自动带会话 cookie）。 */
+export function mediaUrl(assetId: number, token?: string | null): string {
+  const base = `${API_BASE}/customer/assets/${assetId}/media`
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base
+}
+
 export interface PublishGateDetail {
   missing: string[]
   unconfirmed: string[]

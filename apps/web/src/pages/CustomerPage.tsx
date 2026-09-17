@@ -1,8 +1,7 @@
 // 顾客页 /customer（ADR 0021）：不登录、不进操作者壳（无主导航/无登录态），
-// 会话级身份=服务端签发的令牌（只保存在页面内存，刷新即新会话——顾客拉历史
-// 属本刀 Out）。发问走与操作者预览同一引擎、同事件序（thinking -> delta* ->
-// complete），引用芯片只读展示（顾客不进控制台）；complete 不带 gap_id，
-// 拒答时只呈现「拒答 · 无已发布证据 / 已转人工」。消息气泡复用共享
+// 会话级身份=服务端签发的令牌。发问走与操作者预览同一引擎、同事件序（thinking
+// -> delta* -> complete），引用芯片只读展示（顾客不进控制台）；complete 不带
+// gap_id，拒答时只呈现「拒答 · 无已发布证据 / 已转人工」。消息气泡复用共享
 // MessageBubble（0021 同一视觉语言），本页只做轻页头 + 会话生命周期。
 // 第 42 刀（ADR 0046）：handoff/拒答消息下方挂内联联系方式表单（姓名+留言
 // 必填、邮箱/电话可选、可跳过），提交走顾客 Bearer 会话令牌；成功后标「已记录
@@ -11,13 +10,17 @@
 // 「新会话」随时可重签令牌。
 // 第 80 刀：顾客可点「结束会话」主动收口（active -> ended 不可逆）——结束后
 // 关闭发问，但评分/反馈/联系方式保持可用（关对话流，不关善后通道）。
+// 第 95 刀（会话续接）：令牌+会话 id 存 localStorage，重开页面先打续接端点
+//（GET /customer/sessions/current/messages）——active 恢复会话态（消息重放+
+// 继续问，不建新会话）；ended/registered 只回放历史+锁输入（不复活对话流，
+// 评分/反馈等善后照旧）；401（过期/无效）清存档走新会话。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUp, ChatCircleDots, Prohibit, Star, Stop, ThumbsDown, ThumbsUp, X } from '@phosphor-icons/react'
 import { ApiError, detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { HandoffTicketCreate } from '../api/types'
-import MessageBubble, { type UiMessage } from '../components/MessageBubble'
+import MessageBubble, { toUi, type UiMessage } from '../components/MessageBubble'
 import { ErrorBanner } from '../components/Banner'
 import Empty from '../components/Empty'
 import { useAskStream } from '../hooks/useAskStream'
@@ -35,6 +38,63 @@ const SUGGESTIONS = [
 interface CustomerSession {
   id: number
   token: string
+}
+
+// ---------- 会话存档（第 95 刀：localStorage 续接） ----------
+
+const SESSION_STORE_KEY = 'ecustomer.session'
+
+/** 存档形态：token+session_id+存入时间。saved_at 只作排查线索，**不作过期
+ * 判据**——TTL 由服务端裁决（前端算时间差会与服务端钟漂移打架，401 即过期）。 */
+interface StoredSession {
+  session_id: number
+  token: string
+  saved_at: string
+}
+
+/** 读存档；坏 JSON/缺字段/隐私模式禁 localStorage 一律返回 null——续接是增强
+ * 不是依赖，读不出就照旧「开始咨询」空态。 */
+function readStoredSession(): StoredSession | null {
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORE_KEY)
+    if (raw === null) return null
+    const parsed = JSON.parse(raw) as Partial<StoredSession>
+    if (
+      typeof parsed.session_id !== 'number' ||
+      typeof parsed.token !== 'string' ||
+      parsed.token === ''
+    ) {
+      return null
+    }
+    return {
+      session_id: parsed.session_id,
+      token: parsed.token,
+      saved_at: typeof parsed.saved_at === 'string' ? parsed.saved_at : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+/** 写存档（建会话/续接成功时）：存不进（隐私模式等）就不续接，不因此打断咨询。 */
+function storeSession(sessionId: number, token: string): void {
+  try {
+    window.localStorage.setItem(
+      SESSION_STORE_KEY,
+      JSON.stringify({ session_id: sessionId, token, saved_at: new Date().toISOString() }),
+    )
+  } catch {
+    /* 存档失败静默：下次打开走新会话 */
+  }
+}
+
+/** 清存档（令牌失效/不再需要续接时）。 */
+function clearStoredSession(): void {
+  try {
+    window.localStorage.removeItem(SESSION_STORE_KEY)
+  } catch {
+    /* 同上 */
+  }
 }
 
 /** 转人工联系方式内联表单（第 42 刀，ADR 0046 §4）：姓名+留言必填、邮箱/电话
@@ -141,6 +201,10 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
   // 评分/反馈/联系方式等善后通道保持可用。
   const [ended, setEnded] = useState(false)
   const [ending, setEnding] = useState(false)
+  // 第 95 刀（会话续接）：打开页面时尝试恢复存档会话——恢复中显示加载态，
+  // 恢复出的服务器历史拼在本地流式消息前渲染（ServicePage 同款模式）。
+  const [resuming, setResuming] = useState(false)
+  const [history, setHistory] = useState<UiMessage[]>([])
 
   // 第 40 刀（ADR 0044 §四）：「没有帮助」反馈——已反馈的消息 id 集合（本地
   // 表达；幂等服务端钉死：同消息二次反馈 409）。换会话即清空。
@@ -148,7 +212,8 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
 
   // 第 42 刀（ADR 0046）：工单联系方式已提交/已跳过的工单 id（本地表达；
   // 一会话一单，按工单而非消息计——同会话多条 handoff 消息指向同一工单）。
-  // 刷新即新会话（顾客页不保历史），服务端 contact_at 是权威。
+  // 刷新后续接回放由 ticket.contact_at（服务端权威）恢复「已记录」态；
+  // 本地集合只补「本次打开内」的提交。
   const [contactSentTickets, setContactSentTickets] = useState<number[]>([])
   const [skippedTickets, setSkippedTickets] = useState<number[]>([])
 
@@ -168,7 +233,11 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
     },
     onError: (err) => {
       setError(err)
-      if (err instanceof ApiError && err.status === 401) setExpired(true)
+      if (err instanceof ApiError && err.status === 401) {
+        setExpired(true)
+        // 存档里的令牌已死：清掉，下次打开直接新会话（第 95 刀）
+        clearStoredSession()
+      }
     },
     pruneEmptyOnFailure: true,
   })
@@ -176,8 +245,11 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
   const endRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
+  // 续接后的完整消息流 = 恢复出的服务器历史 + 本次打开的本地流式消息
+  const allMessages = [...history, ...messages]
+
   // 自动跟随：消息条数与已输出字符数变化都滚动到尾部
-  const totalChars = messages.reduce((acc, m) => acc + m.content.length, 0)
+  const totalChars = allMessages.reduce((acc, m) => acc + m.content.length, 0)
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [messages.length, totalChars])
@@ -212,7 +284,10 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
       if (embedVisitor !== null && embedVisitor !== '') widgetHeaders['X-Visitor-Id'] = embedVisitor
       const created = await api.createCustomerSession(widgetHeaders)
       setSession({ id: created.session_id, token: created.token })
+      // 第 95 刀：新会话落存档（覆盖旧会话）——关掉页面再打开能续上这段
+      storeSession(created.session_id, created.token)
       resetMessages()
+      setHistory([])
       setFeedbackSent([])
       setContactSentTickets([])
       setSkippedTickets([])
@@ -237,7 +312,9 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
     setExpired(false)
     setError(null)
     resetMessages()
+    setHistory([])
     setSession(null)
+    clearStoredSession() // 旧令牌已死，别让下次打开再撞一次 401
     await startSession()
   }
 
@@ -345,8 +422,61 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
   const [ratingJustUpdated, setRatingJustUpdated] = useState(0)
   // 闸门=「有过一次 AI 回答（任何 kind）」，不是「答出来过」：只被拒答/转人工的
   // 会话恰恰是最想吐槽的那批人，若把他们排除，CSAT 就成了「只统计满意的人」
-  // （审计刀 9 P0）。空会话仍然不打分（没有说话就没有服务可评）。
-  const hasReply = messages.some((m) => m.role === 'agent' && !m.streaming)
+  // （审计刀 9 P0）。空会话仍然不打分（没有说话就没有服务可评）。续接恢复的
+  // 历史同样算数（第 95 刀）——重开后评分条必须在。
+  const hasReply = allMessages.some((m) => m.role === 'agent' && !m.streaming)
+
+  // 第 95 刀（会话续接）：打开页面时若有存档，先打续接端点再决定恢复还是空态。
+  // - active：恢复会话态——令牌沿用，历史重放（handoff 消息按会话工单回填
+  //   ticketId/ticketContactAt，与 live 流的 complete.ticket_id 同位），继续问。
+  // - ended/registered：回放历史 + 置 ended（输入锁、「会话已结束」横幅、
+  //   评分反馈照旧——80 刀「关对话流不关善后」跨重载成立）；registered 的
+  //   评分提交由服务端 409 兜底（回流后善后也关）。
+  // - 401（过期/无效）与其他失败：清存档，落到「开始咨询」空态——续接是增强
+  //   不是依赖，401 本就是新会话的合法入口（不发错误横幅吓顾客）。
+  useEffect(() => {
+    const stored = readStoredSession()
+    if (stored === null) return
+    let cancelled = false
+    setResuming(true)
+    api
+      .getCustomerCurrentMessages(stored.token)
+      .then((resume) => {
+        if (cancelled) return
+        setSession({ id: resume.session_id, token: stored.token })
+        const ticket = resume.ticket
+        setHistory(
+          resume.messages.map((m) => {
+            const ui = toUi(m)
+            return ui.handoff && ticket !== null
+              ? { ...ui, ticketId: ticket.id, ticketContactAt: ticket.contact_at }
+              : ui
+          }),
+        )
+        if (resume.status !== 'active') setEnded(true)
+        // 既有评分跨重载回显（第 71 刀改评语义：星星回当前分、留言框回填）
+        if (resume.rating !== null) {
+          setRated(resume.rating.score)
+          setRatingComment(resume.rating.comment ?? '')
+        }
+        // 存档以库内真值为准（session_id 与令牌本就同源，防存档陈旧）
+        storeSession(resume.session_id, stored.token)
+      })
+      .catch((err: unknown) => {
+        // 只有「凭证确实无效」（401/403）才弃存档；瞬时 500/网络错保留存档下次再试
+        // （评审 P2：全清档会把一次抖动变成永久弃续接）。
+        const status = err instanceof ApiError ? err.status : 0
+        if (!cancelled && (status === 401 || status === 403)) clearStoredSession()
+      })
+      .finally(() => {
+        if (!cancelled) setResuming(false)
+      })
+    return () => {
+      cancelled = true
+    }
+    // 仅挂载时跑一次：存档只在建会话/续接成功/清除时变化，重试无意义
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const submitRating = async (score: number) => {
     if (session === null || ratingSending) return
@@ -491,40 +621,49 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
         style={{ minHeight: embed || framed ? 0 : 420 }}
       >
         {session === null ? (
-          /* 空态在面板内垂直居中：顾客页是产品门面，内容别吊在顶上。
-             被框住却拿不到宿主来源（宿主剥离了 referrer）时不给「开始咨询」——
-             fail-closed，理由写在面上（否则剥掉 referrer 就成了绕过白名单的免费路）。 */
-          <div className="flex flex-1 items-center justify-center">
-            {frameOriginUnknown ? (
-              <Empty
-                icon={<Prohibit aria-hidden size={26} />}
-                title="无法确认嵌入来源"
-                hint="本客服被嵌在页面里，但宿主页没有提供来源信息（referrer 被剥离）。请让宿主页保留 referrer 后重试，或直接打开客服页。"
-              />
-            ) : (
-              <Empty
-                icon={<ChatCircleDots aria-hidden size={26} />}
-                title="开始咨询"
-                hint="无需注册登录：点击开始，服务端为这段对话签发一次性会话身份。"
-                action={
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => void startSession()}
-                    disabled={creating}
-                  >
-                    <ChatCircleDots aria-hidden size={14} />
-                    {creating ? '创建中…' : '开始咨询'}
-                  </button>
-                }
-              />
-            )}
-          </div>
+          resuming ? (
+            /* 第 95 刀：正在试恢复存档会话——短暂加载态，别闪「开始咨询」空态
+               （恢复成功空态会立刻消失，闪一下像坏掉） */
+            <div className="flex flex-1 items-center justify-center text-[13px] text-caption">
+              正在恢复上次的咨询…
+            </div>
+          ) : (
+            /* 空态在面板内垂直居中：顾客页是产品门面，内容别吊在顶上。
+               被框住却拿不到宿主来源（宿主剥离了 referrer）时不给「开始咨询」——
+               fail-closed，理由写在面上（否则剥掉 referrer 就成了绕过白名单的免费路）。 */
+            <div className="flex flex-1 items-center justify-center">
+              {frameOriginUnknown ? (
+                <Empty
+                  icon={<Prohibit aria-hidden size={26} />}
+                  title="无法确认嵌入来源"
+                  hint="本客服被嵌在页面里，但宿主页没有提供来源信息（referrer 被剥离）。请让宿主页保留 referrer 后重试，或直接打开客服页。"
+                />
+              ) : (
+                <Empty
+                  icon={<ChatCircleDots aria-hidden size={26} />}
+                  title="开始咨询"
+                  hint="无需注册登录：点击开始，服务端为这段对话签发一次性会话身份。"
+                  action={
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => void startSession()}
+                      disabled={creating}
+                    >
+                      <ChatCircleDots aria-hidden size={14} />
+                      {creating ? '创建中…' : '开始咨询'}
+                    </button>
+                  }
+                />
+              )}
+            </div>
+          )
         ) : (
           <>
-            {/* 消息流（共享 MessageBubble；引用芯片只读——顾客不进控制台） */}
+            {/* 消息流（共享 MessageBubble；引用芯片只读——顾客不进控制台）。
+                第 95 刀：续接恢复的服务器历史（history）拼在本地流式消息前。 */}
             <div className="chat-scroll flex-1 space-y-3 overflow-y-auto px-4 py-4">
-              {messages.length === 0 && (
+              {allMessages.length === 0 && (
                 <div className="py-6 text-center text-[13px] text-caption">
                   试着问问：
                   <div className="mx-auto mt-3 flex max-w-lg flex-wrap justify-center gap-1.5">
@@ -542,12 +681,16 @@ export default function CustomerPage({ embed = false }: { embed?: boolean } = {}
                   </div>
                 </div>
               )}
-              {messages.map((m, i) => (
+              {allMessages.map((m, i) => (
                 <MessageBubble
                   key={m.key}
                   m={m}
-                  prev={messages[i - 1]}
+                  prev={allMessages[i - 1]}
                   citationAsLink={false}
+                  // 第 94b 刀（ADR 0052）：顾客通道的媒体附件带 query 令牌
+                  // （img/video 的 src 带不了 Authorization 头；服务端仅此端点
+                  // 接受 ?token=，见 ADR 与 mediaUrl 注释）
+                  mediaToken={session.token}
                   footer={handoffFooter(m) ?? feedbackFooter(m)}
                 />
               ))}

@@ -23,6 +23,7 @@ from sqlalchemy import event
 
 from suite_api.models import OpsRun, Product
 from suite_api.services import llm as llm_module
+from suite_api.services.material import QC_SYSTEM_PROMPT
 from suite_api.services.ops import deliver_run
 
 ApiFixture = tuple[TestClient, Path]
@@ -53,13 +54,19 @@ def _patch_complete_chat(
     result: str | None = None,
     error: Exception | None = None,
 ) -> list[dict[str, str]]:
-    """替换 llm.complete_chat；返回 prompt 捕获记录（同素材/考核测试先例）。"""
+    """替换 llm.complete_chat；返回 prompt 捕获记录（同素材/考核测试先例）。
+
+    第 98 刀起素材任务有第二处 LLM 调用（事实性质检二道闸，复用
+    complete_chat）：替身对质检 system prompt 固定答「通过」，其余调用照
+    ``result`` 单值应答——本文件只测运营编排，素材链路只是铺垫数据。"""
     calls: list[dict[str, str]] = []
 
     async def fake(system_prompt: str, user_prompt: str) -> Any:
         calls.append({"system": system_prompt, "user": user_prompt})
         if error is not None:
             raise error
+        if system_prompt == QC_SYSTEM_PROMPT:
+            return '{"passed": true, "issues": []}'
         assert result is not None
         return result
 

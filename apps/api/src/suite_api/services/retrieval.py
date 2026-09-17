@@ -247,28 +247,39 @@ def index_chunks_for_version(
     长转写（>200 轮）下 QA 排尾会被静默截掉，排首则任何截断先丢正文。
     其余确认字段块仍续在正文块后（与第 12 刀口径一致）。
 
-    正文文本源按 kind 分派（第 46 刀，裁决 5；评审 P1 修正）：
-    - video：正文**只来自 transcript 字段**（confirmed 优先，回落 extracted），
-      **永不读对象字节**——字节可能是 mp4 二进制（有源录像）或旧路径的时间码
-      文本，前者读回是乱码、后者能读但那是历史形态；用「字段缺失就回落读字节」
-      会留下一条静默乱码/409 的路（评审 P1-2）。字段缺失或为空 = 正文为空
-      （视频资产无必填字段闸，照常可发布，只是没有正文块）。
+    正文文本源按 kind 分派（第 46 刀，裁决 5；第 94a 刀推广到图片）：
+    - **字段供体种类**（video -> transcript / image -> 图片描述）：正文**只来自
+      该字段**，**永不读对象字节**——video 字节可能是 mp4 二进制（有源录像）或
+      旧路径的时间码文本；image 字节是 png/jpeg/webp，解码必失败。字段缺失或为
+      空 = 正文为空（两类资产都无必填字段闸，照常可发布，只是没有正文块）。
+      两类的**取值面不同**：video 的 transcript 允许回落 extracted（46 刀裁决
+      5——转写是资产的文本面，机洗预置即正文）；image 的「图片描述」**只认
+      confirmed**（第 94a 刀：描述是 VLM **生成**内容，「只出草稿、人确认生效」
+      ——未确认的草稿不进索引，顾客面前不出现未经人确认的模型文本）。
     - 其余 kind：照旧 read_index_text(storage, object_key) 读字节切块。
+
+    **正文供体字段不进「字段：值」块循环**（第 94a 刀）：正文块本身就是该字段
+    的文本，再补一块「字段名：值」等于同一句话在索引里存两份——图片的描述是
+    人洗确认的常态路径，双份证据会在 prompt 的 2 个证据位上互相挤占（video 的
+    同形重复只出现在确认字段继承的罕见路径，一并收口）。
     """
+    from suite_api.services.machine_wash import IMAGE_DESCRIPTION_FIELD
     from suite_api.services.publishing import confirmed_value
 
-    if kind == "video":
-        transcript = _field_text(confirmed_fields, "transcript")
-        if transcript is None and extracted_fields is not None:
-            transcript = _field_text(extracted_fields, "transcript")
-        body = transcript or ""  # 永不读字节：mp4 二进制不进切块（评审 P1-2）
+    # 正文供体字段表（kind -> 字段名）与「可否回落 extracted」：见 docstring
+    body_field = {"video": "transcript", "image": IMAGE_DESCRIPTION_FIELD}.get(kind)
+    if body_field is not None:
+        body = _field_text(confirmed_fields, body_field)
+        if body is None and kind == "video" and extracted_fields is not None:
+            body = _field_text(extracted_fields, body_field)
+        body = body or ""  # 永不读字节：二进制不进切块（评审 P1-2）
     else:
         body = read_index_text(storage, object_key)
 
     chunks = qa_pair_chunks(confirmed_fields)
     chunks.extend(chunk_text(body, kind))
     for field in sorted(confirmed_fields):
-        if field == QA_FIELD:
+        if field == QA_FIELD or field == body_field:
             continue
         value = confirmed_value(confirmed_fields, field)
         if value is not None:

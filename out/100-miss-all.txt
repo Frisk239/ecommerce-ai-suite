@@ -1,0 +1,3 @@
+NON-OFF MISS pos-038 positive '补口径 · 你们几点上班怎么样' expect= 17 got= [480, 17]
+NON-OFF MISS syn-005 paraphrase '请问退换政策说明值得入手吗' expect= 6 got= [479, 13, 6]
+NON-OFF MISS syn-012 paraphrase '钛钢保温瓶的容量有多少' expect= 3 got= [9, 3, 9]

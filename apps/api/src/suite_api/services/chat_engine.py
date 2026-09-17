@@ -24,7 +24,7 @@
 - 步 2 提议步（仅未命中快路径）：LLM 按工具描述输出 ``TOOL: 名 {"参数": "值"}``
   提议（格式化约定非 function calling API）——代码校验（agent_tools 注册表
   +参数白名单）授权后执行，工具结果作为 history 附加轮进步 3 生成 prompt；
-  提议被拒（越狱/坏参/未注册）-> kind="handoff" 转人工（不检索不调模型不落
+  提议被拒（越狱/坏参/未注册）-> kind="handoff" 转人工（不检索不进生成步（提议步照跑——103 刀压测口径）不落
   缺口，对齐 0024 工具失败不产生缺口）；模型认为无需工具（纯文本）-> 步 3。
   LLM 不可用/超时/空 key -> 降级为按原问句走步 3（36 刀前行为，不是
   handoff——纯检索可能可答）。
@@ -43,13 +43,19 @@
 组装失败会留下已落库的顾客问句——属可接受残留：问题真实发生过，不因回答侧
 失败而抹掉提问记录。LLM 前再 commit 一次只为归还连接，不改变「问句与回答
 分两事务」的语义。
+
+第 94b 刀（ADR 0052）媒体引用：``media_citations`` 是 citations 的姊妹键
+（同一份服务端证据派生，模型无决定权）——派生点在**所有会改写 citations 的闸
+之后**（覆盖声明收口/OOV 闸清空 citations 时媒体跟着空，不会「拒答挂图」），
+随 agent 消息落列（重载会话照样出图/出播放器），SSE complete 两通道同形状
+（恒列表，无媒体=[]）。工具/目录/澄清/转人工出口不检索，恒空。
 """
 
 import json
 import logging
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
@@ -96,6 +102,7 @@ from suite_api.services.knowledge_gaps import (
     resolve_gap_answered_by_catalog,
 )
 from suite_api.services.machine_wash import redact
+from suite_api.services.media import media_citations_for
 from suite_api.services.order_tools import (
     find_order_no,
     get_order_status,
@@ -203,6 +210,10 @@ class AskOutcome:
     # 第 42 刀（ADR 0046）：本会话工单（handoff/拒答路径非 None；answer/工具
     # 查得路径恒 None）。SSE complete 据此带工单号回执（运行时可选键）。
     ticket: HandoffTicket | None = None
+    # 第 94b 刀（ADR 0052）：媒体附件 ``[{asset_id, version_no, mime}]``——服务端
+    # 按 citations 同一份证据派生（模型无决定权）；无媒体恒 ``[]``，形态固定
+    # （不是可选键）。工具/目录/澄清/转人工出口不检索，恒空。
+    media_citations: list[dict[str, Any]] = field(default_factory=list)
 
 
 # 覆盖声明（第 58 刀）：模型自己说「证据没覆盖/没有相关信息」——**保守**只认
@@ -244,6 +255,21 @@ _BARE_COVERAGE_RE = re.compile(
     r"|没有(提及|提供|说明|相关)"
     r"|暂无(相关信息|相关答案|信息|答案)?"
     r"|无(相关|答案|记录)"
+)
+
+# 覆盖动词**开头**的无主语免责句（审计刀 17 记债①）：审计实测「未覆盖保修信息」
+# 「未给出净含量数值」两种形态——没有证据类主语（`_NO_COVERAGE_RE` 收不到），
+# 又拖着宾语不满 fullmatch（`_BARE_COVERAGE_RE` 的刀 16 保守口径也收不到）。
+# 58 刀摘句层对它们**刻意保持不动**（误摘比漏检贵，刀 12 口径——答案文本面
+# 零改动，这类句子照旧原样答给顾客）；只在 auto-close 缺口的判据面认它：
+# 句首就是覆盖动词的句子按免责句对待。句首是主语的事实否定句
+# （「配料信息中不包含任何防腐剂」）不受牵连。
+_BARE_COVERAGE_LEAD_RE = re.compile(
+    r"^(未覆盖|未涉及|未提供|未收录|尚未收录|未说明|未提及|未给出|未列明|未包含|不包含"
+    r"|无法(回答|提供|确认|给出)"
+    r"|没有(提及|提供|说明|相关)"
+    r"|暂无(相关信息|相关答案|信息|答案)?"
+    r"|无(相关|答案|记录))"
 )
 
 
@@ -290,6 +316,33 @@ def strip_coverage_disclaimers(text: str) -> tuple[str, bool]:
     if not _SUBSTANTIVE_RE.search(_CITE_MARK_RE.sub("", remaining)):
         return "", True
     return remaining, False
+
+
+def has_substantive_answer(text: str) -> bool:
+    """回答文本里是否存在**非免责的实质内容**（审计刀 17 记债①的 auto-close 判据）。
+
+    复用 58/69/81 刀族的免责句词表按句判：`_NO_COVERAGE_RE` 命中句、裸覆盖
+    fullmatch 句（刀 16），以及**覆盖动词开头**的无主语形态（刀 17 实测
+    「未覆盖保修信息」「未给出净含量数值」——见 `_BARE_COVERAGE_LEAD_RE`）
+    都算免责句；存在任一既非免责、又含实质字符（字母数字/CJK——光秃秃的
+    引用标记不算）的句子才 True。
+
+    只服务「答上是否关缺口」的判定，**不改答案文本本身**：纯免责句照旧以
+    kind=answer 出给顾客（58 刀摘句层不动），但缺口不关——知识仍缺，下次
+    再答（「答非所答」不等于「已答」）；部分实质+部分免责=照答照关
+    （12 刀「答上即关」对实质回答的语义不回归）。
+    """
+    for sentence in _SENTENCE_SPLIT_RE.findall(text):
+        if _NO_COVERAGE_RE.search(sentence):
+            continue
+        bare = re.sub(r"[\s\W]+", "", _CITE_MARK_RE.sub("", sentence))
+        if bare and (
+            _BARE_COVERAGE_RE.fullmatch(bare) or _BARE_COVERAGE_LEAD_RE.match(bare)
+        ):
+            continue
+        if _SUBSTANTIVE_RE.search(_CITE_MARK_RE.sub("", sentence)):
+            return True
+    return False
 
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
@@ -587,6 +640,12 @@ async def run_ask(
     fallback = answer.kind == "answer" and generated is None and not is_catalog
     content = generated if generated is not None else answer.content
 
+    # 第 94b 刀（ADR 0052）：媒体引用派生——**在所有会改写 citations 的闸之后**
+    # （覆盖声明收口/实体存在性闸都把 citations 清成 []，媒体必须跟着这份最终
+    # 证据走，否则会出现「拒答却挂一张图」）。输入是服务端定的 citations（0007），
+    # 输出只认命中的 image/video 且字节真是媒体（services.media）。
+    media_citations = media_citations_for(db, answer.citations)
+
     # 落 agent 消息：引用带版本（0007），拒答/转人工显性（0018）。
     # agent 消息 citations 恒为列表（refusal=[]），customer 消息为 None（ADR 0023「仅 agent」）
     agent_message = ServiceMessage(
@@ -597,6 +656,7 @@ async def run_ask(
         kind=answer.kind,
         handoff=answer.handoff,
         tool=tool_record,
+        media_citations=media_citations,
     )
     db.add(agent_message)
     # 0024：无证据拒答同事务落知识缺口（question=顾客原问，精确幂等：同文
@@ -613,7 +673,12 @@ async def run_ask(
     if answer.kind == "answer":
         # 审计刀 12 P1：**任何答上的出口都关同问 open 缺口**——此前只有目录分支调，
         # 于是「库存已答」「RAG 已答」的问句仍挂着「待补」（点「去补文档」误人）。
-        resolve_gap_answered_by_catalog(db, question)
+        # 审计刀 17 记债①收口：answer 还须**答的是实质内容**——纯免责句
+        # （「未覆盖保修信息」类挂 kind=answer 的「答非所答」）不关缺口，
+        # 知识仍缺、下次再答（has_substantive_answer 按句判；模板/目录/澄清
+        # 路径的固定文案恒过，12 刀「答上即关」语义不回归）。
+        if has_substantive_answer(content):
+            resolve_gap_answered_by_catalog(db, question)
     if answer.kind == "refusal":
         # 第 86 刀：**「本店没有这款商品」不落知识缺口**——缺口池语义是「知识待补」
         # （点「去补文档」能补出来），而「本店不经营」补文档也补不出来；此类只建
@@ -659,6 +724,7 @@ async def run_ask(
             else ("coverage" if gate_fallback else ("no_coverage" if no_coverage else None))
         ),
         ticket=ticket,
+        media_citations=media_citations,
     )
 
 
@@ -686,6 +752,7 @@ def _run_handoff_ask(
         role="agent",
         content=content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind="handoff",
         handoff=True,
         tool=tool_record,
@@ -785,6 +852,7 @@ def _run_rejected_proposal(
         role="agent",
         content=REJECTED_CONTENT,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind="handoff",
         handoff=True,
         tool=tool_record,
@@ -838,6 +906,7 @@ def _run_return_eligibility_ask(
         role="agent",
         content=content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind=kind,
         handoff=handoff,
         tool=tool_record,
@@ -907,6 +976,7 @@ def _run_order_clarify_ask(db: Session, session: ServiceSession, question: str) 
         role="agent",
         content=_ORDER_CLARIFY_CONTENT,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind="answer",
         handoff=False,
         tool=tool_record,
@@ -956,6 +1026,7 @@ def _run_order_ask(db: Session, session: ServiceSession, order_no: str) -> AskOu
         role="agent",
         content=content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind=kind,
         handoff=handoff,
         tool=tool_record,
@@ -993,6 +1064,7 @@ def _run_catalog_ask(
         role="agent",
         content=catalog.content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind="answer",
         handoff=False,
         tool=catalog.tool,
@@ -1046,6 +1118,7 @@ def _run_stock_ask(
         role="agent",
         content=content,
         citations=[],
+        media_citations=[],  # 第 94b 刀：工具/模板路径不检索，媒体引用恒空
         kind=kind,
         handoff=handoff,
         tool=tool_record,
@@ -1124,6 +1197,10 @@ def sse_event_stream(outcome: AskOutcome, *, expose_gap_id: bool = True) -> Iter
     complete: dict[str, Any] = {
         "message_id": outcome.agent_message.id,
         "citations": outcome.answer.citations,
+        # 第 94b 刀（ADR 0052）：媒体附件与 citations 并列（同一份证据派生的
+        # 图片/视频），**恒为列表**——无媒体是 []，不是缺键（形态固定，前端
+        # 按键直取）；两通道同形状（媒体不是内部 id：顾客要拿它取字节）。
+        "media_citations": list(outcome.media_citations),
         "kind": outcome.answer.kind,
         "handoff": outcome.answer.handoff,
         # 0036：None 或 {name, arg, result}——非订单路径多一个 null 键，

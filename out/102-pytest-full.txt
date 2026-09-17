@@ -1,0 +1,177 @@
+........................................................................ [  4%]
+........................................................................ [  9%]
+........................................................................ [ 14%]
+........................................................................ [ 19%]
+........................................................................ [ 24%]
+........................................................................ [ 28%]
+........................................................................ [ 33%]
+........................................................................ [ 38%]
+........................................................................ [ 43%]
+........................................................................ [ 48%]
+........................................................................ [ 52%]
+........................................................................ [ 57%]
+........................................................................ [ 62%]
+........................................................................ [ 67%]
+........................................................................ [ 72%]
+........................................................................ [ 77%]
+........................................................................ [ 81%]
+........................................................................ [ 86%]
+........................................................................ [ 91%]
+........................................................................ [ 96%]
+.......................................................                  [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  E:\code\ecommerce-ai-suite\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv\Lib\site-packages\starlette\testclient.py:53
+  E:\code\ecommerce-ai-suite\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+apps/api/tests/test_agent_loop_integration.py: 1 warning
+apps/api/tests/test_asr_integration.py: 1 warning
+apps/api/tests/test_category_schema_integration.py: 1 warning
+apps/api/tests/test_clip_rebind_integration.py: 1 warning
+apps/api/tests/test_clips_integration.py: 1 warning
+apps/api/tests/test_coaching_integration.py: 1 warning
+apps/api/tests/test_concurrency_integration.py: 1 warning
+apps/api/tests/test_conversation_memory.py: 1 warning
+apps/api/tests/test_csat_integration.py: 1 warning
+apps/api/tests/test_customer_integration.py: 1 warning
+apps/api/tests/test_customer_token_ttl.py: 1 warning
+apps/api/tests/test_data_ingest_integration.py: 1 warning
+apps/api/tests/test_demo_reset_script.py: 1 warning
+apps/api/tests/test_engine_eval.py: 1 warning
+apps/api/tests/test_eval_set.py: 1 warning
+apps/api/tests/test_exports_sft.py: 1 warning
+apps/api/tests/test_frames_integration.py: 1 warning
+apps/api/tests/test_gin_index_migration.py: 3 warnings
+apps/api/tests/test_governance_integration.py: 1 warning
+apps/api/tests/test_handoff_tickets_integration.py: 1 warning
+apps/api/tests/test_image_integration.py: 1 warning
+apps/api/tests/test_lifecycle_exits_integration.py: 1 warning
+apps/api/tests/test_lineage_integration.py: 1 warning
+apps/api/tests/test_material_integration.py: 1 warning
+apps/api/tests/test_mcp.py: 4 warnings
+apps/api/tests/test_mcp_evidence.py: 3 warnings
+apps/api/tests/test_mcp_live_tools.py: 5 warnings
+apps/api/tests/test_media_integration.py: 1 warning
+apps/api/tests/test_migration_backfill.py: 20 warnings
+apps/api/tests/test_multi_turn_integration.py: 1 warning
+apps/api/tests/test_observability_integration.py: 1 warning
+apps/api/tests/test_off_mismatch_integration.py: 1 warning
+apps/api/tests/test_oov_gate.py: 1 warning
+apps/api/tests/test_ops_integration.py: 1 warning
+apps/api/tests/test_order_tools.py: 1 warning
+apps/api/tests/test_order_tools_integration.py: 1 warning
+apps/api/tests/test_product_operable.py: 1 warning
+apps/api/tests/test_real_clips_integration.py: 1 warning
+apps/api/tests/test_realdata_fixup_integration.py: 1 warning
+apps/api/tests/test_redact_exports.py: 2 warnings
+apps/api/tests/test_reflow_qa_integration.py: 1 warning
+apps/api/tests/test_retrieval.py: 1 warning
+apps/api/tests/test_return_flow_integration.py: 1 warning
+apps/api/tests/test_service_integration.py: 1 warning
+apps/api/tests/test_session_end_integration.py: 1 warning
+apps/api/tests/test_session_resume_integration.py: 1 warning
+apps/api/tests/test_source_visibility.py: 1 warning
+apps/api/tests/test_stats_integration.py: 1 warning
+apps/api/tests/test_stock_tools_integration.py: 1 warning
+apps/api/tests/test_system_loop.py: 1 warning
+apps/api/tests/test_vendor_llm_integration.py: 1 warning
+apps/api/tests/test_video_compose_integration.py: 1 warning
+apps/api/tests/test_widget_embed.py: 1 warning
+  E:\code\ecommerce-ai-suite\.venv\Lib\site-packages\alembic\config.py:604: DeprecationWarning: No path_separator found in configuration; falling back to legacy splitting on spaces, commas, and colons for prepend_sys_path.  Consider adding path_separator=os to Alembic config.
+    util.warn_deprecated(
+
+apps/api/tests/test_asr_integration.py: 1 warning
+apps/api/tests/test_category_schema_integration.py: 2 warnings
+apps/api/tests/test_clips_integration.py: 1 warning
+apps/api/tests/test_coaching_integration.py: 1 warning
+apps/api/tests/test_csat_integration.py: 4 warnings
+apps/api/tests/test_data_ingest_integration.py: 1 warning
+apps/api/tests/test_governance_integration.py: 4 warnings
+apps/api/tests/test_handoff_tickets_integration.py: 1 warning
+apps/api/tests/test_material_integration.py: 1 warning
+apps/api/tests/test_real_clips_integration.py: 1 warning
+apps/api/tests/test_reflow_qa_integration.py: 1 warning
+apps/api/tests/test_service_integration.py: 2 warnings
+apps/api/tests/test_source_visibility.py: 1 warning
+apps/api/tests/test_system_loop.py: 1 warning
+apps/api/tests/test_video_compose_integration.py: 6 warnings
+  E:\code\ecommerce-ai-suite\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:1100: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    result = context.run(func, *args)
+
+apps/api/tests/test_customer_integration.py::test_customer_input_validation
+apps/api/tests/test_service_integration.py::test_service_input_validation
+  E:\code\ecommerce-ai-suite\.venv\Lib\site-packages\fastapi\routing.py:352: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    return await dependant.call(**values)
+
+apps/api/tests/test_data_ingest_integration.py::test_import_csv_rejects_oversize_file
+apps/api/tests/test_real_clips_integration.py::test_upload_recording_contract
+  E:\code\ecommerce-ai-suite\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:1100: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+    result = context.run(func, *args)
+
+apps/api/tests/test_frames_integration.py::test_frame_candidates_reject_non_video_and_unpublished
+apps/api/tests/test_frames_integration.py::test_frame_candidates_reject_legacy_text_clip
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\assets.py:194: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    _asset, ref = _frame_wash_ref(db, asset_id)
+
+apps/api/tests/test_frames_integration.py::test_register_frame_rejects_non_video
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\assets.py:261: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    _asset, ref = _frame_wash_ref(db, asset_id)
+
+apps/api/tests/test_governance_integration.py::test_register_rejects_bad_uploads
+apps/api/tests/test_image_integration.py::test_register_image_requires_login_and_validates_upload
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\assets.py:570: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+    data, suffix = _read_upload(file, kind, empty_detail="空文件不能登记")
+
+apps/api/tests/test_governance_integration.py::test_register_rejects_bad_uploads
+apps/api/tests/test_image_integration.py::test_register_image_requires_login_and_validates_upload
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\assets.py:570: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    data, suffix = _read_upload(file, kind, empty_detail="空文件不能登记")
+
+apps/api/tests/test_lifecycle_exits_integration.py::test_replace_bytes_rejects_published_and_validates_upload
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\assets.py:1109: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+    data, suffix = _read_upload(file, kind, empty_detail="空文件不能上传")
+
+apps/api/tests/test_lifecycle_exits_integration.py::test_replace_bytes_rejects_published_and_validates_upload
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\assets.py:1109: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    data, suffix = _read_upload(file, kind, empty_detail="空文件不能上传")
+
+apps/api/tests/test_mcp.py: 6 warnings
+apps/api/tests/test_mcp_evidence.py: 3 warnings
+apps/api/tests/test_mcp_live_tools.py: 5 warnings
+apps/api/tests/test_redact_exports.py: 1 warning
+  C:\Users\a2691\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\contextlib.py:105: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+apps/api/tests/test_product_operable.py::test_post_product_validation_422_and_409
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\products.py:256: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    price_cents=_check_price(body.price_cents),
+
+apps/api/tests/test_product_operable.py::test_post_product_validation_422_and_409
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\products.py:257: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    currency=_check_currency(body.currency),
+
+apps/api/tests/test_product_operable.py::test_post_product_validation_422_and_409
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\products.py:248: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    name = _check_name(body.name)
+
+apps/api/tests/test_product_operable.py::test_post_product_validation_422_and_409
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\products.py:254: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    spec_schema=_check_spec_schema(body.spec_schema, category),
+
+apps/api/tests/test_real_clips_integration.py::test_cut_failure_keeps_candidate_pending_and_previous_registered
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\clips.py:442: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    assets = pick_candidates(db, storage, body.ids)
+
+apps/api/tests/test_reflow_qa_integration.py::test_dialogue_field_validation_contract
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\assets.py:788: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    "value": _mask_confirmed_value(field, _validate_qa_pairs_payload(value)),
+
+apps/api/tests/test_service_integration.py::test_gap_fill_register_publish_resolves
+  E:\code\ecommerce-ai-suite\apps\api\src\suite_api\routes\assets.py:573: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    gap = load_attachable_gap(db, knowledgeGapId) if knowledgeGapId is not None else None
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

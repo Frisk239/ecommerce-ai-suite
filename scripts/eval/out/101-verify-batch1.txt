@@ -1,0 +1,188 @@
+===== POS =====
+answer   怎么退货                               479v1:退换货政策; 6v1:退货政策说明; 479v1:退换货政策
+answer   退货政策是什么                            479v1:退换货政策; 13v4:退货政策; 6v1:退货政策说明
+answer   退货运费多少钱                            479v1:退换货政策; 479v1:退换货政策; 479v1:退换货政策
+answer   退货需要什么材料                           479v1:退换货政策; 479v1:退换货政策; 6v1:退货政策说明
+answer   运费谁出                               479v1:退换货政策; 479v1:退换货政策; 478v1:数码外设保修政策
+answer   退货运费谁承担                            479v1:退换货政策; 479v1:退换货政策; 479v1:退换货政策
+answer   退货要钱吗                              479v1:退换货政策; 6v1:退货政策说明; 479v1:退换货政策
+answer   买了东西想退货，政策是什么                      479v1:退换货政策; 13v4:退货政策; 6v1:退货政策说明
+answer   保修多久                               478v1:数码外设保修政策; 478v1:数码外设保修政策; 478v1:数码外设保修政策
+answer   发票怎么开具                             480v1:发票与配送口径; 480v1:发票与配送口径
+answer   能刻字吗                               492v1:定制刻字服务口径; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+answer   笔记本电脑刻字怎么收费                        492v1:定制刻字服务口径; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+answer   你们几点上班                             17v2:补口径 · 你们几点上班
+answer   Vivo Y300 是什么品牌                    268v1:Vivo Y300 规格; 268v1:Vivo Y300 规格; 228v1:AdvoCare 规格（OFF）
+answer   Xperia Ear Duo 什么时候上市的             482v1:Xperia Ear Duo 规; 230v1:Mg ricarica 规格（O; 481v1:Xperia Ear 规格（Wi
+answer   Xperia Ear Duo 上市了吗                482v1:Xperia Ear Duo 规; 230v1:Mg ricarica 规格（O; 481v1:Xperia Ear 规格（Wi
+answer   Xperia Ear 是耳机吗                    481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规; 230v1:Mg ricarica 规格（O
+answer   饮用水的保质期是多久                         15v1:瓶装水：日常补水随身装; 264v1:现场踩给各位看：瓶身轻但抗压，整
+answer   I never received my order, what should I do 223v1:shipping_issue/m; 223v1:shipping_issue/m; 223v1:shipping_issue/m
+answer   仓库在哪里                              260v1:仓库存储位置说明
+answer   羊绒围巾起球怎么处理                         261v1:羊绒围巾起球处理
+answer   钛钢保温壶的材质是什么                        3v1:钛钢保温杯 · 规格; 10v1:钛钢保温杯 500ml 316不; 3v1:钛钢保温杯 · 规格
+answer   整箱堆放会不会变形                          264v1:现场踩给各位看：瓶身轻但抗压，整
+answer   有瓶装水直播实拍的清晰商品图吗                    505v1:瓶装水 · 实拍帧 00:05; 15v1:瓶装水：日常补水随身装; 15v1:瓶装水：日常补水随身装
+answer   显示器支架能调节吗                          501v1:显示器商品图 · 实拍帧; 503v2:<无>; 11v1:现场实测保温：早上九点灌的95度
+answer   帮我查下我的订单到哪了，顺便讲讲退货政策               479v1:退换货政策; 13v4:退货政策; 6v1:退货政策说明
+answer   塑料外壳的键盘能刻字吗                        492v1:定制刻字服务口径; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+answer   刻字一个字多少钱                           492v1:定制刻字服务口径; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+answer   刻字要多加几个工作日                         492v1:定制刻字服务口径; 492v1:定制刻字服务口径; 478v1:数码外设保修政策
+answer   蓝牙耳机电池保修多久                         478v1:数码外设保修政策; 481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规
+answer   保修维修周期是多久                          478v1:数码外设保修政策; 478v1:数码外设保修政策; 478v1:数码外设保修政策
+answer   保修要凭纸质凭证吗                          478v1:数码外设保修政策; 478v1:数码外设保修政策; 478v1:数码外设保修政策
+answer   退货退款多久能到账                          479v1:退换货政策; 479v1:退换货政策; 6v1:退货政策说明
+answer   质量问题几天内可以换新                        301v1:平板评论 · 要求退货。质量太次; 479v1:退换货政策; 129v1:衣服评论 · 质量如，款式新，信
+answer   发什么快递                              480v1:发票与配送口径
+answer   现货商品什么时候发货                         480v1:发票与配送口径; 6v1:退货政策说明; 492v1:定制刻字服务口径
+answer   电子发票多久能开出来                         480v1:发票与配送口径; 480v1:发票与配送口径
+answer   预售商品什么时候发货                         480v1:发票与配送口径; 6v1:退货政策说明; 492v1:定制刻字服务口径
+answer   LK201 是什么品牌                        497v1:LK201 规格（Wikidat; 481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规
+answer   LK201 是键盘吗                         497v1:LK201 规格（Wikidat; 481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规
+answer   Sennheiser HD 800 是什么品牌            485v1:Sennheiser HD 80; 242v1:Hershey’s Syrup ; 486v1:Sennheiser HD 80
+answer   UE LIVE 的类目是什么                     487v1:UE LIVE 规格（Wikid; 488v1:UE 18+ Pro 规格（Wi; 489v1:UE Pro Reference
+answer   Fairbuds 是耳机吗                      484v1:Fairbuds 规格（Wiki; 483v1:TWS Earbuds 规格（W; 481v1:Xperia Ear 规格（Wi
+answer   TWS Earbuds 是什么类目                  483v1:TWS Earbuds 规格（W; 484v1:Fairbuds 规格（Wiki; 481v1:Xperia Ear 规格（Wi
+answer   Cardiofitmd的品牌是1MD Nutrition吗      245v1:1MD Nutrition 规格; 244v1:Nestle Carnation; 245v1:1MD Nutrition 规格
+answer   Chocolate n3的销售国家                  239v1:Coca-Cola 规格（OFF; 239v1:Coca-Cola 规格（OFF; 238v1:Nestlé 规格（OFF）
+answer   Chocolate n3 的净含量是多少               239v1:Coca-Cola 规格（OFF; 9v1:保温杯的净含量是多少？; 239v1:Coca-Cola 规格（OFF
+answer   Erdbeeren 酸奶的净含量是多少                237v1:Erdbeeren 规格（OFF; 237v1:Erdbeeren 规格（OFF; 9v1:保温杯的净含量是多少？
+answer   Erdbeeren 巧克力的条码是多少                237v1:Erdbeeren 规格（OFF; 237v1:Erdbeeren 规格（OFF; 223v1:shipping_issue/m
+answer   Xperia Ear Duo 的上市年份是多少            482v1:Xperia Ear Duo 规; 481v1:Xperia Ear 规格（Wi; 490v1:Ultimate Ears Su
+answer   Vivo Y300 的存储容量是多少                 268v1:Vivo Y300 规格; 268v1:Vivo Y300 规格; 268v1:Vivo Y300 规格
+answer   瓶装水的保质期是多久                         15v1:瓶装水：日常补水随身装; 15v1:瓶装水：日常补水随身装; 15v1:瓶装水：日常补水随身装
+answer   现场实测保温能坚持几个小时                      11v1:现场实测保温：早上九点灌的95度; 3v1:钛钢保温杯 · 规格; 9v1:保温杯的净含量是多少？
+answer   钛钢内胆是一体成型的吗                        11v1:现场实测保温：早上九点灌的95度; 3v1:钛钢保温杯 · 规格; 13v4:退货政策
+answer   净含量是多少                             9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？
+answer   保温杯的净含量多少                          9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？
+answer   羊绒围巾起球怎么办                          261v1:羊绒围巾起球处理
+answer   保温杯内胆什么材质会不会腐蚀                     9v1:保温杯的净含量是多少？; 3v1:钛钢保温杯 · 规格; 9v1:保温杯的净含量是多少？
+===== SYN =====
+answer   怎么退换                               479v1:退换货政策; 301v1:平板评论 · 要求退货。质量太次; 6v1:退货政策说明
+answer   退货的邮费谁出                            479v1:退换货政策; 479v1:退换货政策; 479v1:退换货政策
+answer   退换货政策是什么                           479v1:退换货政策; 13v4:退货政策; 479v1:退换货政策
+answer   退货用什么快递寄回                          479v1:退换货政策; 6v1:退货政策说明; 479v1:退换货政策
+answer   下单后多久出库                            29v1:衣服评论 · 发货速度慢的死、客; 492v1:定制刻字服务口径; 78v1:水果评论 · 买了六次了，每次只
+answer   瓶装水的保存期是多久                         15v1:瓶装水：日常补水随身装; 15v1:瓶装水：日常补水随身装; 15v1:瓶装水：日常补水随身装
+answer   能开收据吗                              480v1:发票与配送口径; 480v1:发票与配送口径
+answer   三包政策是什么                            478v1:数码外设保修政策; 479v1:退换货政策; 478v1:数码外设保修政策
+answer   水果的口感怎么样                           76v1:水果评论 · 买了3次，第一次1; 80v1:水果评论 · 水份多，味道甜，没; 76v1:水果评论 · 买了3次，第一次1
+answer   保温瓶的保温时长是多少                        9v1:保温杯的净含量是多少？; 3v1:钛钢保温杯 · 规格; 3v1:钛钢保温杯 · 规格
+answer   键盘上刻字怎么收费                          492v1:定制刻字服务口径; 492v1:定制刻字服务口径; 497v1:LK201 规格（Wikidat
+answer   发票多久能开好                            480v1:发票与配送口径; 480v1:发票与配送口径
+answer   退货后退款几天到账                          479v1:退换货政策; 479v1:退换货政策; 6v1:退货政策说明
+answer   保修维修要几个工作日                         478v1:数码外设保修政策; 478v1:数码外设保修政策; 478v1:数码外设保修政策
+answer   刻字服务怎么收费                           492v1:定制刻字服务口径; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+answer   耳机的类目是什么                           481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规; 483v1:TWS Earbuds 规格（W
+answer   无人机的保修期是多长                         478v1:数码外设保修政策; 478v1:数码外设保修政策; 478v1:数码外设保修政策
+answer   键盘的保修政策是什么                         478v1:数码外设保修政策; 479v1:退换货政策; 478v1:数码外设保修政策
+answer   显示器的实拍图有吗                          501v1:显示器商品图 · 实拍帧; 503v2:<无>; 11v1:现场实测保温：早上九点灌的95度
+answer   退换的时间限制是几天                         479v1:退换货政策; 301v1:平板评论 · 要求退货。质量太次; 6v1:退货政策说明
+answer   邮费是你们出吗                            29v1:衣服评论 · 发货速度慢的死、客; 479v1:退换货政策; 479v1:退换货政策
+answer   瓶装水开盖即饮吗                           15v1:瓶装水：日常补水随身装; 15v1:瓶装水：日常补水随身装; 505v1:瓶装水 · 实拍帧 00:05
+answer   vivo 手机的品牌是什么                      268v1:Vivo Y300 规格; 268v1:Vivo Y300 规格; 228v1:AdvoCare 规格（OFF）
+answer   巧克力酸奶的条码是多少                        230v1:Mg ricarica 规格（O; 231v1:xylimgxyling 规格（; 226v1:Fitpiggy 规格（OFF）
+answer   Xperia Ear Duo 的品牌是什么              230v1:Mg ricarica 规格（O; 482v1:Xperia Ear Duo 规; 481v1:Xperia Ear 规格（Wi
+answer   TWS Earbuds 的品牌是什么                 491v1:Ultimate Ears Tr; 490v1:Ultimate Ears Su; 483v1:TWS Earbuds 规格（W
+answer   羊绒围巾起球咋办                           261v1:羊绒围巾起球处理
+answer   仓库位置在哪里                            260v1:仓库存储位置说明
+answer   补口径是几点上班                           480v1:发票与配送口径; 17v2:补口径 · 你们几点上班
+answer   零售政策是什么                            479v1:退换货政策; 478v1:数码外设保修政策; 13v4:退货政策
+answer   笔记本的存储容量是多少                        9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？
+answer   保修期内维修收费吗                          478v1:数码外设保修政策; 478v1:数码外设保修政策; 478v1:数码外设保修政策
+answer   换货政策是什么                            479v1:退换货政策; 13v4:退货政策; 478v1:数码外设保修政策
+answer   开具发票要多久                            480v1:发票与配送口径; 480v1:发票与配送口径
+answer   刻字的内容写在哪里                          492v1:定制刻字服务口径; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+answer   杯子的净含量是多少                          9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？
+answer   保温壶的净含量是多少                         9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？; 9v1:保温杯的净含量是多少？
+answer   规格文档里品牌是什么                         232v1:xxx 规格（OFF）; 497v1:LK201 规格（Wikidat; 268v1:Vivo Y300 规格
+===== CONF =====
+answer   显示器和耳机你们都有吗                        501v1:显示器商品图 · 实拍帧; 481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规
+answer   耳机的保修和显示器一样吗                       501v1:显示器商品图 · 实拍帧; 478v1:数码外设保修政策; 481v1:Xperia Ear 规格（Wi
+answer   耳机多少钱                              481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规; 483v1:TWS Earbuds 规格（W
+answer   耳机推荐一款                             481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规; 483v1:TWS Earbuds 规格（W
+answer   有没有便宜点的耳机                          481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规; 483v1:TWS Earbuds 规格（W
+answer   耳机啥时候出的                            481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规; 483v1:TWS Earbuds 规格（W
+answer   索尼的耳机多少钱                           481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规; 483v1:TWS Earbuds 规格（W
+answer   保温杯的材质是什么                          9v1:保温杯的净含量是多少？; 3v1:钛钢保温杯 · 规格; 9v1:保温杯的净含量是多少？
+answer   Xperia Ear 是什么品牌                   230v1:Mg ricarica 规格（O; 481v1:Xperia Ear 规格（Wi; 490v1:Ultimate Ears Su
+answer   Xperia Ear 是什么品牌的耳机                230v1:Mg ricarica 规格（O; 481v1:Xperia Ear 规格（Wi; 482v1:Xperia Ear Duo 规
+answer   刻字的键盘支持七天无理由退货吗                    492v1:定制刻字服务口径; 479v1:退换货政策; 479v1:退换货政策
+answer   Sennheiser HD 800 和 HD 800 S 是同一款吗 485v1:Sennheiser HD 80; 225v1:account_access/r; 226v1:Fitpiggy 规格（OFF）
+answer   Xperia Ear 和 Xperia Ear Duo 是同一款吗  230v1:Mg ricarica 规格（O; 490v1:Ultimate Ears Su; 245v1:1MD Nutrition 规格
+answer   显示器有多高啊                            501v1:显示器商品图 · 实拍帧; 503v2:<无>; 11v1:现场实测保温：早上九点灌的95度
+answer   有带支架的显示器吗                          501v1:显示器商品图 · 实拍帧; 503v2:<无>; 11v1:现场实测保温：早上九点灌的95度
+===== REF =====
+refusal  鼠标有货吗                              
+refusal  鼠标还有吗                              
+refusal  有赠品吗                               
+refusal  有没有白色款                             
+refusal  会员积分怎么兑换                           
+refusal  无人机多少钱                             
+refusal  乐事薯片有货吗                            
+refusal  小龙虾有货吗                             
+refusal  你们老板叫什么名字                          
+refusal  你们老板在吗                             
+refusal  投诉！要真人                             
+refusal  举报你们                               
+refusal  孕妇可以喝这个茶吗                          
+refusal  那个多少钱                              
+refusal  家电多少钱                              
+refusal  家具送货安装怎么收费                         
+refusal  还有别的颜色吗                            
+refusal  神奇校车这套书怎么样                         
+refusal  笔记本电脑怎么保养                          
+refusal  能用花呗付款吗                            
+refusal  有碎屏险吗                              
+refusal  能送到港澳台吗                            
+answer   充电宝有货吗                             451v1:平板评论 · 后悔了 专门给孩子
+refusal  有没有货                               
+answer   找人工客服                              225v1:account_access/r; 223v1:shipping_issue/m; 9v1:保温杯的净含量是多少？
+refusal  我要转人工                              
+answer   能预留吗                               480v1:发票与配送口径
+answer   能加急发货吗                             480v1:发票与配送口径; 480v1:发票与配送口径; 492v1:定制刻字服务口径
+answer   支持上门安装吗                            479v1:退换货政策; 492v1:定制刻字服务口径; 479v1:退换货政策
+answer   什么时候降价                             335v1:平板评论 · 总是*机，还有时候; 451v1:平板评论 · 后悔了 专门给孩子
+answer   支持分期付款吗                            479v1:退换货政策; 492v1:定制刻字服务口径; 27v1:手机评论 · 实际上这个机子就是
+answer   买两个键盘有优惠吗                          497v1:LK201 规格（Wikidat; 492v1:定制刻字服务口径; 417v1:平板评论 · 真的很不错的产品，
+answer   帮我看看键盘库存                           497v1:LK201 规格（Wikidat; 492v1:定制刻字服务口径; 260v1:仓库存储位置说明
+answer   键盘有机械的吗                            497v1:LK201 规格（Wikidat; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+answer   显示器支持壁挂吗                           501v1:显示器商品图 · 实拍帧; 503v2:<无>; 11v1:现场实测保温：早上九点灌的95度
+answer   Xperia Ear 能连 iPhone 吗             233v1:Toneop 规格（OFF）; 230v1:Mg ricarica 规格（O; 234v1:Pbfit 规格（OFF）
+answer   显示器有多少款                            501v1:显示器商品图 · 实拍帧; 503v2:<无>; 11v1:现场实测保温：早上九点灌的95度
+answer   你们卖键盘吗                             497v1:LK201 规格（Wikidat; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+answer   话费充值有优惠吗                           417v1:平板评论 · 真的很不错的产品，
+answer   直播间优惠券怎么领                          417v1:平板评论 · 真的很不错的产品，; 505v1:瓶装水 · 实拍帧 00:05
+answer   数码相机防水吗                            478v1:数码外设保修政策; 478v1:数码外设保修政策
+answer   以旧换新怎么办理                           479v1:退换货政策; 478v1:数码外设保修政策
+answer   库存政策是什么                            479v1:退换货政策; 478v1:数码外设保修政策; 13v4:退货政策
+===== OOV-BASE =====
+answer   运费谁出                               479v1:退换货政策; 479v1:退换货政策; 478v1:数码外设保修政策
+answer   保修多久                               478v1:数码外设保修政策; 478v1:数码外设保修政策; 478v1:数码外设保修政策
+answer   能开发票吗                              480v1:发票与配送口径; 480v1:发票与配送口径
+answer   能刻字吗                               492v1:定制刻字服务口径; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+answer   什么时候发货                             480v1:发票与配送口径; 480v1:发票与配送口径; 492v1:定制刻字服务口径
+answer   退货运费谁承担                            479v1:退换货政策; 479v1:退换货政策; 479v1:退换货政策
+answer   饮用水的保质期是多久                         15v1:瓶装水：日常补水随身装; 264v1:现场踩给各位看：瓶身轻但抗压，整
+answer   Erdbeeren的条码是多少                    237v1:Erdbeeren 规格（OFF; 237v1:Erdbeeren 规格（OFF; 223v1:shipping_issue/m
+answer   Xperia Ear Duo 什么时候上市的             482v1:Xperia Ear Duo 规; 230v1:Mg ricarica 规格（O; 481v1:Xperia Ear 规格（Wi
+answer   Vivo Y300 是什么品牌                    268v1:Vivo Y300 规格; 268v1:Vivo Y300 规格; 228v1:AdvoCare 规格（OFF）
+answer   羊绒围巾起球怎么办                          261v1:羊绒围巾起球处理
+answer   怎么退货                               479v1:退换货政策; 6v1:退货政策说明; 479v1:退换货政策
+answer   仓库在哪里                              260v1:仓库存储位置说明
+answer   你们几点上班                             17v2:补口径 · 你们几点上班
+===== OOV =====
+refusal  邮资怎么算                              
+refusal  坏了给修吗                              
+refusal  能开张票据吗                             
+answer   可以在键盘上雕字吗                          497v1:LK201 规格（Wikidat; 492v1:定制刻字服务口径; 492v1:定制刻字服务口径
+refusal  拍了多久寄出                             
+answer   退回去的邮资哪边付                          479v1:退换货政策
+answer   瓶装水能存放多久                           15v1:瓶装水：日常补水随身装; 15v1:瓶装水：日常补水随身装; 505v1:瓶装水 · 实拍帧 00:05
+answer   Erdbeeren的商品编码是什么                  237v1:Erdbeeren 规格（OFF; 223v1:shipping_issue/m; 237v1:Erdbeeren 规格（OFF
+answer   Xperia Ear Duo 哪一年出的               230v1:Mg ricarica 规格（O; 490v1:Ultimate Ears Su; 245v1:1MD Nutrition 规格
+answer   Vivo Y300 是哪家厂的                    268v1:Vivo Y300 规格; 268v1:Vivo Y300 规格; 234v1:Pbfit 规格（OFF）
+answer   羊绒围巾磨出毛球咋处理                        261v1:羊绒围巾起球处理
+refusal  不想要了能退掉吗                           
+answer   货从哪里发出来                            28v1:平板评论 · 很一般的产品，常常; 29v1:衣服评论 · 发货速度慢的死、客; 56v1:水果评论 · 看包装那些还是可以
+answer   你们什么时间开门                           78v1:水果评论 · 买了六次了，每次只; 209v1:洗发水评论 · 第一次给差评，这; 17v2:补口径 · 你们几点上班

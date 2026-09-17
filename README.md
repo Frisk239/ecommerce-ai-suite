@@ -11,10 +11,10 @@
 打开客服页问「保温杯的净含量是多少」，回答 500ml，带引用芯片 `A-xxxx · v1`——引用=资产 ID+版本号，服务端定，模型没有引用决定权。紧接着问「那它的材质是什么」也接得上：会话内多轮记忆把上一轮问答带给模型做指代消解（拒答轮、工具轮不进记忆），检索词自动补全上一问，但仍然只答有证据的内容。再问一个没有已发布证据的，比如「会员积分怎么兑换？」，直接拒答并转人工：消息文本里带问句摘要和缺口编号 `G-0001`（顾客通道只见摘要，内部缺口 id 不下发，complete 载荷同样不带）。**转人工是有闭环的**（第 42 刀，ADR 0046）：明说「我要转人工」（或 找人工/要人工/人工客服/真人/投诉/举报）走引擎最前置的词表快路径直接落工单——回执给 `H-0001` 与「工作时间 4 小时内回复」的承诺话术（**话术不外发**：不真发短信/邮件），顾客可在下面留联系方式（姓名+留言必填、邮箱/电话可选、整表可跳过）；**一个会话一张工单**，操作者在客服页按「待处理工单」筛选、待处理置顶、回复后结单。订单/库存/退货资格工具查无或提议被拒同样转人工并建单——**新产生的会话凡亮「已转人工」徽章背后都有工单**（演示库里 2026-09-08 的三条历史会话是第 42 刀之前的存量、当时还没有工单表，属历史数据而非当前行为）。工单是「顾客要人」、知识缺口是「知识待补」，两者独立、同一会话可并存；没有坐席队列/分派/SLA。操作者在治理台「知识缺口」待办里点「去补文档」：上传、机洗、人洗、发布，缺口在发布事务内自动解决；同一问法再问就命中引用新资产。**顾客满意度也闭环了**（第 48 刀）：顾客打完分（页脚 1–5 星 + 可选留言，点星即提交，评过可改（覆盖式留最新，第 71 刀））后，操作者在总览「顾客满意度 · 近 7 日」看到均分 / 1–5 分布 / 最近三条**已掩码**留言，客服页会话行也带 ★ 徽章；单条回答另有「有帮助 / 没有帮助」两向反馈（正反馈只记档，负反馈才把引用资料推进复审队列）。整段会话还能回流登记成对话资产再进治理。知识变好靠发布，不靠训练。
 
 **0:45 内容闭环——「同一份已发布权威也喂内容生产」**
-素材中心选「钛钢保温杯」一键生成卖点文案，规则质检过线进待抽检，操作者抽检通过就登记为资产进中台（种类=素材），照常机洗、人洗、发布；直播侧先在切片页上传一份源录像（.mp4，≤200MB；绑错或换录像随时可「改绑」），再把转写片段拣选登记成视频资产——登记字节是 `ffmpeg` 从该源录像切出的**真 mp4 片段**（回执指名切自哪一份），转写作为版本字段供检索，汇入切片页；运营 Agent 读商品事实与已发布素材组装投放文案，操作者确认投放——「投放」和治理台的「发布」是两回事。成品与过程都进中台，可被引用、可被追溯。
+素材中心选「钛钢保温杯」选模板（站内投放/小红书笔记体/短视频口播稿，可选文生图配图——无 IMGGEN key 就诚实跳过、纯文案照常）一键生成文案，双闸质检（规则四条 + LLM 事实性核对规格矛盾/夸大/编造）过线进待抽检，操作者抽检通过就登记为资产进中台（文案=种类素材，配图=独立图片资产，同走机洗、人洗、发布）；直播侧先在切片页上传一份源录像（.mp4，≤200MB；绑错或换录像随时可「改绑」），点「自动转写」由云 ASR 按停顿聚合出待拣候选（无 key 则人工填转写，见「自动转写」节），再把转写片段拣选登记成视频资产——登记字节是 `ffmpeg` 从该源录像切出的**真 mp4 片段**（回执指名切自哪一份），转写作为版本字段供检索，汇入切片页；商品侧传一张商品图上中台（种类=图片），VLM 看图出「图片描述」草稿、人洗确认改写后发布——顾客问图片内容词（如「有没有带支架的显示器」）就命中这张图带引用（无 VLM key 则纯人洗补写，见「图片资产」节）；运营 Agent 读商品事实与已发布素材组装投放文案，操作者确认投放——「投放」和治理台的「发布」是两回事。成品与过程都进中台，可被引用、可被追溯。
 
 **1:30 连接层（MCP）——「外部 Agent 接同一份数据，一天接一个新系统」**
-同一个 FastAPI 挂 `/mcp/`（Streamable HTTP），独立 Bearer 鉴权，不复用登录 cookie。只有四个工具：`search_published` 检索已发布、`get_asset` 取已发布正文（可取历史已发布版）、`register_asset` 带正文登记（来源服务端定值）、`export_published` 全量导出已发布。**没有 publish 这个工具**——发布权只在治理台操作者手里。导出是数据包，不是微调集；本产品不做微调。
+同一个 FastAPI 挂 `/mcp/`（Streamable HTTP），独立 Bearer 鉴权，不复用登录 cookie。七个工具：知识四件 `search_published` 检索已发布、`get_asset` 取已发布正文（可取历史已发布版）、`register_asset` 带正文登记（来源服务端定值）、`export_published` 全量导出已发布；活状态只读三件 `get_product` / `get_stock` / `get_order_status`（第 99 刀起，包的是与客服同一套查询函数，订单返回不含顾客联系方式）。**没有 publish 这个工具**——发布权只在治理台操作者手里。MCP `export_published` 导出已发布正文数据包；微调数据集（SFT 形态，只出已发布对话资产的人工确认问答对，逐条带资产版本血缘）经治理台 `POST /api/exports/sft` 导出——本产品不做训练。
 
 **2:20 中台为什么是核心——「答错可追溯」**
 七块能力共用一个数据中台。资产只有三态：已接入、待人洗、已发布——只有已发布进检索索引，这是唯一能被 AI 引用的权威；每次引用都锚定 `A-xxxx · vN` 二元组，答错了能追回当时回答用的是哪一版字节；资产详情的血缘面板给出：从哪条来源来、被哪些提问引用过、写回了哪个商品的哪条规格、被哪场考核用过、有没有被 MCP 导出过。拒答留缺口、登记带来源、发布有审计，治理是闭环，不是七个各养一套数据的 demo。
@@ -24,6 +24,10 @@
 ```bash
 docker compose up --build
 ```
+
+> 部署到自有服务器（IP + HTTP 演示栈：env 清单、安全 checklist、数据灌入、故障处置）见 [`ops/deploy.md`](ops/deploy.md)；LLM 端点更换三步与备用免费端点见 [`ops/runbook-llm.md`](ops/runbook-llm.md)。数码外设店宿主页示例：`/storefront.html`。
+
+> **体系闭环演示**：12+1 幕演示手册见 [`docs/demo-system-loop.md`](docs/demo-system-loop.md)（每幕=步骤+画面+主张+可指测试）；演示库就绪检查 `uv run python scripts/demo_prepare.py --db <库URL>`（只读，21 项）。
 
 打开 <http://localhost:5173>：健康卡应显示 API 与数据库双绿（页面真实调用 API 的 `GET /health`）。
 api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者、两个商品与三笔 mock 订单），无需手工迁移。
@@ -78,7 +82,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 | `LLM_BASE_URL` | OpenAI 兼容端点（默认 `https://opencode.ai/zen/go/v1`） |
 | `LLM_MODEL` | 模型名（默认 `qwen3.8-flash`） |
 
-- **无证据不调模型**（0018）：拒答+转人工路径原样，防编造也省调用。
+- **无证据不调生成**（0018；第 103 刀压测订正表述）：零命中拒答不进生成步——但**提议步先于检索**，无信号问句仍付 1 次提议 LLM 调用；弱命中 no_coverage 收口付 2 次。防编造不省这部分调用。
 - **降级**：LLM 未配置/超时（20s，重试 0 次）/网络失败/空产出 -> 复用 `answer.py` 证据组装模板回答，走同一 delta 流，`complete` 事件带 `fallback: true`，前端显示「模板回退」徽章（诚实标注，不装作模型回答）；错误细节只进服务端日志且不含密钥。
 - **引用服务端定**（0007）：`citations` 恒由检索命中确定，模型无引用决定权；系统提示明确要求模型不输出引用编号。
 - 回答先收全再落库再流式：断连仍完整落库（契约不变）。
@@ -117,14 +121,14 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 - 宿主页若开了 CSP，需放行 `script-src <控制台地址>`（加载 `embed.js`）、`frame-src <控制台地址>`（嵌入 iframe）与 `style-src 'unsafe-inline'`（加载器用一段内联样式做 Shadow DOM 里的按钮外观）；无需放行 `connect-src`（客服请求都发生在 iframe 内部）。
 - 宿主页**不要设 `Referrer-Policy: no-referrer`**：来源取自 `document.referrer`，剥掉它客服会拒绝工作（fail-closed，不是绕过）。
 - 白名单校验用的是我们前端读 `document.referrer` 后带上的 `X-Widget-Origin`。宿主若自己伪造请求头仍可能绕过，**要彻底堵死需在边缘/反代层拦文档请求**（本仓是 dev 栈，没有这层）——这里挡的是「把客服嵌进未授权站点」的正常路径。
-- 同一访客的**会话续接/历史回放**不在 v1（顾客通道没有历史端点）；每次打开是全新会话。
+- **会话续接（第 95 刀）**：顾客端（widget/独立顾客页共用）把令牌+会话 id 存进 localStorage（`ecustomer.session`），重开页面先调 `GET /api/customer/sessions/current/messages`（Bearer，「current」=令牌所指的会话）——active 自动恢复（消息重放+继续问，不建新会话）；已结束（ended）回放历史+锁输入（评分/反馈等善后照旧，已结束会话不复活）；令牌过期/失效（401）清存档走新会话。**不做的**是历史列表/多会话管理：一个浏览器一次只续最近一段。
 
 ## MCP 连接层（第 5 刀，ADR 0032）
 
 外部 Agent（Cursor / Claude / 官方 SDK 客户端）经 Streamable HTTP 连同一份中台，端点 `http://localhost:8000/mcp/`。
 
 - **鉴权**：`Authorization: Bearer <MCP_BEARER_TOKEN>`，与操作者登录会话完全隔离（不读 cookie）。token 未配置或为空时所有 MCP 调用一律 401；本地开发默认值见 `.env.example`（`dev-mcp-bearer`，生产必换）。
-- **四工具**（没有 publish——发布只属于治理台操作者）：
+- **七工具**（第 99 刀/ADR 0057：知识四件 + 活状态只读三件；没有 publish——发布只属于治理台操作者）：
 
   | 工具 | 语义 |
   | --- | --- |
@@ -132,6 +136,11 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
   | `get_asset(asset_id, version?)` | 取已发布资产正文；不传 version=当前指针版，传 version=历史已发布版；待人洗/已接入一律拒绝 |
   | `register_asset(content, title?, product_id?)` | 登记文档（必须带正文），来源固定 `mcp_registered`，落为已接入等治理台处理 |
   | `export_published()` | 全部当前已发布资产，含该版正文全文 |
+  | `get_product(name)` | 按名查商品行档案（价格/库存/已写回规格摘要；类目名或别名给类目聚合），与客服目录同款匹配 |
+  | `get_stock(product_name)` | 查商品（或类目）当前库存，与客服 get_stock 同一函数 |
+  | `get_order_status(order_no)` | 查订单状态与物流轨迹，与客服 get_order_status 同一函数；**脱敏**：返回不含顾客联系方式（items/events 联系键剥除、自由文本过出口打码），真实部署升级路径=单号+手机尾数双因子核验（ADR 0057） |
+
+  活状态三件是**只读**的：复用客服 agent loop 的 TOOL_REGISTRY 同一条目（同一份参数白名单校验 + 同一执行函数），无任何写动作；订单/库存/商品仍不经检索索引、不进治理台（0002 工具数据源口径不变）。
 
 - **冒烟**（需先有已发布资产）：
 
@@ -142,7 +151,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
   MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py 保温杯 1 1
   ```
 
-- **协议证据**：`MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py --evidence`（goal §6.2.5 三断言：工具恰四无 publish、未发布 search 空、register 落已接入；pytest 版见 `apps/api/tests/test_mcp_evidence.py`）
+- **协议证据**：`MCP_BEARER_TOKEN=dev-mcp-bearer uv run python scripts/mcp_smoke.py --evidence`（goal §6.2.5 三断言：工具恰七无 publish、未发布 search 空、register 落已接入、活状态工具只读；pytest 版见 `apps/api/tests/test_mcp_evidence.py`）
 - **Cursor mcp.json**：
 
   ```json
@@ -192,8 +201,9 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 | `#148` | **澄清闭环**（第 70 刀）：「我的订单到哪了」→ 请提供订单号 → 补单号 → 订单详情 |
 | `#198` | **评分可改**（第 71 刀）：4 星 → 填留言 → 改 5 星；详情 ★ chip 见「· 改过」（第 77 刀） |
 | `#142` | **拼接追问**（审计刀 13 P0 修复）：净含量 → 「那它的材质是什么」→ 答钛钢带引用 |
+| 数码店（第 92 刀） | **真实使用剧本**：问「显示器有货吗」看类目聚合库存；「能刻字吗」拒答落缺口 → 治理台补《定制刻字服务口径》（A492）→ 同问法再问命中带引用——飞轮整圈实录见 `docs/research/real-usage-log.md`；带必填全链（登记→机洗→人洗→发布）样例 A497 |
 
-**避开**（历史探针的旧形态，行为已被后续刀修掉，展示会误导）：早期「怎么退货」整段拒答的会话、「你们有笔记本吗」旧 handoff、「到货了吗」旧拒答——**避开方法**：演示前跑一次 `scripts/demo_reset.py --apply`（清空会话与探针资产），然后用上表主线会话。「M&M white的条码」类具名 OFF 规格问句**已可稳定作答**（第 81 刀证据行补资料名修复：审计刀 17 C 轴克隆库复测 3/3 答、值正确；此前审计刀 16 实测的 6 次 3 拒是修复前数据）——OFF 导入数据的标题/正文品牌错配残留仍在，遇其他 OFF 商品问句仍偶发不稳，演示跨商品检索首选「保温杯/Erdbeeren」类问句（第 79 刀实体亲和重排对这些稳定命中）。
+**避开**（历史探针的旧形态，行为已被后续刀修掉，展示会误导）：早期「怎么退货」整段拒答的会话、「你们有笔记本吗」旧 handoff、「到货了吗」旧拒答——**避开方法**：演示前跑一次 `scripts/demo_reset.py --apply`（清空会话与探针资产），然后用上表主线会话。**OFF 错配已订正（第 100 刀，`scripts/realdata/correct_off_mismatch.py` 以正文为准改 14 份标题）**：具名 OFF 规格问句可演示——问「Fitpiggy 的条码」「Erdbeeren 的条码」稳定作答带引用（实测 3/3 同答）；**「M&M white」这个旧名已无对应资产**（订正=承认它是 OFF 数据错配，真名是正文品牌 Fitpiggy），再问它的归宿在「诚实澄清」与「拒答」间随模型措辞摆（检索层稳定、都不再引用错配值，OOV 闸在中英混库上有已知漏判）——演示跨商品检索仍首选「保温杯 / Erdbeeren / Fitpiggy」类问句。
 
 **治理面顺带**：待处理工单与待补缺口若干（数字随演示操作累加）多为历史探针素材——演示「转人工闭环」用 `#125` 的工单即可，其余不必逐条处理；缺口演示用 `#199` 的已解决对（G4/G5）。工单池里 OOV 类工单的**文案有三代并存**（82 刀前泛文案 / 84 刀点名 / 86 刀两类分说——历史探针残留，`demo_reset` 对工单只报告不清是明示设计），演示翻到旧文案以最新口径为准。
 
@@ -217,15 +227,115 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 
   它清**两类特征行**（空会话：无消息/工单/评分/缺口/回流锚；探针资产：`mcp_registered` 且标题 `^mcp-smoke|^evidence probe`（大小写不敏感，与前端判据对齐）→ 置 discarded 不删行）。**请在演示开始前跑**：顾客刚创建、还没发第一问的会话也符合「空会话」判据，会被一并删掉（其下一问会 401）。**知识缺口与工单只报告不清**——那些是「拒答留缺口 → 去补 → 再问命中」与「转人工闭环」的演示素材。默认 dry-run、必须显式 `--apply`。
 
+- **自动转写要有 ASR key**（第 93 刀）：切片页「自动转写」按钮在后端 `ASR_API_KEY` 为空时禁用（服务端也 409，见「自动转写」节）；演示前把 key 写进本机 `.env` 再 `PG_PORT=5433 docker compose up -d --build api` 带上它。
+
+- **看图出草稿要有 VLM key**（第 94a 刀）：登记抽屉上传 .png/.jpg/.jpeg/.webp 时，后端配了 `VLM_API_KEY` 才会在登记请求内出「图片描述」草稿（≤20s，失败=无草稿、不阻断登记）；**没有 key 也照常演示**——描述纯人洗补写，链路其余部分（确认→发布→问句命中）完全一样。见「图片资产」节。
+
+## 自动转写（第 93 刀，ADR 0050）
+
+切片页选好源录像 → 点「自动转写」：后端 ffmpeg 抽出 16kHz 单声道音轨 → 云 ASR 出**句级时间戳**（OpenAI 兼容 `POST {base}/audio/transcriptions`、`response_format=verbose_json`）→ 按停顿聚合落 `clip_candidates`（**pending，人工拣选闸门保留**）。候选与人工/导入候选同形（时间码 + 转写 + 源录像绑定），多一列**只读**的 `transcript_source` 标注来源（`cloud`/`local`/`manual`）。
+
+| 变量 | 说明 |
+| --- | --- |
+| `ASR_API_KEY` | 云转写密钥；**为空时不建客户端、不发请求**——转写端点 409「ASR 未配置」，人工填写转写与本地兜底脚本的现状不变 |
+| `ASR_BASE_URL` | OpenAI 兼容端点（默认 `https://api.groq.com/openai/v1`；89 刀定案：带时间戳的免费档） |
+| `ASR_MODEL` | 模型名（默认 `whisper-large-v3-turbo`） |
+
+- **聚合口径**（纯函数，`apps/api/src/suite_api/services/asr.py`）：句间静默 ≥1.2s 断段；段累计时长 ≥20s 后下一句强切（长独白不糊成一大段）；单份录像候选 ≤60 段——超出把相邻段按序合并，回执 `note` 如实说明合并过（不静默截断丢句）。
+- **提音轨与切段**：ffmpeg 抽 16kHz 单声道 wav；超过 24MB（Groq 单文件 25MB 上限）按 10 分钟一块切 PCM 上送，时间戳按块偏移合并回源录像时间轴。
+- **端点**：`POST /api/clips/recordings/{id}/transcribe`（操作者登录）。录像不存在 404；`ASR_API_KEY` 为空 409；该录像**已有未拣选的转写候选** 409（回执带现有条数——重跑不是追加，全部拣选/登记后可再生成一批）；录像无音轨 422；云转写失败/没回句级时间戳 502。成功 200 + `{candidates_created, segments, duration_ms, note}`（`segments`=ASR 句级段数）。同步执行，云请求超时 120s。
+- **落库形状**：`status=pending`、`transcript_source='cloud'`、**直接带 `recording_id`**（第 46 刀「上传即绑无源候选」只圈 `recording_id IS NULL`——转写候选不会被后续上传误绑；第 49 刀改绑仍可把它们改走）；`product_id` 缺省为空（句子里没有商品归属——归属是人/治理动作，不编造；请求体可带 `product_id` 显式归属）。
+- **本地兜底（脚本级，不进 api 镜像）**：`uv sync --extra asr-local` 后 `uv run python scripts/transcribe_local.py --db postgresql://suite:suite@localhost:5433/suite --recording-id <N>`——funasr paraformer-zh 本地转写，落 `transcript_source='local'` 的候选（同一套聚合口径）。依赖在 `apps/api` 的可选组 `asr-local`，Dockerfile 的 `uv sync --no-dev` 不带它（torch GB 级，不进运行时）。
+
+## 图片资产（第 94a 刀，ADR 0051）
+
+**运营上传一张商品图 → 机器出草稿 → 人确认 → 顾客问图上的话命中带引用。**
+
+登记抽屉选 .png / .jpg / .jpeg / .webp（≤10MB；文本仍 ≤2MB）上传：后端按上传类型定种类（**图片**）、对象键后缀按字节魔数走（报 png 传 jpeg 也写 `.jpg` 键）。图片字节是原图、解不出文本，所以**检索文本面是「图片描述」字段**——索引切块只从该字段进，永不读字节（与视频走 `transcript` 字段同款）。
+
+| 变量 | 说明 |
+| --- | --- |
+| `VLM_API_KEY` | 看图密钥；**为空时不建客户端、不发请求** = 无草稿（人洗补写兜底）。密钥只写本机 `.env`，禁止提交 |
+| `VLM_BASE_URL` | OpenAI 兼容端点（默认 `https://api.openai.com/v1`；任意视觉端点同形可换） |
+| `VLM_MODEL` | 模型名（默认 `gpt-4o-mini`） |
+
+- **VLM 只出草稿**：登记请求内同步看图（≤20s、0 重试），草稿写进机洗面（`extracted_fields["图片描述"]`，标注「VLM 草稿」）；**人确认才生效**——索引只认 confirmed，未确认的草稿不进索引、顾客面前不出现。失败/超时 = 无草稿，**不阻断登记**（照常进待人洗）。
+- **人洗**：资产详情页「图片描述」面板——草稿一键确认、或对照图上内容改写后确认（PATCH `图片描述`）；确认过的值发布时按句成块入索引。无 VLM key 时面板显示「未出草稿」，直接补写。
+- **无描述的图片**照常可发布，只是没有正文块、检索不到；按 ID 取该版正文（`GET /api/assets/{id}/versions/{n}/text`）返回 409——不静默给空串。
+- **换图**：待人洗版可「上传新正文」换一张图（旧键字节删除、重跑 VLM 草稿、已确认字段保留）；视频资产仍不支持换字节（正文由转写字段承载，见 ADR 0047）。
+- **商品素材聚合**：商品卡展开「素材」段——该商品挂载的图/视频/文案/文档按组铺开（`GET /api/products/{id}/assets`，懒加载）；**只有已发布是权威**（已发布排前、未发布灰标），素材库不另建页。
+- **Out**：AI 生图**作知识证据**（证据要能核：图要么人拍人传、要么来自可追溯素材源；第 98 刀起生图可作**素材成品**，见「自媒体内容套件」节的分层红线）；Pexels 辅轨拉图（直播洗帧已由 94c 落地，见「直播洗帧」节）。
+
+## 媒体附件（第 94b 刀，ADR 0052）
+
+**问「有带支架的显示器吗」→ 回答里直接看到那张商品图；命中切片转写的问句 → 回答里出现可播放的视频。**
+
+- **载荷**：SSE `complete` 恒带 `media_citations: [{asset_id, version_no, mime}]`（无媒体= `[]`，不是缺键）。它是 `citations` 的**姊妹键**：服务端按同一份检索命中派生（模型无决定权），并把**这份附件随消息落库**——重载会话（客服页）照样出图/出播放器。`mime` 由**资产种类 + 对象键后缀**决定：`png/jpg/jpeg/webp → image/*`、`mp4 → video/mp4`；**旧切片资产（键 `.txt`、字节是时间码文本）不是媒体**，不产附件也不可播。
+- **字节端点**：`GET /api/customer/assets/{id}/media`——**只出当前已发布指针版**：未发布（待人洗）/已废弃/非媒体资产一律 404 同文案「媒体不存在」（不泄漏存在性、**响应不回对象键**）。图片直出（`Content-Type`/`Content-Length` 按字节）；视频支持 **Range**：`bytes=0-99` → `206` + `Content-Range`，越界 → `416` + `bytes */size`，多段/坏头忽略（200 全量）；字节按 64KiB 分块**流式**出，不整读进内存。
+- **鉴权（双通道）**：操作者会话 cookie（客服预览页 `img`/`video` 同源自动带）；顾客令牌 `Authorization: Bearer <token>` **或** `?token=<token>`——`<img>/<video>` 的 `src` 带不了请求头，query 形态**只此端点**接受（发问/反馈/评分/联系方式仍只认 Bearer 头）。缺凭证统一 401。顾客令牌过期与无效同文案（TTL 24h，同发问口径）。
+- **query 令牌的泄漏面与收口**：URL 会进访问日志——服务端日志管线把 `?token=`/`&token=` 的值渲染成 `***`（uvicorn 访问日志与业务日志同一条 structlog 链）；响应带 `Cache-Control: private, no-store` 不留缓存副本。浏览器历史的残留属已知取舍（ADR 0052 记债）。
+- **前端**：客服页与顾客页共用消息气泡——图片 `<img>`（限宽圆角）、视频 `<video controls preload="metadata">`；**媒体附件区与引用芯片区并列**（芯片=依据哪份资料的哪一版，附件=那份资料里的图/视频本身）。顾客页的媒体 URL 由 `mediaUrl()` 拼 query 令牌，操作者页不带（cookie）。
+- **演示**：`PG_PORT=5433 docker compose up -d --build api web` 后，先在治理台把一条切片视频（如 A-498）确认+发布，再用顾客页问切片内容；命中图片描述的问句直接出图。
+- **Out**：MCP 导出媒体字节、Range 多段/断点续传/转码（HLS）。
+
+## 直播洗帧（第 94c 刀，ADR 0053）
+
+**已发布切片视频的详情页点「洗帧到素材库」→ VLM 挑清晰商品帧 → 操作者勾选 → 确认帧登记为图片资产 → 走 94a 描述治理 → 顾客问图片内容词命中出图。内容自循环：直播 → 切片 → 帧 → 素材库 → 客服引用。**
+
+- **候选定位 = 均匀采样 + VLM 打分**（不是转写时间戳——资产的 transcript 是纯文本，没有时间戳可依）：每 5s 抽一帧（采样 ≤24 帧，超上限拉大间隔保持均匀）、每帧 VLM 打 1-10 分 + 一句话，**≥6 分成候选、上限 8**。打分复用 94a 的 VLM（同一把 `VLM_API_KEY`），但打分与描述是两种 prompt 两个任务。
+- **候选是请求态**：不落库、缩略图（≤480px jpeg）base64 回传，刷新即重算；幂等只由「确认登记」承载。
+- **确认登记**（操作者闸门，全自动被否——发布权在人）：`POST /api/assets/{id}/frames {at_second}`——服务器从**已发布指针版**字节重抽该秒全尺寸 jpg（不信任请求里的缩略图），登记 kind=图片、来源=`直播洗帧`、标题=`{商品/视频名} · 实拍帧 mm:ss`、挂同商品；之后与上传图片同路：VLM 出「图片描述」草稿 → 人洗确认 → 发布 → 94b 出图。
+- **闸门**：非视频资产 422；未发布 409；旧时间码文本切片（键非 `.mp4`）422；**无 `VLM_API_KEY` 候选端点 409**（打分没有本地兜底；`GET /api/clips/frames/status` 供前端禁用按钮，后端是唯一闸）。
+- **Out**：批量自动登记（≥6 分全登记）、按转写时间戳定位帧（先得有带时间戳的 transcript）、抽帧重编码/超分。
+
+## 自媒体内容套件（第 98 刀，ADR 0055）
+
+**素材中心选模板（站内投放/小红书笔记体/短视频口播稿）→ 请求内生成文案 + 可选文生图配图 → 双闸质检（规则四条 + LLM 事实性核对）→ 待抽检 → 操作者通过 → 双资产登记（文案=素材资产、配图=图片资产）→ 照常机洗人洗发布。无 IMGGEN key = 配图诚实跳过，纯文案套件照常。**
+
+- **三模板只是 prompt 参数**（不是 Agent、不加 planner）：`POST /api/material/tasks` 收 `template`（`station`/`xhs`/`short_video`，默认站内=17 刀形态）与 `with_image`。模板派生两样：生成 system prompt 的风格段（小红书=emoji 口语种草+话题标签；口播=开场钩子-卖点分镜-行动号召）与配图的 prompt/尺寸（站内=方图 1024x1024、小红书/口播=竖版 768x1024）。运营编排（ops 的 `gen_material`）是另一条独立通道，本刀不动。
+- **质检双闸**（三层终审是人）：第一道规则四条纯函数（0038 不变）；第二道 **LLM 事实性质检**——把「文案 + 商品规格事实」给 LLM 只问三类问题（与规格矛盾/夸大功效/编造参数），判定不过、调用失败、输出坏 JSON 都 **fail-closed**：任务 failed 不进待抽检（文案保留预览、可重试）。写作风格/emoji/话题标签明确排除在问题域外（否则会误杀小红书模板）。两闸**独立记录**：规则项进失败原因、LLM 判定进任务的 `qc_llm_passed`（规则先挡下时不调 LLM，如实记「未跑到」）。
+- **配图 = 素材成品非知识证据**（分层红线）：文生图 API（OpenAI 兼容 `POST {base}/images/generations`）出图字节按魔数复验，抽检前暂存对象存储 `material/` 前缀（不是资产，任务详情可预览 `GET /api/material/tasks/{id}/image`）；抽检通过**一次登记双资产**——文案=material 资产、配图=独立 image 资产（来源=`素材生成`、标题 `{商品} · {模板名}配图`、挂同商品、图片描述预填文案首句——VLM 看图草稿可用时优先，人洗可改）。生成图不回写商品规格、不冒充实拍证据。
+- **IMGGEN 三 env**（表同上 ASR/VLM 风格）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `IMGGEN_API_KEY` | 文生图密钥；**为空时不建客户端、不发请求 = 配图步诚实跳过**（任务不 fail，详情标注「未配置 IMGGEN_API_KEY，跳过」）。密钥只写本机 `.env` |
+| `IMGGEN_BASE_URL` | OpenAI 兼容端点（默认 `https://api.siliconflow.cn/v1` 硅基流动，有免费 FLUX 档） |
+| `IMGGEN_MODEL` | 模型名（默认 `black-forest-labs/FLUX.1-schnell`） |
+
+- **与 ASR/VLM 的 409 刻意不同级**：转写/打分没有本地兜底、无 key 就没有产物（fail-closed 拒绝）；配图是增值项不是任务本体——无 key 跳过、生成失败也只记 `image_status=failed`（不 fail 任务，整任务重试可再要图）。双闸没过线不跑配图步（不给废文案产图）。`GET /api/material/imggen/status` 供前端禁用「生成配图」开关。
+- **Out**：批量任务；配图单独重生成（整任务重试代替）。~~98b 成片~~（第 98b 刀已做，见下节「内容成片」）。
+
+## 内容成片（第 98b 刀，ADR 0056）
+
+**素材中心「内容成片」页签选商品+模板 → plan 同步选材+排版（该商品已发布的切片/图片/文案要点，15-60s 时间线）→ 预览成片（ffmpeg，常驻「AI 生成」AIGC 角标）+ 剪映草稿 zip 双层产物 → 人审改（下草稿精修或直接看预览）→「确认登记」把文案要点过双闸复用登记 material 资产进治理。AI 排版、人上市。**
+
+- **端点**（全操作者鉴权，`apps/api/src/suite_api/routes/video_compose.py`）：
+  - `POST /api/video-compose/plan`（`{product_id, template: highlight|product_intro}`，同步执行——ffprobe 秒级 + TTS ≤60s + ffmpeg 合成 ≤120s，前端超时 240s）：选材规则=优先切片（转写含商品名/卖点词）+ 图 2-3 张 + 文案要点 3 条，不足图+文案补足；每素材 3-8s（切片按 ffprobe 实测、超 8s 截前 8s）。商品无任何已发布素材 422；合成失败 502 不落任务。
+  - `GET /api/video-compose/{id}/preview`（预览 mp4，inline 播放）/ `GET /{id}/draft`（剪映草稿 zip 附件）/ `GET /{id}/final`（publish 上传的成品留档）。
+  - `POST /api/video-compose/{id}/publish`：人闸门确认。body 可带剪映导出的成品 mp4（≤200MB、mp4 魔数校验；不传=用预览成片）；文案正文=时间线文案要点串联，**双闸复用**（material 的规则四条 + LLM 事实性质检，98 刀同函数）不过线/LLM 未配置 422 不登记（fail-closed，任务停 planned 可重发）；过线登记 material 资产（来源=**upload** 服务端定值、标题「{商品} · 内容成片」、挂商品）→ 待人洗/发布治理。不做自动 publish。
+- **红线四条**（ADR 0056）：①预览 drawtext 角标「AI 生成」+ 草稿常驻文本，**代码里没有开关**；②选材白名单=只取已发布+自有来源（本仓资产面天然满足）；③publish 文案双闸复用；④数字人/声音克隆 Out——TTS voice 用厂商预置音色。
+- **剪映草稿是最小自写 JSON 形态**（记偏差）：draft_content.json + draft_meta_info.json + `materials/` 媒体字节，素材用**相对路径**；调研过 pyJianYingDraft（库可用），但其素材 path 硬绑生成机绝对路径且拖 pymediainfo 原生库，与「服务端生成 zip、操作者下载打开」冲突。用法：解压 zip 到剪映草稿目录（com.lveditor.draft/）；剪映版本对相对路径不认时用「媒体重链接」指向包内 materials/。
+- **TTS 三 env**（同 ASR/VLM/IMGGEN 风格；默认硅基流动 CosyVoice2）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `TTS_API_KEY` | 口播密钥；**为空时不建客户端、不发请求 = 预览无音轨**（任务不 fail，`with_tts=false`、详情标注「TTS 未配置，预览无声」）。密钥只写本机 `.env` |
+| `TTS_BASE_URL` | OpenAI 兼容端点（默认 `https://api.siliconflow.cn/v1`） |
+| `TTS_MODEL` | 模型名（默认 `FunAudioLLM/CosyVoice2-0.5B`）；`TTS_VOICE` 预置音色（默认 `FunAudioLLM/CosyVoice2-0.5B:alex`，非克隆） |
+
+- **与 ASR/VLM 的 409 同样刻意不同级**：口播是增值项不是成片本体——无 key/失败都只是无声预览（fail-closed 不 fail 任务），整任务重发可再要口播。`GET /api/video-compose/tts/status` 供前端提示。
+- **Out**：批量成片；自动 publish；多模板 DSL；数字人/声音克隆；成片自动分发。
+
 ## 数据来源与演示价（第 50 / 55 刀）
 
 演示库里有**四份真实数据集**，它们在产品面上的来源是可见的（资产来源列 / 商品来源 chip）：
 
 | 数据 | 量 | 落在哪 | 产品面显示 |
 | --- | --- | --- | --- |
-| Wikidata 商品（`scripts/realdata/fetch_wikidata_products.py`） | 91 | `products` | 商品卡「Wikidata」 |
+| Wikidata 商品（`scripts/realdata/fetch_wikidata_products.py`，含第 90 刀数码四类） | 155 | `products` | 商品卡「Wikidata」 |
 | OpenFoodFacts（`load_openfoodfacts.py`） | 20 商品 + 20 规格资产 | `products` / `assets` | 商品卡与资产来源「OpenFoodFacts」 |
-| 在线购物评论（`load_reviews.py`） | 200 资产 | `assets` | 资产来源「评论导入」 |
+| 在线购物评论（`load_reviews.py`，第 90 刀起含数码三类目筛选） | 400 资产 | `assets` | 资产来源「评论导入」 |
 | WANDS 家具检索基准（`load_wands_clips.py`） | 30 切片候选 + 1 承载商品 | `clip_candidates` / `products` | 承载商品「WANDS 基准」+ 切片候选卡各自的源录像标签 |
 
 许可与出处见 `scripts/realdata/README.md`；**来源是只读字段**（既成事实，运营改不了——可改就成可造假的溯源）。
@@ -238,6 +348,7 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 - **关联 id**：每个响应带 `X-Request-Id`，同值进每条 JSON 日志的 `correlation_id` 字段——一行一问能拼回一条请求链。客户端传合规 id（8–64 位 `[A-Za-z0-9._-]`）则沿用，否则服务端生成（脏值不原样回显）。
 - **指标**：`GET /metrics`（Prometheus 文本格式），**独立 Bearer**——设 `METRICS_TOKEN` 才可用，**留空一律 401**（默认栈不裸奔），不接受登录 cookie。内容 = HTTP RED（`http_requests_total` / `http_request_duration_seconds`，`/metrics` 与 `/health` 自身不入账）+ 七个业务指标：`chat_requests_total{channel,kind,generated}`（`generated=false` 即模板/工具回答，给出**模板回退率**）、`ttft_seconds`（请求进入 → 厂商首个增量，只记生成路径）、`llm_tokens_total{direction,model}`（厂商 usage，缺了不记、不用字数估算冒充）、`clip_cuts_total{result}`（切片拣选：真切成功 / 切段失败 / 无源录像走旧文本路径，审计刀 9 补）、`csat_ratings_total{score}`（会话评分分布，审计刀 9 补）、`chat_fallbacks_total{channel,reason}`（**闸回退**：coverage=忠实度闸降级 / no_coverage=证据未覆盖按拒答收口 / oov=实体不在库按拒答收口 / other=防御位；普通厂商失败不计——第 63 刀补、第 82 刀补 oov，审计刀 7 起记债。**闸回退率 = 本指标 / `chat_requests_total`，不是 `generated=false` 占比**——后者把厂商失败降级与工具/目录回答都算进来）、`service_session_transitions_total{from,to}`（会话生命周期迁移：new->active 建会话 / active->ended 顾客结束 / active\|ended->registered 回流——第 84 刀补，审计刀 16 记债；标签值有界、不带会话 id）。
 - **抓取（可选，默认不启）**：**先建令牌文件再起**——`printf '%s' "$METRICS_TOKEN" > ops/metrics_token`（与 api 的 `METRICS_TOKEN` 同值；该文件已 gitignore，模板见 `ops/metrics_token.example`），然后 `docker compose --profile metrics up` → Prometheus 起在 <http://localhost:9090>，配置 `ops/prometheus.yml`。两点环境事实：①Prometheus **不展开**配置文件里的 `${VAR}`，故令牌只能走 `credentials_file` 挂文件；②缺该文件时 Docker 会把源路径建成同名**目录**，表现为 target down（不是 401）。
+- **压测（第 103 刀）**：`uv run python scripts/perf/loadtest.py --path rag --users 30 --duration 60`（路径 `health|refusal|tool|rag|ratelimit`，stdlib 线程+httpx 自制，不引 locust；输出 RPS/p50/p95/p99/错误率/429 与可直接粘贴的表格行，rag 另采客户端 TTFT）——本机口径基线、限流闸验证实录与 `ttft_seconds` 埋点对照见 `docs/research/perf-report.md`。
 - 口径、标签基数纪律与 Out（不接 OTel/trace 传播、无面板/告警/远端写）见 `docs/progress/observability-intake.md`。
 
 ## 数据库迁移（Alembic）
@@ -278,11 +389,13 @@ SUITE_TEST_DATABASE_URL=postgresql://suite:suite@localhost:5432/suite_test uv ru
 
 锚定口径是**标题不锚 id**：测试库每个 module 独立自建 `suite_test` 库，资产 id 随发布顺序漂移，只有标题跨运行稳定可复现；runner 在 fixture 内记录 `{标题: asset_id}` 再把 JSON 里的标题解析成 id 断言引用。
 
+另一层是**动态大集**（`scripts/eval/out/golden_large.json`，不进 CI）：208 条五分布（positive 80 / paraphrase 58 / confusion 25 / refusal 30 / **oov_syn 表外同义探针 15**，第 101 刀从 96 条四分布扩容，每条期望实跑核验），runner `scripts/eval/run_eval.py` 直调 retrieve+compose（零 LLM 依赖、可复现），数字入档 `docs/research/rag-eval-report.md`；上游问法回流半自动脚本 `scripts/eval/collect_questions.py`（会话表抽问+去重+预分类提示，期望人审手工定）。
+
 web 构建校验：`cd apps/web && npm run build && npm run lint`
 
 ## 环境变量
 
-见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM 密钥只落到 `.env`。
+见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`（云转写，OpenAI 兼容 `POST {base}/audio/transcriptions`；**空 key = 不建客户端、不发请求**，切片页「自动转写」如实 409——见「自动转写」节）、`VLM_API_KEY` / `VLM_BASE_URL` / `VLM_MODEL`（看图出「图片描述」草稿，OpenAI 兼容 `POST {base}/chat/completions` 带 `image_url` 内联 base64；**空 key = 不建客户端、不发请求** = 无草稿，人洗补写兜底——见「图片资产」节）、`IMGGEN_API_KEY` / `IMGGEN_BASE_URL` / `IMGGEN_MODEL`（素材任务文生图配图，OpenAI 兼容 `POST {base}/images/generations`；**空 key = 配图步诚实跳过**（任务不 fail）——见「自媒体内容套件」节）、`TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL`（内容成片口播，OpenAI 兼容 `POST {base}/audio/speech`；**空 key = 预览无音轨**（任务不 fail，`with_tts=false` 如实标注）——见「内容成片」节）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM/ASR 密钥只落到 `.env`。
 
 ## 仓库布局
 

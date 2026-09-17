@@ -1,4 +1,4 @@
-"""直播切片路由（第 18 刀，ADR 0014/0015/0039；第 46 刀真链路）。
+"""直播切片路由（第 18 刀，ADR 0014/0015/0039；第 46 刀真链路；第 93 刀云转写）。
 
 端点全操作者 cookie 鉴权（拣选/上传源录像都是操作者动作，0016 控制台=登录后的
 人机界面）。候选不是中台对象（0014）：GET 视图带商品名、registered_asset_id
@@ -15,9 +15,16 @@ POST pick 的批量原子性、404/409 判定在 services/clips.pick_candidates�
 （min_length）转 422。有源录像的候选真切 mp4，切失败 422 且该候选保持 pending。
 登记返回资产列表（AssetOut，kind=video/来源=切片拣选），id 供前端把卡片换成
 「已登记」。
+
+POST /recordings/{id}/transcribe（第 93 刀，ADR 0050）：云 ASR 把整段录像转成
+**停顿聚合的候选**落 pending（人工拣选闸门保留）。无 key 409（fail-closed：
+不建客户端、不发请求）、无音轨 422、云转写失败 502、已有未拣选 cloud 候选 409
+（拒绝重跑，回执带现有条数——避免重复堆候选；全被拣选/登记后可再生成一批）。
+GET /asr/status 给前端「无 key 时禁用按钮并提示」的判据。
 """
 
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -28,7 +35,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
-from suite_api.models import ClipCandidate, ClipRecording, Operator
+from suite_api.models import ClipCandidate, ClipRecording, Operator, Product
+from suite_api.services import asr as asr_service
+from suite_api.services import vlm as vlm_service
 from suite_api.services.asset_view import (
     AssetOut,
     load_product_names,
@@ -87,12 +96,15 @@ RECORDING_LIST_LIMIT = 20
 
 class ClipCandidateOut(BaseModel):
     id: int
-    product_id: int
+    # 第 93 刀起可空：云转写候选按录像整段生成，句子里没有商品归属（不编造）
+    product_id: int | None
     product_name: str
     status: str  # pending | registered（单向，0039）
     timecode_start: str
     timecode_end: str
     transcript: str
+    # 转写来源（第 93 刀）：cloud/local/manual，只读标注（来源是既成事实）
+    transcript_source: str
     source_video_label: str
     # 绑定的源录像（第 46 刀）：null=无源录像（拣选走时间码文本旧路径）
     recording: ClipRecordingOut | None
@@ -102,6 +114,45 @@ class ClipCandidateOut(BaseModel):
 
 class ClipPickIn(BaseModel):
     ids: Annotated[list[int], Field(min_length=1)]
+
+
+class ClipTranscribeIn(BaseModel):
+    """转写请求体（第 93 刀）：product_id 可选——整段录像只讲一件商品时可顺手
+    归属；不给则候选无商品（ASR 从句子里判不出归属，不猜）。"""
+
+    product_id: int | None = None
+
+
+class ClipTranscribeOut(BaseModel):
+    """转写回执（第 93 刀）：真值三件套 + 上限合并附注。
+
+    - ``candidates_created``：本次落库的 pending 候选条数；
+    - ``segments``：ASR 返回的句级段数（聚合前的原始句数）；
+    - ``duration_ms``：同步请求耗时（含提音轨与全部云请求）；
+    - ``note``：上限合并/无语音等如实说明（未触发为 null）。
+    """
+
+    candidates_created: int
+    segments: int
+    duration_ms: int
+    note: str | None = None
+
+
+class ClipAsrStatusOut(BaseModel):
+    """ASR 配置状态（第 93 刀）：前端据此禁用「自动转写」并给提示。
+
+    **只回布尔**：不回 base_url/model（配置细节不进前端）；key 本身更不回。
+    """
+
+    configured: bool
+
+
+class ClipFrameStatusOut(BaseModel):
+    """洗帧 VLM 配置状态（第 94c 刀，ADR 0053）：前端据此禁用资产详情的
+    「洗帧到素材库」并给提示。只回布尔（同 asr/status 口径）；后端仍是唯一闸
+    ——即使前端被绕过，候选端点自己 409（fail-closed）。"""
+
+    configured: bool
 
 
 def _recording_out(recording: ClipRecording | None) -> ClipRecordingOut | None:
@@ -124,6 +175,7 @@ def _to_out(candidate: ClipCandidate, product_name: str, recording: ClipRecordin
         timecode_start=candidate.timecode_start,
         timecode_end=candidate.timecode_end,
         transcript=candidate.transcript,
+        transcript_source=candidate.transcript_source,
         source_video_label=candidate.source_video_label,
         recording=_recording_out(recording),
         registered_asset_id=candidate.registered_asset_id,
@@ -266,6 +318,114 @@ def bind_recording(
         "源录像改绑: recording=%s label=%s bound=%s", recording.id, recording.label, bound
     )
     return ClipBindOut(recording_id=recording.id, label=recording.label, bound_count=bound)
+
+
+@router.get("/asr/status", response_model=ClipAsrStatusOut)
+def asr_status(
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+) -> ClipAsrStatusOut:
+    """ASR 配置状态（第 93 刀）：前端「无 key 时禁用按钮并提示」的判据。
+
+    只回布尔（配置细节与密钥都不进前端）；后端仍是唯一闸——即使前端被绕过，
+    转写端点自己 409（fail-closed）。
+    """
+    del operator  # 读接口同样要求登录
+    return ClipAsrStatusOut(configured=asr_service.is_configured())
+
+
+@router.get("/frames/status", response_model=ClipFrameStatusOut)
+def frame_wash_status(
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+) -> ClipFrameStatusOut:
+    """洗帧 VLM 配置状态（第 94c 刀）：帧打分复用 94a 的 VLM 客户端（同一把
+    ``VLM_API_KEY``），此端点给前端禁用判据。放在 clips 路由是因为洗帧属直播/
+    切片家族（入口在资产详情页，与 asr/status 同居一族）。"""
+    del operator  # 读接口同样要求登录
+    return ClipFrameStatusOut(configured=vlm_service.is_configured())
+
+
+@router.post("/recordings/{recording_id}/transcribe", response_model=ClipTranscribeOut)
+def transcribe_recording(
+    recording_id: int,
+    body: ClipTranscribeIn | None = None,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> ClipTranscribeOut:
+    """自动转写（第 93 刀，ADR 0050）：整段录像 → 停顿聚合候选落 pending。
+
+    判定次序与码位：录像不存在 404；``ASR_API_KEY`` 为空 409（**不建客户端、
+    不发请求**——诚实拒绝，人工填 transcript 的现状不变）；该录像已有未拣选的
+    cloud 候选 409（带现有条数：重跑不是追加，避免重复堆候选；全部拣选/登记后
+    可再生成一批）；``product_id`` 给了但不存在 404；录像无音轨 422；云转写
+    失败/无句级时间戳 502；**转写超总预算 300s** 502（审计 19——已成功块的
+    部分候选已落库，重跑被既有候选 409 挡住：先拣选再整段重转或切段上传）。
+    成功 200 + 真值回执。
+
+    同步执行（路由是同步 def，跑在线程池：ffmpeg 与云请求都是阻塞调用，不占
+    事件循环）；单块云超时 120s，提音轨+逐块合计总预算 300s（超限转 502 带
+    已转块数，可再点一次）。
+    """
+    del operator  # 写接口仅要求登录，401 口径同既有写端点
+    recording = db.get(ClipRecording, recording_id)
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="源录像不存在")
+    if not asr_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ASR 未配置（ASR_API_KEY 为空）：无法自动转写，可人工填写转写后拣选",
+        )
+    existing = asr_service.pending_count(db, recording.id)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"该录像已有 {existing} 条未拣选的云转写候选：先拣选或改绑处理完再重跑，"
+                "避免重复堆候选"
+            ),
+        )
+    product_id = body.product_id if body is not None else None
+    if product_id is not None and db.get(Product, product_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="商品不存在")
+    # 快照 + 收口事务再动合成（P1#2 纪律，与 pick_candidates 的「收口事务再动
+    # 子进程」同口径）：ffmpeg + 云请求最长 ~120s，带着上面的校验读等它 =
+    # idle-in-transaction 占池连接；rollback 会过期 ORM 实例，故先取只读快照。
+    ref = asr_service.RecordingRef.of(recording)
+    db.rollback()
+    started = time.monotonic()
+    try:
+        outcome = asr_service.transcribe_recording(db, storage, ref, product_id=product_id)
+    except asr_service.ASRNotConfigured as exc:
+        # 配置检查与调用之间 key 被清（进程内 settings 不变，仅防御位）
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ASR 未配置（ASR_API_KEY 为空）：无法自动转写，可人工填写转写后拣选",
+        ) from exc
+    except asr_service.AudioExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except asr_service.ASRUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except asr_service.TranscribeBudgetExceeded as exc:
+        # 总预算闸（审计 19）：已成功块的部分候选已先行落库（重跑会被既有
+        # cloud 候选 409 挡住并带条数——先拣选，再整段重转或切段上传）
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    duration_ms = int((time.monotonic() - started) * 1000)
+    logger.info(
+        "源录像自动转写: recording=%s candidates=%s segments=%s merged=%s duration_ms=%s",
+        ref.id,
+        outcome.candidates_created,
+        outcome.segments,
+        outcome.merged,
+        duration_ms,
+    )
+    return ClipTranscribeOut(
+        candidates_created=outcome.candidates_created,
+        segments=outcome.segments,
+        duration_ms=duration_ms,
+        note=outcome.note,
+    )
 
 
 @router.post("/candidates/pick", response_model=list[AssetOut])

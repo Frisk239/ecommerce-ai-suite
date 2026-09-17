@@ -148,6 +148,10 @@ class MessageOut(BaseModel):
     # 0036 工具调用记录 {name, arg, result}（仅订单工具路径的 agent 消息非空）：
     # 回放还原灰底工具条（与 gap_id 的运行时口径不同，随消息落库）
     tool: dict[str, Any] | None
+    # 第 94b 刀（ADR 0052）：媒体引用 [{asset_id, version_no, mime}]——citations 的
+    # 姊妹键（服务端按同一份证据派生，模型无决定权），重载会话照样出图/出播放器；
+    # 仅 agent 消息为列表（无媒体恒 []），customer 消息 null
+    media_citations: list[dict[str, Any]] | None = None
     created_at: datetime
 
 
@@ -212,6 +216,11 @@ def _to_message_out(message: ServiceMessage) -> MessageOut:
         kind=message.kind,
         handoff=message.handoff,
         tool=dict(message.tool) if message.tool is not None else None,
+        # 第 94b 刀：媒体引用随消息落库（citations 的姊妹键）——重载会话由它还原
+        # 图/播放器；NULL 原样透传（历史回填见迁移 0031）
+        media_citations=(
+            list(message.media_citations) if message.media_citations is not None else None
+        ),
         created_at=message.created_at,
     )
 
@@ -455,6 +464,7 @@ def confirm_return(
         role="agent",
         content=f"订单 {order_no} 的退货申请已确认，已写入物流事件。",
         citations=[],
+        media_citations=[],  # 第 94b 刀：确认-退货跟单无媒体
         kind="answer",
         handoff=False,
         tool={"name": "create_return", "arg": order_no, "result": "已确认退货 · 事件已写入"},

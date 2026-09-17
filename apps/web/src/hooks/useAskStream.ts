@@ -111,6 +111,8 @@ export function useAskStream(options: AskStreamOptions): AskStream {
               gapId: payload.gap_id ?? null,
               fallback: payload.fallback ?? false,
               tool: payload.tool ?? m.tool,
+              // 第 94b 刀（ADR 0052）：媒体附件（恒列表；两通道同形状）
+              mediaCitations: payload.media_citations ?? m.mediaCitations,
               // 第 42 刀（ADR 0046）：handoff/拒答路径工单回执（运行时可选键）
               ticketId: payload.ticket_id ?? null,
               ticketContactAt: payload.ticket_contact_at ?? null,

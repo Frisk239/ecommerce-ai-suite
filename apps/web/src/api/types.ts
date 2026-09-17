@@ -288,6 +288,16 @@ export interface ServiceCitation {
   version_no: number
 }
 
+/** 媒体引用（第 94b 刀，ADR 0052）：citations 的姊妹键——服务端按**同一份**
+ * 检索命中派生的媒体附件（模型无决定权）。mime 决定渲染形态：image/* 直出
+ * <img>、video/* 出 <video controls>；字节走 GET /api/customer/assets/{id}/media
+ * （只出当前已发布指针版，未发布/已废弃 404）。无媒体命中恒 []（形态固定）。 */
+export interface MediaCitation {
+  asset_id: number
+  version_no: number
+  mime: string
+}
+
 /** 工具调用记录（第 13 刀/ADR 0036）：SSE tool 事件、complete.tool 与消息表
  * tool 列同形状；result 是后端生成的一行摘要（灰底工具条「参数→结果」）。 */
 export interface ToolCallRecord {
@@ -307,6 +317,9 @@ export interface ServiceMessage {
   handoff: boolean | null
   /** 仅订单工具路径的 agent 消息非空（0036：随消息落库，重载还原工具条）。 */
   tool: ToolCallRecord | null
+  /** 第 94b 刀（ADR 0052）：媒体附件——citations 的姊妹键，随消息落库
+   * （重载会话照样出图/出播放器；仅 agent 消息为列表，无媒体恒 []）。 */
+  media_citations: MediaCitation[] | null
   created_at: string
 }
 
@@ -433,6 +446,9 @@ export interface StatsOverview {
 export interface ServiceAnswerComplete {
   message_id: number
   citations: ServiceCitation[]
+  /** 第 94b 刀（ADR 0052）：媒体附件（与 citations 同一份服务端证据派生；
+   * 无媒体恒 []，形态固定不是可选键）。两通道同形状——顾客要拿它取字节。 */
+  media_citations: MediaCitation[]
   kind: 'answer' | 'refusal' | 'handoff'
   handoff: boolean
   gap_id: number | null
@@ -476,7 +492,7 @@ export interface ConfirmReturnResult {
   events: { at: string; text: string }[]
 }
 
-// ---------- 素材中心任务（routes/material.py 契约，第 17 刀/ADR 0038） ----------
+// ---------- 素材中心任务（routes/material.py 契约，第 17 刀/ADR 0038；第 98 刀内容套件） ----------
 
 /** 任务五态（0038 状态机；不是资产三态，与 middle-plate 无关）：
  * queued=排队 / running=进行中 / pending_qc=待抽检（规则质检过线等人）/
@@ -488,6 +504,21 @@ export type MaterialTaskStatus =
   | 'registered'
   | 'failed'
 
+/** 内容模板（第 98 刀，ADR 0055）：station=站内投放文案（默认，17 刀形态）/
+ * xhs=小红书笔记体 / short_video=短视频口播稿——prompt 模板参数，非 Agent。 */
+export type MaterialTemplate = 'station' | 'xhs' | 'short_video'
+
+/** 配图步六态（第 98 刀）：none=未请求 / requested=请求待生成 /
+ * pending=已生成待登记（暂存字节可预览）/ registered=已登记（image_asset_id
+ * 回执锚）/ skipped_no_key=无 IMGGEN key 诚实跳过 / failed=生成失败（不 fail 任务）。 */
+export type MaterialImageStatus =
+  | 'none'
+  | 'requested'
+  | 'pending'
+  | 'registered'
+  | 'skipped_no_key'
+  | 'failed'
+
 export interface MaterialTask {
   id: number
   product_id: number
@@ -497,7 +528,67 @@ export interface MaterialTask {
   content: string | null
   last_error: string | null
   asset_id: number | null
+  template: MaterialTemplate
+  template_name: string
+  /** LLM 事实性质检二道闸结果（第 98 刀）：null=未跑到（两闸独立记录）。 */
+  qc_llm_passed: boolean | null
+  image_status: MaterialImageStatus
+  image_asset_id: number | null
   created_at: string
+}
+
+/** 文生图配置状态（第 98 刀）：「生成配图」开关禁用判据（GET /api/material/imggen/status）。 */
+export interface MaterialImggenStatus {
+  configured: boolean
+}
+
+// ---------- 内容成片（routes/video_compose.py 契约，第 98b 刀/ADR 0056） ----------
+
+/** 成片模板（ADR 0056，v1 两模板不做 DSL）：highlight=高光集锦 /
+ * product_intro=商品介绍。 */
+export type ComposeTemplate = 'highlight' | 'product_intro'
+
+/** 时间线候选项（AI 排版结果，秒制 butt-joint）：type=clip|image|text，
+ * text 项带文案要点行（预览字幕与口播的文本源）。 */
+export interface ComposeTimelineItem {
+  type: 'clip' | 'image' | 'text'
+  asset_id: number
+  start: number
+  dur: number
+  text?: string
+}
+
+/** 成片任务（不是中台对象）：planned=时间线候选+预览+草稿已出（待人审改） /
+ * registered=publish 双闸过线已登记 material 资产（终态）。预览/草稿/成品是
+ * 任务暂存件（compose/ 前缀），不是资产。 */
+export interface ComposeTask {
+  id: number
+  product_id: number
+  product_name: string
+  status: 'planned' | 'registered'
+  template: ComposeTemplate
+  template_name: string
+  timeline: ComposeTimelineItem[]
+  duration_seconds: number
+  /** 预览是否带 TTS 口播（无 key=无声预览，诚实标注）。 */
+  with_tts: boolean
+  note: string | null
+  asset_id: number | null
+  has_final_video: boolean
+  preview_url: string
+  draft_url: string
+  created_at: string
+}
+
+/** TTS 配置状态（GET /api/video-compose/tts/status）：无 key=预览无声提示判据。 */
+export interface ComposeTtsStatus {
+  configured: boolean
+}
+
+/** publish 回执：任务转 registered + 登记出的 material 资产锚。 */
+export interface ComposePublishResult {
+  task: ComposeTask
+  asset_id: number
 }
 
 // ---------- 直播切片候选（routes/clips.py 契约，第 18 刀/ADR 0014/0015/0039；第 46 刀真链路） ----------
@@ -528,14 +619,71 @@ export interface ClipBindResult {
   bound_count: number
 }
 
+/** 转写来源（第 93 刀，迁移 0030）：cloud=云 ASR 端点 / local=本地兜底脚本 /
+ * manual=非 ASR 通道（人工填写、种子与 WANDS 数据自带）。**只读标注**——来源
+ * 是既成事实，没有改它的端点。 */
+export type ClipTranscriptSource = 'cloud' | 'local' | 'manual'
+
+/** 自动转写回执（第 93 刀 POST /clips/recordings/{id}/transcribe）：
+ * candidates_created=落库候选条数、segments=ASR 句级段数（聚合前）、
+ * duration_ms=同步耗时、note=上限合并/无语音等如实说明（未触发为 null）。 */
+export interface ClipTranscribeResult {
+  candidates_created: number
+  segments: number
+  duration_ms: number
+  note: string | null
+}
+
+/** ASR 配置状态（第 93 刀 GET /clips/asr/status）：只回布尔——前端据此禁用
+ * 「自动转写」并给提示（后端仍是唯一闸，绕过了也 409）。 */
+export interface ClipAsrStatus {
+  configured: boolean
+}
+
+/** 洗帧 VLM 配置状态（第 94c 刀 GET /clips/frames/status）：帧打分复用 94a 的
+ * VLM 客户端（同一把 VLM_API_KEY），只回布尔——前端据此禁用「洗帧到素材库」。 */
+export interface ClipFrameStatus {
+  configured: boolean
+}
+
+/** 洗帧候选帧（第 94c 刀 POST /assets/{id}/frame-candidates）：**请求态**——
+ * 不落库、刷新即重算；确认时只回传 at_second，服务器从已发布版字节重新抽帧
+ * （不信任请求里的缩略图）。 */
+export interface FrameCandidate {
+  at_second: number
+  /** mm:ss 展示位（权威是 at_second）。 */
+  at_time: string
+  score: number
+  note: string
+  /** data:image/jpeg;base64,...（VLM 打分用的同一张 ≤480px 缩略图）。 */
+  thumbnail_data_url: string
+}
+
+/** 洗帧候选回执：时长 + 采样数（含被淘汰的，如实）+ 过线候选（≥6 分上限 8）。 */
+export interface FrameCandidatesResult {
+  duration_seconds: number
+  sampled: number
+  candidates: FrameCandidate[]
+}
+
+/** 确认登记回执（第 94c 刀 POST /assets/{id}/frames）：新图片资产
+ * （kind=image、source_kind=clip_frame，待人洗走 94a 描述治理）+ 「切自」锚。 */
+export interface FrameRegisterResult {
+  asset: AssetListItem
+  /** 血缘锚「A-xxxx · vN」：切自哪份视频资产的哪个已发布版。 */
+  cut_from: string
+}
+
 export interface ClipCandidate {
   id: number
-  product_id: number
+  /** 第 93 刀起可空：云转写候选按录像整段生成，句子里没有商品归属（不编造）。 */
+  product_id: number | null
   product_name: string
   status: ClipCandidateStatus
   timecode_start: string
   timecode_end: string
   transcript: string
+  transcript_source: ClipTranscriptSource
   source_video_label: string
   /** 绑定的源录像；null=无源录像（拣选走时间码文本旧路径）。 */
   recording: ClipRecording | null
@@ -637,6 +785,20 @@ export interface CustomerSessionEnded {
   id: number
   status: ServiceSessionStatus
   closed_at: string | null
+}
+
+/** 会话续接回执（第 95 刀，GET /customer/sessions/current/messages）：
+ * 「current」= Bearer 令牌所指的会话——顾客端把令牌+会话 id 存 localStorage，
+ * 重开页面先打这里再决定恢复还是新建。messages 与操作者详情端点同形状（含
+ * media_citations/tool）；rating/ticket 供评分条与 handoff 联系表单跨重载回显
+ * （第 71 刀改评、第 42 刀工单锚的续接口径）。 */
+export interface CustomerSessionResume {
+  session_id: number
+  /** active=可继续问；ended/registered=只回放（前端锁输入，善后通道照旧）。 */
+  status: ServiceSessionStatus
+  messages: ServiceMessage[]
+  rating: SessionRating | null
+  ticket: { id: number; contact_at: string | null } | null
 }
 
 /** 顾客版 SSE complete：事件序与操作者版相同，但 gap_id 被服务端载荷白名单

@@ -1,6 +1,11 @@
 // 界面用词与格式化（CONTEXT.md 词表：已接入/待人洗/已发布；不用「用户」「草稿」「未审核」）。
 
-import type { AssetStatus, MaterialTaskStatus, ServiceSessionStatus } from './api/types'
+import type {
+  AssetStatus,
+  MaterialImageStatus,
+  MaterialTaskStatus,
+  ServiceSessionStatus,
+} from './api/types'
 
 /** 素材任务五态（第 17 刀/ADR 0038）：与资产三态分词表——任务不是中台对象。 */
 export const MATERIAL_TASK_STATUS_LABEL: Record<MaterialTaskStatus, string> = {
@@ -9,6 +14,23 @@ export const MATERIAL_TASK_STATUS_LABEL: Record<MaterialTaskStatus, string> = {
   pending_qc: '待抽检',
   registered: '已登记',
   failed: '失败',
+}
+
+/** 内容模板（第 98 刀/ADR 0055）：三选一，站内=第 17 刀默认形态。 */
+export const MATERIAL_TEMPLATE_LABEL: Record<string, string> = {
+  station: '站内投放文案',
+  xhs: '小红书笔记体',
+  short_video: '短视频口播稿',
+}
+
+/** 配图步状态（第 98 刀）：标签用于任务详情的配图行如实标注。 */
+export const MATERIAL_IMAGE_STATUS_LABEL: Record<MaterialImageStatus, string> = {
+  none: '未请求',
+  requested: '待生成',
+  pending: '已生成',
+  registered: '已登记',
+  skipped_no_key: '跳过',
+  failed: '生成失败',
 }
 
 export const ASSET_STATUS_LABEL: Record<AssetStatus, string> = {
@@ -31,6 +53,8 @@ const KIND_LABELS: Record<string, string> = {
   material: '素材',
   // 第 18 刀/ADR 0039：切片拣选登记出的资产种类（登记字节=带时间码转写文本）
   video: '视频',
+  // 第 94a 刀（ADR 0051）：运营上传的商品图（字节=原图，检索文本面=「图片描述」）
+  image: '图片',
 }
 
 export function kindLabel(kind: string): string {
@@ -44,6 +68,9 @@ const SOURCE_KIND_LABELS: Record<string, string> = {
   upload: '上传',
   session_backflow: '会话回流',
   clip_pick: '切片拣选',
+  // 第 94c 刀（ADR 0053）：从已发布切片视频确认抽出的一帧（kind=图片）——
+  // 与「切片拣选」同族，来源是「从自己的直播里洗」。
+  clip_frame: '直播洗帧',
   material_generated: '素材生成',
   mcp_registered: '连接层登记',
   seed: '种子',

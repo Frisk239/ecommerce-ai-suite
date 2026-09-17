@@ -1,19 +1,21 @@
-// 素材中心（第 17 刀/ADR 0038）：卖点文案生成任务的列表 + 新建抽屉 + 详情抽屉。
+// 素材中心（第 17 刀/ADR 0038；第 98 刀内容套件/ADR 0055）：卖点文案生成任务的
+// 列表 + 新建抽屉（三模板+配图开关）+ 详情抽屉（双闸质检结果+配图预览）。
 // 任务不是中台对象（0012）：五态徽章走既有灰阶体系（排队/进行中=灰、待抽检=琥珀、
 // 已登记=绿、失败=红），registered 行给 A-xxxx 链接直达治理台详情。
-// 建任务/重试是请求内同步生成（LLM ≤20s）：按钮置「生成中/重试中…」禁用态，
-// 结果回来即整表 reload（不轮询演戏——0012 无任务 worker）。
+// 建任务/重试是请求内同步生成（文案+质检 ≤40s、配图再 +60s）：按钮置「生成中/
+// 重试中…」禁用态，结果回来即整表 reload（不轮询演戏——0012 无任务 worker）。
 // 第 18 刀（ADR 0015）：加「切片汇入」页签——直播切片拣选登记出的视频资产列表
 // （kind=视频 且 来源=切片拣选）。视图不是二次登记：只展示已登记资产，运营只
 // 引用其中已发布的。列表端点无种类/来源过滤参数，客户端全量过滤（与治理台
 // 列表同口径，侵入最小）。
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowsClockwise,
   CaretRight,
   FilmSlate,
+  Image as ImageIcon,
   Megaphone,
   Plus,
   Warning,
@@ -21,10 +23,16 @@ import {
 } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
-import type { AssetListItem, MaterialTask } from '../api/types'
+import type { AssetListItem, MaterialTask, MaterialTemplate } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { useEscapeClose } from '../hooks/useEscapeClose'
-import { formatAssetId, formatDateTime, formatTaskId } from '../labels'
+import {
+  MATERIAL_IMAGE_STATUS_LABEL,
+  MATERIAL_TEMPLATE_LABEL,
+  formatAssetId,
+  formatDateTime,
+  formatTaskId,
+} from '../labels'
 import { ErrorBanner } from '../components/Banner'
 import ActionError from '../components/ActionError'
 import Empty from '../components/Empty'
@@ -32,14 +40,23 @@ import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
 import ProductSelect from '../components/ProductSelect'
 import { StatusBadge, TaskStatusBadge } from '../components/StateBadge'
+import VideoComposePanel from './VideoComposePanel'
 
 const EMPTY_TASKS = [] as const
 const EMPTY_CLIP_ASSETS: AssetListItem[] = []
 
 // 页签（对照 AssetsListPage 的 seg 模式）：任务列表=本模块自有状态机；
-// 切片汇入=已登记视频资产的只读视图（0015）
-const TABS = ['任务列表', '切片汇入'] as const
+// 切片汇入=已登记视频资产的只读视图（0015）；内容成片=第 98b 刀成片引擎面板
+const TABS = ['任务列表', '切片汇入', '内容成片'] as const
 type MaterialTab = (typeof TABS)[number]
+
+// 三模板（第 98 刀/ADR 0055）：站内=第 17 刀默认形态；小红书/口播各自带派生
+// 配图风格与尺寸（配图 prompt 服务端派生，前端只做选择）
+const TEMPLATE_OPTIONS: { key: MaterialTemplate; label: string; hint: string }[] = [
+  { key: 'station', label: '站内投放文案', hint: '分行卖点 + 「字段：值」行文' },
+  { key: 'xhs', label: '小红书笔记体', hint: '口语种草 + emoji + 话题标签' },
+  { key: 'short_video', label: '短视频口播稿', hint: '开场钩子-卖点分镜-行动号召' },
+]
 
 // ---------- 新建任务抽屉 ----------
 
@@ -55,8 +72,15 @@ function CreateTaskDrawer({
   const productsFetcher = useCallback(() => api.listProducts(), [])
   const productsQ = useApiData(productsFetcher)
   const products = productsQ.state.phase === 'ok' ? productsQ.state.data : []
+  // 文生图配置状态（第 98 刀）：无 IMGGEN key 时「生成配图」开关禁用并提示
+  // （后端即使被绕过也只是诚实跳过配图步，不 fail 任务——fail-closed）
+  const imggenFetcher = useCallback(() => api.getMaterialImggenStatus(), [])
+  const imggenQ = useApiData(imggenFetcher)
+  const imggenConfigured = imggenQ.state.phase === 'ok' ? imggenQ.state.data.configured : false
 
   const [productId, setProductId] = useState('')
+  const [template, setTemplate] = useState<MaterialTemplate>('station')
+  const [withImage, setWithImage] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -75,10 +99,12 @@ function CreateTaskDrawer({
     setSubmitting(true)
     try {
       // 同步就地执行：请求返回即稳定态（pending_qc 或 failed），无轮询
-      await api.createMaterialTask(Number(productId))
+      await api.createMaterialTask(Number(productId), template, withImage && imggenConfigured)
       onCreated()
       onClose()
       setProductId('')
+      setTemplate('station')
+      setWithImage(false)
     } catch (err) {
       setError(detailText(err))
     } finally {
@@ -87,19 +113,19 @@ function CreateTaskDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="生成卖点文案">
+    <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="生成内容">
       <div className="modal-backdrop absolute inset-0" onClick={submitting ? undefined : onClose} aria-hidden />
       <aside className="drawer-panel absolute inset-y-0 right-0 flex w-full max-w-md flex-col">
         <div className="flex items-center gap-2 border-b border-line-2 px-4 py-3">
-          <div className="flex-1 text-[14px] font-semibold text-ink">生成卖点文案</div>
+          <div className="flex-1 text-[14px] font-semibold text-ink">生成内容</div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} disabled={submitting} aria-label="关闭生成抽屉">
             <X aria-hidden size={14} />
           </button>
         </div>
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
           <p className="text-xs leading-5 text-ink-3">
-            选择商品后由厂商模型生成「标题 + 正文」卖点文案，规则质检（非空/总长≤2000/标题非空/正文含商品名）过线即落
-            待抽检，等操作者在任务详情里通过或打回。生成失败不降级：任务直接失败，可重试。
+            选模板与商品后由厂商模型生成「标题 + 正文」，双闸质检（规则四条 + LLM 事实性核对规格矛盾/夸大/
+            编造）过线即落待抽检，等操作者在任务详情里通过或打回。生成失败不降级：任务直接失败，可重试。
           </p>
           <div>
             <label className="field-label" htmlFor="material-product">
@@ -116,6 +142,58 @@ function CreateTaskDrawer({
               loading={productsQ.state.phase === 'loading'}
             />
           </div>
+          <div>
+            <span className="field-label">内容模板</span>
+            <div className="mt-1 space-y-1.5" role="radiogroup" aria-label="内容模板">
+              {TEMPLATE_OPTIONS.map((option) => (
+                <label
+                  key={option.key}
+                  className={`flex cursor-pointer items-start gap-2 rounded-[8px] border px-3 py-2 transition-colors duration-150 ${
+                    template === option.key ? 'border-accent-strong bg-accent-strong/5' : 'border-line-2 bg-canvas'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="material-template"
+                    className="mt-0.5"
+                    checked={template === option.key}
+                    disabled={submitting}
+                    onChange={() => setTemplate(option.key)}
+                  />
+                  <span className="flex-1">
+                    <span className="block text-[13px] font-medium leading-5 text-ink">{option.label}</span>
+                    <span className="block text-xs leading-4 text-ink-3">{option.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="flex cursor-pointer items-start gap-2 rounded-[8px] border border-line-2 bg-canvas px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={withImage && imggenConfigured}
+                disabled={submitting || !imggenConfigured}
+                onChange={(e) => setWithImage(e.target.checked)}
+              />
+              <span className="flex-1">
+                <span className="block text-[13px] font-medium leading-5 text-ink">生成配图（文生图）</span>
+                <span className="block text-xs leading-4 text-ink-3">
+                  {imggenConfigured ? (
+                    <>
+                      按模板风格派生配图（{MATERIAL_TEMPLATE_LABEL[template]} · 生成 ≤60s）；配图失败不影响文案，
+                      抽检通过后登记为独立图片资产。
+                    </>
+                  ) : imggenQ.state.phase === 'loading' ? (
+                    '正在检查文生图配置…'
+                  ) : (
+                    '未配置 IMGGEN_API_KEY：配图步会诚实跳过（纯文案套件照常可用）。'
+                  )}
+                </span>
+              </span>
+            </label>
+          </div>
           {error ? <ActionError message={error} /> : null}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-line-2 px-4 py-3">
@@ -124,7 +202,7 @@ function CreateTaskDrawer({
           </button>
           <button type="button" className="btn btn-primary" onClick={() => void submit()} disabled={submitting || productId === ''}>
             <Megaphone aria-hidden size={14} />
-            {submitting ? '生成中…（≤20s）' : '开始生成'}
+            {submitting ? '生成中…' : '开始生成'}
           </button>
         </div>
       </aside>
@@ -133,6 +211,52 @@ function CreateTaskDrawer({
 }
 
 // ---------- 任务详情抽屉 ----------
+
+/** 配图行（第 98 刀）：按 image_status 如实呈现——预览/跳过/失败/登记回执。 */
+function TaskImageBlock({ task }: { task: MaterialTask }) {
+  let body: ReactNode
+  if (task.image_status === 'pending') {
+    body = (
+      <div className="space-y-2">
+        {/* 抽检前暂存字节预览（操作者 cookie 同源直取）；登记后此端点 404，
+            预览去治理台资产详情看 */}
+        <img
+          src={api.materialTaskImageUrl(task.id)}
+          alt={`${task.product_name} 配图预览`}
+          className="max-h-64 w-auto rounded-[8px] border border-line-2 object-contain"
+        />
+        <p className="text-xs leading-4 text-ink-3">配图已生成，抽检通过后与文案一起登记。</p>
+      </div>
+    )
+  } else if (task.image_status === 'skipped_no_key') {
+    body = <p className="text-[13px] leading-5 text-ink-3">配图：未配置 IMGGEN_API_KEY，跳过（纯文案套件）。</p>
+  } else if (task.image_status === 'failed') {
+    body = <p className="text-[13px] leading-5 text-warning">配图生成失败（不影响文案；重试生成会重新配图）。</p>
+  } else if (task.image_status === 'registered' && task.image_asset_id !== null) {
+    body = (
+      <p className="text-[13px] leading-5">
+        已登记为图片资产：
+        <Link
+          to={`/platform/assets/${task.image_asset_id}`}
+          className="ml-1 font-medium text-accent-strong hover:underline"
+        >
+          {formatAssetId(task.image_asset_id)} · 去治理台
+        </Link>
+        <span className="ml-1 text-ink-3">（待人洗描述，发布后可被媒体引用）</span>
+      </p>
+    )
+  } else {
+    body = <p className="text-[13px] leading-5 text-ink-3">未请求配图。</p>
+  }
+  return (
+    <div>
+      <span className="field-label">
+        配图（{MATERIAL_IMAGE_STATUS_LABEL[task.image_status]}）
+      </span>
+      {body}
+    </div>
+  )
+}
 
 function TaskDetailDrawer({
   task,
@@ -187,12 +311,20 @@ function TaskDetailDrawer({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <div className="flex items-center gap-2 text-xs text-ink-2">
+            <ImageIcon aria-hidden size={14} className="text-ink-3" />
+            模板：
+            <span className="font-medium text-ink">{task.template_name}</span>
+          </div>
+
           <div>
             <span className="field-label">质检结果</span>
             {task.status === 'failed' ? (
               <p className="text-[13px] leading-5 text-danger">{task.last_error ?? '失败原因未记录'}</p>
             ) : task.status === 'pending_qc' ? (
-              <p className="text-[13px] leading-5 text-ok">规则质检已过线</p>
+              <p className="text-[13px] leading-5 text-ok">
+                规则质检已过线{task.qc_llm_passed ? ' · LLM 事实性质检已过线' : ''}
+              </p>
             ) : (
               <p className="text-[13px] leading-5 text-ink-3">—</p>
             )}
@@ -211,6 +343,8 @@ function TaskDetailDrawer({
               <p className="text-[13px] leading-5 text-ink-3">还没有生成物（排队/进行中，或本次生成失败）。</p>
             )}
           </div>
+
+          <TaskImageBlock task={task} />
 
           {task.status === 'registered' && task.asset_id !== null ? (
             <div className="rounded-[6px] border border-[rgba(30,107,69,0.22)] bg-[rgba(30,107,69,0.05)] px-3 py-2 text-[13px] leading-5">
@@ -277,7 +411,7 @@ function TaskDetailDrawer({
           ) : task.status === 'failed' ? (
             <button type="button" className="btn btn-primary" onClick={() => void run('retry')} disabled={busy !== null}>
               <ArrowsClockwise aria-hidden size={14} />
-              {busy === 'retry' ? '重试中…（≤20s）' : '重试生成'}
+              {busy === 'retry' ? '重试中…' : '重试生成'}
             </button>
           ) : null}
           <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy !== null}>
@@ -325,12 +459,12 @@ export default function MaterialPage() {
     <div>
       <PageHeader
         title="素材中心"
-        desc="选商品生成卖点文案，抽检通过才登记为素材资产。"
+        desc="选模板生成内容（站内投放/小红书/口播，可选配图），双闸质检过线待抽检，通过才登记为资产；内容成片一键排版出预览+剪映草稿。"
         actions={
           tab === '任务列表' ? (
             <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
               <Plus aria-hidden size={14} weight="bold" />
-              生成卖点文案
+              生成内容
             </button>
           ) : undefined
         }
@@ -347,14 +481,16 @@ export default function MaterialPage() {
             >
               {t}
               <span className={tab === t ? 'text-ink-3' : ''}>
-                {t === '任务列表' ? tasks.length : clipAssets.length}
+                {t === '任务列表' ? tasks.length : t === '切片汇入' ? clipAssets.length : ''}
               </span>
             </button>
           ))}
         </div>
       </PageHeader>
 
-      {tab === '切片汇入' ? (
+      {tab === '内容成片' ? (
+        <VideoComposePanel />
+      ) : tab === '切片汇入' ? (
         assetsQ.state.phase === 'loading' ? (
           <div className="panel">
             <SkeletonRows rows={5} />
@@ -440,11 +576,11 @@ export default function MaterialPage() {
           <Empty
             icon={<Megaphone aria-hidden size={24} />}
             title="还没有素材任务"
-            hint="右上「生成卖点文案」选一个商品开始；任务请求内同步执行，回来即待抽检或失败。"
+            hint="右上「生成内容」选模板与商品开始；任务请求内同步执行，回来即待抽检或失败。"
             action={
               <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)}>
                 <Plus aria-hidden size={13} weight="bold" />
-                生成卖点文案
+                生成内容
               </button>
             }
           />
@@ -457,6 +593,7 @@ export default function MaterialPage() {
                 <th className="w-24">任务 ID</th>
                 <th className="w-36">商品</th>
                 <th>标题</th>
+                <th className="w-28">模板</th>
                 <th className="w-24">状态</th>
                 <th className="w-20">产物</th>
                 <th className="w-56">失败原因</th>
@@ -474,19 +611,38 @@ export default function MaterialPage() {
                   <td className="max-w-[22rem] truncate text-[13px] text-ink">
                     {task.title ?? <span className="text-ink-3">—</span>}
                   </td>
+                  <td className="text-xs text-ink-2" title={task.template_name}>
+                    {task.template === 'station' ? (
+                      <span className="text-ink-3">站内</span>
+                    ) : (
+                      task.template_name
+                    )}
+                  </td>
                   <td>
                     <TaskStatusBadge status={task.status} />
                   </td>
                   <td>
                     {task.asset_id !== null ? (
-                      <Link
-                        to={`/platform/assets/${task.asset_id}`}
-                        className="font-mono text-xs text-ink-2 underline-offset-2 hover:text-accent-strong hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                        title="查看登记出的素材资产"
-                      >
-                        {formatAssetId(task.asset_id)}
-                      </Link>
+                      <>
+                        <Link
+                          to={`/platform/assets/${task.asset_id}`}
+                          className="font-mono text-xs text-ink-2 underline-offset-2 hover:text-accent-strong hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                          title="查看登记出的素材资产"
+                        >
+                          {formatAssetId(task.asset_id)}
+                        </Link>
+                        {task.image_asset_id !== null ? (
+                          <Link
+                            to={`/platform/assets/${task.image_asset_id}`}
+                            className="ml-1.5 font-mono text-xs text-ink-3 underline-offset-2 hover:text-accent-strong hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                            title="查看登记出的配图资产"
+                          >
+                            +图{formatAssetId(task.image_asset_id)}
+                          </Link>
+                        ) : null}
+                      </>
                     ) : (
                       <span className="text-ink-3">—</span>
                     )}

@@ -32,3 +32,5 @@ scripts/realdata/out/
 
 # 第 47 刀：prometheus 抓取的令牌文件（真实值不进仓库）
 ops/metrics_token
+# 第 94b 刀门禁产物（切片本地留档）
+out/94b-junit.xml

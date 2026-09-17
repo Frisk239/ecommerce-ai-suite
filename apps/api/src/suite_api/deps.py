@@ -58,15 +58,25 @@ def get_storage(request: Request):
     return ensure_storage(request.app)
 
 
-def get_current_operator(request: Request, db: Session = Depends(get_db)) -> Operator:
-    """签名 cookie 验签 -> 操作者；失败一律 401（0016：控制台必须登录）。"""
+def operator_from_cookie(request: Request, db: Session) -> Operator | None:
+    """签名 cookie 验签 -> 操作者；未登录/验签失败返回 None（第 94b 刀抽出）。
+
+    供**双通道**端点复用：``get_current_operator`` 依赖（必登录，失败 401）与
+    媒体端点（操作者 cookie **或**顾客令牌，二者有其一即可）需要同一份验签口径
+    ——两处各写一遍迟早漂移（会话密钥/取行语义）。
+    """
     settings = request.app.state.settings
     operator_id = verify_session_value(
         request.cookies.get(SESSION_COOKIE_NAME), settings.session_secret
     )
     if operator_id is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录或会话已过期")
-    operator = db.scalar(select(Operator).where(Operator.id == operator_id))
+        return None
+    return db.scalar(select(Operator).where(Operator.id == operator_id))
+
+
+def get_current_operator(request: Request, db: Session = Depends(get_db)) -> Operator:
+    """签名 cookie 验签 -> 操作者；失败一律 401（0016：控制台必须登录）。"""
+    operator = operator_from_cookie(request, db)
     if operator is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录或会话已过期")
     return operator

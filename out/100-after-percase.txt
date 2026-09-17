@@ -1,0 +1,6 @@
+positive 43 0.75 0.8
+paraphrase 25 0.56 0.68
+confusion 15 0.7333 0.9333
+refusal 13 None None
+overall 96 0.6875 0.7875
+pos/syn recall1 miss: 21 ['pos-003', 'pos-004', 'pos-006', 'pos-010', 'pos-012', 'pos-028', 'pos-030', 'pos-034', 'pos-036', 'pos-038', 'syn-001', 'syn-003', 'syn-004', 'syn-005', 'syn-006', 'syn-007', 'syn-009', 'syn-010', 'syn-012', 'syn-024', 'syn-025']

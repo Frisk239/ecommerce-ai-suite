@@ -1,0 +1,952 @@
+[
+ {
+  "session": 326,
+  "scene": "规格事实",
+  "q": "Xperia Ear 是什么品牌的耳机",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   481,
+   482
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《Xperia Ear 规格（Wikidata）》，类目为耳机。\n根据已发布的规格文档《Xperia Ear Duo 规格（Wikidata）》，类目为耳机。"
+ },
+ {
+  "session": 326,
+  "scene": "规格事实",
+  "q": "Xperia Ear Duo 什么时候上市的",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   482,
+   481
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…Xperia Ear Duo 于 2018 年上市。[1]"
+ },
+ {
+  "session": 326,
+  "scene": "规格事实",
+  "q": "耳机多少钱",
+  "kind": "answer",
+  "tool": "catalog",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询商品目录中…耳机共 15 件，其中已定价 15 件，均为 599元；问具体型号给你准确价。"
+ },
+ {
+  "session": 326,
+  "scene": "规格事实",
+  "q": "键盘多少钱",
+  "kind": "answer",
+  "tool": "catalog",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询商品目录中…键盘共 14 件，其中已定价 14 件，均为 399元；问具体型号给你准确价。"
+ },
+ {
+  "session": 326,
+  "scene": "规格事实",
+  "q": "鼠标多少钱",
+  "kind": "answer",
+  "tool": "catalog",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询商品目录中…鼠标共 13 件，其中已定价 13 件，均为 199元；问具体型号给你准确价。"
+ },
+ {
+  "session": 327,
+  "scene": "规格事实2",
+  "q": "显示器多少钱",
+  "kind": "answer",
+  "tool": "catalog",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询商品目录中…显示器共 22 件，其中已定价 22 件，均为 1499元；问具体型号给你准确价。"
+ },
+ {
+  "session": 327,
+  "scene": "规格事实2",
+  "q": "你们有耳机吗",
+  "kind": "answer",
+  "tool": "get_stock",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询库存中…耳机共 15 件，其中有货 15 件，库存合计 695 件。"
+ },
+ {
+  "session": 327,
+  "scene": "规格事实2",
+  "q": "你们卖键盘吗",
+  "kind": "refusal",
+  "tool": "get_stock",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询库存中…正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：你们卖键盘吗"
+ },
+ {
+  "session": 327,
+  "scene": "规格事实2",
+  "q": "Xperia Ear 是耳机吗",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   481,
+   482
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…是，Xperia Ear 的类目为耳机 [1]。"
+ },
+ {
+  "session": 327,
+  "scene": "规格事实2",
+  "q": "索尼的耳机多少钱",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   481,
+   482
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…证据仅显示 Xperia Ear 和 Xperia Ear Duo 的类目为耳机[1][2]。"
+ },
+ {
+  "session": 328,
+  "scene": "规格事实3",
+  "q": "显示器有多少款",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：显示器有多少款"
+ },
+ {
+  "session": 328,
+  "scene": "规格事实3",
+  "q": "键盘有几件",
+  "kind": "refusal",
+  "tool": "get_stock",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询库存中…正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：键盘有几件"
+ },
+ {
+  "session": 328,
+  "scene": "规格事实3",
+  "q": "鼠标有货吗",
+  "kind": "answer",
+  "tool": "get_stock",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询库存中…鼠标共 13 件，其中有货 13 件，库存合计 534 件。"
+ },
+ {
+  "session": 328,
+  "scene": "规格事实3",
+  "q": "显示器多高啊",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   11,
+   28
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…未提供显示器高度信息，现有证据无法回答。"
+ },
+ {
+  "session": 329,
+  "scene": "口语改写",
+  "q": "那个 Xperia Ear 谁家出的",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   234,
+   490
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《Powdered peanut butter 规格（OFF）》：Leptospermum Scoparium Mel (Manuka Honey)。\n根据已发布的规格文档《Ultimate Ears"
+ },
+ {
+  "session": 329,
+  "scene": "口语改写",
+  "q": "耳机啥时候出的",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   481,
+   482
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《Xperia Ear 规格（Wikidata）》，类目为耳机。\n根据已发布的规格文档《Xperia Ear Duo 规格（Wikidata）》，类目为耳机。"
+ },
+ {
+  "session": 329,
+  "scene": "口语改写",
+  "q": "键盘贵不贵",
+  "kind": "answer",
+  "tool": "catalog",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询商品目录中…键盘共 14 件，其中已定价 14 件，均为 399元；问具体型号给你准确价。"
+ },
+ {
+  "session": 329,
+  "scene": "口语改写",
+  "q": "鼠标还有吗",
+  "kind": "answer",
+  "tool": "get_stock",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询库存中…鼠标共 13 件，其中有货 13 件，库存合计 534 件。"
+ },
+ {
+  "session": 329,
+  "scene": "口语改写",
+  "q": "咋卖显示器",
+  "kind": "answer",
+  "tool": "catalog",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询商品目录中…显示器共 22 件，其中已定价 22 件，均为 1499元；问具体型号给你准确价。"
+ },
+ {
+  "session": 330,
+  "scene": "口语改写2",
+  "q": "耳机怎么卖",
+  "kind": "answer",
+  "tool": "catalog",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询商品目录中…耳机共 15 件，其中已定价 15 件，均为 599元；问具体型号给你准确价。"
+ },
+ {
+  "session": 330,
+  "scene": "口语改写2",
+  "q": "有没有便宜点的耳机",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   481,
+   482
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《Xperia Ear 规格（Wikidata）》，类目为耳机。\n根据已发布的规格文档《Xperia Ear Duo 规格（Wikidata）》，类目为耳机。"
+ },
+ {
+  "session": 330,
+  "scene": "口语改写2",
+  "q": "显示器和耳机你们都有吗",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   481,
+   482
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《Xperia Ear 规格（Wikidata）》，类目为耳机。\n根据已发布的规格文档《Xperia Ear Duo 规格（Wikidata）》，类目为耳机。"
+ },
+ {
+  "session": 330,
+  "scene": "口语改写2",
+  "q": "帮我看看键盘库存",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…本店暂时没有「看键盘库」这款商品，已记录并转人工处理。\n问句摘要：帮我看看键盘库存"
+ },
+ {
+  "session": 331,
+  "scene": "无证据",
+  "q": "能刻字吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：能刻字吗"
+ },
+ {
+  "session": 331,
+  "scene": "无证据",
+  "q": "支持分期付款吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…本店暂时没有「持分期付款」这款商品，已记录并转人工处理。\n问句摘要：支持分期付款吗"
+ },
+ {
+  "session": 331,
+  "scene": "无证据",
+  "q": "有赠品吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：有赠品吗"
+ },
+ {
+  "session": 331,
+  "scene": "无证据",
+  "q": "能加急发货吗",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   480
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…证据未明确是否支持加急发货；现货商品默认 48 小时内发货，预售商品以商品页标注为准 [2]，配送默认顺丰快递，偏远地区发 EMS [1]。"
+ },
+ {
+  "session": 332,
+  "scene": "无证据2",
+  "q": "支持上门安装吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…本店暂时没有「持上门安装」这款商品，已记录并转人工处理。\n问句摘要：支持上门安装吗"
+ },
+ {
+  "session": 332,
+  "scene": "无证据2",
+  "q": "有没有白色款",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：有没有白色款"
+ },
+ {
+  "session": 332,
+  "scene": "无证据2",
+  "q": "什么时候降价",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：什么时候降价"
+ },
+ {
+  "session": 332,
+  "scene": "无证据2",
+  "q": "能预留吗",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   480
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…可发送至预留邮箱；订单完成后 24 小时内开具电子增值税普通发票并发送至预留邮箱 [1]。"
+ },
+ {
+  "session": 333,
+  "scene": "政策命中",
+  "q": "能开发票吗",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   480
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《发票与配送口径》：发票与配送口径。\n根据已发布的规格文档《发票与配送口径》：本店支持电子增值税普通发票，订单完成后 24 小时内开具并发送至预留邮箱。"
+ },
+ {
+  "session": 333,
+  "scene": "政策命中",
+  "q": "保修多久",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   478
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《数码外设保修政策》：数码外设保修政策。\n根据已发布的规格文档《数码外设保修政策》：蓝牙耳机电池属耗材，保修 6 个月。"
+ },
+ {
+  "session": 333,
+  "scene": "政策命中",
+  "q": "怎么退货",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   479,
+   6
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《退换货政策》：退换货政策。\n根据已发布的规格文档《退货政策说明》：签收后7天内可申请退货。"
+ },
+ {
+  "session": 333,
+  "scene": "政策命中",
+  "q": "运费谁出",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   479
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…质量问题退换运费由商家承担 [1]；无理由退货运费由买家承担 [2]。"
+ },
+ {
+  "session": 336,
+  "scene": "多轮-库存追问",
+  "q": "钛钢保温杯有货吗",
+  "kind": "answer",
+  "tool": "get_stock",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询库存中…钛钢保温杯有货，当前库存 42 件。"
+ },
+ {
+  "session": 336,
+  "scene": "多轮-库存追问",
+  "q": "还有吗",
+  "kind": "answer",
+  "tool": "get_stock",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询库存中…钛钢保温杯有货，当前库存 42 件。"
+ },
+ {
+  "session": 337,
+  "scene": "多轮-指代",
+  "q": "Xperia Ear 是什么品牌",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   481,
+   490
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…Xperia Ear 的品牌是索尼移動 [1]。"
+ },
+ {
+  "session": 337,
+  "scene": "多轮-指代",
+  "q": "那它的上市年份呢",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   481,
+   486
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…Xperia Ear 的上市年份是2016 [1]。"
+ },
+ {
+  "session": 338,
+  "scene": "多轮-澄清订单",
+  "q": "我的订单到哪了",
+  "kind": "answer",
+  "tool": "need_order_no",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在核对订单信息…请提供订单号（SO- 开头），我帮你查询订单状态。"
+ },
+ {
+  "session": 338,
+  "scene": "多轮-澄清订单",
+  "q": "SO-1001",
+  "kind": "answer",
+  "tool": "get_order_status",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询订单中…订单 SO-1001 当前状态：退货中。\n商品：瓶装水 ×2、钛钢保温杯 ×1。\n物流轨迹：\n- 2026-09-05 09:12 商家已发货，包裹揽收\n- 2026-09-05 20:40 快件已到达杭州转运中心\n- 2026"
+ },
+ {
+  "session": 340,
+  "scene": "转人工",
+  "q": "我要转人工",
+  "kind": "handoff",
+  "tool": "handoff",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在转接人工…已记录工单 H-0078，工作时间 4 小时内回复。\n可在下面留下联系方式，方便我们联系你。"
+ },
+ {
+  "session": 340,
+  "scene": "转人工",
+  "q": "投诉！要真人",
+  "kind": "handoff",
+  "tool": "handoff",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在转接人工…已记录工单 H-0078，工作时间 4 小时内回复。\n可在下面留下联系方式，方便我们联系你。"
+ },
+ {
+  "session": 340,
+  "scene": "转人工",
+  "q": "找人工客服",
+  "kind": "handoff",
+  "tool": "handoff",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在转接人工…已记录工单 H-0078，工作时间 4 小时内回复。\n可在下面留下联系方式，方便我们联系你。"
+ },
+ {
+  "session": 340,
+  "scene": "转人工",
+  "q": "举报你们",
+  "kind": "handoff",
+  "tool": "handoff",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在转接人工…已记录工单 H-0078，工作时间 4 小时内回复。\n可在下面留下联系方式，方便我们联系你。"
+ },
+ {
+  "session": 340,
+  "scene": "转人工",
+  "q": "你们老板在吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：你们老板在吗"
+ },
+ {
+  "session": 334,
+  "scene": "无证据2-续",
+  "q": "有没有白色款",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：有没有白色款"
+ },
+ {
+  "session": 334,
+  "scene": "无证据2-续",
+  "q": "能预留吗",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   480
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《发票与配送口径》：本店支持电子增值税普通发票，订单完成后 24 小时内开具并发送至预留邮箱。"
+ },
+ {
+  "session": 335,
+  "scene": "政策命中",
+  "q": "能开发票吗",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   480
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…可以，本店支持电子增值税普通发票。[2]  发票将在订单完成后 24 小时内开具并发送至预留邮箱。[2]"
+ },
+ {
+  "session": 335,
+  "scene": "政策命中",
+  "q": "保修多久",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   478
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…蓝牙耳机电池属耗材，保修 6 个月 [2]。"
+ },
+ {
+  "session": 335,
+  "scene": "政策命中",
+  "q": "怎么退货",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": true,
+  "cites": [
+   479,
+   6
+  ],
+  "answer": "正在检索已发布资产…根据已发布的规格文档《退换货政策》：退换货政策。\n根据已发布的规格文档《退货政策说明》：签收后7天内可申请退货。"
+ },
+ {
+  "session": 335,
+  "scene": "政策命中",
+  "q": "运费谁出",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   479
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…质量问题退换运费由商家承担 [1]；无理由退货运费由买家承担 [2]。"
+ },
+ {
+  "session": 339,
+  "scene": "多轮-库存追问",
+  "q": "钛钢保温杯有货吗",
+  "kind": "answer",
+  "tool": "get_stock",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询库存中…钛钢保温杯有货，当前库存 42 件。"
+ },
+ {
+  "session": 339,
+  "scene": "多轮-库存追问",
+  "q": "还有吗",
+  "kind": "answer",
+  "tool": "get_stock",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询库存中…钛钢保温杯有货，当前库存 42 件。"
+ },
+ {
+  "session": 341,
+  "scene": "多轮-指代",
+  "q": "Xperia Ear 是什么品牌",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   481,
+   490
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…Xperia Ear 的品牌是索尼移動 [1]。"
+ },
+ {
+  "session": 341,
+  "scene": "多轮-指代",
+  "q": "那它的上市年份呢",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   481,
+   486
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…Xperia Ear 的上市年份是 2016 年 [1]。"
+ },
+ {
+  "session": 342,
+  "scene": "多轮-澄清订单",
+  "q": "我的订单到哪了",
+  "kind": "answer",
+  "tool": "need_order_no",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在核对订单信息…请提供订单号（SO- 开头），我帮你查询订单状态。"
+ },
+ {
+  "session": 342,
+  "scene": "多轮-澄清订单",
+  "q": "SO-1001",
+  "kind": "answer",
+  "tool": "get_order_status",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询订单中…订单 SO-1001 当前状态：退货中。\n商品：瓶装水 ×2、钛钢保温杯 ×1。\n物流轨迹：\n- 2026-09-05 09:12 商家已发货，包裹揽收\n- 2026-09-05 20:40 快件已到达杭州转运中心\n- 2026"
+ },
+ {
+  "session": 343,
+  "scene": "转人工",
+  "q": "我要转人工",
+  "kind": "handoff",
+  "tool": "handoff",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在转接人工…已记录工单 H-0079，工作时间 4 小时内回复。\n可在下面留下联系方式，方便我们联系你。"
+ },
+ {
+  "session": 343,
+  "scene": "转人工",
+  "q": "投诉！要真人",
+  "kind": "handoff",
+  "tool": "handoff",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在转接人工…已记录工单 H-0079，工作时间 4 小时内回复。\n可在下面留下联系方式，方便我们联系你。"
+ },
+ {
+  "session": 343,
+  "scene": "转人工",
+  "q": "找人工客服",
+  "kind": "handoff",
+  "tool": "handoff",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在转接人工…已记录工单 H-0079，工作时间 4 小时内回复。\n可在下面留下联系方式，方便我们联系你。"
+ },
+ {
+  "session": 343,
+  "scene": "转人工",
+  "q": "举报你们",
+  "kind": "handoff",
+  "tool": "handoff",
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在转接人工…已记录工单 H-0079，工作时间 4 小时内回复。\n可在下面留下联系方式，方便我们联系你。"
+ },
+ {
+  "session": 343,
+  "scene": "转人工",
+  "q": "你们老板在吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：你们老板在吗"
+ },
+ {
+  "session": 346,
+  "scene": "补批-价格与政策",
+  "q": "显示器最便宜多少钱",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   11,
+   28
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…已发布内容仅涉及保温杯实测和平板休眠设置[1][2]。"
+ },
+ {
+  "session": 346,
+  "scene": "补批-价格与政策",
+  "q": "买两个键盘有优惠吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：买两个键盘有优惠吗"
+ },
+ {
+  "session": 346,
+  "scene": "补批-价格与政策",
+  "q": "退货需要什么材料",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   479
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…当前政策仅要求：商品签收后7天内支持无理由退货，退货需商品完好、附件齐全、不影响二次销售 [2]。"
+ },
+ {
+  "session": 346,
+  "scene": "补批-价格与政策",
+  "q": "耳机的保修和显示器一样吗",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   478,
+   481
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…目前仅能确认：蓝牙耳机电池属于耗材，保修 6 个月 [1]；该商品类目为耳机 [2]。"
+ },
+ {
+  "session": 346,
+  "scene": "补批-价格与政策",
+  "q": "订单 SO-1002 到哪了",
+  "kind": "answer",
+  "tool": "get_order_status",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询订单中…订单 SO-1002 当前状态：退货中。\n商品：钛钢保温杯 ×1。\n物流轨迹：\n- 2026-09-06 10:05 商家已发货，包裹揽收\n- 2026-09-07 06:20 干线运输中，下一站上海分拨中心\n- 2026-09"
+ },
+ {
+  "session": 347,
+  "scene": "补批-口语与边界",
+  "q": "帮我查下 SO-1003",
+  "kind": "answer",
+  "tool": "get_order_status",
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [],
+  "answer": "查询订单中…订单 SO-1003 当前状态：已签收。\n商品：瓶装水 ×6。\n物流轨迹：\n- 2026-09-01 08:45 商家已发货，包裹揽收\n- 2026-09-02 15:10 派件中，快递员 王师傅\n- 2026-09-02 17"
+ },
+ {
+  "session": 347,
+  "scene": "补批-口语与边界",
+  "q": "耳机推荐一款",
+  "kind": "answer",
+  "tool": null,
+  "gap": null,
+  "handoff": false,
+  "fallback": false,
+  "cites": [
+   481,
+   482
+  ],
+  "answer": "正在检索已发布资产…正在生成回答…可参考 Xperia Ear，它属于耳机类目 [1]。  也可参考 Xperia Ear Duo，同样属于耳机类目 [2]。"
+ },
+ {
+  "session": 347,
+  "scene": "补批-口语与边界",
+  "q": "Xperia Ear 能连 iPhone 吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：Xperia Ear 能连 iPhone 吗"
+ },
+ {
+  "session": 347,
+  "scene": "补批-口语与边界",
+  "q": "显示器支持壁挂吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：显示器支持壁挂吗"
+ },
+ {
+  "session": 347,
+  "scene": "补批-口语与边界",
+  "q": "键盘有机械的吗",
+  "kind": "refusal",
+  "tool": null,
+  "gap": null,
+  "handoff": true,
+  "fallback": false,
+  "cites": [],
+  "answer": "正在检索已发布资产…抱歉，已发布资产里没有能回答这个问题的证据。\n问句摘要：键盘有机械的吗"
+ }
+]

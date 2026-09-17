@@ -10,20 +10,31 @@ import type {
   ClipBindResult,
   ClipCandidate,
   ClipRecording,
+  ClipTranscribeResult,
+  ClipAsrStatus,
+  ClipFrameStatus,
   CoachQuestion,
   CoachQuestionKey,
   CoachRecord,
+  ComposeTask,
+  ComposeTemplate,
+  ComposeTtsStatus,
+  ComposePublishResult,
   ConfirmReturnResult,
   CustomerAnswerComplete,
   CustomerSessionCreated,
   CustomerSessionEnded,
+  CustomerSessionResume,
   CsvImportReport,
   FeedbackResult,
+  FrameCandidatesResult,
+  FrameRegisterResult,
   HandoffTicket,
   HandoffTicketCreate,
   HandoffTicketResult,
   KnowledgeGap,
   KnowledgeGapStatus,
+  MaterialImggenStatus,
   MaterialTask,
   Operator,
   OpsRun,
@@ -127,6 +138,10 @@ export const api = {
   // 商品与留痕
   listProducts: () => request<Product[]>('/products'),
   getProduct: (productId: number) => request<Product>(`/products/${productId}`),
+  // 商品维度的素材聚合（第 94a 刀，ADR 0051）：该商品关联的全部资产（图/视频/
+  // 文案/文档…同一 AssetOut 形状）。素材库不另建页，聚合做在商品维度。
+  listProductAssets: (productId: number) =>
+    request<AssetListItem[]>(`/products/${productId}/assets`),
   // 上新（第 41 刀）：登录操作者在控制台建商品；409 重名、422 校验。
   createProduct: (payload: ProductCreate) =>
     request<Product>('/products', { method: 'POST', body: JSON.stringify(payload) }),
@@ -139,20 +154,25 @@ export const api = {
   listKnowledgeGaps: (status: KnowledgeGapStatus = 'open') =>
     request<KnowledgeGap[]>(`/knowledge-gaps?status=${status}`),
 
-  // 素材中心（第 17 刀/ADR 0038）：任务不是中台对象；建任务请求内同步执行
-  // LLM 生成+规则质检（≤20s，同回流机洗的等待面），返回即稳定态。全部操作者鉴权。
-  // 建任务/重试的 LLM 等待面必须宽于默认 15s 超时（LLM 上限 20s + 缓冲）。
-  createMaterialTask: (productId: number) =>
+  // 素材中心（第 17 刀/ADR 0038；第 98 刀内容套件/ADR 0055）：任务不是中台对象；
+  // 建任务请求内同步执行 LLM 生成+双闸质检+配图，返回即稳定态。全部操作者鉴权。
+  // 建任务/重试的等待面必须宽于默认 15s 超时：文案 ≤20s + LLM 质检 ≤20s +
+  // 配图 ≤60s，给 120s（要配图时才用满，纯文案远低于此）。
+  createMaterialTask: (productId: number, template: string = 'station', withImage: boolean = false) =>
     request<MaterialTask>(
       '/material/tasks',
       {
         method: 'POST',
-        body: JSON.stringify({ product_id: productId }),
+        body: JSON.stringify({ product_id: productId, template, with_image: withImage }),
       },
-      30_000,
+      120_000,
     ),
   listMaterialTasks: () => request<MaterialTask[]>('/material/tasks'),
   getMaterialTask: (taskId: number) => request<MaterialTask>(`/material/tasks/${taskId}`),
+  // 文生图配置状态（第 98 刀）：「生成配图」开关禁用判据（无 key 禁用并提示）。
+  getMaterialImggenStatus: () => request<MaterialImggenStatus>('/material/imggen/status'),
+  // 配图暂存字节预览（操作者 cookie 同源直取；抽检通过登记后 404，去治理台看）
+  materialTaskImageUrl: (taskId: number) => `/api/material/tasks/${taskId}/image`,
   approveMaterialTask: (taskId: number) =>
     request<MaterialTask>(`/material/tasks/${taskId}/approve`, { method: 'POST' }),
   // 第 48 刀：打回可带理由（≤200 字）——写进 last_error 的详情段，运营看得见
@@ -163,7 +183,34 @@ export const api = {
       body: JSON.stringify({ reason }),
     }),
   retryMaterialTask: (taskId: number) =>
-    request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 30_000),
+    request<MaterialTask>(`/material/tasks/${taskId}/retry`, { method: 'POST' }, 120_000),
+
+  // 内容成片（第 98b 刀/ADR 0056）：AI 选材+排版出时间线候选+预览成片+剪映
+  // 草稿，人审改后 publish 经双闸复用登记 material 资产。plan 是同步请求
+  // （ffprobe 实测+TTS ≤60s+ffmpeg 合成 ≤120s）——超时给 240s，别在服务端
+  // 还在合成时先断（断了操作者只看到「网络失败」而库里任务照落）。
+  planVideoCompose: (productId: number, template: ComposeTemplate) =>
+    request<ComposeTask>(
+      '/video-compose/plan',
+      { method: 'POST', body: JSON.stringify({ product_id: productId, template }) },
+      240_000,
+    ),
+  listVideoComposeTasks: () => request<ComposeTask[]>('/video-compose/tasks'),
+  getVideoComposeTtsStatus: () => request<ComposeTtsStatus>('/video-compose/tts/status'),
+  videoComposePreviewUrl: (taskId: number) => `/api/video-compose/${taskId}/preview`,
+  videoComposeDraftUrl: (taskId: number) => `/api/video-compose/${taskId}/draft`,
+  videoComposeFinalUrl: (taskId: number) => `/api/video-compose/${taskId}/final`,
+  // publish 人闸门：可选上传剪映导出的成品 mp4（不传=用预览成片）；文案过
+  // 双闸（无 LLM/判定不过 422，任务停在 planned 可改后重发）。
+  publishVideoCompose: (taskId: number, finalVideo: File | null) => {
+    const form = new FormData()
+    if (finalVideo) form.append('final_video', finalVideo)
+    return request<ComposePublishResult>(
+      `/video-compose/${taskId}/publish`,
+      { method: 'POST', body: form },
+      120_000,
+    )
+  },
 
   // 直播切片（第 18 刀/ADR 0014/0039；第 46 刀真链路）：候选不是中台对象；
   // 上传源录像（.mp4，≤200MB；上传即绑「尚无源录像」的 pending 候选）后，pick
@@ -186,11 +233,39 @@ export const api = {
     // 上传超时宽于默认 15s：原始录像最大 200MB，慢链路上传会超过默认阈值
     return request<ClipRecording>('/clips/recordings', { method: 'POST', body: form }, 120_000)
   },
+  // 第 93 刀（ADR 0050）：自动转写 + 配置状态。
+  // 转写是**同步**请求（提音轨 + 逐块云 ASR，服务端总预算 300s——审计 19 起
+  // 多块串行共享硬上限，超限服务端先停并保留部分候选）——前端超时给到
+  // 320s，别在服务端还在跑时先断（断了操作者只会看到「网络失败」而库里候选照落）。
+  getClipAsrStatus: () => request<ClipAsrStatus>('/clips/asr/status'),
+  transcribeClipRecording: (recordingId: number, productId: number | null = null) =>
+    request<ClipTranscribeResult>(
+      `/clips/recordings/${recordingId}/transcribe`,
+      { method: 'POST', body: JSON.stringify({ product_id: productId }) },
+      320_000,
+    ),
   pickClips: (ids: number[]) =>
     request<AssetListItem[]>('/clips/candidates/pick', {
       method: 'POST',
       body: JSON.stringify({ ids }),
     }),
+  // 第 94c 刀（ADR 0053）：洗帧到素材库——帧打分复用 94a 的 VLM（同一把 key），
+  // 无 key 时候选端点 409（fail-closed），此状态给按钮禁用判据。
+  getFrameWashStatus: () => request<ClipFrameStatus>('/clips/frames/status'),
+  // 洗帧候选是**同步**请求（ffprobe/ffmpeg + 逐帧 VLM，分钟级）——超时宽于
+  // 默认 15s，别在服务端还在打分时先断（断了操作者只看到「网络失败」）。
+  listFrameCandidates: (assetId: number) =>
+    request<FrameCandidatesResult>(
+      `/assets/${assetId}/frame-candidates`,
+      { method: 'POST' },
+      300_000,
+    ),
+  registerFrame: (assetId: number, atSecond: number, vlmNote?: string) =>
+    request<FrameRegisterResult>(
+      `/assets/${assetId}/frames`,
+      { method: 'POST', body: JSON.stringify({ at_second: atSecond, vlm_note: vlmNote ?? null }) },
+      150_000,
+    ),
 
   // 销售考核（第 19 刀/ADR 0040）：题库从已发布对话动态推导；作答/重评请求内
   // 同步 LLM 打分（≤20s，超时宽同素材生成）。打分失败不抛：200 + unscored 态。
@@ -252,6 +327,13 @@ export const api = {
   endCustomerSession: (sessionId: number, token: string) =>
     request<CustomerSessionEnded>(`/customer/sessions/${sessionId}/end`, {
       method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  // 会话续接（第 95 刀）：「current」= Bearer 令牌所指会话。active 恢复对话流
+  //（消息重放+继续问）；ended/registered 只回放（锁输入，善后照旧）；401
+  //（过期/无效）由页面清存档走新会话。
+  getCustomerCurrentMessages: (token: string) =>
+    request<CustomerSessionResume>('/customer/sessions/current/messages', {
       headers: { Authorization: `Bearer ${token}` },
     }),
   askCustomer: (

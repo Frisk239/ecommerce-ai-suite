@@ -1,7 +1,9 @@
-// 登记资产抽屉：单份（选商品可不挂 + 可选标题 + 上传 .txt/.md ≤ 2MB）与
-// 批量导入（CSV title,content 两列，逐行登记一份文档资产）两个页签。
+// 登记资产抽屉：单份（选商品可不挂 + 可选标题 + 上传 .txt/.md/.png/.jpg/.jpeg/.webp）
+// 与批量导入（CSV title,content 两列，逐行登记一份文档资产）两个页签。
 // 前端只做类型/大小校验，415/413/422 以 API 返回文案为准；单份成功后直达
 // 资产详情，批量留在抽屉里看报告（创建 A-XXXX 可点、跳过行号+原因）。
+// 第 94a 刀：图片文件走同一端点——后端按上传类型定 kind（文本=文档、图片=
+// 图片），图片登记后进「图片描述」人洗（VLM 草稿 + 人确认才进检索）。
 // 批量预览是 FileReader 极简计数（表头识别 + 行计数 + 空值行计数），刻意
 // 不做完整 CSV 解析——以后端结果为准，避免两套解析器语义漂移。
 // 从知识缺口「去补文档」进入时带 gap：不切页签（批量通道不带缺口关联），
@@ -11,7 +13,7 @@
 
 import { useCallback, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { FileCsv, FileText, X } from '@phosphor-icons/react'
+import { FileCsv, FileImage, FileText, X } from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { CsvImportReport, KnowledgeGap, Product } from '../api/types'
@@ -22,16 +24,28 @@ import ActionError from '../components/ActionError'
 import ProductSelect from '../components/ProductSelect'
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
+// 图片上限（第 94a 刀，与后端 MAX_IMAGE_BYTES 同值）：原图比正文大，
+// 2MB 量不了手机拍的商品图。
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 type DrawerMode = 'single' | 'batch'
 
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp']
+
+/** 是否为图片文件（按扩展名；后端另按字节魔数复验，以后端为准）。 */
+function isImageName(name: string): boolean {
+  const lower = name.toLowerCase()
+  return IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
+
 function validateFile(file: File): string | null {
-  const lower = file.name.toLowerCase()
-  if (!lower.endsWith('.txt') && !lower.endsWith('.md')) {
-    return '仅接受 .txt 或 .md 文本文件'
+  const image = isImageName(file.name)
+  if (!image && !file.name.toLowerCase().endsWith('.txt') && !file.name.toLowerCase().endsWith('.md')) {
+    return '仅接受 .txt / .md 文本或 .png / .jpg / .jpeg / .webp 图片'
   }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return '文件超过 2MB 上限'
+  const limit = image ? MAX_IMAGE_BYTES : MAX_UPLOAD_BYTES
+  if (file.size > limit) {
+    return image ? '图片超过 10MB 上限' : '文件超过 2MB 上限'
   }
   if (file.size === 0) {
     return '空文件不能登记'
@@ -324,6 +338,7 @@ export default function RegisterAssetDrawer({
               ) : (
                 <p className="text-xs leading-5 text-ink-3">
                   登记即把文件字节写入对象存储并进入已接入（来源=上传）；机洗成功直接到待人洗，失败会停在已接入并给出原因。
+                  图片走 VLM 看图出「图片描述」草稿（未配置 VLM 则无草稿），草稿确认后才进检索。
                 </p>
               )}
 
@@ -340,7 +355,7 @@ export default function RegisterAssetDrawer({
                   showId
                 />
                 <span className="mt-1.5 block text-[11px] leading-4 text-ink-3">
-                  挂了商品的文档，按该商品的规格字段做机洗与发布必填。
+                  挂了商品的文档，按该商品的规格字段做机洗与发布必填；图片不跑规格（只做「图片描述」）。
                 </span>
               </label>
 
@@ -356,17 +371,21 @@ export default function RegisterAssetDrawer({
               </label>
 
               <div>
-                <span className="field-label">文件（.txt / .md，≤ 2MB）</span>
+                <span className="field-label">文件（.txt / .md ≤ 2MB；.png / .jpg / .jpeg / .webp ≤ 10MB）</span>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.md,text/plain,text/markdown"
+                  accept=".txt,.md,text/plain,text/markdown,image/png,image/jpeg,image/webp"
                   className="hidden"
                   onChange={pickFile}
                 />
                 {file ? (
                   <div className="flex items-center gap-2.5 rounded-[6px] border border-line-3 bg-surface px-3 py-2">
-                    <FileText aria-hidden size={15} className="shrink-0 text-ink-3" />
+                    {isImageName(file.name) ? (
+                      <FileImage aria-hidden size={15} className="shrink-0 text-ink-3" />
+                    ) : (
+                      <FileText aria-hidden size={15} className="shrink-0 text-ink-3" />
+                    )}
                     <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{file.name}</span>
                     <span className="shrink-0 font-mono text-[11px] text-ink-3 tabular-nums">
                       {(file.size / 1024).toFixed(1)} KB
@@ -388,10 +407,10 @@ export default function RegisterAssetDrawer({
                     onClick={() => fileInputRef.current?.click()}
                     disabled={submitting}
                   >
-                    <FileText aria-hidden size={22} className="text-ink-3" />
+                    <FileImage aria-hidden size={22} className="text-ink-3" />
                     <span className="text-[13px] text-ink-2">点击选择文件</span>
                     <span className="text-[11px] leading-4 text-ink-3">
-                      仅接受纯文本或 Markdown；超过 2MB 会被拒绝
+                      文本或商品图；图片登记后在详情页补「图片描述」——描述是图片可被检索的文本面
                     </span>
                   </button>
                 )}
