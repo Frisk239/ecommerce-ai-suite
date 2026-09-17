@@ -17,6 +17,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -174,3 +175,57 @@ def parse_single_range(header: str | None, size: int) -> ByteRange | None:
         return ByteRange(start=start, end=end)
     except ValueError:
         return None  # 非数字（字面坏头）——忽略
+
+
+# ---------- 媒体字节响应（200/206/416 的公共装配；第 114 刀起两面共用） ----------
+
+# 媒体响应头（全量/区间两分支共用）：Range 能力声明 + 不缓存（URL 可能带顾客
+# 令牌，别让中间层/浏览器把「带凭证的 URL 内容」留在共享缓存里）+ nosniff
+# （Content-Type 由常量表定死，不许浏览器嗅探改判）。顾客面（customer 路由）
+# 与操作者面（assets 路由）的媒体端点同一份——两头漂移会让 <video> 在一个面
+# 能 seek 另一个面不能。
+MEDIA_BASE_HEADERS = {
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+def media_stream_response(
+    range_header: str | None,
+    storage: Any,
+    object_key: str,
+    mime: str,
+    size: int,
+) -> Response:
+    """对象字节 → 媒体响应：无/坏 Range=200 全量，单段=206，语法合法越界=416。
+
+    ``size`` 由调用方先取好——「对象缺失怎么报」两面口径不同（顾客面统一 404
+    不泄漏存在性，操作者面 409 带对象键如实说），本函数只负责「已知的 size 与
+    字节」怎么出。字节按区间流式（``storage.iter_bytes`` 分块），不整读进内存
+    ——视频可上百 MB。
+    """
+    try:
+        window = parse_single_range(range_header, size)
+    except RangeNotSatisfiable:
+        # 416 必须带 ``bytes */{size}``，客户端据此知道真实长度（RFC 9110 §15.5.17）
+        return Response(
+            status_code=416,
+            headers={**MEDIA_BASE_HEADERS, "Content-Range": f"bytes */{size}"},
+        )
+    if window is None:
+        return StreamingResponse(
+            storage.iter_bytes(object_key),
+            media_type=mime,
+            headers={**MEDIA_BASE_HEADERS, "Content-Length": str(size)},
+        )
+    return StreamingResponse(
+        storage.iter_bytes(object_key, start=window.start, end=window.end),
+        status_code=206,
+        media_type=mime,
+        headers={
+            **MEDIA_BASE_HEADERS,
+            "Content-Length": str(window.length),
+            "Content-Range": f"bytes {window.start}-{window.end}/{size}",
+        },
+    )

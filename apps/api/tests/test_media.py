@@ -3,6 +3,7 @@
 不连库、不碰存储——媒体端点与引擎的集成面在 test_media_integration.py。
 """
 
+import asyncio
 import io
 import json
 import logging
@@ -20,6 +21,7 @@ from suite_api.services.media import (
     key_suffix,
     media_citations_for,
     media_mime,
+    media_stream_response,
     parse_single_range,
 )
 
@@ -232,3 +234,77 @@ def test_access_log_line_with_query_token_is_masked_end_to_end() -> None:
     assert "token=***" in payload["event"]
     assert "super-secret-token" not in stream.getvalue()
     assert "206" in payload["event"]  # 其余信息量不丢
+
+
+# ---------- 媒体字节响应装配（第 114 刀 W8：顾客/操作者两面共用的 200/206/416） ----------
+
+
+class _FakeStreamStorage:
+    """iter_bytes 替身：全量/区间一次出（端点语义只依赖字节序与区间，不依赖块大小）。"""
+
+    def __init__(self, objects: dict[str, bytes]) -> None:
+        self._objects = objects
+
+    def iter_bytes(self, key: str, *, start: int = 0, end: int | None = None):
+        data = self._objects[key]
+        yield data[start : (end + 1 if end is not None else None)]
+
+
+def _drain(response: Any) -> bytes:
+    """StreamingResponse 的 body_iterator 收干成字节（Starlette 把同步生成器
+    包成异步迭代器，测试里用事件循环收）。"""
+
+    async def _collect() -> bytes:
+        return b"".join([chunk async for chunk in response.body_iterator])
+
+    return asyncio.run(_collect())
+
+
+_Payload = bytes(range(64))
+
+
+def _respond(range_header: str | None) -> Any:
+    return media_stream_response(
+        range_header,
+        _FakeStreamStorage({"clips/x/a.mp4": _Payload}),
+        "clips/x/a.mp4",
+        "video/mp4",
+        len(_Payload),
+    )
+
+
+def test_media_stream_response_full_without_range() -> None:
+    response = _respond(None)
+    assert response.status_code == 200
+    assert response.media_type == "video/mp4"
+    assert response.headers["content-length"] == str(len(_Payload))
+    assert response.headers["accept-ranges"] == "bytes"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert _drain(response) == _Payload
+
+
+def test_media_stream_response_partial_and_suffix() -> None:
+    window = _respond("bytes=4-9")
+    assert window.status_code == 206
+    assert window.headers["content-range"] == f"bytes 4-9/{len(_Payload)}"
+    assert window.headers["content-length"] == "6"
+    assert _drain(window) == _Payload[4:10]
+
+    suffix = _respond("bytes=-8")
+    assert suffix.status_code == 206
+    assert _drain(suffix) == _Payload[-8:]
+
+
+def test_media_stream_response_ignores_bad_and_multi_ranges() -> None:
+    # 多段与语法坏头一律忽略（200 全量）——与端点层行为同判，这里钉住装配层不擅自 206
+    for header in ("bytes=0-1,4-5", "items=0-5", "bytes=a-b"):
+        response = _respond(header)
+        assert response.status_code == 200, header
+        assert _drain(response) == _Payload
+
+
+def test_media_stream_response_416_carries_total_size() -> None:
+    too_far = _respond(f"bytes={len(_Payload)}-")
+    assert too_far.status_code == 416
+    assert too_far.headers["content-range"] == f"bytes */{len(_Payload)}"

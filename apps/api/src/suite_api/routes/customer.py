@@ -77,7 +77,7 @@ from suite_api.observability import (
 from suite_api.routes.service import MessageOut, _session_messages, _to_message_out
 from suite_api.services.chat_engine import run_ask, sse_event_stream
 from suite_api.services.handoff_tickets import submit_contact, ticket_no
-from suite_api.services.media import RangeNotSatisfiable, media_mime, parse_single_range
+from suite_api.services.media import media_mime, media_stream_response
 from suite_api.services.rate_limit import CustomerRateLimits
 from suite_api.services.triage import triage_asset_ids
 from suite_platform.storage import ObjectStorage
@@ -418,14 +418,6 @@ async def ask(
 # 是不可探测面——待人洗、已废弃、非媒体资产一律同一句话（goal 口径：未发布
 # 拒绝；不给 id 探测留反馈面）。也**不回对象键**（字节只经此端点出，键不出门）。
 _MEDIA_NOT_FOUND = "媒体不存在"
-# 媒体响应头（两分支共用）：Range 能力声明 + 不缓存（URL 带顾客令牌，别让
-# 中间层/浏览器把「带凭证的 URL 内容」留在共享缓存里）+ nosniff（字节是运营
-# 上传/切片产物，Content-Type 由我们定死，不许浏览器嗅探改判）。
-_MEDIA_BASE_HEADERS = {
-    "Accept-Ranges": "bytes",
-    "Cache-Control": "private, no-store",
-    "X-Content-Type-Options": "nosniff",
-}
 
 
 def _media_customer_token(request: Request) -> str | None:
@@ -523,31 +515,9 @@ def get_asset_media(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_MEDIA_NOT_FOUND
         ) from None
-
-    try:
-        window = parse_single_range(request.headers.get("range"), size)
-    except RangeNotSatisfiable:
-        # 416 必须带 ``bytes */{size}``，客户端据此知道真实长度（RFC 9110 §15.5.17）
-        return Response(
-            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
-            headers={**_MEDIA_BASE_HEADERS, "Content-Range": f"bytes */{size}"},
-        )
-    if window is None:
-        return StreamingResponse(
-            storage.iter_bytes(object_key),
-            media_type=mime,
-            headers={**_MEDIA_BASE_HEADERS, "Content-Length": str(size)},
-        )
-    return StreamingResponse(
-        storage.iter_bytes(object_key, start=window.start, end=window.end),
-        status_code=status.HTTP_206_PARTIAL_CONTENT,
-        media_type=mime,
-        headers={
-            **_MEDIA_BASE_HEADERS,
-            "Content-Length": str(window.length),
-            "Content-Range": f"bytes {window.start}-{window.end}/{size}",
-        },
-    )
+    # 200/206/416 的装配在 services.media.media_stream_response（第 114 刀起与
+    # 操作者面媒体端点共用同一份——Range 语义不可能两面漂移）
+    return media_stream_response(request.headers.get("range"), storage, object_key, mime, size)
 
 
 # ---------- 反馈（第 40 刀，ADR 0044 §四：thumbs-down 分诊） ----------
