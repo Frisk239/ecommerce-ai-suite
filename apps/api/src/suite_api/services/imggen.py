@@ -96,6 +96,16 @@ def _decode_b64_json(response: Any) -> bytes:
     payload = None
     for item in items:
         payload = getattr(item, "b64_json", None)
+        # 第 98 刀评审补记：部分模型（如 Kwai-Kolors）忽略 response_format=b64_json，
+        # 仍返回 url——此时下载 URL 字节（走 httpx 同客户端，代理/超时一致）。
+        if payload is None:
+            url = getattr(item, "url", None)
+            if url:
+                import httpx as _httpx
+
+                resp = _httpx.get(url, timeout=60.0)
+                resp.raise_for_status()
+                return resp.content
         if payload:
             break
     if not payload:
