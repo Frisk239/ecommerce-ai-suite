@@ -650,6 +650,46 @@
     white-space: nowrap;
   }
 
+  /* ---------- 回答路径标签（第 108B 刀 W2） ----------
+     气泡右下角一枚小 chip：工具/模板/AI/拒答四态（灰/蓝/紫/红）。语义色与
+     badge 族同源：灰取 badge-ingested、红取 badge-failed、蓝取 cite-chip 的
+     accent 对（模板=固定句式组装，唯一用品牌蓝的语义位——§二点七「蓝只做
+     语义」）；紫是本标签独有色（AI 生成）。11px 只读、不可点。 */
+  .path-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: default;
+  }
+  .path-chip-tool {
+    color: #5b6779;
+    background: #e8ebee;
+    border-color: var(--color-line-3);
+  }
+  .path-chip-template {
+    color: var(--color-accent-strong);
+    background: var(--color-accent-soft);
+    border-color: var(--color-accent-border);
+  }
+  .path-chip-llm {
+    color: #6d28d9;
+    background: #f1e9fe;
+    border-color: rgba(124, 58, 237, 0.28);
+  }
+  .path-chip-refusal {
+    color: var(--color-danger);
+    background: #fde8e6;
+    border-color: rgba(217, 45, 32, 0.3);
+  }
+
   /* ---------- 骨架（扫光 shimmer，只用于加载态） ---------- */
   .skeleton {
     border-radius: 4px;

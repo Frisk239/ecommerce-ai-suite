@@ -82,7 +82,7 @@ def test_customer_channel_hides_internal_fallback_reason() -> None:
     # 用最小替身（SimpleNamespace；MagicMock 不能进 json.dumps）
     outcome = AskOutcome(
         agent_message=SimpleNamespace(
-            content="抱歉，已发布资产里没有能回答这个问题的证据。",
+            content="抱歉，这个问题我暂时没有查到可靠的资料——不想随便编一个答案误导您。",
             citations=[],
             kind="refusal",
             handoff=True,

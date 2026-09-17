@@ -85,7 +85,7 @@ def test_recent_turns_skips_unanswered_customer_residue() -> None:
 
 def test_recent_turns_skips_refusal_handoff_and_tool_turns() -> None:
     valid_old = _turn(2, "旧问句", 3, "旧回答")
-    refusal = _turn(4, "拒答的问句", 5, "抱歉，已发布资产里没有能回答这个问题的证据。", kind="refusal")
+    refusal = _turn(4, "拒答的问句", 5, "抱歉，这个问题我暂时没有查到可靠的资料——不想随便编一个答案误导您。", kind="refusal")
     handoff = _turn(6, "转人工的问句", 7, "订单工具转人工文案", kind="handoff")
     tool = _turn(8, "工具轮问句", 9, "订单 SO-1001 已发货", tool={"name": "get_order_status", "arg": "SO-1001"})
     valid_new = _turn(10, "新问句", 11, "新回答")

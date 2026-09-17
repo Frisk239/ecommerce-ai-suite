@@ -195,18 +195,21 @@ def test_oov_verdict_span_threshold_is_load_bearing(api: ApiFixture, monkeypatch
 
 
 def test_oov_refusal_text_names_the_missing_entity(api: ApiFixture, monkeypatch: Any) -> None:
-    """第 84 刀：OOV 拒答首行**点名未收录对象**（比固定文案精确）；非 OOV 路径
-    首行仍是 REFUSAL_CONTENT 常量原样（既有全等断言不破）。"""
-    from suite_api.services.answer import REFUSAL_CONTENT, build_refusal_handoff_content
+    """第 84 刀：OOV 拒答首行**点名未收录对象**（比通用文案精确）；非 OOV 路径
+    首行仍是四段式模板首行（第 108B 刀 W4 重写后 = REFUSAL_OPENING）。"""
+    from suite_api.services.answer import (
+        REFUSAL_OPENING,
+        build_refusal_handoff_content,
+    )
 
-    # 非 OOV：首行 = 常量原样
+    # 非 OOV：首行 = 四段式模板首行
     plain = build_refusal_handoff_content("随便问问")
-    assert plain.startswith(REFUSAL_CONTENT)
-    # OOV：首行点名实体
+    assert plain.startswith(REFUSAL_OPENING)
+    # OOV：首行点名实体（通用首行不出场）
     # 商品不在库 -> 「本店暂时没有这款」
     absent = build_refusal_handoff_content("雀巢咖啡的配料是什么", missing_entity="雀巢咖啡")
     assert absent.startswith("本店暂时没有「雀巢咖啡」这款商品")
-    assert REFUSAL_CONTENT not in absent.splitlines()[0]
+    assert REFUSAL_OPENING not in absent
     assert "问句摘要：雀巢咖啡的配料是什么" in absent
     # 商品在库但资料缺 -> 「资料还在补充中」（第 86 刀两类分说）
     incat = build_refusal_handoff_content(

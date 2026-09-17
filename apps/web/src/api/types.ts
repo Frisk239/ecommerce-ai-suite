@@ -437,6 +437,12 @@ export interface StatsOverview {
   csat: StatsCsat
 }
 
+/** 回答路径标识（第 108B 刀 W2）：让「什么时候没调大模型」一眼可见。
+ * refusal=拒答（无证据/无覆盖/未收录实体）；llm=模型真产出正文；tool=确定性
+ * 工具/查询（订单/库存/退货资格/目录/澄清/元回声）；template=证据组装模板回退
+ * 与纯文案出口（转人工回执/提议被拒）。 */
+export type ServiceAnswerPath = 'tool' | 'template' | 'llm' | 'refusal'
+
 /** SSE complete 事件的负载（与后端 event_stream 尾事件一致）。
  * gap_id 仅 refusal 时非空（ADR 0030：运行时返回，消息表不加列——重载会话后
  * 芯片不重现，属契约口径）。fallback 仅 answer 且厂商生成失败降级模板时为
@@ -453,6 +459,10 @@ export interface ServiceAnswerComplete {
   handoff: boolean
   gap_id: number | null
   fallback?: boolean
+  /** 第 108B 刀（W2）：回答路径标识（气泡角落小标签；同 fallback/gap_id 的
+   * 运行时返回口径——消息表不加列，重载会话后标签不重现）。两通道同形状：
+   * 它不含任何内部 id。 */
+  path?: ServiceAnswerPath
   /** 第 40 刀：忠实度闸触发原因（仅闸触发时出现，值 'coverage'）。普通厂商
    * 失败降级只带 fallback 不带该键——运行时返回口径，消息表不加列。 */
   fallback_reason?: string

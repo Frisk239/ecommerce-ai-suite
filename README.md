@@ -68,7 +68,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 
 库存问「有货吗」即命中库存工具（第 14 刀，ADR 0037）：问「钛钢保温杯有货吗？」（种子 mock 值：保温杯 42、瓶装水 0）命中词表（有货/没货/无货/缺货/库存/现货/剩）走只读 `get_stock`——商品名最长公共子串匹配（「保温杯」也能命中「钛钢保温杯」），模板回答「有货，当前库存 42 件。」/「暂时无货。」、同样不调 LLM、`citations` 恒空；库存未设置（stock NULL）、商品没匹配上（如「小龙虾有货吗」）或查询失败均 `kind: "handoff"` 转人工不检索不缺口。规格问题（净含量/保质期/材质）词表外，零漂移走检索。
 
-无命中 -> `kind: "refusal"`、`handoff: true`、`citations: []`，固定文案「抱歉，已发布资产里没有能回答这个问题的证据。」（0018：不编造不闲聊）。检索只查当前已发布版本（0004/0017），切块在发布事务内写入 `retrieval_chunks`（0002 第二批迁移）。
+无命中 -> `kind: "refusal"`、`handoff: true`、`citations: []`，固定文案（第 108B 刀 W4 四段式重写：承认边界不编造 + 转人工回执 + 顾客行动选项）「抱歉，这个问题我暂时没有查到可靠的资料——不想随便编一个答案误导您。已为您转人工处理（工单 H-xxxx），工作时间会在 4 小时内回复您。您也可以在下方留言，或者换个说法再问我一次。」（0018：不编造不闲聊；旧文案的「已发布资产」是内部术语，已清零）。检索只查当前已发布版本（0004/0017），切块在发布事务内写入 `retrieval_chunks`（0002 第二批迁移）。
 
 拒答（0024 知识缺口）同事务落 `knowledge_gaps`（同问法精确幂等不新建），`complete.gap_id` 即缺口 id（answer 恒为 null）；`GET /api/knowledge-gaps?status=open|resolved` 看待办（全登录），「补文档」=`POST /api/assets/register` 带可选表单字段 `knowledgeGapId`（来源 `source_kind` 由端点定值：上传=upload、回流=session_backflow），发布事务内缺口自动 resolved 并指向该资产。
 

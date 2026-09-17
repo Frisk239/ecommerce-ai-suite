@@ -6,8 +6,10 @@
   直接陈述不复读。
 - 命中对话块 ->「根据已发布的客服对话记录：」+ 证据句。
 - 多源命中取分数最高 1-2 条，各带引用（0007：引用=资产 ID+版本号）。
-- 无命中 -> kind=refusal，固定文案 + handoff=True（0018：拒答是消息种类不是
-  异常；不编造、不降级闲聊、显性转人工）。
+- 无命中 -> kind=refusal，固定文案（第 108B 刀 W4：四段式模板，见
+  REFUSAL_OPENING）+ handoff=True（0018：拒答是消息种类不是异常；不编造、
+  不降级闲聊、显性转人工；工具化渠道由 build_refusal_handoff_content 拼装
+  工单号/问句摘要/缺口段）。
 """
 
 import re
@@ -16,7 +18,21 @@ from typing import Any
 
 from suite_api.services.machine_wash import redact
 
-REFUSAL_CONTENT = "抱歉，已发布资产里没有能回答这个问题的证据。"
+# 第 108B 刀（W4）：拒答话术重写。旧文案「抱歉，已发布资产里没有能回答这个
+# 问题的证据。」的「已发布资产」是内部术语（顾客不可理解）且无引导。四段式
+# 确定性模板（**不调 LLM**：无证据场景是唯一没有证据背书的地方，文案可测、
+# 无提示词注入面）：①承认边界+不编造理由 ②转人工回执（工单号由
+# build_refusal_handoff_content 衔接）③顾客行动选项。
+REFUSAL_OPENING = "抱歉，这个问题我暂时没有查到可靠的资料——不想随便编一个答案误导您。"
+# 工单号是给顾客的回执（42 刀口径：不走 gap_id 白名单），{no} 空串=无号形态
+# （compose_answer 的纯函数出口没有工单上下文，见 REFUSAL_CONTENT）。
+_REFUSAL_HANDOFF_LINE = "已经为您转人工处理{no}，工作时间会在 4 小时内回复您。"
+_REFUSAL_TAIL = "您也可以在下方留言，或者换个说法再问我一次。"
+# 无工单上下文的通用形态（compose_answer 无命中出口用；引擎落库/流式文本由
+# build_refusal_handoff_content 带真实工单号拼装）。
+REFUSAL_CONTENT = "\n".join(
+    [REFUSAL_OPENING, _REFUSAL_HANDOFF_LINE.format(no=""), _REFUSAL_TAIL]
+)
 
 _MAX_EVIDENCE = 2  # 多源命中最多引 1-2 条（宁少而准，0018 宁缺勿滥）
 
@@ -31,39 +47,51 @@ def build_refusal_handoff_content(
     *,
     missing_entity: str | None = None,
     known_product: str | None = None,
+    ticket_no: str | None = None,
 ) -> str:
     """拒答落库消息的完整文本（第 27 刀，词条「转人工」：交接带结构化摘要）。
 
-    结构：REFUSAL_CONTENT（常量原样，既有全等断言不破）+ 换行 +
-    「问句摘要：{question}」（先掩后截，对齐 0038「字节不动、出口必掩」与
-    _first_question 口径——顾客原问本就在同会话 customer 消息里裸存，摘要不
-    新增暴露面，打码只是不主动多做一次原样复读）+（gap_id 非空时）换行 +
-    「缺口：G-xxxx」（4 位补零，与治理台界面 ID 口径一致）。
+    结构（第 108B 刀 W4 起）：拒答四段式模板（承认边界+不编造 / 转人工回执 /
+    顾客行动选项，见 REFUSAL_OPENING）+ 换行 +「问句摘要：{question}」（先掩后
+    截，对齐 0038「字节不动、出口必掩」与 _first_question 口径——顾客原问本就
+    在同会话 customer 消息里裸存，摘要不新增暴露面，打码只是不主动多做一次
+    原样复读）+（gap_id 非空时）换行 +「缺口：G-xxxx」（4 位补零，与治理台
+    界面 ID 口径一致）。
 
-    gap_id 是否可进文本由调用方通道白名单决定（run_ask 的 expose_gap_id）：
+    ``gap_id`` 是否可进文本由调用方通道白名单决定（run_ask 的 expose_gap_id）：
     顾客通道不带缺口 ID（0030 gap_id 白名单语义从 complete 载荷延伸到消息
     文本）；操作者通道带——治理台/客服页重开会话也能看见缺口号，不依赖
     只在流里出现一次的 complete 事件。
+
+    ``ticket_no``（第 108B 刀 W4）：拒答路径**同事务**建/取本会话工单（42 刀
+    ADR 0046），工单号 H-xxxx 是给顾客的回执（不走白名单，两通道同形状）——
+    由 run_ask 在 ensure_session_ticket 之后回填进文本，顾客在消息正文里直接
+    看到号码；无工单上下文（纯函数直调）时省略号码，其余文字一致。
     """
     masked = redact(question)
     summary = masked[:_SUMMARY_MAX_CHARS] + ("…" if len(masked) > _SUMMARY_MAX_CHARS else "")
-    # 第 84 刀：实体存在性闸（OOV）命中时首行点名未收录对象——比「没有能回答
-    # 这个问题的证据」精确（「资料里没有『雀巢咖啡』的信息」直接告诉顾客差什么）；
-    # 非 OOV 路径首行仍是 REFUSAL_CONTENT 常量原样（既有全等断言不破）。
+    # 第 84 刀：实体存在性闸（OOV）命中时首行点名未收录对象——比「没有查到
+    # 可靠的资料」精确（「资料里没有『雀巢咖啡』的信息」直接告诉顾客差什么）；
+    # 非 OOV 路径首行仍是 REFUSAL_OPENING 常量原样。
     # 第 86 刀：OOV 两类分说（实体串过 redact——_normalize 保留数字，手机号问句
     # 可能成为实体串，0038 出口必掩）：
     # - 商品在库但资料没上架 -> 「资料还在补充中」（同时落知识缺口）
     # - 商品不在库 -> 「本店暂时没有这款」（只建工单，不落缺口）
+    # 108B 刀：转人工回执行统一由模板承载（首行不再重复「已记录并转人工处理」
+    # ——工单号本身就是记录的证据，重复陈述在四段式里是噪声）。
     if missing_entity:
         entity = redact(missing_entity)
         head = (
-            f"「{entity}」的商品资料还在补充中，已记录并转人工处理。"
+            f"「{entity}」的商品资料还在补充中。"
             if known_product
-            else f"本店暂时没有「{entity}」这款商品，已记录并转人工处理。"
+            else f"本店暂时没有「{entity}」这款商品。"
         )
     else:
-        head = REFUSAL_CONTENT
-    parts = [head, f"问句摘要：{summary}"]
+        head = REFUSAL_OPENING
+    handoff_line = _REFUSAL_HANDOFF_LINE.format(
+        no=f"（工单 {ticket_no}）" if ticket_no else ""
+    )
+    parts = [head, handoff_line, _REFUSAL_TAIL, f"问句摘要：{summary}"]
     if gap_id is not None:
         parts.append(f"缺口：G-{gap_id:04d}")
     return "\n".join(parts)

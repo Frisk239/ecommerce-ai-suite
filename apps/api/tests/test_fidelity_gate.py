@@ -40,6 +40,13 @@ def engine(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr("suite_api.services.chat_engine.llm.stream_chat", fake_stream)
     monkeypatch.setattr("suite_api.services.chat_engine.recent_turns", lambda *_a, **_k: [])
+    # 第 108B 刀（W4）：拒答消息文本要格式化工单号 H-xxxx——真函数走库拿 int PK，
+    # MagicMock 会话给不出 id，用替身（与 58 刀 record_refusal_gap 替身同款；
+    # 号码位文本由 test_answer 单测 + test_service_integration 真库钉）
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.ensure_session_ticket",
+        lambda *_a, **_k: type("T", (), {"id": 1})(),
+    )
     return {"db": db, "session": session, "calls": calls}
 
 

@@ -89,6 +89,30 @@ def retrieval_query(question: str, history: list[dict[str, str]]) -> str:
     return f"{prev_questions[-1]} {question}"
 
 
+def last_customer_question(
+    db: Session, session_id: int, exclude_message_id: int | None = None
+) -> str | None:
+    """本会话**上一条顾客消息**原文（第 108B 刀 W3：元问题回声的数据源）。
+
+    与会话元意图快路径配套：顾客问「我的上一个问题是什么」这类**关于对话
+    本身**的问题时，回声的是真实历史而不是模型猜测。``exclude_message_id``
+    排除本轮刚落的问句（同 recent_turns 口径——它已经 commit，按 id 排除比
+    按时间戳可靠）；没有任何历史（首问）返回 None，由调用方走首问边界文案。
+    倒序取最近一条（created_at + id 双键，同 recent_turns 的排序口径）。
+    不做 redact——掩码由消费方按出口纪律决定（元回声走 0038 出口必掩）。
+    """
+    stmt = select(ServiceMessage).where(
+        ServiceMessage.session_id == session_id,
+        ServiceMessage.role == "customer",
+    )
+    if exclude_message_id is not None:
+        stmt = stmt.where(ServiceMessage.id != exclude_message_id)
+    row = db.scalar(
+        stmt.order_by(ServiceMessage.created_at.desc(), ServiceMessage.id.desc()).limit(1)
+    )
+    return row.content if row is not None else None
+
+
 def last_tool_subject(db: Session, session_id: int) -> str | None:
     """最近一次**已答工具轮**的命中对象（第 73 刀）：供省略追问复用。查询限 agent 轮，本轮 customer 消息天然不在其中。
 

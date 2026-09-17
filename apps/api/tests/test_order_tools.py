@@ -280,6 +280,13 @@ def test_run_ask_non_order_never_touches_order_tool(
     # 第 27 刀：拒答落库文本要格式化缺口 id，本单测钉分派零接触不测文本——
     # mock 库把缺口钉 None（摘要/缺口段文本由 test_answer 单测+DB 集成钉）
     monkeypatch.setattr("suite_api.services.chat_engine.record_refusal_gap", lambda *_a, **_k: None)
+    # 第 108B 刀（W4）：拒答文本还要格式化工单号 H-xxxx——真函数走库拿 int PK，
+    # MagicMock 会话给不出 id，用替身（同 27 刀缺口替身款；号码位文本由
+    # test_answer 单测 + test_service_integration 真库钉）
+    monkeypatch.setattr(
+        "suite_api.services.chat_engine.ensure_session_ticket",
+        lambda *_a, **_k: type("T", (), {"id": 1})(),
+    )
 
     outcome = asyncio.run(run_ask(_mock_db(), MagicMock(id=1), "保温杯的材质是什么？"))
 

@@ -110,6 +110,9 @@ export function useAskStream(options: AskStreamOptions): AskStream {
               stopped: false,
               gapId: payload.gap_id ?? null,
               fallback: payload.fallback ?? false,
+              // 第 108B 刀（W2）：回答路径标识（气泡角落来源标签；运行时键——
+              // 消息表不加列，重载后不重现，同 fallback/gapId 口径）
+              path: payload.path ?? null,
               tool: payload.tool ?? m.tool,
               // 第 94b 刀（ADR 0052）：媒体附件（恒列表；两通道同形状）
               mediaCitations: payload.media_citations ?? m.mediaCitations,

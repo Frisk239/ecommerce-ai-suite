@@ -223,6 +223,8 @@ def test_engine_golden_schema_selfcheck() -> None:
     known = {
         "catalog-price", "catalog-purity", "catalog-miss", "catalog-listing",
         "stock", "stock-purity", "order", "evidence-gate", "rag", "multi-turn",
+        # 第 108B 刀（W3）：会话元问题快路径（回声/首问边界）
+        "meta",
     }
     ids = [case["id"] for case in CASES]
     assert len(ids) == len(set(ids)), "case id 重复"
