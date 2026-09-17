@@ -34,7 +34,7 @@ api 容器启动时自动跑 `alembic upgrade head` + 幂等种子（操作者�
 
 | 端口 | 服务 | 说明 |
 | --- | --- | --- |
-| 5432 | db | `pgvector/pgvector:pg16`（镜像预留；检索未用 pgvector） |
+| 5432 | db | `pgvector/pgvector:pg16`（向量列+HNSW 已启用，第 105 刀 ADR） |
 | 8000 | api | FastAPI 单体（治理发布后端 + `/health`） |
 | 5173 | web | Vite + React 19 控制台壳 |
 
