@@ -299,7 +299,28 @@ uv sync                       # 安装 workspace（apps/api + packages/platform�
 | `IMGGEN_MODEL` | 模型名（默认 `black-forest-labs/FLUX.1-schnell`） |
 
 - **与 ASR/VLM 的 409 刻意不同级**：转写/打分没有本地兜底、无 key 就没有产物（fail-closed 拒绝）；配图是增值项不是任务本体——无 key 跳过、生成失败也只记 `image_status=failed`（不 fail 任务，整任务重试可再要图）。双闸没过线不跑配图步（不给废文案产图）。`GET /api/material/imggen/status` 供前端禁用「生成配图」开关。
-- **Out**：98b 成片（口播稿→TTS/剪辑轨）；批量任务；配图单独重生成（整任务重试代替）。
+- **Out**：批量任务；配图单独重生成（整任务重试代替）。~~98b 成片~~（第 98b 刀已做，见下节「内容成片」）。
+
+## 内容成片（第 98b 刀，ADR 0056）
+
+**素材中心「内容成片」页签选商品+模板 → plan 同步选材+排版（该商品已发布的切片/图片/文案要点，15-60s 时间线）→ 预览成片（ffmpeg，常驻「AI 生成」AIGC 角标）+ 剪映草稿 zip 双层产物 → 人审改（下草稿精修或直接看预览）→「确认登记」把文案要点过双闸复用登记 material 资产进治理。AI 排版、人上市。**
+
+- **端点**（全操作者鉴权，`apps/api/src/suite_api/routes/video_compose.py`）：
+  - `POST /api/video-compose/plan`（`{product_id, template: highlight|product_intro}`，同步执行——ffprobe 秒级 + TTS ≤60s + ffmpeg 合成 ≤120s，前端超时 240s）：选材规则=优先切片（转写含商品名/卖点词）+ 图 2-3 张 + 文案要点 3 条，不足图+文案补足；每素材 3-8s（切片按 ffprobe 实测、超 8s 截前 8s）。商品无任何已发布素材 422；合成失败 502 不落任务。
+  - `GET /api/video-compose/{id}/preview`（预览 mp4，inline 播放）/ `GET /{id}/draft`（剪映草稿 zip 附件）/ `GET /{id}/final`（publish 上传的成品留档）。
+  - `POST /api/video-compose/{id}/publish`：人闸门确认。body 可带剪映导出的成品 mp4（≤200MB、mp4 魔数校验；不传=用预览成片）；文案正文=时间线文案要点串联，**双闸复用**（material 的规则四条 + LLM 事实性质检，98 刀同函数）不过线/LLM 未配置 422 不登记（fail-closed，任务停 planned 可重发）；过线登记 material 资产（来源=**upload** 服务端定值、标题「{商品} · 内容成片」、挂商品）→ 待人洗/发布治理。不做自动 publish。
+- **红线四条**（ADR 0056）：①预览 drawtext 角标「AI 生成」+ 草稿常驻文本，**代码里没有开关**；②选材白名单=只取已发布+自有来源（本仓资产面天然满足）；③publish 文案双闸复用；④数字人/声音克隆 Out——TTS voice 用厂商预置音色。
+- **剪映草稿是最小自写 JSON 形态**（记偏差）：draft_content.json + draft_meta_info.json + `materials/` 媒体字节，素材用**相对路径**；调研过 pyJianYingDraft（库可用），但其素材 path 硬绑生成机绝对路径且拖 pymediainfo 原生库，与「服务端生成 zip、操作者下载打开」冲突。用法：解压 zip 到剪映草稿目录（com.lveditor.draft/）；剪映版本对相对路径不认时用「媒体重链接」指向包内 materials/。
+- **TTS 三 env**（同 ASR/VLM/IMGGEN 风格；默认硅基流动 CosyVoice2）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `TTS_API_KEY` | 口播密钥；**为空时不建客户端、不发请求 = 预览无音轨**（任务不 fail，`with_tts=false`、详情标注「TTS 未配置，预览无声」）。密钥只写本机 `.env` |
+| `TTS_BASE_URL` | OpenAI 兼容端点（默认 `https://api.siliconflow.cn/v1`） |
+| `TTS_MODEL` | 模型名（默认 `FunAudioLLM/CosyVoice2-0.5B`）；`TTS_VOICE` 预置音色（默认 `FunAudioLLM/CosyVoice2-0.5B:alex`，非克隆） |
+
+- **与 ASR/VLM 的 409 同样刻意不同级**：口播是增值项不是成片本体——无 key/失败都只是无声预览（fail-closed 不 fail 任务），整任务重发可再要口播。`GET /api/video-compose/tts/status` 供前端提示。
+- **Out**：批量成片；自动 publish；多模板 DSL；数字人/声音克隆；成片自动分发。
 
 ## 数据来源与演示价（第 50 / 55 刀）
 
@@ -366,7 +387,7 @@ web 构建校验：`cd apps/web && npm run build && npm run lint`
 
 ## 环境变量
 
-见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`（云转写，OpenAI 兼容 `POST {base}/audio/transcriptions`；**空 key = 不建客户端、不发请求**，切片页「自动转写」如实 409——见「自动转写」节）、`VLM_API_KEY` / `VLM_BASE_URL` / `VLM_MODEL`（看图出「图片描述」草稿，OpenAI 兼容 `POST {base}/chat/completions` 带 `image_url` 内联 base64；**空 key = 不建客户端、不发请求** = 无草稿，人洗补写兜底——见「图片资产」节）、`IMGGEN_API_KEY` / `IMGGEN_BASE_URL` / `IMGGEN_MODEL`（素材任务文生图配图，OpenAI 兼容 `POST {base}/images/generations`；**空 key = 配图步诚实跳过**（任务不 fail）——见「自媒体内容套件」节）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM/ASR 密钥只落到 `.env`。
+见 `.env.example`：`DATABASE_URL`、`STORAGE_ROOT`、`OPERATOR_PASSWORD`（种子操作者密码，默认 operator123 仅开发）、`SESSION_SECRET`（会话 cookie 签名密钥，生产必换）、`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（OpenAI 兼容 Chat Completions，只写本机 `.env`，禁止入库）、`ASR_API_KEY` / `ASR_BASE_URL` / `ASR_MODEL`（云转写，OpenAI 兼容 `POST {base}/audio/transcriptions`；**空 key = 不建客户端、不发请求**，切片页「自动转写」如实 409——见「自动转写」节）、`VLM_API_KEY` / `VLM_BASE_URL` / `VLM_MODEL`（看图出「图片描述」草稿，OpenAI 兼容 `POST {base}/chat/completions` 带 `image_url` 内联 base64；**空 key = 不建客户端、不发请求** = 无草稿，人洗补写兜底——见「图片资产」节）、`IMGGEN_API_KEY` / `IMGGEN_BASE_URL` / `IMGGEN_MODEL`（素材任务文生图配图，OpenAI 兼容 `POST {base}/images/generations`；**空 key = 配图步诚实跳过**（任务不 fail）——见「自媒体内容套件」节）、`TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL`（内容成片口播，OpenAI 兼容 `POST {base}/audio/speech`；**空 key = 预览无音轨**（任务不 fail，`with_tts=false` 如实标注）——见「内容成片」节）、`MCP_BEARER_TOKEN`（连接层独立凭证，空则 MCP 全部 401，不复用登录 cookie）、`CUSTOMER_TRUST_PROXY`（顾客通道 XFF 信任模式，空=直连忽略 XFF，反代部署设 true，语义见「顾客通道」节）、`CUSTOMER_TOKEN_TTL_SECONDS`（顾客会话令牌有效期，默认 86400=24h）、`WIDGET_ALLOWED_ORIGINS`（可嵌入小组件的宿主白名单，逗号分隔，**空=未启用嵌入**，见「可嵌入客服小组件」节）。真实 LLM/ASR 密钥只落到 `.env`。
 
 ## 仓库布局
 

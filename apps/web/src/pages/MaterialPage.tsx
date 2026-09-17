@@ -40,13 +40,14 @@ import { SkeletonRows } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
 import ProductSelect from '../components/ProductSelect'
 import { StatusBadge, TaskStatusBadge } from '../components/StateBadge'
+import VideoComposePanel from './VideoComposePanel'
 
 const EMPTY_TASKS = [] as const
 const EMPTY_CLIP_ASSETS: AssetListItem[] = []
 
 // 页签（对照 AssetsListPage 的 seg 模式）：任务列表=本模块自有状态机；
-// 切片汇入=已登记视频资产的只读视图（0015）
-const TABS = ['任务列表', '切片汇入'] as const
+// 切片汇入=已登记视频资产的只读视图（0015）；内容成片=第 98b 刀成片引擎面板
+const TABS = ['任务列表', '切片汇入', '内容成片'] as const
 type MaterialTab = (typeof TABS)[number]
 
 // 三模板（第 98 刀/ADR 0055）：站内=第 17 刀默认形态；小红书/口播各自带派生
@@ -458,7 +459,7 @@ export default function MaterialPage() {
     <div>
       <PageHeader
         title="素材中心"
-        desc="选模板生成内容（站内投放/小红书/口播，可选配图），双闸质检过线待抽检，通过才登记为资产。"
+        desc="选模板生成内容（站内投放/小红书/口播，可选配图），双闸质检过线待抽检，通过才登记为资产；内容成片一键排版出预览+剪映草稿。"
         actions={
           tab === '任务列表' ? (
             <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
@@ -480,14 +481,16 @@ export default function MaterialPage() {
             >
               {t}
               <span className={tab === t ? 'text-ink-3' : ''}>
-                {t === '任务列表' ? tasks.length : clipAssets.length}
+                {t === '任务列表' ? tasks.length : t === '切片汇入' ? clipAssets.length : ''}
               </span>
             </button>
           ))}
         </div>
       </PageHeader>
 
-      {tab === '切片汇入' ? (
+      {tab === '内容成片' ? (
+        <VideoComposePanel />
+      ) : tab === '切片汇入' ? (
         assetsQ.state.phase === 'loading' ? (
           <div className="panel">
             <SkeletonRows rows={5} />

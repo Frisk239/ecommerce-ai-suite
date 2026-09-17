@@ -57,7 +57,9 @@ jobs:
       - name: install ffmpeg
         # 第 46 刀起「真切 mp4」是契约的一部分（test_real_clips_integration → 无 ffmpeg
         # 会整例 skip）；显式装上，别赌 runner 自带（审计刀 9）。
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        # fonts-noto-cjk（第 98b 刀）：成片预览的 drawtext 字幕/AIGC 角标要渲染
+        # 中文，runner 默认无 CJK 字体（缺了只渲染豆腐块）——与 api 镜像同装。
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk
       - name: refuse skip-green
         run: |
           if [ -z "${SUITE_TEST_DATABASE_URL}" ]; then

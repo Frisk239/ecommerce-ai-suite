@@ -48,6 +48,14 @@ services:
       IMGGEN_API_KEY: ${IMGGEN_API_KEY:-}
       IMGGEN_BASE_URL: ${IMGGEN_BASE_URL:-https://api.siliconflow.cn/v1}
       IMGGEN_MODEL: ${IMGGEN_MODEL:-black-forest-labs/FLUX.1-schnell}
+      # 云 TTS 口播（第 98b 刀，ADR 0056）：内容成片预览的口播音轨（OpenAI 兼容
+      # audio/speech，默认硅基流动 CosyVoice2）。空 key = 不建客户端、不发请求
+      # ——预览成片无音轨（with_tts=false，任务详情如实标注）；voice 用厂商
+      # 预置音色（红线④：数字人/声音克隆 Out）。
+      TTS_API_KEY: ${TTS_API_KEY:-}
+      TTS_BASE_URL: ${TTS_BASE_URL:-https://api.siliconflow.cn/v1}
+      TTS_MODEL: ${TTS_MODEL:-FunAudioLLM/CosyVoice2-0.5B}
+      TTS_VOICE: ${TTS_VOICE:-FunAudioLLM/CosyVoice2-0.5B:alex}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
       CUSTOMER_TRUST_PROXY: ${CUSTOMER_TRUST_PROXY:-}  # 空=直连模式忽略 XFF；反代部署设 true（settings 空串回落默认）
       # 可嵌入小组件的宿主白名单（第 45b 刀）：逗号分隔 origin，空=未启用嵌入。

@@ -23,6 +23,10 @@ os.environ["VLM_API_KEY"] = ""
 # 时，素材任务的配图步也必须走「未配置 = 诚实跳过」（零外网调用）；要测配置态
 # 用例自己 monkeypatch services.imggen 的 generate_image（替身，不打真网）。
 os.environ["IMGGEN_API_KEY"] = ""
+# 第 98b 刀同口径：测试进程强制空 TTS 凭证——本机 .env 配了真 TTS_API_KEY 时，
+# 成片预览的口播也必须走「未配置 = 无声预览」（零外网调用）；要测配置态用例
+# 自己 monkeypatch services.tts 的 synthesize_speech（替身，不打真网）。
+os.environ["TTS_API_KEY"] = ""
 
 from pathlib import Path  # noqa: E402
 from urllib.parse import urlsplit, urlunsplit  # noqa: E402

@@ -380,6 +380,51 @@ class MaterialTask(Base):
     )
 
 
+class ComposeTask(Base):
+    """第 98b 刀（ADR 0056）：内容成片任务=成片模块自有的候选留档，不是中台对象。
+
+    plan 请求内同步完成「选材→时间线→预览成片+剪映草稿」后落一行 planned
+    （AI 排版结果是**候选**：预览/草稿供人看人改，不是成品资产——字节住
+    对象存储 ``compose/`` 暂存前缀，同配图/录像先例）；publish 是人闸门确认
+    （可带剪映导出的成品 mp4），把文案要点串联经**双闸复用**（material 的
+    规则+LLM 质检，红线③）登记 material 资产后转 registered（终态）。
+
+    timeline 是排版结果的完整留档（``[{type, asset_id, start, dur, text?}]``
+    JSONB）；``with_tts`` 如实记预览有无口播（无 TTS key=无声预览，诚实标注）；
+    ``note`` 记选材口径的回执事实（如「素材不足，以图+文案补足」）。
+    final_video_object_key：publish 时操作者上传的成品 mp4 暂存键（可选——
+    不传则登记用的文案即预览时间线的串联；字节只是留档不是资产，ADR 0056）。
+    """
+
+    __tablename__ = "compose_tasks"
+    __table_args__ = (Index("ix_compose_tasks_status", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    # planned=已出时间线+预览+草稿（待人审） / registered=已登记 material 资产（终态）
+    status: Mapped[str] = mapped_column(String(16))
+    template: Mapped[str] = mapped_column(String(20))
+    # 排版时间线候选（services.video_compose 的输出形状，JSONB 留档可回放）
+    timeline: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    duration_seconds: Mapped[float]
+    with_tts: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    note: Mapped[str | None] = mapped_column(String(500))
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    # 预览成片 / 剪映草稿包的对象存储暂存键（compose/ 前缀，不是资产）
+    preview_object_key: Mapped[str] = mapped_column(String(500))
+    draft_object_key: Mapped[str] = mapped_column(String(500))
+    # publish 上传的成品 mp4 暂存键（无上传为 NULL）
+    final_video_object_key: Mapped[str | None] = mapped_column(String(500))
+    # publish 登记出的素材资产（kind=material、source_kind=upload；UI 跳治理台锚）
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ClipRecording(Base):
     """第 46 刀：直播源录像=切片模块自有的上传字节，不是中台对象（同候选 0014）。
 
