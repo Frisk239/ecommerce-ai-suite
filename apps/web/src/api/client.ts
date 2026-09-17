@@ -69,6 +69,14 @@ export function assetMediaUrl(assetId: number, versionNo?: number): string {
     : `${API_BASE}/assets/${assetId}/media`
 }
 
+/** 切片候选帧缩略 URL（第 114 刀 C，W11）：绑定源录像的候选出真画面帧。
+ *
+ * ``recordingId`` 进 ``?r=`` 只作浏览器换缓存键（改绑后同一候选换一份录像，
+ * URL 必须变才能绕开 max-age 缓存）——服务端不读这个参数。 */
+export function clipFrameUrl(candidateId: number, recordingId: number): string {
+  return `${API_BASE}/clips/candidates/${candidateId}/frame?r=${recordingId}`
+}
+
 export interface PublishGateDetail {
   missing: string[]
   unconfirmed: string[]

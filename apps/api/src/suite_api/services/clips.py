@@ -74,6 +74,12 @@ def _parse_hms(value: str) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
+def parse_timecode_seconds(value: str) -> int:
+    """公共别名（第 114 刀 C，W11）：候选帧端点与切段共用同一 HH:MM:SS 解析
+    ——路由不 import 私有名，两处口径（切段/抽帧）不可能漂移。"""
+    return _parse_hms(value)
+
+
 def cut_clip_bytes(storage: ObjectStorage, recording: ClipRecording, start: str, end: str) -> bytes:
     """从源录像真切 [start, end) 为 mp4 字节（第 46 刀裁决 3）。
 

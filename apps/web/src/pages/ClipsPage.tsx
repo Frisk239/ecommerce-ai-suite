@@ -9,23 +9,31 @@
 // 单向状态机（0039）：已登记卡不再出勾选框，只给「已登记 A-xxxx」链跳治理台
 // 详情——不可撤销不可重切。交互状态对照原型 Clips.tsx 冻结口径（勾选态/批量
 // 按钮/登记后卡换徽章/单向），视觉照 UX-NOTES §二点七（实色、无 hover 位移）。
+// 第 114 刀 C（W11/W13/W14）：绑了源录像的候选卡出**真画面帧**（0039 的「不用
+// 假截图」只对无字节的 demo 候选仍成立）；状态/源录像/关键词三维筛选；卡片角
+// 「详情」抽屉（不抢勾选手势——点击卡片仍是拣选工作台的高频动作）。
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowUDownLeft,
   CheckSquare,
   FilmSlate,
+  Info,
+  MagnifyingGlass,
   Square,
   UploadSimple,
   Warning,
   Waveform,
+  X,
 } from '@phosphor-icons/react'
-import { detailText } from '../api/client'
+import { clipFrameUrl, detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { ClipCandidate, ClipRecording } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 import { formatAssetId, formatClipId } from '../labels'
+import { matchesAllTerms, splitTerms } from '../search'
 import { ErrorBanner, SuccessBanner } from '../components/Banner'
 import ActionError from '../components/ActionError'
 import Empty from '../components/Empty'
@@ -93,6 +101,147 @@ function PickReceipt({ note, assetIds }: { note: string; assetIds: number[] }) {
   )
 }
 
+/** 候选画面占位框：无源录像（demo 候选）或帧加载失败时用——0039「不用假截图」
+ * 对没有视频字节的候选仍是诚实设计（有帧可抽的走 CandidateFrame 真图）。 */
+function FramePlaceholder({ candidate, tall = false }: { candidate: ClipCandidate; tall?: boolean }) {
+  return (
+    <div
+      className={`flex ${tall ? 'h-48' : 'h-24'} items-center justify-center gap-2 rounded-[4px] border border-line-3 bg-fill/70 text-ink-3`}
+      title={
+        candidate.recording === null
+          ? 'demo 候选没有视频字节：占位不造假（0039）'
+          : '帧加载失败，可稍后刷新重试'
+      }
+    >
+      <FilmSlate aria-hidden size={tall ? 24 : 18} />
+      <span className="font-mono text-xs tabular-nums">{formatTimecodeRange(candidate)}</span>
+    </div>
+  )
+}
+
+/** 候选帧（W11）：绑了源录像的候选向帧端点要 timecode_start 处的真画面；
+ * 失败（越界/损坏/抖动）回退占位框——不把破图钉在屏幕上。 */
+function CandidateFrame({ candidate, tall = false }: { candidate: ClipCandidate; tall?: boolean }) {
+  const [failed, setFailed] = useState(false)
+  if (failed || candidate.recording === null) {
+    return <FramePlaceholder candidate={candidate} tall={tall} />
+  }
+  return (
+    <img
+      src={clipFrameUrl(candidate.id, candidate.recording.id)}
+      alt={`${candidate.product_name}候选 ${candidate.timecode_start} 处的画面`}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={`${tall ? 'h-48' : 'h-24'} w-full rounded-[4px] border border-line-3 bg-canvas object-cover`}
+    />
+  )
+}
+
+/** 抽屉元信息行（W14）：dt 定宽，墨线分层——与详情页元数据同语言。 */
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <dt className="w-20 shrink-0 pt-0.5 text-xs text-ink-3">{label}</dt>
+      <dd className="min-w-0 flex-1 text-ink-2">{children}</dd>
+    </div>
+  )
+}
+
+/** 候选详情抽屉（W14）：完整转写/绑定录像/时间码/归属/登记锚——入口在卡片头
+ * 的「详情」小钮，**不抢勾选手势**（卡片点击仍是拣选工作台的高频动作）。 */
+function CandidateDetailDrawer({
+  candidate,
+  onClose,
+}: {
+  candidate: ClipCandidate | null
+  onClose: () => void
+}) {
+  useEscapeClose(candidate !== null, onClose, true)
+  if (candidate === null) return null
+  const assetId = candidate.registered_asset_id
+  const registered = candidate.status === 'registered' && assetId !== null
+  return (
+    <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="切片候选详情">
+      <div className="modal-backdrop absolute inset-0" onClick={onClose} aria-hidden />
+      <aside className="drawer-panel absolute inset-y-0 right-0 flex w-full max-w-lg flex-col">
+        <div className="flex items-center gap-2 border-b border-line-2 px-4 py-3">
+          <FilmSlate aria-hidden size={15} className="text-ink-3" />
+          <div className="min-w-0 flex-1 truncate text-[14px] font-semibold text-ink">
+            候选详情 · {formatClipId(candidate.id)}
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onClose}
+            aria-label="关闭候选详情"
+          >
+            <X aria-hidden size={14} />
+          </button>
+        </div>
+        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <CandidateFrame candidate={candidate} tall />
+          <dl className="space-y-1.5 text-[13px]">
+            <DetailRow label="状态">
+              {registered ? (
+                <span className="badge badge-published">已登记（单向终态，不可重拣）</span>
+              ) : (
+                <span className="badge badge-ingested">待拣（可勾选）</span>
+              )}
+            </DetailRow>
+            <DetailRow label="商品归属">
+              {candidate.product_id === null ? (
+                <span className="text-ink-3">未归属（云转写按录像整段生成，归属是人/治理动作，不编造）</span>
+              ) : (
+                `${candidate.product_name}（P-${String(candidate.product_id).padStart(4, '0')}）`
+              )}
+            </DetailRow>
+            <DetailRow label="时间码">
+              <span className="font-mono text-xs tabular-nums">{formatTimecodeRange(candidate)}</span>
+            </DetailRow>
+            <DetailRow label="转写来源">
+              {TRANSCRIPT_SOURCE_LABELS[candidate.transcript_source] ?? candidate.transcript_source}
+              <span className="ml-1 text-xs text-ink-3">（只读，来源是既成事实）</span>
+            </DetailRow>
+            <DetailRow label="源录像">
+              {candidate.recording !== null ? (
+                <span title={`对象字节 ${formatBytes(candidate.recording.size_bytes)}`}>
+                  《{candidate.recording.label}》（{formatBytes(candidate.recording.size_bytes)}，已上传）
+                </span>
+              ) : (
+                <span className="text-ink-3">
+                  未绑定——直播源「{candidate.source_video_label}」没有视频字节（demo），拣选走时间码文本
+                </span>
+              )}
+            </DetailRow>
+          </dl>
+          <div>
+            <div className="mb-1.5 text-xs font-medium text-ink-3">转写全文</div>
+            <pre className="whitespace-pre-wrap break-words rounded-[6px] border border-line-2 bg-canvas/40 px-3 py-2.5 font-sans text-[13px] leading-6 text-ink-2">
+              {candidate.transcript}
+            </pre>
+          </div>
+          {registered && assetId !== null ? (
+            <Link
+              to={`/platform/assets/${assetId}`}
+              className="btn btn-secondary w-full"
+              onClick={onClose}
+              title="治理台：补转写、发布（发布后客服可引用）"
+            >
+              查看登记出的资产 {formatAssetId(assetId)}
+            </Link>
+          ) : (
+            <div className="text-xs leading-5 text-ink-3">
+              {candidate.recording !== null
+                ? `勾选后拣选将从《${candidate.recording.label}》切出 ${formatTimecodeRange(candidate)} 的真 mp4 片段，登记为待人洗视频资产（转写预置为版本字段）。`
+                : '该候选无源录像：勾选后拣选仍登记时间码转写文本（旧路径，待人洗）。'}
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  )
+}
+
 export default function ClipsPage() {
   const fetcher = useCallback(() => api.listClipCandidates(), [])
   const { state, reload } = useApiData(fetcher)
@@ -121,7 +270,42 @@ export default function ClipsPage() {
   // 单向：勾选只对 pending 有意义；reload 后已登记/被移除的选中项自动出列
   const registrable = clips.filter((c) => c.status === 'pending' && selected.has(c.id))
   const pendingCount = clips.filter((c) => c.status === 'pending').length
+  const registeredCount = clips.filter((c) => c.status === 'registered').length
   const currentRecording = latestRecording(clips)
+
+  // 三维筛选（W13）：状态/源录像/关键词各管一维——客户端过滤（数据量小），
+  // 不进 URL（口径对齐资产页：切筛选保留输入、刷新即清）。
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'registered'>('all')
+  const [recordingFilter, setRecordingFilter] = useState<'all' | 'none' | number>('all')
+  const [query, setQuery] = useState('')
+  // 候选详情抽屉（W14）：锚定打开时点的候选快照（候选字段不可变，status 除外）
+  const [detailCandidate, setDetailCandidate] = useState<ClipCandidate | null>(null)
+
+  const terms = useMemo(() => splitTerms(query), [query])
+  const visibleClips = useMemo(() => {
+    let rows = clips
+    if (statusFilter !== 'all') rows = rows.filter((c) => c.status === statusFilter)
+    if (recordingFilter !== 'all') {
+      rows = rows.filter((c) =>
+        recordingFilter === 'none' ? c.recording === null : c.recording?.id === recordingFilter,
+      )
+    }
+    if (terms.length > 0) {
+      rows = rows.filter((c) =>
+        matchesAllTerms(
+          [
+            c.product_name.toLowerCase(),
+            c.transcript.toLowerCase(),
+            c.source_video_label.toLowerCase(),
+            String(c.id),
+            formatClipId(c.id).toLowerCase(),
+          ],
+          terms,
+        ),
+      )
+    }
+    return rows
+  }, [clips, statusFilter, recordingFilter, terms])
 
   // ASR 配置状态（第 93 刀）：拉不到就按「未知」处理——按钮仍可点，由后端 409
   // 给准确文案（前端不做假的禁用判断）
@@ -434,6 +618,85 @@ export default function ClipsPage() {
         </div>
       </PageHeader>
 
+      {/* 三维筛选（W13）：几十张候选卡平铺靠滚不是办法——demo 源与真实 ASR 候选
+          混排，状态/源录像/关键词各管一维；口径对齐资产页（客户端过滤，不进 URL）。 */}
+      {state.phase === 'ok' && clips.length > 0 ? (
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="seg" role="tablist" aria-label="候选状态筛选">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={statusFilter === 'all'}
+              className={`seg-btn ${statusFilter === 'all' ? 'seg-btn-active' : ''}`}
+              onClick={() => setStatusFilter('all')}
+            >
+              全部 <span className={statusFilter === 'all' ? 'text-ink-3' : ''}>{clips.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={statusFilter === 'pending'}
+              className={`seg-btn ${statusFilter === 'pending' ? 'seg-btn-active' : ''}`}
+              onClick={() => setStatusFilter('pending')}
+              title="还没登记的候选（可勾选拣选）"
+            >
+              待拣 <span className={statusFilter === 'pending' ? 'text-ink-3' : ''}>{pendingCount}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={statusFilter === 'registered'}
+              className={`seg-btn ${statusFilter === 'registered' ? 'seg-btn-active' : ''}`}
+              onClick={() => setStatusFilter('registered')}
+              title="已登记为资产（单向终态，卡上有 A-xxxx 链接）"
+            >
+              已登记 <span className={statusFilter === 'registered' ? 'text-ink-3' : ''}>{registeredCount}</span>
+            </button>
+          </div>
+          <select
+            className="input h-7 max-w-56 text-[12px]"
+            aria-label="源录像筛选"
+            value={String(recordingFilter)}
+            onChange={(e) => {
+              const value = e.target.value
+              setRecordingFilter(value === 'all' || value === 'none' ? value : Number(value))
+            }}
+          >
+            <option value="all">全部源录像</option>
+            <option value="none">未绑定（demo 候选）</option>
+            {recordings.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}（{formatBytes(r.size_bytes)}）
+              </option>
+            ))}
+          </select>
+          <div className="relative ml-auto w-full max-w-xs">
+            <MagnifyingGlass
+              aria-hidden
+              size={13}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-caption"
+            />
+            <input
+              className="input h-7 w-full pl-8 pr-8 text-[12px]"
+              aria-label="搜索候选"
+              placeholder="搜索商品 / 转写 / ID（多词空格分隔）…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query !== '' ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm absolute right-1 top-1/2 -translate-y-1/2"
+                aria-label="清空搜索"
+                onClick={() => setQuery('')}
+              >
+                <X aria-hidden size={12} />
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {state.phase === 'loading' ? (
         <div className="panel">
           <SkeletonRows rows={6} />
@@ -453,9 +716,30 @@ export default function ClipsPage() {
             hint="直播结束后切出候选（自动切出/ASR 留部署刀；v1 由启动种子灌入 mock 候选）。"
           />
         </div>
+      ) : visibleClips.length === 0 ? (
+        <div className="rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface/60">
+          <Empty
+            icon={<MagnifyingGlass aria-hidden size={24} />}
+            title="当前筛选下没有候选"
+            hint={`筛选或搜索把 ${clips.length} 条候选收窄到了 0——清空搜索、或把状态/源录像切回「全部」即可恢复。`}
+            action={
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setStatusFilter('all')
+                  setRecordingFilter('all')
+                  setQuery('')
+                }}
+              >
+                清除全部筛选
+              </button>
+            }
+          />
+        </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {clips.map((c) => {
+          {visibleClips.map((c) => {
             const isSel = c.status === 'pending' && selected.has(c.id)
             const assetId = c.registered_asset_id
             const registered = c.status === 'registered' && assetId !== null
@@ -482,13 +766,26 @@ export default function ClipsPage() {
                   <span className="kind-chip">{c.product_name}</span>
                   <span className="flex-1" />
                   <span className="font-mono text-xs tabular-nums text-caption">{formatTimecodeRange(c)}</span>
+                  {/* 详情入口（W14）：不抢勾选手势（stopPropagation），已登记卡也有——
+                      转写全文/绑定录像/登记锚都在抽屉里 */}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm shrink-0"
+                    aria-label={`查看 ${formatClipId(c.id)} 详情`}
+                    title="候选详情：完整转写 / 绑定源录像 / 登记锚"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setDetailCandidate(c)
+                    }}
+                  >
+                    <Info aria-hidden size={13} />
+                  </button>
                 </div>
 
-                {/* 视频占位：灰阶画面 + 时间码，不用假截图（0039：候选不是视频字节） */}
-                <div className="flex h-24 items-center justify-center gap-2 rounded-[4px] border border-line-3 bg-fill/70 text-ink-3">
-                  <FilmSlate aria-hidden size={18} />
-                  <span className="font-mono text-xs tabular-nums">{formatTimecodeRange(c)}</span>
-                </div>
+                {/* 画面（W11）：绑了源录像的候选出真帧（timecode_start 处，≤480px，
+                    与洗帧同规格）；无源录像（demo）保持占位——0039「不用假截图」
+                    只对没有视频字节的候选仍成立 */}
+                <CandidateFrame candidate={c} />
 
                 <p className="line-clamp-2 text-sm leading-6 text-ink-2" title={c.transcript}>
                   {c.transcript}
@@ -533,6 +830,9 @@ export default function ClipsPage() {
       <div className="mt-4 text-xs leading-5 text-caption">
         登记后是种类=视频的中台资产（待人洗）。有源录像的候选登记的是切出的真 mp4 片段，转写作为版本字段供检索；无源录像仍是时间码文本。未发布前客服检索不到；发布后可被引用。素材中心「切片汇入」列出这些视频，不另造任务。
       </div>
+
+      {/* 候选详情抽屉（W14）：入口在卡片头「详情」钮 */}
+      <CandidateDetailDrawer candidate={detailCandidate} onClose={() => setDetailCandidate(null)} />
     </div>
   )
 }

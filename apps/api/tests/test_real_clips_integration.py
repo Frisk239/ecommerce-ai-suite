@@ -394,3 +394,57 @@ def test_claim_release_puts_candidate_back_to_pending(api: ApiFixture) -> None:
         db.refresh(candidate)
         assert candidate.status == "pending"
         assert candidate.registered_asset_id is None
+
+
+# ---------- 5. 候选帧缩略端点（第 114 刀 C，W11） ----------
+
+
+def test_candidate_frame_thumbnail(api: ApiFixture, test_mp4: bytes) -> None:
+    """绑了录像的候选出真帧 jpeg（≤480px，洗帧同规格）；同键二次请求走缓存。"""
+    client, _ = api
+    _login(client)
+    uploaded = client.post(
+        "/api/clips/recordings",
+        files={"file": ("frame-src.mp4", test_mp4, "video/mp4")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    recording_id = int(uploaded.json()["id"])
+    candidate_id = _insert_candidate(
+        start="00:00:01",
+        end="00:00:02",
+        transcript="帧缩略测试候选",
+        recording_id=recording_id,
+    )
+
+    first = client.get(f"/api/clips/candidates/{candidate_id}/frame")
+    assert first.status_code == 200, first.text
+    assert first.headers["content-type"] == "image/jpeg"
+    assert first.content[:2] == b"\xff\xd8"  # JPEG 魔数（真抽帧，不是假图）
+    # 缓存命中：同键二次请求字节一致（同一份派生帧，不重跑 ffmpeg）
+    second = client.get(f"/api/clips/candidates/{candidate_id}/frame")
+    assert second.status_code == 200 and second.content == first.content
+
+
+def test_candidate_frame_gates(api: ApiFixture) -> None:
+    """404 候选不存在；409 未绑源录像（demo 候选没有视频字节）；422 坏时间码；401 未登录。"""
+    client, _ = api
+    _login(client)
+    assert client.get("/api/clips/candidates/999999/frame").status_code == 404
+
+    unbound = _insert_candidate(start="00:00:01", end="00:00:02", transcript="未绑录像的候选")
+    assert client.get(f"/api/clips/candidates/{unbound}/frame").status_code == 409
+
+    fake = client.post(
+        "/api/clips/recordings", files={"file": ("fake.mp4", _FAKE_MP4, "video/mp4")}
+    )
+    assert fake.status_code == 201, fake.text
+    bad_tc = _insert_candidate(
+        start="0:01",
+        end="00:00:02",
+        transcript="坏时间码候选",
+        recording_id=int(fake.json()["id"]),
+    )
+    assert client.get(f"/api/clips/candidates/{bad_tc}/frame").status_code == 422
+
+    client.cookies.clear()
+    assert client.get(f"/api/clips/candidates/{unbound}/frame").status_code == 401
