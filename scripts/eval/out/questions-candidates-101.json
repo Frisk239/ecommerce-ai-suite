@@ -1,0 +1,5343 @@
+{
+  "source": "service_messages (customer -> next agent kind/citations)",
+  "db": "postgresql://suite:suite@localhost:5433/suite",
+  "probe_patterns": [
+    "^第\\d+问[：:]",
+    "thermos\\s+capacity",
+    "\\bzxqw\\b|\\btiuu\\b|838383"
+  ],
+  "occurrences": 534,
+  "unique_questions": 210,
+  "candidates": [
+    {
+      "question": "保温杯的净含量是多少？",
+      "count": 44,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "保温杯的净含量是多少？"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "M&M white的条码是多少",
+      "count": 40,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.275,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 235,
+          "version_no": 1,
+          "title": "Apple bandit 规格（OFF）"
+        },
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "怎么退货？",
+      "count": 13,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.1538,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 6,
+          "version_no": 1,
+          "title": "退货政策说明"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "雀巢咖啡的配料",
+      "count": 12,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 245,
+          "version_no": 1,
+          "title": "1MD Nutrition 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "会员积分怎么兑换？",
+      "count": 10,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.6,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "你们卖什么？",
+      "count": 10,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.2,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "保温杯的材质是什么？",
+      "count": 10,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.1,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "钛钢保温杯有货吗？",
+      "count": 10,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "钛钢保温杯"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "你们有笔记本吗？",
+      "count": 8,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.5,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "我的订单到哪了",
+      "count": 8,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 224,
+          "version_no": 1,
+          "title": "subscription_inquiry/manage_pay_bill · I'm trying to find out about m"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "退货政策是什么",
+      "count": 8,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "退货政策"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 13,
+          "version_no": 4,
+          "title": "退货政策"
+        },
+        {
+          "asset_id": 6,
+          "version_no": 1,
+          "title": "退货政策说明"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "你们几点上班",
+      "count": 7,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.2857,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 17,
+          "version_no": 2,
+          "title": "补口径 · 你们几点上班"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温杯刻字怎么收费？",
+      "count": 7,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.4286,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "还有吗",
+      "count": 7,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.1429,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "SO-1001 我想退货",
+      "count": 6,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Xperia Ear 是什么品牌的耳机",
+      "count": 6,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        },
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "净含量是多少",
+      "count": 6,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "我的订单 SO-1001 到哪了？",
+      "count": 6,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 233,
+          "version_no": 1,
+          "title": "Toneop 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "笔记本多少钱？",
+      "count": 6,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.1667,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "钛钢保温杯多少钱？",
+      "count": 6,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "钛钢保温杯"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "笔记本电脑多少钱？",
+      "count": 5,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.4,
+      "suggest": [],
+      "name_hits": [
+        "笔记本电脑"
+      ],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "那它的材质是什么",
+      "count": 5,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 13,
+          "version_no": 4,
+          "title": "退货政策"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "雀巢咖啡的配料是什么",
+      "count": 5,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 245,
+          "version_no": 1,
+          "title": "1MD Nutrition 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "SO-1001",
+      "count": 4,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 233,
+          "version_no": 1,
+          "title": "Toneop 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温杯保温能坚持几个小时？",
+      "count": 4,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.5,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "我要转人工",
+      "count": 4,
+      "agent_kind": "handoff",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "手机多少钱？",
+      "count": 4,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 47,
+          "version_no": 1,
+          "title": "平板评论 · 在你家买个手机、耳塞都没有、差评"
+        },
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        },
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "有带支架的显示器吗",
+      "count": 4,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "显示器"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 503,
+          "version_no": 2,
+          "title": "<无标题>"
+        },
+        {
+          "asset_id": 11,
+          "version_no": 1,
+          "title": "现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "有现货吗",
+      "count": 4,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "物流怎么样",
+      "count": 4,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 78,
+          "version_no": 1,
+          "title": "水果评论 · 买了六次了，每次只买80mm ，每次"
+        },
+        {
+          "asset_id": 80,
+          "version_no": 1,
+          "title": "水果评论 · 水份多，味道甜，没有坏果，物流速度快"
+        },
+        {
+          "asset_id": 210,
+          "version_no": 1,
+          "title": "水果评论 · 果子很甜，很脆，应该是真的正品，物流"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "羊绒围巾起球怎么处理？",
+      "count": 4,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.5,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 261,
+          "version_no": 1,
+          "title": "羊绒围巾起球处理"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "退货运费多少钱",
+      "count": 4,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.25,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "钛钢保温壶的净含量是多少",
+      "count": 4,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.5,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Erdbeeren的净含量是多少",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "Erdbeeren"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 237,
+          "version_no": 1,
+          "title": "Erdbeeren 规格（OFF）"
+        },
+        {
+          "asset_id": 237,
+          "version_no": 1,
+          "title": "Erdbeeren 规格（OFF）"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Erdbeeren的条码是多少",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "Erdbeeren"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 237,
+          "version_no": 1,
+          "title": "Erdbeeren 规格（OFF）"
+        },
+        {
+          "asset_id": 237,
+          "version_no": 1,
+          "title": "Erdbeeren 规格（OFF）"
+        },
+        {
+          "asset_id": 223,
+          "version_no": 1,
+          "title": "shipping_issue/missing · Hi, I never received my order."
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Fitpiggy的条码是多少",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "Fitpiggy"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 226,
+          "version_no": 1,
+          "title": "Fitpiggy 规格（OFF）"
+        },
+        {
+          "asset_id": 226,
+          "version_no": 1,
+          "title": "Fitpiggy 规格（OFF）"
+        },
+        {
+          "asset_id": 226,
+          "version_no": 1,
+          "title": "Fitpiggy 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "M&M black的条码是多少",
+      "count": 3,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        },
+        {
+          "asset_id": 236,
+          "version_no": 1,
+          "title": "Bodylab 规格（OFF）"
+        },
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "M&M white的净含量是多少",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "SO-1001 退货进度怎么样",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Vivo Y300 是什么品牌？",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 268,
+          "version_no": 1,
+          "title": "Vivo Y300 规格"
+        },
+        {
+          "asset_id": 268,
+          "version_no": 1,
+          "title": "Vivo Y300 规格"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "乐事薯片的配料是什么",
+      "count": 3,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 245,
+          "version_no": 1,
+          "title": "1MD Nutrition 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温杯有货吗？",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "到货了吗",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.3333,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "发货了吗",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.3333,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        },
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "可以开发票吗",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.6667,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        },
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "戴森吸尘器的配料是什么",
+      "count": 3,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 245,
+          "version_no": 1,
+          "title": "1MD Nutrition 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "手机壳有货吗？",
+      "count": 3,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 47,
+          "version_no": 1,
+          "title": "平板评论 · 在你家买个手机、耳塞都没有、差评"
+        },
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        },
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "无人机多少钱？",
+      "count": 3,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "星巴克杯子的价格是多少",
+      "count": 3,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 417,
+          "version_no": 1,
+          "title": "平板评论 · 真的很不错的产品，大小适中，价格优惠"
+        },
+        {
+          "asset_id": 27,
+          "version_no": 1,
+          "title": "手机评论 · 实际上这个机子就是多浦达700的OE"
+        },
+        {
+          "asset_id": 160,
+          "version_no": 1,
+          "title": "酒店评论 · 周边环境不好，除了酒店没有别的。一个"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "电脑多少钱？",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.3333,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "笔记本电脑怎么卖？",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.3333,
+      "suggest": [],
+      "name_hits": [
+        "笔记本电脑"
+      ],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "退货运费谁承担",
+      "count": 3,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.3333,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "饮用水的保质期是多久？",
+      "count": 3,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 15,
+          "version_no": 1,
+          "title": "瓶装水：日常补水随身装"
+        },
+        {
+          "asset_id": 264,
+          "version_no": 1,
+          "title": "现场踩给各位看：瓶身轻但抗压，整箱堆放不变形。保质期12个月，常温避光存放就行。"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Xperia Ear Duo 什么时候上市的",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        },
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "举报你们",
+      "count": 2,
+      "agent_kind": "handoff",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "乐事薯片有货吗",
+      "count": 2,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "书多少钱？",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.5,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "书还有么",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "仓库在哪里",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 260,
+          "version_no": 1,
+          "title": "仓库存储位置说明"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "你们老板叫什么名字？",
+      "count": 2,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "保温杯多少钱？",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "发票怎么开具？",
+      "count": 2,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        },
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "孕妇可以喝这个茶吗？",
+      "count": 2,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "客服态度好吗",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 29,
+          "version_no": 1,
+          "title": "衣服评论 · 发货速度慢的死、客服还有一句没一句的"
+        },
+        {
+          "asset_id": 441,
+          "version_no": 1,
+          "title": "手机评论 · 有回音而且回音很大，很讨厌，并且售后"
+        },
+        {
+          "asset_id": 225,
+          "version_no": 1,
+          "title": "account_access/recover_username · Hi! I forogt my username so i "
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "彩电咋样卖",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "戴森吸尘器的净含量是多少",
+      "count": 2,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "找人工客服",
+      "count": 2,
+      "agent_kind": "handoff",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 225,
+          "version_no": 1,
+          "title": "account_access/recover_username · Hi! I forogt my username so i "
+        },
+        {
+          "asset_id": 223,
+          "version_no": 1,
+          "title": "shipping_issue/missing · Hi, I never received my order."
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "投诉！要真人",
+      "count": 2,
+      "agent_kind": "handoff",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "显示器有货吗",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "显示器"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 503,
+          "version_no": 2,
+          "title": "<无标题>"
+        },
+        {
+          "asset_id": 11,
+          "version_no": 1,
+          "title": "现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "有没有白色款",
+      "count": 2,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "物流咋样",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.5,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 78,
+          "version_no": 1,
+          "title": "水果评论 · 买了六次了，每次只买80mm ，每次"
+        },
+        {
+          "asset_id": 80,
+          "version_no": 1,
+          "title": "水果评论 · 水份多，味道甜，没有坏果，物流速度快"
+        },
+        {
+          "asset_id": 210,
+          "version_no": 1,
+          "title": "水果评论 · 果子很甜，很脆，应该是真的正品，物流"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "瓶装水多少钱？",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "瓶装水"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 15,
+          "version_no": 1,
+          "title": "瓶装水：日常补水随身装"
+        },
+        {
+          "asset_id": 15,
+          "version_no": 1,
+          "title": "瓶装水：日常补水随身装"
+        },
+        {
+          "asset_id": 505,
+          "version_no": 1,
+          "title": "瓶装水 · 实拍帧 00:05"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "瓶装水有货吗",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "瓶装水"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 15,
+          "version_no": 1,
+          "title": "瓶装水：日常补水随身装"
+        },
+        {
+          "asset_id": 15,
+          "version_no": 1,
+          "title": "瓶装水：日常补水随身装"
+        },
+        {
+          "asset_id": 505,
+          "version_no": 1,
+          "title": "瓶装水 · 实拍帧 00:05"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "笔记本电脑刻字怎么收费？",
+      "count": 2,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "笔记本电脑"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "羊绒围巾起球怎么办",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 261,
+          "version_no": 1,
+          "title": "羊绒围巾起球处理"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "能刻字吗",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.5,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "订单 SO-9999 到哪了？",
+      "count": 2,
+      "agent_kind": "handoff",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 224,
+          "version_no": 1,
+          "title": "subscription_inquiry/manage_pay_bill · I'm trying to find out about m"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "那个多少钱？",
+      "count": 2,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "那多少钱呢",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "那它的上市年份呢",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 485,
+          "version_no": 1,
+          "title": "Sennheiser HD 800 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "钛钢保温壶的材质是什么",
+      "count": 2,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.5,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "钛钢保温杯 500ml 316不锈钢 日常饮水随行的净含量是多少",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "钛钢保温杯怎么保养，收费吗",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "钛钢保温杯"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "零食多少钱？",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "食品多少钱？",
+      "count": 2,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "食品"
+      ],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "316不锈钢饮水随行怎么样",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Cardiofitmd的品牌是1MD Nutrition吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "1MD Nutrition"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 245,
+          "version_no": 1,
+          "title": "1MD Nutrition 规格（OFF）"
+        },
+        {
+          "asset_id": 244,
+          "version_no": 1,
+          "title": "Nestle Carnation 规格（OFF）"
+        },
+        {
+          "asset_id": 245,
+          "version_no": 1,
+          "title": "1MD Nutrition 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Chocolate n3 的净含量是多少？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Chocolate n3的销售国家",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        },
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        },
+        {
+          "asset_id": 238,
+          "version_no": 1,
+          "title": "Nestlé 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Chocolate n3的销售国家是什么",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        },
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        },
+        {
+          "asset_id": 238,
+          "version_no": 1,
+          "title": "Nestlé 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Clicks Communicator 多少钱？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        },
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        },
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Erdbeeren 巧克力的条码是多少",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "Erdbeeren"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 237,
+          "version_no": 1,
+          "title": "Erdbeeren 规格（OFF）"
+        },
+        {
+          "asset_id": 237,
+          "version_no": 1,
+          "title": "Erdbeeren 规格（OFF）"
+        },
+        {
+          "asset_id": 223,
+          "version_no": 1,
+          "title": "shipping_issue/missing · Hi, I never received my order."
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Erdbeeren 酸奶的净含量是多少",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "Erdbeeren"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 237,
+          "version_no": 1,
+          "title": "Erdbeeren 规格（OFF）"
+        },
+        {
+          "asset_id": 237,
+          "version_no": 1,
+          "title": "Erdbeeren 规格（OFF）"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "I never received my order, what should I do",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 223,
+          "version_no": 1,
+          "title": "shipping_issue/missing · Hi, I never received my order."
+        },
+        {
+          "asset_id": 223,
+          "version_no": 1,
+          "title": "shipping_issue/missing · Hi, I never received my order."
+        },
+        {
+          "asset_id": 223,
+          "version_no": 1,
+          "title": "shipping_issue/missing · Hi, I never received my order."
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "M&M white 条码",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 235,
+          "version_no": 1,
+          "title": "Apple bandit 规格（OFF）"
+        },
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "M&M white是什么",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 235,
+          "version_no": 1,
+          "title": "Apple bandit 规格（OFF）"
+        },
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Meizu 20 Infinity 多少钱？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 223,
+          "version_no": 1,
+          "title": "shipping_issue/missing · Hi, I never received my order."
+        },
+        {
+          "asset_id": 223,
+          "version_no": 1,
+          "title": "shipping_issue/missing · Hi, I never received my order."
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Motorola Edge 60 Pro 多少钱？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        },
+        {
+          "asset_id": 238,
+          "version_no": 1,
+          "title": "Nestlé 规格（OFF）"
+        },
+        {
+          "asset_id": 226,
+          "version_no": 1,
+          "title": "Fitpiggy 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "SO-1001 到哪了",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 233,
+          "version_no": 1,
+          "title": "Toneop 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "SO-1001 退货进度",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "SO-1002 到哪了",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 238,
+          "version_no": 1,
+          "title": "Nestlé 规格（OFF）"
+        },
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "SO-1002 我想退货",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 238,
+          "version_no": 1,
+          "title": "Nestlé 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "SO-1002 退货进度",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 238,
+          "version_no": 1,
+          "title": "Nestlé 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "SO-1003 我想退货",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 243,
+          "version_no": 1,
+          "title": "Lindt Vollmilch Schokolade 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Toofan 的配料是什么",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 238,
+          "version_no": 1,
+          "title": "Nestlé 规格（OFF）"
+        },
+        {
+          "asset_id": 233,
+          "version_no": 1,
+          "title": "Toneop 规格（OFF）"
+        },
+        {
+          "asset_id": 233,
+          "version_no": 1,
+          "title": "Toneop 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Trifolding phone 多少钱？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 233,
+          "version_no": 1,
+          "title": "Toneop 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 235,
+          "version_no": 1,
+          "title": "Apple bandit 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Vivo Y300 多少钱？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 268,
+          "version_no": 1,
+          "title": "Vivo Y300 规格"
+        },
+        {
+          "asset_id": 268,
+          "version_no": 1,
+          "title": "Vivo Y300 规格"
+        },
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Xperia Ear Duo 上市了吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        },
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Xperia Ear 是什么品牌",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        },
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 490,
+          "version_no": 1,
+          "title": "Ultimate Ears Super.fi 5 EB 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Xperia Ear 是耳机吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "Xperia Ear 能连 iPhone 吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 233,
+          "version_no": 1,
+          "title": "Toneop 规格（OFF）"
+        },
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        },
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "不锈钢保温壶多少钱",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "不锈钢保温壶的净含量是多少",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "不锈钢保温壶的配料是什么",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "乐事薯片的净含量是多少",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "书都卖完了吗？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "买两个键盘有优惠吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "键盘"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 497,
+          "version_no": 1,
+          "title": "LK201 规格（Wikidata）"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 417,
+          "version_no": 1,
+          "title": "平板评论 · 真的很不错的产品，大小适中，价格优惠"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "买了东西想退货，政策是什么？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 13,
+          "version_no": 4,
+          "title": "退货政策"
+        },
+        {
+          "asset_id": 6,
+          "version_no": 1,
+          "title": "退货政策说明"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "什么时候能收到货",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "什么时候降价",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 335,
+          "version_no": 1,
+          "title": "平板评论 · 总是*机，还有时候没有反应，入手需谨"
+        },
+        {
+          "asset_id": 451,
+          "version_no": 1,
+          "title": "平板评论 · 后悔了 专门给孩子视频用的 充电慢"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "以旧换新怎么办理",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "你们卖什么的？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "你们卖键盘吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "键盘"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 497,
+          "version_no": 1,
+          "title": "LK201 规格（Wikidata）"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "你们支持比特币支付吗？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 27,
+          "version_no": 1,
+          "title": "手机评论 · 实际上这个机子就是多浦达700的OE"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "你们有耳机吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 483,
+          "version_no": 1,
+          "title": "TWS Earbuds 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "你们老板在吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "保温壶的净含量是多少",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温杯保修多久？",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温杯内胆什么材质会不会腐蚀",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温杯有什么卖点",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温杯的净含量多少？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温杯还剩多少毫升",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温杯还有货吗？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "保温瓶的容量是多少",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "咋卖显示器",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "显示器"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 503,
+          "version_no": 2,
+          "title": "<无标题>"
+        },
+        {
+          "asset_id": 11,
+          "version_no": 1,
+          "title": "现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "品牌怎么样",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 497,
+          "version_no": 1,
+          "title": "LK201 规格（Wikidata）"
+        },
+        {
+          "asset_id": 268,
+          "version_no": 1,
+          "title": "Vivo Y300 规格"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "它到货了吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "家具送货安装怎么收费？",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "家具"
+      ],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "家电多少钱？",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "小龙虾有货吗",
+      "count": 1,
+      "agent_kind": "handoff",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "帮我查下 SO-1003",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 243,
+          "version_no": 1,
+          "title": "Lindt Vollmilch Schokolade 规格（OFF）"
+        },
+        {
+          "asset_id": 244,
+          "version_no": 1,
+          "title": "Nestle Carnation 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "帮我查下我的订单到哪了，顺便讲讲退货政策",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "退货政策"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 13,
+          "version_no": 4,
+          "title": "退货政策"
+        },
+        {
+          "asset_id": 6,
+          "version_no": 1,
+          "title": "退货政策说明"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "帮我看看键盘库存",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "键盘"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 497,
+          "version_no": 1,
+          "title": "LK201 规格（Wikidata）"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 260,
+          "version_no": 1,
+          "title": "仓库存储位置说明"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "平板会不会黑屏",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 28,
+          "version_no": 1,
+          "title": "平板评论 · 很一般的产品，常常黑屏，设置显示5分"
+        },
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        },
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "平板多少钱？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        },
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        },
+        {
+          "asset_id": 284,
+          "version_no": 1,
+          "title": "平板评论 · 开机系统升级到安卓7，相当流畅。声音"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "库存政策是什么",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        },
+        {
+          "asset_id": 13,
+          "version_no": 4,
+          "title": "退货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "彩电多少钱？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "我的订单 SO-1002 到哪了",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 238,
+          "version_no": 1,
+          "title": "Nestlé 规格（OFF）"
+        },
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "我的订单到货了吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 224,
+          "version_no": 1,
+          "title": "subscription_inquiry/manage_pay_bill · I'm trying to find out about m"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "支持上门安装吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "支持分期付款吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 27,
+          "version_no": 1,
+          "title": "手机评论 · 实际上这个机子就是多浦达700的OE"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "数码相机防水吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        },
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "整箱堆放会不会变形？保质期多久？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 264,
+          "version_no": 1,
+          "title": "现场踩给各位看：瓶身轻但抗压，整箱堆放不变形。保质期12个月，常温避光存放就行。"
+        },
+        {
+          "asset_id": 15,
+          "version_no": 1,
+          "title": "瓶装水：日常补水随身装"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "无人机保修多久",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        },
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        },
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "星巴克杯子的配料是什么",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 245,
+          "version_no": 1,
+          "title": "1MD Nutrition 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "显示器和耳机你们都有吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "confusion"
+      ],
+      "name_hits": [
+        "显示器",
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "显示器多少钱",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "显示器"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 503,
+          "version_no": 2,
+          "title": "<无标题>"
+        },
+        {
+          "asset_id": 11,
+          "version_no": 1,
+          "title": "现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "显示器多高啊",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "显示器"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 503,
+          "version_no": 2,
+          "title": "<无标题>"
+        },
+        {
+          "asset_id": 11,
+          "version_no": 1,
+          "title": "现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "显示器支持壁挂吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "显示器"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 503,
+          "version_no": 2,
+          "title": "<无标题>"
+        },
+        {
+          "asset_id": 11,
+          "version_no": 1,
+          "title": "现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "显示器最便宜多少钱",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "显示器"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 503,
+          "version_no": 2,
+          "title": "<无标题>"
+        },
+        {
+          "asset_id": 11,
+          "version_no": 1,
+          "title": "现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "显示器有多少款",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "显示器"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 503,
+          "version_no": 2,
+          "title": "<无标题>"
+        },
+        {
+          "asset_id": 11,
+          "version_no": 1,
+          "title": "现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "有没有便宜点的耳机",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 483,
+          "version_no": 1,
+          "title": "TWS Earbuds 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "有没有货？",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "有瓶装水直播实拍的清晰商品图吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "瓶装水"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 505,
+          "version_no": 1,
+          "title": "瓶装水 · 实拍帧 00:05"
+        },
+        {
+          "asset_id": 15,
+          "version_no": 1,
+          "title": "瓶装水：日常补水随身装"
+        },
+        {
+          "asset_id": 15,
+          "version_no": 1,
+          "title": "瓶装水：日常补水随身装"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "有赠品吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "杯子卖光了吗？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "杯子有货吗？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "查物流",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "物流信息",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        },
+        {
+          "asset_id": 224,
+          "version_no": 1,
+          "title": "subscription_inquiry/manage_pay_bill · I'm trying to find out about m"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "电脑咋样卖",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "直播间优惠券怎么领",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 417,
+          "version_no": 1,
+          "title": "平板评论 · 真的很不错的产品，大小适中，价格优惠"
+        },
+        {
+          "asset_id": 505,
+          "version_no": 1,
+          "title": "瓶装水 · 实拍帧 00:05"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "神奇校车这套书怎么样",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "笔记本电脑怎么保养？",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "笔记本电脑"
+      ],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "笔记本电脑有货吗？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "笔记本电脑"
+      ],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "索尼的耳机多少钱",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 483,
+          "version_no": 1,
+          "title": "TWS Earbuds 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "耳机啥时候出的",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 483,
+          "version_no": 1,
+          "title": "TWS Earbuds 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "耳机多少钱",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 483,
+          "version_no": 1,
+          "title": "TWS Earbuds 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "耳机怎么卖",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 483,
+          "version_no": 1,
+          "title": "TWS Earbuds 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "耳机推荐一款",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        },
+        {
+          "asset_id": 482,
+          "version_no": 1,
+          "title": "Xperia Ear Duo 规格（Wikidata）"
+        },
+        {
+          "asset_id": 483,
+          "version_no": 1,
+          "title": "TWS Earbuds 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "耳机的保修和显示器一样吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "confusion"
+      ],
+      "name_hits": [
+        "显示器",
+        "耳机"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 501,
+          "version_no": 1,
+          "title": "显示器商品图 · 实拍帧"
+        },
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        },
+        {
+          "asset_id": 481,
+          "version_no": 1,
+          "title": "Xperia Ear 规格（Wikidata）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "能加急发货吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        },
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "能预留吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 480,
+          "version_no": 1,
+          "title": "发票与配送口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "订单 SO-1002 到哪了",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 232,
+          "version_no": 1,
+          "title": "xxx 规格（OFF）"
+        },
+        {
+          "asset_id": 238,
+          "version_no": 1,
+          "title": "Nestlé 规格（OFF）"
+        },
+        {
+          "asset_id": 239,
+          "version_no": 1,
+          "title": "Coca-Cola 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "订单到哪了顺便问下退货政策",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "退货政策"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 13,
+          "version_no": 4,
+          "title": "退货政策"
+        },
+        {
+          "asset_id": 6,
+          "version_no": 1,
+          "title": "退货政策说明"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "话费充值有优惠吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 417,
+          "version_no": 1,
+          "title": "平板评论 · 真的很不错的产品，大小适中，价格优惠"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "转人工",
+      "count": 1,
+      "agent_kind": "handoff",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "转人工吧，联系我 13800000000",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        },
+        {
+          "asset_id": 231,
+          "version_no": 1,
+          "title": "xylimgxyling 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "转人工吧，联系我13800000000",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        },
+        {
+          "asset_id": 231,
+          "version_no": 1,
+          "title": "xylimgxyling 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "辛丑條約的配料是什么",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 234,
+          "version_no": 1,
+          "title": "Pbfit 规格（OFF）"
+        },
+        {
+          "asset_id": 228,
+          "version_no": 1,
+          "title": "AdvoCare 规格（OFF）"
+        },
+        {
+          "asset_id": 245,
+          "version_no": 1,
+          "title": "1MD Nutrition 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "运费谁出",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 478,
+          "version_no": 1,
+          "title": "数码外设保修政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "还有别的颜色吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "这个水喝起来有点发甜",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 28,
+          "version_no": 1,
+          "title": "平板评论 · 很一般的产品，常常黑屏，设置显示5分"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "这书咋价",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "退货咋样卖",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 301,
+          "version_no": 1,
+          "title": "平板评论 · 要求退货。质量太次。死屏，听歌自己就"
+        },
+        {
+          "asset_id": 6,
+          "version_no": 1,
+          "title": "退货政策说明"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "退货要钱吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 6,
+          "version_no": 1,
+          "title": "退货政策说明"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "退货运费谁付？",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "退货需要什么材料",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 479,
+          "version_no": 1,
+          "title": "退换货政策"
+        },
+        {
+          "asset_id": 6,
+          "version_no": 1,
+          "title": "退货政策说明"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "那个 Xperia Ear 谁家出的",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 230,
+          "version_no": 1,
+          "title": "Mg ricarica 规格（OFF）"
+        },
+        {
+          "asset_id": 490,
+          "version_no": 1,
+          "title": "Ultimate Ears Super.fi 5 EB 规格（Wikidata）"
+        },
+        {
+          "asset_id": 245,
+          "version_no": 1,
+          "title": "1MD Nutrition 规格（OFF）"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "那台手机卖光了么",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 47,
+          "version_no": 1,
+          "title": "平板评论 · 在你家买个手机、耳塞都没有、差评"
+        },
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        },
+        {
+          "asset_id": 337,
+          "version_no": 1,
+          "title": "平板评论 · 比想象中的大，只是此款手机平板与八英"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "那它可靠吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "钛钢保温杯 500ml 316不锈钢 日常饮水随行的净含量",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 10,
+          "version_no": 1,
+          "title": "钛钢保温杯 500ml 316不锈钢 日常饮水随行"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "钛钢保温杯的净含量是多少",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [
+        "钛钢保温杯"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 9,
+          "version_no": 1,
+          "title": "保温杯的净含量是多少？"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "钛钢内胆一体成型",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": true,
+      "agent_refused_ratio": 0.0,
+      "suggest": [
+        "positive",
+        "paraphrase"
+      ],
+      "name_hits": [],
+      "engine_top3": [
+        {
+          "asset_id": 11,
+          "version_no": 1,
+          "title": "现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀"
+        },
+        {
+          "asset_id": 3,
+          "version_no": 1,
+          "title": "钛钢保温杯 · 规格"
+        },
+        {
+          "asset_id": 13,
+          "version_no": 4,
+          "title": "退货政策"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "键盘多少钱",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "键盘"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 497,
+          "version_no": 1,
+          "title": "LK201 规格（Wikidata）"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "键盘有几件",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "键盘"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 497,
+          "version_no": 1,
+          "title": "LK201 规格（Wikidata）"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "键盘有机械的吗",
+      "count": 1,
+      "agent_kind": "refusal",
+      "agent_cited": false,
+      "agent_refused_ratio": 1.0,
+      "suggest": [
+        "refusal",
+        "oov_syn"
+      ],
+      "name_hits": [
+        "键盘"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 497,
+          "version_no": 1,
+          "title": "LK201 规格（Wikidata）"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "键盘贵不贵",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "键盘"
+      ],
+      "engine_top3": [
+        {
+          "asset_id": 497,
+          "version_no": 1,
+          "title": "LK201 规格（Wikidata）"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        },
+        {
+          "asset_id": 492,
+          "version_no": 1,
+          "title": "定制刻字服务口径"
+        }
+      ],
+      "engine_hit": true
+    },
+    {
+      "question": "鼠标多少钱",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "鼠标"
+      ],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "鼠标有货吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "鼠标"
+      ],
+      "engine_top3": [],
+      "engine_hit": false
+    },
+    {
+      "question": "鼠标还有吗",
+      "count": 1,
+      "agent_kind": "answer",
+      "agent_cited": false,
+      "agent_refused_ratio": 0.0,
+      "suggest": [],
+      "name_hits": [
+        "鼠标"
+      ],
+      "engine_top3": [],
+      "engine_hit": false
+    }
+  ]
+}

@@ -9,6 +9,8 @@ import random
 import sys
 from pathlib import Path
 
+import pytest
+
 from suite_api.services.retrieval import query_terms, score_chunk
 from suite_api.services.synonyms import SYNONYM_GROUPS, apply_synonyms
 
@@ -213,6 +215,30 @@ def _case(dist: str, expect: dict) -> dict:
     return {"id": f"{dist}-x", "distribution": dist, "question": "q", "expect": expect}
 
 
+def test_distributions_include_oov_syn() -> None:
+    """第 101 刀：第五分布（表外同义探针）进统计词表与表格。"""
+    assert "oov_syn" in runner.DISTRIBUTIONS
+    hit = {"asset_id": 1, "version_no": 1, "chunk": "c", "score": 1.0}
+    rows = [
+        runner.judge_case(_case("oov_syn", {"cite": {"asset_id": 1, "version_no": 1}}), [hit], "answer"),
+        runner.judge_case(_case("oov_syn", {"cite": {"asset_id": 2, "version_no": 1}}), [], "refusal"),
+    ]
+    agg = runner.aggregate(rows)
+    assert agg["oov_syn"]["n"] == 2
+    assert agg["oov_syn"]["recall1"] == 0.5
+    assert agg["oov_syn"]["confusion_top1"] is None  # 混淆@1 只对 confusion 组
+    table = runner.format_table(agg, judge_on=False)
+    assert "oov_syn" in table
+
+
+def test_aggregate_cite_groups_share_recall_columns() -> None:
+    """positive/paraphrase/confusion/oov_syn 四个 cite 组统一走 recall 判定。"""
+    hit = {"asset_id": 5, "version_no": 2, "chunk": "c", "score": 1.0}
+    for dist in ("positive", "paraphrase", "confusion", "oov_syn"):
+        row = runner.judge_case(_case(dist, {"cite": {"asset_id": 5, "version_no": 2}}), [hit], "answer")
+        assert row["recall1"] is True and row["recall3"] is True
+
+
 def test_judge_case_recall_and_refusal() -> None:
     cite = _case("positive", {"cite": {"asset_id": 1, "version_no": 2}})
     row = runner.judge_case(cite, [{"asset_id": 1, "version_no": 2, "chunk": "c", "score": 1.0}], "answer")
@@ -331,3 +357,54 @@ def test_judge_with_retry_no_sleep_on_last_attempt(monkeypatch) -> None:
     monkeypatch.setattr(runner.time, "sleep", lambda s: sleeps.append(s))
     assert runner.judge_with_retry("Q", ["证据"], "回答") is None
     assert sleeps == [runner.JUDGE_RETRY_WAIT_SECONDS] * (runner.JUDGE_ATTEMPTS - 1)
+
+
+# ---------------------------------------------------------------- golden schema 自检（第 101 刀）
+
+
+# 表外同义探针的改写词（golden oov_syn 组里被改写的目标词）。它们**不得**出现在
+# 同义词表成员里——若未来 synonyms 表扩容吃掉其中任何一个，探针即失效，本测试
+# 变红提示维护（把该条挪分布或换词）。
+OOV_SYN_REWRITE_WORDS = (
+    "邮资", "给修", "票据", "雕字", "寄出", "退回去", "存放", "商品编码",
+    "哪一年出", "哪家厂", "毛球", "退掉", "发出来", "开门", "保温壶",
+)
+
+
+def test_golden_schema_five_distributions() -> None:
+    """golden_large.json 形状自检（纯文件检查，不连 DB）：五分布键合法、
+    id/问句唯一、oov_syn 改写词不在同义词表内。"""
+    golden = EVAL_DIR / "out" / "golden_large.json"
+    if not golden.exists():
+        pytest.skip("golden 大集文件不在本环境（生成见 scripts/eval/generate_golden.py）")
+    cases = json.loads(golden.read_text(encoding="utf-8"))
+
+    valid = {"positive", "paraphrase", "confusion", "refusal", "oov_syn"}
+    ids = [c["id"] for c in cases]
+    questions = [c["question"] for c in cases]
+    assert len(ids) == len(set(ids)), "case id 必须唯一"
+    assert len(questions) == len(set(questions)), "问句分布间不得重复"
+    assert {c["distribution"] for c in cases} <= valid, "分布词表外的键"
+
+    for case in cases:
+        expect = case["expect"]
+        if case["distribution"] == "refusal":
+            assert expect == {"refuse": True}, f"{case['id']} 拒答期望形状"
+        else:
+            assert set(expect) == {"cite"}, f"{case['id']} cite 期望只有 cite 键"
+            assert set(expect["cite"]) == {"asset_id", "version_no"}
+            assert isinstance(expect["cite"]["asset_id"], int)
+            assert isinstance(expect["cite"]["version_no"], int)
+
+    # 第五分布必须在场（第 101 刀起大集含表外同义探针 10-20 条）
+    oov_cases = [c for c in cases if c["distribution"] == "oov_syn"]
+    assert 10 <= len(oov_cases) <= 20, f"表外同义探针 10-20 条，实际 {len(oov_cases)}"
+
+
+def test_golden_oov_syn_words_outside_synonym_table() -> None:
+    """oov_syn 组的改写词必须仍在同义词表之外（表内词会被检索侧并集扩展救回，
+    探针就不再测「表外泛化」）。"""
+    members = {m for group in SYNONYM_GROUPS for m in group}
+    members |= {"折扣券", "优惠券"}
+    for word in OOV_SYN_REWRITE_WORDS:
+        assert word not in members, f"{word!r} 已进同义词表——表外探针失效，需换词"

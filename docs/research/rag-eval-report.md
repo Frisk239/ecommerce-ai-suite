@@ -638,3 +638,105 @@ overall        96     90.0%     97.5%   69.2%    0.0%   73.3%
 uv run python scripts/realdata/correct_off_mismatch.py --db postgresql://suite:suite@localhost:5433/suite           # dry-run 诊断
 uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
 ```
+
+## 第 101 刀：评测扩容（96→208）+ embedding 评估门执行（2026-09-16）
+
+### 问法回流（collect_questions.py，半自动上游）
+
+`scripts/eval/collect_questions.py`（新增）：演示库 `service_messages` 抽顾客问句——
+566 条顾客消息 → 探针/无回复排除后 **534 个 occurrence** → 归一去重 **210 个唯一问句**
+（候选清单 `scripts/eval/out/questions-candidates-101.json`：问句+出现次数+当前引擎
+kind/是否命中+retrieve top-3）。预分类提示（简单启发）：answer 带引用 89 / refusal 58 /
+混淆（问句点名 ≥2 资产名或类目词）2 / 工具面（answer 无引用）不在大集。抽问/去重/
+预分类全纯函数，单测 `test_collect_questions.py`。
+
+### golden 扩容：96 → 208（五分布），每条期望实跑核验
+
+新增 112 条（id 前缀 `exp-`，清单 `scripts/eval/out/golden-exp-101.json`），来源=真实
+使用语料（usage-92 的 56 唯一问法 + service_messages 真实问句）+ 按数码店/存量商品
+语料构造；**期望全部由 run_eval 同款 retrieve/compose 实跑核验**（正例：top1 恰为语义
+正确资产；同义/混淆：语义正确资产在 top3 内锚定；拒答：实跑 kind=refusal 才入；
+表外探针：锚由表内基底核验）：
+
+| 分布 | 存量 | 新增 | 总数 | 新增构成 |
+|---|---|---|---|---|
+| positive | 43 | 37 | **80** | 政策（退换货/保修/发票/刻字）+数码规格（Xperia/Vivo/LK201/UE）+图片帧+英文回流，真实问法为主 |
+| paraphrase | 25 | 33 | **58** | 表内同义改写（退货↔退换、运费↔邮费、保质期↔保存期、发票↔收据、保修↔三包…）+句式口语变体，2 条实跑 miss 如实入集 |
+| confusion | 15 | 10 | **25** | 真实多商品/近名问句（耳机类目 5 资产并列、显示器×耳机、「Xperia Ear 是什么品牌」=#90-P1 债 2 承接） |
+| refusal | 13 | 17 | **30** | 全部实跑 refusal 才入（鼠标有货吗/有赠品吗/我要转人工/会员积分怎么兑换…） |
+| oov_syn | 0 | 15 | **15** | **第五分布**（下节） |
+
+维护申报（60 刀先例同款）：① ref-001/011/015 的 expect 形态笔误
+（`cite_asset_title`）统一为标准 `cite` 键——三条 top1 实跑全中（480/480/478），
+100 刀已申报「存量无害」，本刀 schema 自检起强制形状；② 100 刀的 22 条已订正
+问句一条未动；③ 全库 208 条 id/问句唯一（分布间不重复，schema 自检钉住）。
+
+### 第五分布：表外同义探针（oov_syn，第 36 刀「无有效探针」就此补上）
+
+15 条**同义词表之外**的自然改写（顾客真实用词：运费→邮资、保修→坏了给修、发票→票据、
+条码→商品编码、上市→哪一年出的、保温杯→保温壶…），期望=与表内同义基底问句相同的
+引用锚（基底 top1 全部实跑核验：479/478/480/492/480/479/15/237/482/268/261/479/260/17）。
+改写词的表外性由测试钉住（`test_golden_oov_syn_words_outside_synonym_table`：15 个
+改写词不得进同义词表——表若扩容吃掉探针词即变红提示维护）。改写的检索命中是**自由
+测量值**（这正是被测对象）：6/15 命中 top1、3/15 连 @3 都 miss、4/15 零命中拒答。
+
+### 新基线（208 条全量，机械粘贴 run_eval stdout，工件 `scripts/eval/out/101-eval-after.txt`）
+
+```
+golden：scripts\eval\out\golden_large.json（208 条）  检索 top-3
+分布             条数  recall@1  recall@3     拒答率     误拒率    混淆@1
+positive       80     98.8%    100.0%       -    0.0%       -
+paraphrase     58     91.4%     98.3%       -       -       -
+confusion      25     64.0%     96.0%       -       -   64.0%
+refusal        30         -         -   86.7%       -       -
+oov_syn        15     40.0%     53.3%       -       -       -
+overall       208     86.5%     94.9%   86.7%    0.0%   64.0%
+```
+
+漂移逐位归属（相对 100 刀基线 97.5/88.0/73.3/69.2/90.0）：**存量 96 条行为零漂移**
+（positive 唯一 miss 仍 pos-038；paraphrase miss 仍 syn-005/007/012；confusion miss 仍
+conf-007/008/010/011；refusal miss 仍 ref-004/007/013/014——四笔 #90-P1 存量债原样）。
+全部变化来自新增条目：positive 98.8=79/80（39 存量 + 3 修复键 + 37 新增全中）；
+paraphrase 91.4=53/58（新增 33 条中 31 中、2 条「邮费是你们出吗/邮费怎么算」miss——
+表内词「邮费」轮转「运费」的并集仍被衣服评论「发货速度慢」块抢走 top1，@3 内锚定）；
+confusion 64.0=16/25（新增 10 条中 5 miss：Xperia 品牌两问=#90-P1 债 2 的量化、
+保温杯材质被回流探针资产 9 抢占、耳机×显示器跨类、「质量问题换新」被平板评论抢）；
+refusal 86.7=26/30（**新增 17 条全拒**）；oov_syn 40.0=6/15。
+
+### embedding 评估门执行（roadmap 101 / goal §6.2 第 4 条口径兑现）
+
+- **paraphrase@1 = 91.4% ≥ 70%**：表内同义词 + 并集扩展 + 实体亲和重排，**够**。
+- **oov_syn@1 = 40.0% < 70%**：表外自然改写，**不够**。
+
+**门裁决：触发「不够」分支，但按 grill Q1 签核口径不自动立项——立项归 Owner 裁决。**
+两个数字都是可讲证据：表内词法管线已到词法天花板（91.4%），表外泛化（vocabulary
+mismatch 的真实面）实测只有 4 成，且 4/15 直接拒答（零命中）、3/15 连 @3 都进不了——
+「词法检索的边界」第一次有了量化数字（第 36 刀只能推「语料内表外词命中 0/461 块」）。
+
+**向量/rerank 增强候选方案**（若 Owner 裁决立项，before/after 同报告纪律不变）：
+
+1. **查询侧 embedding 召回并联**（pgvector 镜像已在 compose、未用）：问句与块各出
+   向量，词法分 × 向量余弦线性混合或 RRF 融合；验收口径=本表五分布全量对照，
+   oov_syn@1 从 40.0% 提到多少即核心数字；风险=中英混库（OFF/英文回流资产）的向量
+   模型选型与维度治理。
+2. **LLM 查询改写**（不加向量库）：问句先过一次便宜模型改写成库内词法形态再检索；
+   oov_syn 的 15 条即天然验收集；风险=检索路径引入 LLM 依赖（可复现口径需另立）。
+3. **同义词表扩容**（最便宜的对照面）：把 15 个探针词收编进表——但这是「把考题背了」，
+   只救这 15 条形态不救下一个新词；仅作对照实验，不作主方案。
+
+### #90-P1 承接申报（弱命中闸不在本刀修，单开检索闸刀）
+
+- **债 1（模板路径字面弱命中无闸）**：批跑实测 19 条「语义不覆盖但词法弱命中」问句
+  （能预留吗→480「预留邮箱」、你们卖键盘吗→497、能加急发货吗→480、什么时候降价→
+  335 评论、支持分期付款吗→479 等，工件 `scripts/eval/out/101-verify-batch1.txt`），
+  run_eval 口径全 answer——按「该拒实拒才入拒答」口径**不收进 golden**，清单留档；
+  存量 4 条（ref-004/007/013/014）继续背债。
+- **债 2（品牌块排序）**：「Xperia Ear 是什么品牌（的耳机）」以 confusion 组两条入集
+  （exp-conf-006/007，期望 481、实跑 top1=230 他品），从个案复现变成常驻回归数字。
+
+### 复现命令（仓库根目录）
+
+```
+uv run python scripts/eval/collect_questions.py --db postgresql://suite:suite@localhost:5433/suite
+uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
+```
