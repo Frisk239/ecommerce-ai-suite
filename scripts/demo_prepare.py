@@ -3,7 +3,7 @@
 ## 为什么
 
 《体系闭环演示手册》（docs/demo-system-loop.md）的 12 幕全部依赖演示库里的
-**既有素材**（数码店数据、演示资产 A-492/493/497/501/503/505、演示会话
+**既有素材**（数码店数据、演示资产 A-492/493/497/501/502/505、演示会话
 #199/#331/#344/#345/#350/#353）。演示前若素材被误清/漂移，现场才发现就晚了——
 本脚本在 demo_reset 之上做「演示就绪」盘点：**只核验、只报告缺失，不自动重建**。
 
@@ -19,7 +19,8 @@
    政策文档 3（数码外设保修/退换货/发票与配送）。
 2. **演示资产**：A-492（刻字口径，G-78 已随发布解决）、A-493（回流对话，
    待人洗）、A-497（LK201 必填闸全链，confirm+publish 双审计行）、A-501
-   （图片治理）、A-503（版本指针 v1→v2）、A-505（洗帧，clip_frame）。
+   （图片治理 + **版本指针 v1→v3**——第 110 刀重灌真图后接幕 2）、A-505
+   （洗帧，clip_frame；110 换真画面）。
 3. **演示会话与直播线**：#199 主线（上班口径）、#331/#332（92 刀缺口与 OOV
    实录）、#344（再问命中）、#345（已回流→A-493）、#350（94b 双图直出）、
    #353（94c 真帧）、A-264（直播切片源）与转写候选（cloud 来源）。
@@ -195,25 +196,30 @@ def _check_demo_assets(session: Any) -> list[Check]:
     )
     # 图片治理素材（幕 5/7）
     expect_asset("显示器商品图 A-501", 501, "published", "image", "上传商品图→人洗写描述→发布（94a 链路）")
-    # 版本指针素材（幕 2）：A-503 线上指针在 v2（v1 无描述 → v2 有描述）
-    row503 = _asset_row(session, 503)
+    # 版本指针素材（幕 2）：第 110 刀重锚——A-503（空标题重复份）退役，
+    # 幕 2 改用 A-501（v1 假图/旧描述 → v2 真图+VLM 复核 → v3 描述二洗；
+    # 线上指针 ≥v2 且 ≥2 版已发布即「指针前移、历史版不丢」形态在位）。
+    row501 = _asset_row(session, 501)
     versions = int(
         _one(
             session,
-            "SELECT count(*) FROM asset_versions WHERE asset_id = 503 AND published_at IS NOT NULL",
+            "SELECT count(*) FROM asset_versions WHERE asset_id = 501 AND published_at IS NOT NULL",
         )
         or 0
     )
+    online_no = row501[3] if row501 else None
     checks.append(
         Check(
-            "版本指针资产 A-503",
-            row503 is not None
-            and row503[0] == "published"
-            and row503[1] == "image"
-            and row503[3] == 2
+            "版本指针资产 A-501",
+            row501 is not None
+            and row501[0] == "published"
+            and row501[1] == "image"
+            and online_no is not None
+            and online_no >= 2
             and versions >= 2,
-            f"A-503 {row503[0] if row503 else '缺'}/线上 v{row503[3] if row503 else '?'}，已发布版 {versions}（期望 published/线上 v2/≥2 版）",
-            "A-503 开修订→人洗补图片描述→发布 v2（94b 实录形态）",
+            f"A-501 {row501[0] if row501 else '缺'}/线上 v{online_no if online_no else '?'}，"
+            f"已发布版 {versions}（期望 published/线上 ≥v2/≥2 版）",
+            "A-501 开修订→换字节/人洗描述→发布（110 刀重灌真图实录）",
         )
     )
     # 洗帧素材（幕 6）：A-505 clip_frame 来源已发布

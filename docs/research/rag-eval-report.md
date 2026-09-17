@@ -1357,3 +1357,131 @@ uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5
 工件：`scripts/eval/out/109-eval-{before,after}.txt`（runner stdout）、
 `109-cases-{before,after}.json`（逐 case 采集）、`109-case-diff.txt`（逐位归属）、
 `out/109-cleanup-*.txt`（清理日志/幂等核对/demo_reset）。
+
+
+## 第 110 刀：重灌真实内容（2026-09-17，真 IMGGEN ×4 + 版本前移 + 转写修订）
+
+第七阶段第三刀：把「描述-画面不符」的图片资产换成**真 IMGGEN（Kolors）画面**，
+真 VLM 复核描述与画面对齐，全程走操作者 HTTP 治理修订流（开修订→换字节→
+机洗 VLM 草稿→人洗确认→发布）；补两张数码店商品图；A-503（空标题重复份）
+退役；#109-P2 的 A-14/A-270 回流转写修订。
+
+### 图片动作（生成 → 治理 → 复核；字节与线上核验）
+
+| 资产 | 动作 | 线上版 | 新字节 md5 | 人洗确认描述（切块=描述） |
+| --- | --- | --- | --- | --- |
+| A-501 显示器商品图·实拍帧 | 修订 v1→v2→**v3** | v3 | `09709338cb4b…` | 显示器商品图：黑色窄边框显示器，斜侧角度，带可调节支架与底座，屏幕关闭，置于桌面，旁有花瓶和杯子。 |
+| A-502 显示器商品图·待发布实拍帧 | 修订 v1→**v2**（换真图，与 A-501 同图；**不加描述**） | v2 | `09709338cb4b…` | （无——v1 起就无确认描述，本刀维持「不增块」口径） |
+| A-505 瓶装水·实拍帧 00:05 | 修订 v1→**v2** | v2 | `cd08ffcfbf26…` | 瓶装水实拍商品图：透明瓶装水特写，蓝色瓶盖与蓝白波浪标签，商品主体清晰，背景有绿色植物叶片。 |
+| A-516 Xperia Ear 商品图（新增，挂商品 166） | 登记 v1→**v2** | v2 | `35ad0c62a64d…` | 耳机商品图：充电盒打开状态，内含真无线入耳式耳机，耳机配黑色硅胶耳塞。 |
+| A-517 LK201 键盘商品图（新增，挂商品 118） | 登记 v1→**v2** | v2 | `22aff0ebac96…` | 键盘商品图：黑色机械键盘，键帽上印有字符，部分按键为双字符设计。 |
+
+- **生成**：`services/imggen.generate_image`，model=Kwai-Kolors/Kolors、
+  size=1024x1024（四张提示词与字节落 `out/110/*.png`）。**复核**：真 VLM
+  （`services/vlm.describe_image` + 自定提示复看）对**媒体端点取回的线上字节**
+  独立描述，与人洗描述关键词交集 15/13/9/11 词——描述与画面对齐（工件
+  `out/110-vlm-recheck.txt`）。
+- **A-501 为何到 v3**：v2 首洗描述含「白色桌面」——`exp-ref-004`（「有没有
+  白色款」，G-80/幕 11 的 OOV 拒答锚）的查询词元 = {白色, 色款}，命中三个新
+  切块（517 s=1.0 最高）→ 拒答翻 answer（runner 层拒答率 −3.4pp）。**描述二洗**
+  把通用颜色词从检索面抹掉（501 v3/516 v2/517 v2；画面本身不改），复跑该问
+  0 命中、拒答复原：这是「描述是检索文本面」的取舍落点——通用背景色不是
+  「有没有白色款」的证据。**A-502 维持无描述**：其 v1 就无确认描述，本刀口径
+  「图片换字节不增块」——若给描述会多出一条与 A-501 同文的块（108 审计 D-3
+  重复副本），留给需要它进索引的刀去定。
+- 退役：**A-503**（空标题 + 与 A-501/502 同字节重复份）`discarded_at` 软删；
+  依赖重锚：`demo_prepare.py` 幕 2 检查改锚 A-501（线上 ≥v2/≥2 版）、演示手册
+  第二幕/第五幕提示改锚 A-501、`data_health_check.DEMO_ASSET_KEEP` 去 503、
+  `data_cleanup.SKIP_ASSETS` 原因文本回填执行结果。
+- 转写修订（#109-P2）：A-14/A-270 旧转写含拒答话术（登记在 109 修代码前）——
+  走**回流登记重做**：旧资产退役、会话 #34/#243 复位 ended、`POST …/register`
+  重登记为 **A-520/A-521**（新规则整轮排除拒答，A-521 落「顾客：保温杯保修
+  多久？」纯顾客问句）。实施中发现 **API 容器还是 109 之前的镜像**（`backflow`
+  代码不在），先 `docker compose build api` 重建再重登记——首轮重登记拿旧代码
+  产出了 A-518/519（含拒答话术），已如实废弃。
+
+### Before/After（golden 230 条；before=109 终态同库复跑）
+
+```
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       76     97.4%    100.0%  0.9868   0.9903    35.1%       -    0.0%       -      ← before
+paraphrase     56     89.3%     98.2%  0.9375   0.9492    26.2%       -       -       -
+confusion      25     72.0%     92.0%  0.8133   0.8409    60.0%       -       -   72.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     86.7%     93.3%  0.9000   0.9087    37.8%       -       -       -
+sem_neg        28     71.4%     92.9%  0.8095   0.8401    28.6%       -       -       -
+overall       230     87.5%     97.0%  0.9200   0.9330    35.0%   86.7%    0.0%   72.0%
+
+positive       76     97.4%    100.0%  0.9868   0.9903    35.1%       -    0.0%       -      ← after
+paraphrase     56     89.3%     98.2%  0.9375   0.9492    26.2%       -       -       -
+confusion      25     72.0%     92.0%  0.8133   0.8409    60.0%       -       -   72.0%
+refusal        30         -         -       -        -        -   86.7%       -       -
+oov_syn        15     86.7%     93.3%  0.9000   0.9087    37.8%       -       -       -
+sem_neg        28     78.6%     92.9%  0.8452   0.8665    28.6%       -       -       -
+overall       230     88.5%     97.0%  0.9250   0.9367    35.0%   86.7%    0.0%   72.0%
+```
+
+### golden 维护（版本前移；60/100/109 先例）
+
+4 条锚换版：**exp-pos-025 / exp-syn-017 / exp-conf-001**（A-501 v1→v3）、
+**exp-pos-024**（A-505 v1→v2）——集合仍 230 条（A-503 无 golden 锚）。
+
+### 逐位归属（`110-case-diff.txt`，before/after 全 case 对照，9 条）
+
+- **版本前移 6 条**：exp-pos-024/025、exp-syn-017、exp-conf-001（期望资产 @1
+  不变，引用版本随指针）；exp-oovsyn-007（505 退第 3 位）、exp-conf-002
+  （501 退第 3 位）——期望资产名次不变，指标不动。
+- **恢复 2 条 @1**：sneg-nb-007「显示器的刻字」/sneg-nb-008「显示器的保修期
+  是多久」——109 遗留的「A-501 短块 @1 压预期资产」消失。机制：501 切块由
+  15 词元短句变 31 词元长描述，`score=|交|/√块词元` 稀释（同问 0.5164→0.3592
+  实测）→ 492/478 回 @1。**与 #109-P1 同根机制的反向兑现**（标题 IDF/块长
+  敏感性），非检索代码改动。
+- **候选构成 1 条**：ref-013「直播间优惠券怎么领」——505 旧块（含「直播」）
+  换词后不再入榜，拒答保持。
+- **拒答险情与修复**：首轮 after 用未二洗的描述复跑时 exp-ref-004 翻 answered
+  （拒答 86.7→83.3），二洗后复原为 86.7（26/30）——见上「A-501 为何到 v3」。
+
+### #109-P1 五条重估（本刀要求）
+
+**未恢复**：exp-syn-001「怎么退换」/exp-syn-033「退换要扣钱吗」/
+sneg-neg-005「不能退换吗」仍被 A-301 抢 @1；sneg-neg-007「不支持七天无理由
+退货吗」仍被 A-492 抢 @1；pos-023 仍被 A-228 抢 @1——before/after 逐位相同
+（robber 与名次一字不差）。本刀语料只动图片描述、增两图、退役一条空标题
+（标题集动了，IDF 有微小位移，但退货/退换主题这 5 条的排序未动）；**债仍转
+111**（或单开检索闸刀：66/71 评论闸与 79 亲和 IDF 的边界）。另有两条 sem_neg
+（nb-007/008）按上节机制恢复，是同一敏感性的另一面。
+
+### 红线与验证
+
+- **双红线逐位保持**：拒答率 **86.7**（26/30）、误拒 **0.0**；confusion/oov_syn/
+  positive/paraphrase 四分布逐位不变；噪声@3 35.0 不变（@1 88.5=+1.0pp 来源
+  只有 nb-007/008 两条）。
+- **线上核验**：`GET /api/customer/assets/{id}/media` 对 501 v3/502 v2/505 v2/
+  516 v2/517 v2 逐张 200 且 md5=生成图；切块=人洗描述（501 v3、505 v2、516 v2、
+  517 v2 各 1 块；502 无常住块=不增块口径）。
+- 门禁：全量 pytest **1662 passed / 0 failed / 0 error / 0 skipped**
+  （`out/110-junit.xml`，exit 0）+ `ruff check apps packages scripts` 全过；
+  demo_prepare 12 幕全 PASS（幕 2 已重锚 A-501）；after 同状态复跑逐位相同
+  （两次 stdout 全表 diff 为空）。
+
+### 复现命令（仓库根目录）
+
+```
+# 生成（真 IMGGEN，输出 out/110/*.png）
+uv run python .scratch/gen_110_images.py
+
+# 治理流（操作者 HTTP：登录→开修订→PUT 字节→PATCH 描述→发布）
+uv run python .scratch/flow_110.py login
+uv run python .scratch/flow_110.py revise 501 && uv run python .scratch/flow_110.py put 501 3 out/110/monitor.png
+uv run python .scratch/flow_110.py confirm 501 3 '{"图片描述":"…"}' && uv run python .scratch/flow_110.py publish 501
+
+# 评测（维护后 golden 230 条）
+uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
+```
+
+工件：`scripts/eval/out/110-eval-{before,after}.txt`（runner stdout）、
+`110-cases-{before,after}.json`（逐 case 采集；before=109 终态拷贝）、
+`out/110-case-diff.txt`（逐位归属）、`out/110/*.png`（四张生成图；媒体端点
+回取的字节 md5 记在 `out/110-vlm-recheck.txt`，不另存副本）、
+`out/110-vlm-recheck.txt`（VLM 复核）、`out/110-pytest.txt` + `out/110-junit.xml`、
+`out/110-api-rebuild.txt`（容器重建）。
