@@ -16,6 +16,7 @@
 source_kind（0025）与补文档/修订缺口关联（0024/0031）都在本路由按端点语义定值。
 """
 
+import base64
 import copy
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -23,7 +24,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -37,6 +38,8 @@ from suite_api.models import (
     Product,
     RetrievalChunk,
 )
+from suite_api.services import frames as frames_service
+from suite_api.services import vlm as vlm_service
 from suite_api.services.asset_view import (
     AssetDetail,
     AssetOut,
@@ -97,6 +100,183 @@ class OpenRevisionIn(BaseModel):
 
 class RollbackIn(BaseModel):
     version_no: int
+
+
+# ---------- 洗帧（第 94c 刀，ADR 0053）：请求态候选 + 确认即登记 ----------
+
+
+class FrameCandidateOut(BaseModel):
+    """一个候选帧：秒位 + mm:ss + VLM 分数/一句话 + base64 缩略图（宽 ≤480px）。
+
+    候选是**请求态**不落库——刷新即重算；这里没有 id（确认时前端只回传
+    ``at_second``，服务器从已发布版字节重新抽帧，不信任请求里的图）。"""
+
+    at_second: float
+    at_time: str  # mm:ss（展示用；权威是 at_second）
+    score: int
+    note: str
+    thumbnail_data_url: str  # data:image/jpeg;base64,...（打分用的同一张缩略图）
+
+
+class FrameCandidatesOut(BaseModel):
+    duration_seconds: float
+    sampled: int  # 采样帧数（含被 VLM 判低分淘汰的——回执如实）
+    candidates: list[FrameCandidateOut]
+
+
+class FrameRegisterIn(BaseModel):
+    at_second: float = Field(ge=0)  # 候选帧秒位（越上界由 ffmpeg 如实失败 422）
+    vlm_note: str | None = None  # 候选阶段的打分附注（只进日志，不冒充描述草稿）
+
+
+class FrameRegisterOut(BaseModel):
+    asset: AssetOut  # 新登记的图片资产（id 供前端跳治理台）
+    cut_from: str  # 血缘锚「A-xxxx · vN」：切自哪份视频资产的哪个已发布版
+
+
+def _frame_wash_ref(db: Session, asset_id: int) -> tuple[Asset, frames_service.VideoRef]:
+    """洗帧两端点共用的校验+快照：404/422(非视频)/409(未发布)/422(非 mp4 字节)。
+
+    返回 (asset, VideoRef)——快照含已发布指针版对象键与标题基名（挂商品用商品
+    名，否则资产标题），调用方据此收口事务再动 ffmpeg/VLM（P1#2 纪律）。
+    旧时间码文本切片（键 .txt）在这里被拒：ffmpeg 对文本字节抽不出帧，与其让
+    它在深处炸一个含糊的 422，不如入口说清「这不是可切帧的 mp4」。
+    """
+    asset = _get_asset_or_404(db, asset_id)
+    if asset.kind != "video":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"只有视频资产可以洗帧，该资产种类: {asset.kind}",
+        )
+    if asset.current_published_version_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"只有已发布的视频资产可以洗帧，当前状态: {asset.status}",
+        )
+    published = db.get(AssetVersion, asset.current_published_version_id)
+    if published is None:  # pragma: no cover - 指针完整性由发布事务保证
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="当前已发布版本缺失，无法洗帧"
+        )
+    if _key_suffix(published.object_key) != "mp4":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="该视频资产的字节不是可切帧的 mp4（旧时间码文本切片不可洗帧）",
+        )
+    product = _product_or_none(db, asset)
+    base_name = product.name if product is not None else (asset.title or "").strip()
+    return asset, frames_service.VideoRef(
+        asset_id=asset.id,
+        version_no=published.version_no,
+        object_key=published.object_key,
+        product_id=asset.product_id,
+        base_name=base_name,
+    )
+
+
+@router.post("/{asset_id}/frame-candidates", response_model=FrameCandidatesOut)
+def list_frame_candidates(
+    asset_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> FrameCandidatesOut:
+    """洗帧候选（第 94c 刀，ADR 0053）：已发布视频 → 均匀采样 → VLM 打分 → 回
+    过线候选（≥6 分，上限 8）。候选是请求态：不落库、缩略图 base64 回传，刷新
+    即重算（幂等只由确认登记承载）。
+
+    判定次序与码位：资产不存在 404；非视频 422；未发布 409；``VLM_API_KEY``
+    为空 409（**不建客户端、不发请求**——打分没有本地兜底，无 key 就没有候选，
+    fail-closed 同 ASR）；字节不是 mp4 422；时长探测/抽帧失败 422；VLM 请求
+    失败 502。同步执行（ffprobe/ffmpeg/逐帧 VLM 串行，最长分钟级）。
+    """
+    del operator  # 写接口仅要求登录，401 口径同既有写端点
+    _asset, ref = _frame_wash_ref(db, asset_id)
+    if not vlm_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="VLM 未配置（VLM_API_KEY 为空）：无法给帧打分，洗帧不可用",
+        )
+    # 快照后收口事务再动合成（P1#2 纪律，同 transcribe/pick 先例）
+    db.rollback()
+    try:
+        video_bytes = storage.get_bytes(ref.object_key)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"源视频字节不存在: {ref.object_key}",
+        ) from exc
+    try:
+        outcome = frames_service.generate_candidates(video_bytes)
+    except vlm_service.VLMNotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="VLM 未配置（VLM_API_KEY 为空）：无法给帧打分，洗帧不可用",
+        ) from exc
+    except frames_service.FrameExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except vlm_service.VLMUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+    return FrameCandidatesOut(
+        duration_seconds=outcome.duration_seconds,
+        sampled=outcome.sampled,
+        candidates=[
+            FrameCandidateOut(
+                at_second=frame.at_second,
+                at_time=frames_service.frame_timecode(frame.at_second),
+                score=frame.score,
+                note=frame.note,
+                thumbnail_data_url=(
+                    "data:image/jpeg;base64,"
+                    + base64.b64encode(frame.thumbnail).decode("ascii")
+                ),
+            )
+            for frame in outcome.candidates
+        ],
+    )
+
+
+@router.post("/{asset_id}/frames", response_model=FrameRegisterOut, status_code=status.HTTP_201_CREATED)
+def register_frame(
+    asset_id: int,
+    body: FrameRegisterIn,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> FrameRegisterOut:
+    """确认登记一帧（第 94c 刀，ADR 0053）：从已发布指针版字节抽该秒**全尺寸**
+    jpg，登记为独立图片资产（kind=image、source_kind=clip_frame、挂同商品），
+    走 94a 治理（VLM 出「图片描述」草稿 → 人洗确认 → 发布）。
+
+    操作者是闸（全自动被否——发布权在人）：这里登记的只是「待人洗的图片资产」，
+    不自动发布、不自动确认描述。抽帧失败 422（不落半个资产）；秒位越界由
+    ffmpeg 如实失败（0047：不做 ffprobe 时长硬闸）。不判 VLM key——确认动作
+    不打分（描述草稿无 key 恒弃权，人洗兜底）。
+    """
+    del operator  # 写接口仅要求登录，401 口径同既有写端点
+    _asset, ref = _frame_wash_ref(db, asset_id)
+    # 快照后收口事务再动 ffmpeg（P1#2 纪律）：抽帧秒级、登记走 register_asset
+    db.rollback()
+    try:
+        asset = frames_service.register_frame_asset(
+            db, storage, ref, at_second=body.at_second, vlm_note=body.vlm_note
+        )
+    except frames_service.FrameExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    db.commit()
+    db.refresh(asset)
+    products = load_products(db, [asset])
+    version_nos = published_version_nos(db, [asset])
+    return FrameRegisterOut(
+        asset=to_asset_out(asset, products, version_nos),
+        cut_from=ref.cut_from,
+    )
 
 
 class CsvCreatedRow(BaseModel):

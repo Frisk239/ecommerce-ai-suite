@@ -12,6 +12,7 @@ import {
   ArrowCounterClockwise,
   ArrowLeft,
   ArrowsClockwise,
+  Camera,
   CaretDown,
   CaretRight,
   CheckCircle,
@@ -35,6 +36,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { LoadingHint } from '../components/Loading'
 import PageHeader from '../components/PageHeader'
 import { KindChip, StatusBadge } from '../components/StateBadge'
+import FrameWashDrawer from './FrameWashDrawer'
 
 function FieldRow({
   assetId,
@@ -672,6 +674,11 @@ export default function AssetDetailPage() {
   const [discardingAsset, setDiscardingAsset] = useState(false)
   const [discardAssetError, setDiscardAssetError] = useState<unknown>(null)
   const [discardAssetNote, setDiscardAssetNote] = useState<string | null>(null)
+  // 洗帧（第 94c 刀）：已发布视频资产的「洗帧到素材库」抽屉；VLM 配置状态
+  // （GET /clips/frames/status）决定按钮禁用与提示——打分没有本地兜底，
+  // 无 key 时后端候选端点也 409（fail-closed，后端是唯一闸）。
+  const [frameWashOpen, setFrameWashOpen] = useState(false)
+  const [frameWashConfigured, setFrameWashConfigured] = useState<boolean | null>(null)
 
   const reloadDetail = useCallback(() => {
     reloadDetailData()
@@ -712,6 +719,24 @@ export default function AssetDetailPage() {
   // 只读证据视图下主栏字段也锁到 anchor 那一版：正文与字段必须同属一个快照，
   // 否则会出现「正文 v1、字段 v3」的自相矛盾。其余情况仍是工作版本（editable 数据源不动）。
   const viewedVersion = readOnlyEvidence ? anchorVersion : activeVersion
+
+  // 洗帧 VLM 状态（第 94c 刀）：仅已发布视频资产拉取——决定侧栏按钮禁用与提示。
+  // 异步回调里置位（不在 effect 内同步 setState）：状态切换的一瞬沿用旧值。
+  useEffect(() => {
+    if (detail?.kind !== 'video' || currentPublishedNo === null) return
+    let cancelled = false
+    api
+      .getFrameWashStatus()
+      .then((status) => {
+        if (!cancelled) setFrameWashConfigured(status.configured)
+      })
+      .catch(() => {
+        if (!cancelled) setFrameWashConfigured(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [detail?.kind, currentPublishedNo])
 
   const fieldViews = useMemo<FieldView[]>(() => {
     if (viewedVersion === null || product === null) return []
@@ -1230,6 +1255,29 @@ export default function AssetDetailPage() {
         <div className="space-y-4 lg:sticky lg:top-[72px]">
           <div className="panel px-4 py-4">
             <div className="mb-3 text-xs font-medium text-ink-3">治理动作</div>
+            {/* 第 94c 刀（ADR 0053）：直播洗帧入口——已发布视频资产（指针非空，
+                修订中也可用：读的是线上指针版字节）。无 VLM key 禁用。 */}
+            {detail.kind === 'video' && currentPublishedNo !== null && !readOnlyEvidence ? (
+              <div className="mb-3 space-y-1.5 border-b border-line-1 pb-3">
+                <button
+                  type="button"
+                  className="btn btn-secondary w-full"
+                  disabled={frameWashConfigured !== true}
+                  title="按 5 秒间隔采样并用 VLM 打分挑清晰商品帧，人工勾选确认后登记为图片资产"
+                  onClick={() => setFrameWashOpen(true)}
+                >
+                  <Camera aria-hidden size={14} />
+                  洗帧到素材库
+                </button>
+                <div className="text-xs leading-5 text-ink-3">
+                  {frameWashConfigured === null
+                    ? '正在确认 VLM 配置…'
+                    : frameWashConfigured
+                      ? '从这份视频抽清晰商品帧，确认后登记为图片资产（来源=直播洗帧，走图片描述人洗后发布）。'
+                      : 'VLM 未配置（VLM_API_KEY 为空）：无法给帧打分，洗帧不可用；配置后即可用。'}
+                </div>
+              </div>
+            ) : null}
             {readOnlyEvidence ? (
               <div className="text-xs leading-5 text-ink-3">
                 只读证据视图：本页是引用指向 v{anchorVersionNo} 的不可变快照，不提供发布、修订、
@@ -1554,6 +1602,14 @@ export default function AssetDetailPage() {
         busy={rollingBack}
         onCancel={() => setRollbackTarget(null)}
         onConfirm={() => void rollback()}
+      />
+
+      {/* 第 94c 刀：洗帧抽屉（已发布视频资产；抽屉内部自带候选流与登记回执） */}
+      <FrameWashDrawer
+        open={frameWashOpen}
+        onClose={() => setFrameWashOpen(false)}
+        assetId={detail.id}
+        assetTitle={detail.title ?? '未命名视频'}
       />
 
       {/* 0042 出口三件的确认框与隐藏文件选择器；均明示字节删除不可恢复 */}

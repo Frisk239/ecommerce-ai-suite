@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from suite_api.deps import get_current_operator, get_db, get_storage
 from suite_api.models import ClipCandidate, ClipRecording, Operator, Product
 from suite_api.services import asr as asr_service
+from suite_api.services import vlm as vlm_service
 from suite_api.services.asset_view import (
     AssetOut,
     load_product_names,
@@ -142,6 +143,14 @@ class ClipAsrStatusOut(BaseModel):
 
     **只回布尔**：不回 base_url/model（配置细节不进前端）；key 本身更不回。
     """
+
+    configured: bool
+
+
+class ClipFrameStatusOut(BaseModel):
+    """洗帧 VLM 配置状态（第 94c 刀，ADR 0053）：前端据此禁用资产详情的
+    「洗帧到素材库」并给提示。只回布尔（同 asr/status 口径）；后端仍是唯一闸
+    ——即使前端被绕过，候选端点自己 409（fail-closed）。"""
 
     configured: bool
 
@@ -322,6 +331,17 @@ def asr_status(
     """
     del operator  # 读接口同样要求登录
     return ClipAsrStatusOut(configured=asr_service.is_configured())
+
+
+@router.get("/frames/status", response_model=ClipFrameStatusOut)
+def frame_wash_status(
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+) -> ClipFrameStatusOut:
+    """洗帧 VLM 配置状态（第 94c 刀）：帧打分复用 94a 的 VLM 客户端（同一把
+    ``VLM_API_KEY``），此端点给前端禁用判据。放在 clips 路由是因为洗帧属直播/
+    切片家族（入口在资产详情页，与 asr/status 同居一族）。"""
+    del operator  # 读接口同样要求登录
+    return ClipFrameStatusOut(configured=vlm_service.is_configured())
 
 
 @router.post("/recordings/{recording_id}/transcribe", response_model=ClipTranscribeOut)

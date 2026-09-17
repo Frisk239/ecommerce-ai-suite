@@ -37,18 +37,22 @@ INGESTED = "ingested"
 PENDING_REVIEW = "pending_review"
 PUBLISHED = "published"
 
-# 来源八枚举（0025/ADR 0030）：登记端点语义定值，调用方不可自由填报。
+# 来源枚举（0025/ADR 0030）：登记端点语义定值，调用方不可自由填报。
 # 第 50 刀增两值——真实数据集导入不再被压成「上传」（来源只活在脚本常量里的
 # 那些数据，产品面上看不出「这不是我们自己传的」）：
 #   review_import = 评论数据集导入（在线购物评论 200 条）
 #   open_dataset  = 开放数据集（**通用类**：将来又接一个数据集时先用它兜底）
 # 第 55 刀再拆细：四份数据集在产品面「逐个可见」——Wikidata / OpenFoodFacts /
 # WANDS 各有自己的词（原来三者都叫 open_dataset，界面上分不出是哪一份）。
+# 第 94c 刀增 clip_frame = 直播洗帧确认帧（从已发布切片视频抽出的一帧登记为
+# 图片资产，ADR 0053）——与 clip_pick（切片段登记）同族：来源是「从自己的
+# 直播里洗」，不是上传也不是生成。
 # 无 DB CHECK（应用层枚举），加值零 DDL；回填走迁移 0026 → 0028。
 SOURCE_KINDS = (
     "upload",
     "session_backflow",
     "clip_pick",
+    "clip_frame",
     "material_generated",
     "mcp_registered",
     "seed",

@@ -137,6 +137,43 @@ def build_messages(data_url_value: str) -> list[dict[str, Any]]:
     ]
 
 
+def chat_with_image(system_prompt: str, user_prompt: str, image_bytes: bytes) -> str:
+    """自定提示的视觉调用（第 94c 刀洗帧打分复用同一客户端与密钥纪律）。
+
+    与 ``describe_image`` 共用进程级单例、超时与「空输出按失败」口径，只是
+    system/user 文本由调用方给——打分（帧好不好）与描述（图里是什么）是两个
+    任务，不该共用一句 prompt。异常口径同 ``describe_image``：只抛 VLMError
+    子类，消息不含密钥/端点；不重试。
+    """
+    client = _get_client()
+    payload = data_url(image_bytes)
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_prompt},
+                {"type": "image_url", "image_url": {"url": payload}},
+            ],
+        },
+    ]
+    try:
+        response = client.chat.completions.create(
+            model=get_settings().vlm_model,
+            messages=messages,
+        )
+        content = response.choices[0].message.content if response.choices else None
+    except VLMError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 统一转通用文案，凭证/端点不外泄
+        logger.warning("VLM 请求失败: %s", type(exc).__name__)
+        raise VLMUnavailable("看图服务暂时不可用") from exc
+    text = (content or "").strip()
+    if not text:
+        raise VLMUnavailable("看图服务没有返回内容")
+    return text
+
+
 def describe_image(image_bytes: bytes) -> str:
     """图片字节 → 描述草稿文本（空/空白输出按失败处理，不静默落空串）。
 

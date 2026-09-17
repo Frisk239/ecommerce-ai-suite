@@ -12,6 +12,7 @@ import type {
   ClipRecording,
   ClipTranscribeResult,
   ClipAsrStatus,
+  ClipFrameStatus,
   CoachQuestion,
   CoachQuestionKey,
   CoachRecord,
@@ -21,6 +22,8 @@ import type {
   CustomerSessionEnded,
   CsvImportReport,
   FeedbackResult,
+  FrameCandidatesResult,
+  FrameRegisterResult,
   HandoffTicket,
   HandoffTicketCreate,
   HandoffTicketResult,
@@ -207,6 +210,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ids }),
     }),
+  // 第 94c 刀（ADR 0053）：洗帧到素材库——帧打分复用 94a 的 VLM（同一把 key），
+  // 无 key 时候选端点 409（fail-closed），此状态给按钮禁用判据。
+  getFrameWashStatus: () => request<ClipFrameStatus>('/clips/frames/status'),
+  // 洗帧候选是**同步**请求（ffprobe/ffmpeg + 逐帧 VLM，分钟级）——超时宽于
+  // 默认 15s，别在服务端还在打分时先断（断了操作者只看到「网络失败」）。
+  listFrameCandidates: (assetId: number) =>
+    request<FrameCandidatesResult>(
+      `/assets/${assetId}/frame-candidates`,
+      { method: 'POST' },
+      300_000,
+    ),
+  registerFrame: (assetId: number, atSecond: number, vlmNote?: string) =>
+    request<FrameRegisterResult>(
+      `/assets/${assetId}/frames`,
+      { method: 'POST', body: JSON.stringify({ at_second: atSecond, vlm_note: vlmNote ?? null }) },
+      150_000,
+    ),
 
   // 销售考核（第 19 刀/ADR 0040）：题库从已发布对话动态推导；作答/重评请求内
   // 同步 LLM 打分（≤20s，超时宽同素材生成）。打分失败不抛：200 + unscored 态。
