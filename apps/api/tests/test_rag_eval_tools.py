@@ -364,10 +364,30 @@ def test_judge_with_retry_no_sleep_on_last_attempt(monkeypatch) -> None:
 
 # 表外同义探针的改写词（golden oov_syn 组里被改写的目标词）。它们**不得**出现在
 # 同义词表成员里——若未来 synonyms 表扩容吃掉其中任何一个，探针即失效，本测试
-# 变红提示维护（把该条挪分布或换词）。
+# 变红提示维护（把该条挪分布或换词）。第 104 刀收编 9 词（OOV_SYN_COLLECTED_WORDS
+# ——数据驱动收词，出处/对照见 rag-eval-report 第 104 刀节），从本表移出并改由
+# test_golden_oov_syn_collected_words_in_table 反向钉住。
 OOV_SYN_REWRITE_WORDS = (
-    "邮资", "给修", "票据", "雕字", "寄出", "退回去", "存放", "商品编码",
-    "哪一年出", "哪家厂", "毛球", "退掉", "发出来", "开门", "保温壶",
+    "退回去",
+    "存放",
+    "商品编码",
+    "哪家厂",
+    "毛球",
+    "发出来",
+)
+
+# 第 104 刀收编的探针词（(左=语料活词, 右=收词) 对组——见 synonyms._PAIR_GROUPS）。
+# 已收编的探针不再是「表外」自由测量值，而是表内回归数字（收词前 40.0% -> 86.7%）。
+OOV_SYN_COLLECTED_WORDS = (
+    ("刻字", "雕字"),
+    ("上市年份", "哪一年出"),
+    ("上班", "开门"),
+    ("配送", "寄出"),
+    ("保修", "给修"),
+    ("发票", "票据"),
+    ("退换", "退掉"),
+    ("运费", "邮资"),
+    ("保温杯", "保温壶"),
 )
 
 
@@ -402,12 +422,21 @@ def test_golden_schema_five_distributions() -> None:
 
 
 def test_golden_oov_syn_words_outside_synonym_table() -> None:
-    """oov_syn 组的改写词必须仍在同义词表之外（表内词会被检索侧并集扩展救回，
-    探针就不再测「表外泛化」）。"""
+    """oov_syn 组里**未收编**的改写词必须仍在同义词表之外（表内词会被检索侧
+    并集扩展救回，探针就不再测「表外泛化」）。"""
     members = {m for group in SYNONYM_GROUPS for m in group}
     members |= {"折扣券", "优惠券"}
     for word in OOV_SYN_REWRITE_WORDS:
         assert word not in members, f"{word!r} 已进同义词表——表外探针失效，需换词"
+
+
+def test_golden_oov_syn_collected_words_in_table() -> None:
+    """第 104 刀收编的 9 个探针词必须在对组里（左=语料活词、右=收词）——反向
+    钉住收词成果不被误删；形态钉 _PAIR_GROUPS（影蔽语义），不进环组。"""
+    from suite_api.services.synonyms import _PAIR_GROUPS
+
+    for pair in OOV_SYN_COLLECTED_WORDS:
+        assert pair in _PAIR_GROUPS, f"{pair} 不在 _PAIR_GROUPS——第 104 刀收词被删或改形"
 
 
 # ---------------------------------------------------------------- 第 102 刀：--judge-llm 生成路径观察

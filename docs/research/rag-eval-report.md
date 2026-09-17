@@ -806,3 +806,103 @@ stdout 存档 `out/102-judge-llm-run.txt`）。
 ```
 uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite --judge-llm --report scripts/eval/out/report-judge-102.md
 ```
+
+## 第 104 刀：数据驱动同义表（2026-09-17，oov_syn 40.0→86.7 / 其余四分布逐位不变）
+
+### 挖掘方法（scripts/eval/dig_oov_synonyms.py，新增）
+
+输入=真实问法池（collect_questions 101 清单 210 问 + 本刀重跑 104 清单 215 问，合并去重）
++ golden oov_syn 15 条探针（探针词也是真实缺口证据）。**分词假设检验**：问句按停用字/
+非中文字符切段、段内 2-4 字滑窗为候选 token；目标词表三层（表内词全 35 / 语料字段名 25 /
+语料滑窗词 df≥2 共 1714——新组发现如 雕字→刻字 只能从语料侧找目标）；对每个
+(token→目标词) 假设，把「token 轮转到目标词」的试探边临时插进 synonyms 规则表
+（`hypothesis_rules` 上下文管理器——retrieve 在调用点读 apply_synonyms 的模块全局，patch
+即**实跑语义**），retrieve 前后对照：探针按期望锚 recall 翻转判收、池按零命中→命中判收；
+探针路径按**期望资产块分**预筛（全库绝对分排序会被「净含量：500ml」这类无关短块占坑，
+真目标反而被截断——实测教训）。词频分拣：池频次 ≥2 或探针在场 → priority（113 token），
+频次 1 非探针 → deferred（336，记候选不收）。清单工件
+`scripts/eval/out/oov-syn-candidates-104.json`（449 token：token+频次+来源问句+替换假设
+（归一到表内哪个词/哪个语料词）+当前/假设命中对照）。--ab 模式=轻量对照（oov_syn 15 +
+paraphrase 58 检索层直调 + 问句池命中快照，--against 逐位 diff）。
+
+### 收词清单（9 词，全部 (语料活词, 表外新词) 对组；出处+归一）
+
+| 对组（活词→收词） | 出处 | 归一落点（库内证据） |
+|---|---|---|
+| 刻字→雕字 | exp-oovsyn-004「可以在键盘上雕字吗」 | 492「本店键盘提供付费刻字服务」 |
+| 上市年份→哪一年出 | exp-oovsyn-009「Xperia Ear Duo 哪一年出的」 | 482「上市年份：」字段 |
+| 上班→开门 | exp-oovsyn-014「你们什么时间开门」 | 17「客服上班时间：」 |
+| 配送→寄出 | exp-oovsyn-005「拍了多久寄出」 | 480「发票与配送口径」 |
+| 保修→给修 | exp-oovsyn-002「坏了给修吗」 | 478 数码外设保修政策 |
+| 发票→票据 | exp-oovsyn-003「能开张票据吗」 | 480 发票与配送口径 |
+| 退换→退掉 | exp-oovsyn-012「不想要了能退掉吗」 | 479 退换货政策 |
+| 运费→邮资 | exp-oovsyn-001/006 | 479/478 运费条款 |
+| 保温杯→保温壶 | **问句池最高频表外词（6 问）**+exp-oovsyn-015 | 3/9/10 保温杯语料 |
+
+**为什么是对组而不是扩环**：轮转环上插一点必破一条既有边（(运费,邮费) 环插 邮资，
+无论插哪，邮费→运费 或 运费→邮费 必断其一）——而金标问句正是靠这些活边命中
+（paraphrase 的 邮费 两问靠 邮费→运费 并集 @3 锚定）。对组形态：左词已在环组时其出边
+（左→右）与环内出边同源冲突，规则表按长度降序稳定排序、环组先生成——环内出边在前，
+对组出边被首 match **影蔽**永不生效（既有行为零漂移），只有「新词→活词」生效。
+影蔽语义由 `test_golden_oov_syn_collected_words_in_table` + `test_synonym_wiring` 钉住。
+
+### 逐词 before/after（轻量对照 oov_syn 15+paraphrase 58 检索层直调；一词一跑工件
+scripts/eval/out/104/ab-00..09.json，全部 9 词 paraphrase 91.4/98.3 逐位不变、问句池命中
+169/215 不变——逐词零漂移）
+
+| # | 收词 | oov@1 | oov@3 | 净效应 |
+|---|---|---|---|---|
+| 0 | 基线 | 40.0 | 53.3 | — |
+| 1 | 刻字→雕字 | 46.7 | 53.3 | 004 r1：top1 497→492 |
+| 2 | 上市年份→哪一年出 | 53.3 | 60.0 | 009 r1+r3：top1 230→482 |
+| 3 | 上班→开门 | 60.0 | 60.0 | 014 r1：top1 78→17 |
+| 4 | 配送→寄出 | 66.7 | 66.7 | 005 r1+r3：零命中→480 |
+| 5 | 保修→给修 | 73.3 | 73.3 | 002 r1+r3：零命中→478 |
+| 6 | 发票→票据 | 80.0 | 80.0 | 003 r1+r3：零命中→480 |
+| 7 | 退换→退掉 | 86.7 | 86.7 | 012 r1+r3：零命中→479 |
+| 8 | 运费→邮资 | 86.7 | 93.3 | 001 r3：零命中→top3 含 479（r1 仍 miss：29 评论块「承担运费」更短分更高——评论闸按问句判，「邮资」不在服务词表，放行） |
+| 9 | 保温杯→保温壶 | 86.7 | 93.3 | 015 锚不变、top1 分 4.06→6.53（池 6 问防御性加强，A/B 面零变化） |
+
+### 全量终表（208 条，机械粘贴 run_eval stdout，工件 scripts/eval/out/104/104-eval-after.txt）
+
+```
+golden：scripts\eval\out\golden_large.json（208 条）  检索 top-3
+分布             条数  recall@1  recall@3     拒答率     误拒率    混淆@1
+positive       80     98.8%    100.0%       -    0.0%       -
+paraphrase     58     91.4%     98.3%       -       -       -
+confusion      25     64.0%     96.0%       -       -   64.0%
+refusal        30         -         -   86.7%       -       -
+oov_syn        15     86.7%     93.3%       -       -       -
+overall       208     90.5%     98.3%   86.7%    0.0%   64.0%
+```
+
+**逐位归属**（旧表 vs 新表对全部 208 条逐位对比：197 条 top3 块/分/kind 完全一致）：
+11 条变化=10 条 oov_syn 探针（收词目标本体）+1 条 positive（exp-pos-022「钛钢保温壶的
+材质是什么」：top1 锚资产 3/v2 不变，分 3.19→5.13——保温壶收词加强自己问句的亲和，
+recall 判定不变）。positive 98.8/100.0、paraphrase 91.4/98.3、confusion 64.0/96.0、
+refusal 86.7 与 101 基线**逐格一致**；overall 86.5→90.5（@1）完全由 oov_syn 贡献。
+
+### 弃收（K 类：证据在案但不收——数据驱动不是强收）
+
+- **OOV 实体族**（笔记本/电脑×7、乐事薯片×3、雀巢咖啡×2、戴森吸尘器×2、星巴克杯子×2、
+  鼠标×3）：库里没有的商品名，同义词表治不了「本店没有」（82 刀 OOV 闸的领域）；
+  挖掘清单里它们的「零命中→命中」假设全是替换成语料碎片的假命中，不收。
+- **工具面词**（转人工/人工×5、订单到×4、进度×3）：引擎在工具步接走，不进检索。
+- **发出来**（exp-oovsyn-013「货从哪里发出来」）：期望锚 260 是仓库位置——问的是
+  **发货地点**，词法同义覆盖不了地点语义；挖掘出的翻转假设全是「仓库存储位置说明」
+  类字段名整 stuffing，语义不成立。105/106 向量刀的天然靶子（留档）。
+- **毛球/哪家厂/商品编码/存放/退回去**（探针在场但探针已 r1 命中——011/010/008/007/006
+  收词前就过）：无提升不留。
+- **想退/收费/杯子**（池频次 ≥4 但碎片或泛称）：不成词/非同义，弃。
+
+oov_syn 剩余 miss：001（r1，29 评论块抢占——评论闸词表是检索代码，Out）与 013
+（地点语义）。两者都是 105+ 的靶子，不是同义表能治的。
+
+### 复现命令（仓库根目录）
+
+```
+uv run python scripts/eval/collect_questions.py --db postgresql://suite:suite@localhost:5433/suite --out scripts/eval/out/questions-candidates-104.json
+uv run python scripts/eval/dig_oov_synonyms.py --db postgresql://suite:suite@localhost:5433/suite
+uv run python scripts/eval/dig_oov_synonyms.py --ab --db postgresql://suite:suite@localhost:5433/suite --ab-out scripts/eval/out/104/ab-00-baseline.json
+uv run python scripts/eval/run_eval.py --db postgresql://suite:suite@localhost:5433/suite
+```
