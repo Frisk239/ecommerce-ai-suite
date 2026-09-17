@@ -231,10 +231,95 @@ def test_distributions_include_oov_syn() -> None:
     assert "oov_syn" in table
 
 
+def test_distributions_include_sem_neg() -> None:
+    """第 107a 刀：第六分布（语义负例）进统计词表与表格，走 cite 组管线。"""
+    assert "sem_neg" in runner.DISTRIBUTIONS
+    hit = {"asset_id": 5, "version_no": 1, "chunk": "c", "score": 1.0}
+    row = runner.judge_case(
+        _case("sem_neg", {"cite": {"asset_id": 5, "version_no": 1}}), [hit], "answer"
+    )
+    assert row["recall1"] is True and row["recall3"] is True
+    assert row["mrr"] == 1.0 and row["ndcg3"] == 1.0 and row["noise3"] == pytest.approx(2 / 3)
+    agg = runner.aggregate([row])
+    assert agg["sem_neg"]["n"] == 1
+    assert agg["sem_neg"]["mrr"] == 1.0
+    table = runner.format_table(agg, judge_on=False)
+    assert "sem_neg" in table
+
+
+# ---------------------------------------------------------------- 第 107a 刀：排序三指标纯函数
+
+
+def _hit(asset_id: int, version_no: int = 1) -> dict:
+    return {"asset_id": asset_id, "version_no": version_no, "chunk": "c", "score": 1.0}
+
+
+def test_reciprocal_rank_position_boundaries() -> None:
+    """MRR 边界：top1=1.0/top2=0.5/top3≈0.333/不中=0；期望多块取首块位次。"""
+    assert runner.reciprocal_rank([_hit(1)], 1) == 1.0
+    assert runner.reciprocal_rank([_hit(2), _hit(1)], 1) == 0.5
+    assert runner.reciprocal_rank([_hit(2), _hit(3), _hit(1)], 1) == pytest.approx(1 / 3)
+    # 不中（含零命中）：0
+    assert runner.reciprocal_rank([_hit(2), _hit(3), _hit(4)], 1) == 0.0
+    assert runner.reciprocal_rank([], 1) == 0.0
+    # 期望多块进榜：MRR 只看首次出现位次（1/2，不叠加）
+    assert runner.reciprocal_rank([_hit(2), _hit(1), _hit(1)], 1) == 0.5
+    # 版本不同不影响（资产级口径，与 recall@3 一致）
+    assert runner.reciprocal_rank([_hit(1, version_no=3)], 1) == 1.0
+
+
+def test_discounted_gain_matches_p1_p2_p3() -> None:
+    """nDCG@3 边界：p1=1.0/p2≈0.6309/p3=0.5（log2(i+1) 折扣）/不中=0；多块取首块。"""
+    assert runner.discounted_gain([_hit(1)], 1) == 1.0
+    # 1/log2(3) = 0.6309（spec 口径 p2=0.63）
+    assert runner.discounted_gain([_hit(2), _hit(1)], 1) == pytest.approx(0.6309, abs=1e-4)
+    # 1/log2(4) = 0.5（spec 口径 p3=0.5）
+    assert runner.discounted_gain([_hit(2), _hit(3), _hit(1)], 1) == 0.5
+    assert runner.discounted_gain([_hit(2), _hit(3), _hit(4)], 1) == 0.0
+    assert runner.discounted_gain([], 1) == 0.0
+    # 期望多块：只记首块位次折扣（取值域不超 1）
+    assert runner.discounted_gain([_hit(1), _hit(1), _hit(1)], 1) == 1.0
+
+
+def test_noise_rate_counts_expected_blocks() -> None:
+    """噪声率@3 边界：(3-期望块数)/3；全部期望=0、不中=100%；短列表空位按非相关计。"""
+    assert runner.noise_rate([_hit(1), _hit(1), _hit(1)], 1) == 0.0
+    assert runner.noise_rate([_hit(1), _hit(2), _hit(1)], 1) == pytest.approx(1 / 3)
+    assert runner.noise_rate([_hit(1), _hit(2), _hit(3)], 1) == pytest.approx(2 / 3)
+    # 期望不在 top3（含零命中）：100%
+    assert runner.noise_rate([_hit(2), _hit(3), _hit(4)], 1) == 1.0
+    assert runner.noise_rate([], 1) == 1.0
+    # 命中列表短于 3：空位按非相关计（分母恒 3——与 spec 公式逐字一致）
+    assert runner.noise_rate([_hit(1)], 1) == pytest.approx(2 / 3)
+    assert runner.noise_rate([_hit(1), _hit(1)], 1) == pytest.approx(1 / 3)
+
+
+def test_metric_columns_flow_through_aggregate_and_table() -> None:
+    """三指标列随 cite 期望落列、refusal 组不适用（None → 表显 -），聚合均值正确。"""
+    cite = {"cite": {"asset_id": 1, "version_no": 1}}
+    miss = {"cite": {"asset_id": 9, "version_no": 1}}
+    rows = [
+        runner.judge_case(_case("positive", cite), [_hit(1), _hit(2), _hit(3)], "answer"),
+        runner.judge_case(_case("positive", miss), [_hit(4), _hit(5), _hit(6)], "answer"),
+        runner.judge_case(_case("refusal", {"refuse": True}), [], "refusal"),
+    ]
+    agg = runner.aggregate(rows)
+    assert agg["positive"]["mrr"] == 0.5  # (1.0 + 0.0) / 2
+    assert agg["positive"]["ndcg3"] == 0.5  # (1.0 + 0.0) / 2
+    assert agg["positive"]["noise3"] == round((2 / 3 + 1.0) / 2, 4)
+    assert agg["refusal"]["mrr"] is None and agg["refusal"]["ndcg3"] is None
+    assert agg["refusal"]["noise3"] is None
+    table = runner.format_table(agg, judge_on=False)
+    assert "MRR" in table and "nDCG@3" in table and "噪声@3" in table
+    # refusal 行三列显示 -
+    refusal_line = next(ln for ln in table.splitlines() if ln.startswith("refusal"))
+    assert refusal_line.count("-") >= 3
+
+
 def test_aggregate_cite_groups_share_recall_columns() -> None:
-    """positive/paraphrase/confusion/oov_syn 四个 cite 组统一走 recall 判定。"""
+    """positive/paraphrase/confusion/oov_syn/sem_neg 五个 cite 组统一走 recall 判定。"""
     hit = {"asset_id": 5, "version_no": 2, "chunk": "c", "score": 1.0}
-    for dist in ("positive", "paraphrase", "confusion", "oov_syn"):
+    for dist in ("positive", "paraphrase", "confusion", "oov_syn", "sem_neg"):
         row = runner.judge_case(_case(dist, {"cite": {"asset_id": 5, "version_no": 2}}), [hit], "answer")
         assert row["recall1"] is True and row["recall3"] is True
 
@@ -391,15 +476,15 @@ OOV_SYN_COLLECTED_WORDS = (
 )
 
 
-def test_golden_schema_five_distributions() -> None:
-    """golden_large.json 形状自检（纯文件检查，不连 DB）：五分布键合法、
+def test_golden_schema_distributions() -> None:
+    """golden_large.json 形状自检（纯文件检查，不连 DB）：六分布键合法、
     id/问句唯一、oov_syn 改写词不在同义词表内。"""
     golden = EVAL_DIR / "out" / "golden_large.json"
     if not golden.exists():
         pytest.skip("golden 大集文件不在本环境（生成见 scripts/eval/generate_golden.py）")
     cases = json.loads(golden.read_text(encoding="utf-8"))
 
-    valid = {"positive", "paraphrase", "confusion", "refusal", "oov_syn"}
+    valid = {"positive", "paraphrase", "confusion", "refusal", "oov_syn", "sem_neg"}
     ids = [c["id"] for c in cases]
     questions = [c["question"] for c in cases]
     assert len(ids) == len(set(ids)), "case id 必须唯一"
@@ -419,6 +504,30 @@ def test_golden_schema_five_distributions() -> None:
     # 第五分布必须在场（第 101 刀起大集含表外同义探针 10-20 条）
     oov_cases = [c for c in cases if c["distribution"] == "oov_syn"]
     assert 10 <= len(oov_cases) <= 20, f"表外同义探针 10-20 条，实际 {len(oov_cases)}"
+
+
+def test_golden_schema_sem_neg_shape() -> None:
+    """第六分布 sem_neg 形状自检（第 107a 刀）：25-30 条、id 全部 sneg- 前缀、
+    两亚族构成钉住（否定 sneg-neg- 10-12 条 + 近邻 sneg-nb- 12-18 条）——
+    亚族配比是评测靶子的构成申报，改配比须同步改报告。"""
+    golden = EVAL_DIR / "out" / "golden_large.json"
+    if not golden.exists():
+        pytest.skip("golden 大集文件不在本环境（生成见 scripts/eval/generate_golden.py）")
+    cases = json.loads(golden.read_text(encoding="utf-8"))
+    sem_neg = [c for c in cases if c["distribution"] == "sem_neg"]
+    assert 25 <= len(sem_neg) <= 30, f"语义负例 25-30 条，实际 {len(sem_neg)}"
+    for case in sem_neg:
+        assert case["id"].startswith("sneg-"), f"{case['id']} 必须 sneg- 前缀"
+        assert set(case["expect"]) == {"cite"}, "sem_neg 全部是 cite 期望（与正向同锚/对象锚）"
+    negation = [c for c in sem_neg if c["id"].startswith("sneg-neg-")]
+    near = [c for c in sem_neg if c["id"].startswith("sneg-nb-")]
+    assert 10 <= len(negation) <= 12, f"否定语义 10-12 条，实际 {len(negation)}"
+    assert 12 <= len(near) <= 18, f"语义近邻 12-18 条，实际 {len(near)}"
+    # 否定式问句必须真带否定标记（不/没/别/未）——形态钉住，防止未来维护混入正向句
+    for case in negation:
+        assert any(mark in case["question"] for mark in ("不", "没", "别", "未")), (
+            f"{case['id']} 否定式问句缺否定标记：{case['question']!r}"
+        )
 
 
 def test_golden_oov_syn_words_outside_synonym_table() -> None:

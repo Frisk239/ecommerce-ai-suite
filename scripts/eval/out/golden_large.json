@@ -2196,5 +2196,313 @@
     "version_no": 1
    }
   }
+ },
+ {
+  "id": "sneg-neg-001",
+  "distribution": "sem_neg",
+  "question": "不支持退货吗",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-002",
+  "distribution": "sem_neg",
+  "question": "不能开发票吗",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-003",
+  "distribution": "sem_neg",
+  "question": "没有保修吧",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-004",
+  "distribution": "sem_neg",
+  "question": "不可以退货吧",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-005",
+  "distribution": "sem_neg",
+  "question": "不能退换吗",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-006",
+  "distribution": "sem_neg",
+  "question": "不提供刻字吗",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-007",
+  "distribution": "sem_neg",
+  "question": "不支持七天无理由退货吗",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-008",
+  "distribution": "sem_neg",
+  "question": "电池不保修吗",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-009",
+  "distribution": "sem_neg",
+  "question": "保修不要运费吗",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-010",
+  "distribution": "sem_neg",
+  "question": "不能换货吗",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-011",
+  "distribution": "sem_neg",
+  "question": "塑料外壳不能刻字吗",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-neg-012",
+  "distribution": "sem_neg",
+  "question": "人为损坏不在保修范围吗",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-001",
+  "distribution": "sem_neg",
+  "question": "保温杯的保修政策",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-002",
+  "distribution": "sem_neg",
+  "question": "保温杯的退换政策",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-003",
+  "distribution": "sem_neg",
+  "question": "保温杯购买能开发票吗",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-004",
+  "distribution": "sem_neg",
+  "question": "保温杯的刻字",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-005",
+  "distribution": "sem_neg",
+  "question": "保温杯的发票",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-006",
+  "distribution": "sem_neg",
+  "question": "Vivo 手机能刻字吗",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-007",
+  "distribution": "sem_neg",
+  "question": "显示器的刻字",
+  "expect": {
+   "cite": {
+    "asset_id": 492,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-008",
+  "distribution": "sem_neg",
+  "question": "显示器的保修期是多久",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-009",
+  "distribution": "sem_neg",
+  "question": "键盘的保修政策",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-010",
+  "distribution": "sem_neg",
+  "question": "耳机的电池保修多久",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-011",
+  "distribution": "sem_neg",
+  "question": "耳机的退换政策",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-012",
+  "distribution": "sem_neg",
+  "question": "退货的运费谁承担",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-013",
+  "distribution": "sem_neg",
+  "question": "换货的时限是多久",
+  "expect": {
+   "cite": {
+    "asset_id": 479,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-014",
+  "distribution": "sem_neg",
+  "question": "发票的开具时限是多久",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-015",
+  "distribution": "sem_neg",
+  "question": "发货用什么快递",
+  "expect": {
+   "cite": {
+    "asset_id": 480,
+    "version_no": 1
+   }
+  }
+ },
+ {
+  "id": "sneg-nb-016",
+  "distribution": "sem_neg",
+  "question": "保修办理需要什么凭证",
+  "expect": {
+   "cite": {
+    "asset_id": 478,
+    "version_no": 1
+   }
+  }
  }
 ]
