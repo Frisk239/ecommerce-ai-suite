@@ -34,7 +34,6 @@
 预置音色（tts.py 请求形状不携带参考音频）。
 """
 
-import glob
 import io
 import json
 import logging
@@ -55,6 +54,7 @@ from suite_api.models import Asset, AssetVersion, ComposeTask, Product
 from suite_api.services import material as material_service
 from suite_api.services import tts as tts_service
 from suite_api.services.asset_view import read_version_text
+from suite_api.services.cjk_font import find_cjk_font
 from suite_api.services.publishing import resolve_field_value
 from suite_api.services.registration import register_asset
 from suite_platform.storage import ObjectStorage
@@ -368,28 +368,14 @@ def build_timeline(manifest: ComposeManifest, template: str) -> PlanOutcome:
 def _find_cjk_font() -> str:
     """找一个带 CJK 字形的字体文件（drawtext 渲染中文必需）。
 
-    搜索序覆盖三平台：Linux 容器（fonts-noto-cjk，Dockerfile 已装）、Windows
-    开发机（微软雅黑/黑体/宋体）、macOS（苹方/黑体）。找不到抛 RenderError
-    （诚实失败：缺字体的 drawtext 只会渲染豆腐块）。
+    第 115 刀起定位逻辑抽到 services/cjk_font.py（封面文字卡流水线共用）；
+    这里保留薄壳：把 None 翻成 RenderError（诚实失败：缺字体的 drawtext
+    只会渲染豆腐块）。
     """
-    candidates = [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-        "/usr/share/fonts/truetype/arphic/uming.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyhbd.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "C:/Windows/Fonts/simsun.ttc",
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/STHeiti Light.ttc",
-    ]
-    for pattern in ("/usr/share/fonts/**/NotoSansCJK*", "/usr/share/fonts/**/*wqy*"):
-        candidates.extend(glob.glob(pattern, recursive=True))
-    for path in candidates:
-        if Path(path).is_file():
-            return path
-    raise RenderError("找不到可用的中文字体（drawtext 渲染字幕/AIGC 标识必需）")
+    path = find_cjk_font()
+    if path is None:
+        raise RenderError("找不到可用的中文字体（drawtext 渲染字幕/AIGC 标识必需）")
+    return path
 
 
 def wrap_cjk(text: str, width: int) -> str:

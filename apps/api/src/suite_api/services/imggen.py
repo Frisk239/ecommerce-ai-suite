@@ -139,3 +139,44 @@ def generate_image(prompt: str, *, size: str) -> bytes:
         logger.warning("文生图请求失败: %s", type(exc).__name__)
         raise ImggenUnavailable("文生图服务暂时不可用") from exc
     return _decode_b64_json(response)
+
+
+# 编辑模型超时（秒）：20B 编辑模型比 schnell 慢得多（实测 30 步几十秒级），
+# 单独给预算——不抬全局 IMGGEN_TIMEOUT（t2i 的 60s 纪律不动，前端等待面也不变）
+EDIT_TIMEOUT_SECONDS = 180.0
+
+
+def edit_image(instruction: str, image_bytes: bytes) -> bytes:
+    """真实图片 + 编辑指令 → 图片字节（指令式图像编辑，第 115 刀 W15a「美化产品图」）。
+
+    与 ``generate_image`` 的本质差异：**输入携带真实商品图**（data URL 进
+    ``image`` 字段，SiliconFlow Images API 的编辑形态——``Qwen-Image-Edit-2509``
+    等指令编辑模型），商品主体来自原图而不是模型想象。输出比例跟随输入图
+    （模型侧行为；构图要求写进指令）。测试注入替身的缝同 ``generate_image``。
+    """
+    from suite_api.services.vlm import image_mime  # 延迟导入：单一魔数真源
+
+    mime = image_mime(image_bytes)
+    if mime is None:
+        raise ImggenUnavailable("参考图字节不是可识别的 png/jpeg/webp 格式")
+    client = _get_client()
+    data_url = f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+    try:
+        response = client.images.generate(
+            model=get_settings().imggen_edit_model,
+            prompt=instruction,
+            response_format="b64_json",
+            timeout=EDIT_TIMEOUT_SECONDS,
+            extra_body={
+                "image": data_url,
+                # SiliconFlow 文档口径（Qwen-Image-Edit 示例参数）：20B 编辑模型
+                # 的采样参数走非 OpenAI 标准字段，经 extra_body 透传
+                "num_inference_steps": 30,
+            },
+        )
+    except ImggenError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 统一转通用文案，凭证/端点不外泄
+        logger.warning("图像编辑请求失败: %s", type(exc).__name__)
+        raise ImggenUnavailable("图像编辑服务暂时不可用") from exc
+    return _decode_b64_json(response)

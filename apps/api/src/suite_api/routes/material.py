@@ -43,6 +43,7 @@ from suite_api.services.material import (
     TEMPLATES,
     approve_task,
     reject_task,
+    retry_image_step,
     retry_task,
     run_generation_task,
     validate_template,
@@ -76,6 +77,9 @@ class MaterialTaskOut(BaseModel):
     qc_llm_passed: bool | None  # None=未跑到（两闸独立记录，ADR 0055）
     image_status: str
     image_asset_id: int | None
+    # 第 115 刀（W15a）：美化产品图所基于的真实图片资产（血缘锚，UI 展示
+    # 「基于 A-xxxx 美化生成」）；文字卡/文生图背景/跳过态为 None
+    image_reference_asset_id: int | None
     created_at: datetime
 
 
@@ -112,6 +116,7 @@ def _to_out(task: MaterialTask, product_name: str) -> MaterialTaskOut:
         qc_llm_passed=task.qc_llm_passed,
         image_status=task.image_status or IMAGE_NONE,
         image_asset_id=task.image_asset_id,
+        image_reference_asset_id=task.image_reference_asset_id,
         created_at=task.created_at,
     )
 
@@ -276,4 +281,23 @@ def retry(
     del operator
     task = _task_or_404(db, task_id)
     retry_task(db, storage, task)  # 配图步会重写暂存字节，重试也需要 storage
+    return _to_out(task, _product_name(db, task.product_id))
+
+
+@router.post("/tasks/{task_id}/retry-image", response_model=MaterialTaskOut)
+def retry_image(
+    task_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> MaterialTaskOut:
+    """补配图（第 115 刀 W15a）：待抽检任务的配图没成/没出时**只重跑配图步**。
+
+    文案已过双闸不动（要重写文案走打回→重试）；适用 image_status ∈
+    requested/skipped_no_key/skipped_no_image/failed——「先给商品传图、
+    再回来补配图」的闭环出口。站内模板配图=美化产品图（基于真实商品图编辑），
+    补跑前先满足前置：商品挂图片资产 + IMGGEN key。"""
+    del operator
+    task = _task_or_404(db, task_id)
+    retry_image_step(db, storage, task)
     return _to_out(task, _product_name(db, task.product_id))
