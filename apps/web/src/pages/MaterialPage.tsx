@@ -16,6 +16,7 @@ import {
   CaretRight,
   FilmSlate,
   Image as ImageIcon,
+  MagnifyingGlass,
   Megaphone,
   Plus,
   Warning,
@@ -26,6 +27,7 @@ import { api } from '../api/endpoints'
 import type { AssetListItem, MaterialTask, MaterialTemplate } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { useEscapeClose } from '../hooks/useEscapeClose'
+import { matchesAllTerms, splitTerms } from '../search'
 import {
   MATERIAL_IMAGE_STATUS_LABEL,
   formatAssetId,
@@ -549,6 +551,25 @@ export default function MaterialPage() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [detailId, setDetailId] = useState<number | null>(null)
+  // 任务检索（第 117 刀 W17，第五站 Owner 反馈）：客户端过滤（数据量小），多词
+  // 空格 AND——与资产/商品/切片页同一口径；不进 URL（切页签保留输入）。
+  const [query, setQuery] = useState('')
+  const terms = useMemo(() => splitTerms(query), [query])
+  const visibleTasks = useMemo(() => {
+    if (terms.length === 0) return tasks
+    return tasks.filter((t) =>
+      matchesAllTerms(
+        [
+          t.product_name.toLowerCase(),
+          (t.title ?? '').toLowerCase(),
+          t.template_name.toLowerCase(),
+          String(t.id),
+          formatTaskId(t.id).toLowerCase(),
+        ],
+        terms,
+      ),
+    )
+  }, [tasks, terms])
   // 详情永远从最新列表取行（动作后 reload，抽屉跟着刷新状态；列表里没了就关抽屉）
   const detailTask = useMemo(
     () => (detailId === null ? null : (tasks.find((t) => t.id === detailId) ?? null)),
@@ -590,6 +611,42 @@ export default function MaterialPage() {
           ))}
         </div>
       </PageHeader>
+
+      {/* 任务检索行（第 117 刀 W17）：任务多了靠滚不是办法——商品/标题/模板/任务 ID
+          多词 AND；口径与资产/商品/切片页同源（src/search.ts）。 */}
+      {tab === '任务列表' && state.phase === 'ok' && tasks.length > 0 ? (
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="relative w-full max-w-xs">
+            <MagnifyingGlass
+              aria-hidden
+              size={13}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-caption"
+            />
+            <input
+              className="input w-full pl-8 pr-8"
+              aria-label="搜索素材任务"
+              placeholder="搜索商品 / 标题 / 模板 / ID（多词空格分隔）…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query !== '' ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm absolute right-1 top-1/2 -translate-y-1/2"
+                aria-label="清空搜索"
+                onClick={() => setQuery('')}
+              >
+                <X aria-hidden size={12} />
+              </button>
+            ) : null}
+          </div>
+          {terms.length > 0 ? (
+            <span className="text-xs tabular-nums text-ink-3">
+              {visibleTasks.length} 条匹配 · 共 {tasks.length} 条
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {tab === '内容成片' ? (
         <VideoComposePanel />
@@ -688,6 +745,19 @@ export default function MaterialPage() {
             }
           />
         </div>
+      ) : visibleTasks.length === 0 ? (
+        <div className="rounded-[8px] border-[1.5px] border-dashed border-line-3 bg-surface/60">
+          <Empty
+            icon={<MagnifyingGlass aria-hidden size={24} />}
+            title="没有匹配的素材任务"
+            hint={`搜索把 ${tasks.length} 条任务收窄到了 0——清空输入即恢复完整列表（多词空格分隔，每个词都要命中）。`}
+            action={
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setQuery('')}>
+                清空搜索
+              </button>
+            }
+          />
+        </div>
       ) : (
         <div className="panel overflow-x-auto">
           <table className="table-gov">
@@ -705,7 +775,7 @@ export default function MaterialPage() {
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task) => (
+              {visibleTasks.map((task) => (
                 <tr key={task.id} className="row-click" onClick={() => setDetailId(task.id)}>
                   <td className="font-mono text-xs text-ink-3">{formatTaskId(task.id)}</td>
                   <td className="text-[13px] text-ink-2" title={`P-${task.product_id}`}>
