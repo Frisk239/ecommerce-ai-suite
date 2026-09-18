@@ -58,7 +58,7 @@ from suite_api.settings import Settings
 
 API_PHONE = "13812345678"
 MASKED_PHONE = "1********78"
-_GOOD_SCORE_JSON = '{"accurate": 36, "evidence": 25, "tone": 28, "comment": "口径准"}'
+_GOOD_SCORE_JSON = '{"accurate": 26, "objection": 21, "evidence": 22, "tone": 17, "comment": "口径准"}'
 
 ApiFixture = tuple[TestClient, Path]
 

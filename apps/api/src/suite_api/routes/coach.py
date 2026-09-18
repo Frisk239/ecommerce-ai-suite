@@ -20,19 +20,32 @@ from sqlalchemy.orm import Session
 
 from suite_api.deps import get_current_operator, get_db, get_storage
 from suite_api.models import CoachRecord, Operator
+from suite_api.models import CoachRoleplay as CoachRoleplayModel
+from suite_api.services import coach_roleplay
 from suite_api.services.coaching import derive_questions, rescore_record, score_attempt
 from suite_platform.storage import ObjectStorage
+
+
+def _operator_name(db: Session) -> str:
+    op = db.scalar(select(Operator).limit(1))
+    return op.username if op is not None and op.username else "operator"
+
 
 router = APIRouter(prefix="/api/coach", tags=["coach"])
 
 
 class QuestionKeyOut(BaseModel):
-    """题源锚（0007 引用口径：题面=该资产该版本里的内容，回放不随修订漂移）。"""
+    """题源锚（0007 引用口径；第 121 刀扩四源）。
 
-    asset_id: int
-    version_no: int
-    source: str  # qa | transcript
-    pair_index: int | None  # transcript 兜底题为 None
+    qa/transcript 锚资产版本；gap 锚缺口 id（真实疑难，缺口解决则题消）；
+    compliance 锚内置场景 id（红线题库的静态键）。四选一形态。"""
+
+    asset_id: int | None = None  # gap/compliance 题无资产锚
+    version_no: int | None = None
+    source: str  # qa | transcript | gap | compliance
+    pair_index: int | None = None
+    gap_id: int | None = None  # source=gap 时有值
+    scenario_id: str | None = None  # source=compliance 时有值
 
 
 class CoachQuestionOut(BaseModel):
@@ -125,3 +138,106 @@ def rescore(
     """未评分记录重跑打分（空 key 环境配好底座后就地点一下即可）；已评分 409。"""
     del operator
     return _to_out(rescore_record(db, record_id))
+
+
+# ---------- 对练模式（第 121 刀 A）----------
+
+
+class RoleplayStartIn(BaseModel):
+    question_key: dict[str, Any]
+
+
+class RoleplayTurnIn(BaseModel):
+    text: str
+
+
+class CoachRoleplayOut(BaseModel):
+    id: int
+    status: str
+    persona: dict[str, Any]
+    question_text: str
+    question_key: dict[str, Any]
+    turns: list[dict[str, Any]]
+    score: dict[str, Any] | None
+    model_name: str | None
+    created_at: datetime
+
+
+def _roleplay_to_out(session) -> CoachRoleplayOut:
+    return CoachRoleplayOut(
+        id=session.id,
+        status=session.status,
+        persona=dict(session.persona or {}),
+        question_text=session.question_text,
+        question_key=dict(session.question_key or {}),
+        turns=list(session.turns or []),
+        score=dict(session.score) if session.score else None,
+        model_name=session.model_name,
+        created_at=session.created_at,
+    )
+
+
+@router.get("/roleplay", response_model=list[CoachRoleplayOut])
+def list_roleplays(
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> list[CoachRoleplayOut]:
+    """对练会话列表（最近的在前）。"""
+    del operator
+    return [
+        _roleplay_to_out(r) for r in coach_roleplay.list_roleplays(db)
+    ]
+
+
+@router.get("/roleplay/{roleplay_id}", response_model=CoachRoleplayOut)
+def get_roleplay(
+    roleplay_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> CoachRoleplayOut:
+    del operator
+    session = db.get(CoachRoleplayModel, roleplay_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对练会话不存在")
+    return _roleplay_to_out(session)
+
+
+@router.post("/roleplay/start", response_model=CoachRoleplayOut, status_code=status.HTTP_201_CREATED)
+def start_roleplay(
+    body: RoleplayStartIn,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+    storage: Annotated[ObjectStorage, Depends(get_storage)] = None,
+) -> CoachRoleplayOut:
+    """开一场 AI 客户对练：选题（四源通吃）→ 随机人设 → 顾客开场。"""
+    del operator
+    session = coach_roleplay.roleplay_start(
+        db, storage, _operator_name(db), body.question_key
+    )
+    return _roleplay_to_out(session)
+
+
+@router.post("/roleplay/{roleplay_id}/turn", response_model=CoachRoleplayOut)
+def roleplay_turn(
+    roleplay_id: int,
+    body: RoleplayTurnIn,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> CoachRoleplayOut:
+    """受训者发言 → AI 顾客回一句（约 10-20 秒）。"""
+    del operator
+    session = coach_roleplay.roleplay_turn(db, roleplay_id, body.text)
+    return _roleplay_to_out(session)
+
+
+@router.post("/roleplay/{roleplay_id}/finish", response_model=CoachRoleplayOut)
+def finish_roleplay(
+    roleplay_id: int,
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> CoachRoleplayOut:
+    """结束对练：整段打四维分 + 证据锚 + 整改建议（约 10-20 秒）。"""
+    del operator
+    session = coach_roleplay.roleplay_finish(db, roleplay_id)
+    return _roleplay_to_out(session)

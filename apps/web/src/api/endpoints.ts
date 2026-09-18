@@ -16,6 +16,7 @@ import type {
   CoachQuestion,
   CoachQuestionKey,
   CoachRecord,
+  CoachRoleplay,
   ComposeTask,
   ComposeTemplate,
   ComposeTtsStatus,
@@ -275,6 +276,20 @@ export const api = {
   // 销售考核（第 19 刀/ADR 0040）：题库从已发布对话动态推导；作答/重评请求内
   // 同步 LLM 打分（≤20s，超时宽同素材生成）。打分失败不抛：200 + unscored 态。
   listCoachQuestions: () => request<CoachQuestion[]>('/coach/questions'),
+  // 对练模式（第 121 刀 A）：AI 客户多轮对练 + 整段评分
+  startCoachRoleplay: (questionKey: Record<string, unknown>) =>
+    request<CoachRoleplay>('/coach/roleplay/start', {
+      method: 'POST',
+      body: JSON.stringify({ question_key: questionKey }),
+    }, 60_000),
+  coachRoleplayTurn: (id: number, text: string) =>
+    request<CoachRoleplay>(`/coach/roleplay/${id}/turn`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }, 60_000),
+  coachRoleplayFinish: (id: number) =>
+    request<CoachRoleplay>(`/coach/roleplay/${id}/finish`, { method: 'POST' }, 60_000),
+  listCoachRoleplays: () => request<CoachRoleplay[]>('/coach/roleplay'),
   createCoachAttempt: (questionKey: CoachQuestionKey, answer: string) =>
     request<CoachRecord>(
       '/coach/attempts',

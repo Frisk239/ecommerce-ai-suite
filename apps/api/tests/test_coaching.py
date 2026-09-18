@@ -192,9 +192,9 @@ def test_normalize_key_rejects(raw: Any) -> None:
 
 def test_system_prompt_carries_rubric() -> None:
     for token in (
-        "口径准确 40",
-        "证据贴合 30",
-        "服务语气 30",
+        "口径准确 30",
+        "证据贴合 25",
+        "服务语气 20",
         "accurate",
         "evidence",
         "tone",
@@ -202,7 +202,7 @@ def test_system_prompt_carries_rubric() -> None:
         "JSON",
     ):
         assert token in SCORING_SYSTEM_PROMPT
-    assert RUBRIC_MAX == {"accurate": 40, "evidence": 30, "tone": 30}
+    assert RUBRIC_MAX == {"accurate": 30, "objection": 25, "evidence": 25, "tone": 20}
 
 
 def test_user_prompt_has_three_inputs() -> None:
@@ -219,12 +219,12 @@ def test_user_prompt_fallback_marks_missing_standard() -> None:
 
 # ---------- 评分解析与三态 ----------
 
-GOOD_SCORE = '{"accurate": 36, "evidence": 25, "tone": 28, "comment": "口径准，语气亲切"}'
+GOOD_SCORE = '{"accurate": 26, "objection": 21, "evidence": 22, "tone": 17, "comment": "口径准，语气亲切"}'
 
 
 def test_parse_plain_and_fenced_score() -> None:
     parsed = parse_score_output(GOOD_SCORE)
-    assert parsed == {"accurate": 36, "evidence": 25, "tone": 28, "comment": "口径准，语气亲切"}
+    assert parsed == {"accurate": 26, "objection": 21, "evidence": 22, "tone": 17, "comment": "口径准，语气亲切"}
     assert parse_score_output(f"```json\n{GOOD_SCORE}\n```") == parsed
 
 
@@ -233,7 +233,7 @@ def test_parse_plain_and_fenced_score() -> None:
     [
         "抱歉，我打不了分。",  # 坏 JSON
         "[36, 25, 28]",  # 不是对象
-        '{"accurate": 41, "evidence": 25, "tone": 28, "comment": "超区间"}',  # >40
+        '{"accurate": 31, "evidence": 25, "tone": 20, "comment": "超区间"}',  # >30
         '{"accurate": -1, "evidence": 25, "tone": 28, "comment": "负数"}',
         '{"accurate": 36, "evidence": 25, "comment": "缺 tone"}',
         '{"accurate": "36", "evidence": 25, "tone": 28, "comment": "字符串分数"}',
@@ -267,13 +267,13 @@ def _patch_llm(
 def test_try_score_success(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _patch_llm(monkeypatch, result=GOOD_SCORE)
     score, reason = try_score("题面", "标准答案", "作答")
-    assert score == {"accurate": 36, "evidence": 25, "tone": 28, "comment": "口径准，语气亲切"}
+    assert score == {"accurate": 26, "objection": 21, "evidence": 22, "tone": 17, "comment": "口径准，语气亲切"}
     assert reason is None
     assert len(calls) == 1
     assert (
         "题面" in calls[0]["user"] and "标准答案" in calls[0]["user"] and "作答" in calls[0]["user"]
     )
-    assert "口径准确 40" in calls[0]["system"]
+    assert "口径准确 30" in calls[0]["system"]
 
 
 @pytest.mark.parametrize(
@@ -294,3 +294,41 @@ def test_try_score_unscored_states(
     score, reason = try_score("题面", None, "作答")
     assert score is None
     assert reason is not None and reason.startswith("未评分") and expect_in_reason in reason
+
+
+# ---------- 第 121 刀：题源四通道 + 证据锚 ----------
+
+
+def test_compliance_scenarios_shape() -> None:
+    """合规红线题库：每条有 scenario_id/题面/答案要点/标题；答案要点讲清
+    红线在哪+应该怎么说（评分参照语义）。"""
+    from suite_api.services.coaching import COMPLIANCE_SCENARIOS
+
+    assert len(COMPLIANCE_SCENARIOS) >= 4
+    for sc in COMPLIANCE_SCENARIOS:
+        assert sc["scenario_id"] and sc["question"] and sc["answer_outline"] and sc["title"]
+
+
+def test_normalize_key_gap_and_compliance() -> None:
+    """题源锚归一：gap 带 gap_id、compliance 带 scenario_id（须在场景库中）；
+    坏形态 None -> 404。"""
+    from suite_api.services.coaching import normalize_key
+
+    assert normalize_key({"source": "gap", "gap_id": 7}) == {"source": "gap", "gap_id": 7}
+    assert normalize_key({"source": "gap"}) is None  # 缺 gap_id
+    assert normalize_key({"source": "gap", "gap_id": "abc"}) is None
+    assert normalize_key({"source": "compliance", "scenario_id": "redline-1"}) == {
+        "source": "compliance",
+        "scenario_id": "redline-1",
+    }
+    assert normalize_key({"source": "compliance", "scenario_id": "nope"}) is None
+
+
+def test_rubric_is_four_dim_with_objection() -> None:
+    """四维（B 方案核心）：口径准确/异议处理/证据贴合/服务语气——行业
+    考核共识=合规红线/销售技巧/专业知识/接待态度。"""
+    from suite_api.services.coaching import RUBRIC_MAX, SCORING_SYSTEM_PROMPT
+
+    assert "objection" in RUBRIC_MAX
+    assert "异议处理" in SCORING_SYSTEM_PROMPT
+    assert "极限词" in SCORING_SYSTEM_PROMPT  # 合规红线在口径维扣分

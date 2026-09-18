@@ -30,7 +30,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from suite_api.models import Asset, AssetVersion, CoachRecord
+from suite_api.models import Asset, AssetVersion, CoachRecord, KnowledgeGap
 from suite_api.services import llm
 from suite_api.services.asset_view import VersionTextError, read_version_text
 from suite_api.services.machine_wash import QA_FIELD, redact, strip_code_fence
@@ -40,21 +40,68 @@ from suite_platform.storage import ObjectStorage
 # 题源两种（0040）：qa=confirmed 问答对逐对成题；transcript=转写首问兜底
 SOURCE_QA = "qa"
 SOURCE_TRANSCRIPT = "transcript"
+SOURCE_GAP = "gap"
+SOURCE_COMPLIANCE = "compliance"
 
-# 三维 rubric 满分（原型 RUBRIC 冻结口径，0040）：键=LLM 输出 JSON 字段名
-RUBRIC_MAX: dict[str, int] = {"accurate": 40, "evidence": 30, "tone": 30}
+# 四维 rubric（第 121 刀 B，行业口径调研后重定）：口径准确（与中台已发布口径
+# 一致）/ 异议处理（应对质疑拒绝、化解异议不死板）/ 证据贴合（扣住题面不空泛）
+# / 服务语气（礼貌专业有成交推进）。行业四大维度共识=合规红线/销售技巧/专业
+# 知识/接待态度——异议处理属销售技巧，极限词超范围承诺属口径准确维度扣分项。
+RUBRIC_MAX: dict[str, int] = {
+    "accurate": 30,  # 口径准确
+    "objection": 25,  # 异议处理
+    "evidence": 25,  # 证据贴合
+    "tone": 20,  # 服务语气
+}
 
 SCORING_SYSTEM_PROMPT = (
-    "你是电商客服销售考核的评分官，对受训销售的单轮作答按三维 rubric 打分。\n"
-    "维度与满分：口径准确 40 分（回答口径与标准答案/事实一致，不编造承诺）；"
-    "证据贴合 30 分（扣住题面与标准答案中的证据，不跑题不空泛）；"
-    "服务语气 30 分（礼貌专业、站在顾客视角，有成交推进但不压迫）。\n"
-    "标准答案为空时这是转写兜底题：只看题面与服务语气、口径常识打分，"
+    "你是电商客服销售考核的评分官，对受训销售的单轮作答按四维 rubric 打分。\n"
+    "维度与满分：口径准确 30 分（回答口径与标准答案/事实一致，不编造承诺、"
+    "不用极限词、不超范围承诺——合规红线在这一维扣分）；"
+    "异议处理 25 分（应对质疑/拒绝/砍价等异议的化解能力：共情接住情绪、"
+    "给出理由或替代方案，不死板不硬顶）；"
+    "证据贴合 25 分（扣住题面与标准答案中的证据，不跑题不空泛）；"
+    "服务语气 20 分（礼貌专业、站在顾客视角，有成交推进但不压迫）。\n"
+    "标准答案为空时这是真实疑难题：只看题面与服务语气、口径常识、异议处理打分，"
     "不因缺少标准答案在证据维度扣分。\n"
-    '只输出一个 JSON 对象，形如 {"accurate": 0-40, "evidence": 0-30, '
-    '"tone": 0-30, "comment": "一句话评语"}；三个分数是区间内整数，'
-    "不要输出 JSON 以外的任何解释文字。"
+    '只输出一个 JSON 对象，形如 {"accurate": 0-30, "objection": 0-25, '
+    '"evidence": 0-25, "tone": 0-20, "comment": "一句话评语"}；四个分数是'
+    "区间内整数，不要输出 JSON 以外的任何解释文字。"
 )
+
+
+# 合规红线场景（第 121 刀 B）：内置题库——极限词/虚假承诺/超范围承诺是行业
+# 考核「服务红线」维度的标准题型；答案要点（answer_outline）做评分参照。
+COMPLIANCE_SCENARIOS: list[dict[str, Any]] = [
+    {
+        "scenario_id": "redline-1",
+        "question": "这个保温杯是不是全网最好的？保温效果是不是第一？",
+        "answer_outline": "不得使用「最好/第一/全网之最」等极限词；应说保温 6 小时是实测口径，"
+        "同价位里表现不错，但不用绝对化用语。",
+        "title": "合规红线 · 极限词",
+    },
+    {
+        "scenario_id": "redline-2",
+        "question": "你们这个杯子是不是能保证一辈子不坏？用十年没问题吧？",
+        "answer_outline": "不得做「一辈子/十年不坏」的虚假承诺；应说正常使用下品质稳定，"
+        "售后按退货政策执行，不做超出政策的承诺。",
+        "title": "合规红线 · 虚假承诺",
+    },
+    {
+        "scenario_id": "redline-3",
+        "question": "听说用这个杯子喝水能治胃病，是真的吗？",
+        "answer_outline": "不得宣称任何治疗/保健功效（食品级 316 不锈钢是材质安全口径，"
+        "不是疗效）；应明确说杯子没有治疗作用，只是食品级材质安全。",
+        "title": "合规红线 · 超范围功效宣称",
+    },
+    {
+        "scenario_id": "redline-4",
+        "question": "我不小心把杯子摔坏了，你们能免费换个新的吧？",
+        "answer_outline": "不得超范围承诺免费换新（人为损坏不在退货政策内）；"
+        "应说退货政策覆盖范围，人为损坏不在内，可引导看维修或优惠回购选项。",
+        "title": "合规红线 · 超范围售后承诺",
+    },
+]
 
 
 class ScoreParseError(Exception):
@@ -169,10 +216,53 @@ def asset_questions(
     return [_question(asset, version, SOURCE_TRANSCRIPT, None, question, None)]
 
 
-def derive_questions(db: Session, storage: ObjectStorage) -> list[dict[str, Any]]:
-    """题库推导（只读，不落库）：已发布 dialogue 逐资产展开，按资产 id 升序。
+def gap_questions(db: Session, limit: int = 20) -> list[dict[str, Any]]:
+    """缺口题（第 121 刀 B）：open 知识缺口按热度降序逐条成题——顾客真实问过
+    且没被答上的疑难，比 QA 对抽出的参数题更接近实战（受训者练的是真实
+    顾客的刁钻问题，不是背参数）。题面=顾客原问（出口过 redact），
+    standard_answer=None（真实疑难题：评分按口径常识+异议处理）。
+    """
+    gaps = list(
+        db.scalars(
+            select(KnowledgeGap)
+            .where(KnowledgeGap.status == "open")
+            .order_by(KnowledgeGap.hit_count.desc(), KnowledgeGap.id.desc())
+            .limit(limit)
+        )
+    )
+    return [
+        {
+            "key": {"source": SOURCE_GAP, "gap_id": gap.id},
+            "question": redact(gap.question),
+            "standard_answer": None,
+            "asset_title": f"真实疑难题 · 被问 {gap.hit_count} 次",
+        }
+        for gap in gaps
+    ]
 
-    已发布口径=指针非空（含修订中：考的是线上正在服务的版本，非修订草稿）。
+
+def compliance_questions() -> list[dict[str, Any]]:
+    """合规红线题（第 121 刀 B）：内置场景——极限词/虚假承诺/超范围承诺是
+    行业考核「服务红线」的标准题型；受训者练的是「什么不能说」，
+    answer_outline 做评分参照（讲清红线在哪+应该怎么说）。
+    """
+    return [
+        {
+            "key": {"source": SOURCE_COMPLIANCE, "scenario_id": sc["scenario_id"]},
+            "question": sc["question"],
+            "standard_answer": sc["answer_outline"],
+            "asset_title": sc["title"],
+        }
+        for sc in COMPLIANCE_SCENARIOS
+    ]
+
+
+def derive_questions(db: Session, storage: ObjectStorage) -> list[dict[str, Any]]:
+    """题库推导（只读，不落库）：四种题源，按「真实疑难 > 合规红线 > QA 对 >
+    转写兜底」排序——价值高的排前面（受训者先练真问题）。
+
+    QA/transcript 从已发布 dialogue 逐资产展开（已发布口径=指针非空含修订中）；
+    gap=知识缺口真实疑难（hit_count 降序）；compliance=内置红线场景。
     """
     assets = list(
         db.scalars(
@@ -188,7 +278,12 @@ def derive_questions(db: Session, storage: ObjectStorage) -> list[dict[str, Any]
         if version is None:  # pragma: no cover - 指针漂移属数据异常，防御不 500
             continue
         questions.extend(asset_questions(db, asset, version, storage))
-    return questions
+    return (
+        gap_questions(db)
+        + compliance_questions()
+        + questions
+    )
+
 
 
 def normalize_key(raw: Any) -> dict[str, Any] | None:
@@ -198,12 +293,25 @@ def normalize_key(raw: Any) -> dict[str, Any] | None:
     """
     if not isinstance(raw, dict):
         return None
+    source = raw.get("source")
+    if source == SOURCE_GAP:
+        try:
+            gap_id = int(raw["gap_id"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        return {"source": SOURCE_GAP, "gap_id": gap_id}
+    if source == SOURCE_COMPLIANCE:
+        scenario_id = raw.get("scenario_id")
+        if not isinstance(scenario_id, str) or not scenario_id.strip():
+            return None
+        if not any(sc["scenario_id"] == scenario_id for sc in COMPLIANCE_SCENARIOS):
+            return None
+        return {"source": SOURCE_COMPLIANCE, "scenario_id": scenario_id}
     try:
         asset_id = int(raw["asset_id"])
         version_no = int(raw["version_no"])
     except (KeyError, TypeError, ValueError):
         return None
-    source = raw.get("source")
     if source not in (SOURCE_QA, SOURCE_TRANSCRIPT):
         return None
     pair_index = raw.get("pair_index")
@@ -233,6 +341,30 @@ def find_question(db: Session, storage: ObjectStorage, question_key: Any) -> dic
     key = normalize_key(question_key)
     if key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="题目不存在")
+    if key["source"] == SOURCE_GAP:
+        gap = db.get(KnowledgeGap, key["gap_id"])
+        if gap is None or gap.status != "open":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="题目不存在（缺口可能已解决）"
+            )
+        return {
+            "key": key,
+            "question": redact(gap.question),
+            "standard_answer": None,
+            "asset_title": f"真实疑难题 · 被问 {gap.hit_count} 次",
+        }
+    if key["source"] == SOURCE_COMPLIANCE:
+        sc = next(
+            (x for x in COMPLIANCE_SCENARIOS if x["scenario_id"] == key["scenario_id"]), None
+        )
+        if sc is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="题目不存在")
+        return {
+            "key": key,
+            "question": sc["question"],
+            "standard_answer": sc["answer_outline"],
+            "asset_title": sc["title"],
+        }
     asset = db.get(Asset, key["asset_id"])
     version = (
         db.get(AssetVersion, asset.current_published_version_id)
@@ -256,6 +388,27 @@ def find_question(db: Session, storage: ObjectStorage, question_key: Any) -> dic
         status_code=status.HTTP_404_NOT_FOUND,
         detail="题目不存在（可能已开修订或取消发布，题库按当前已发布版本推导）",
     )
+
+
+def evidence_anchors(db: Session, question_text: str, limit: int = 3) -> list[dict[str, Any]]:
+    """证据锚（第 121 刀 B）：题面过站内检索索引，取 top 命中的已发布资产
+    （A-xxxx · vN + 摘要）——评分参照与中台已发布口径接通，受训者答错时
+    能直接指到「正确口径在哪份资产哪一版」。检索失败返回空列表不拦评分。
+    """
+    try:
+        from suite_api.services.retrieval import retrieve
+
+        hits = retrieve(db, question_text, top_k=limit)
+        return [
+            {
+                "asset_id": hit["asset_id"],
+                "version_no": hit["version_no"],
+                "chunk": hit["chunk"][:80],
+            }
+            for hit in hits
+        ]
+    except Exception:  # noqa: BLE001 - 锚失败不拦评分
+        return []
 
 
 def _apply_score(
@@ -331,6 +484,12 @@ def score_attempt(
     _apply_score(
         record, question_text, standard_answer, trainee_answer
     )  # 三输入走本地变量，不回读过期属性（不重开事务）
+    if record.score is not None:
+        # 证据锚（第 121 刀）：题面接站内检索，评分参照=A-xxxx · vN（检索
+        # 失败空列表不拦评分）；在 LLM 收口后的新事务里查
+        anchors = evidence_anchors(db, question_text)
+        if anchors:
+            record.score = {**record.score, "anchors": anchors}
     db.commit()  # ② 打分结果 UPDATE 收口（新事务，毫秒级）
     db.refresh(record)
     return record
@@ -353,6 +512,10 @@ def rescore_record(db: Session, record_id: int) -> CoachRecord:
     trainee_answer = record.trainee_answer
     db.commit()  # ① 结束读取事务（属性已过期的行不再被 LLM 等待期触碰）
     _apply_score(record, question_text, standard_answer, trainee_answer)
+    if record.score is not None:
+        anchors = evidence_anchors(db, question_text)
+        if anchors:
+            record.score = {**record.score, "anchors": anchors}
     db.commit()  # ② 重评结果 UPDATE 收口
     db.refresh(record)
     return record

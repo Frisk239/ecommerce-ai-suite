@@ -18,6 +18,7 @@
 由人洗 PATCH 直接给定（纯函数校验，不调 LLM），故造数据无需替身。
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,7 @@ from suite_api.settings import get_settings
 
 ApiFixture = tuple[TestClient, Path]
 
-GOOD_SCORE_JSON = '{"accurate": 36, "evidence": 25, "tone": 28, "comment": "口径准，语气亲切"}'
+GOOD_SCORE_JSON = '{"accurate": 26, "objection": 21, "evidence": 22, "tone": 17, "comment": "口径准，语气亲切"}'
 
 
 def _login(client: TestClient) -> None:
@@ -111,7 +112,7 @@ def test_question_bank_and_scored_attempt(api: ApiFixture, monkeypatch: pytest.M
     q = _qa_question(client, asset_id)
     assert q["question"] == "盲盒可以指定款式吗"
     assert q["standard_answer"] == "盲盒随机发货，不能指定"  # v1 下发参照（单操作者兼考官）
-    assert q["key"] == {"asset_id": asset_id, "version_no": 1, "source": "qa", "pair_index": 0}
+    assert q["key"] == {"asset_id": asset_id, "version_no": 1, "source": "qa", "pair_index": 0, "gap_id": None, "scenario_id": None}
 
     calls = _patch_complete_chat(monkeypatch, result=GOOD_SCORE_JSON)
     created = client.post(
@@ -121,12 +122,18 @@ def test_question_bank_and_scored_attempt(api: ApiFixture, monkeypatch: pytest.M
     assert created.status_code == 200
     rec = created.json()
     assert rec["status"] == "scored"
-    assert rec["score"] == {
-        "accurate": 36,
-        "evidence": 25,
-        "tone": 28,
+    assert {
+        k: rec["score"][k]
+        for k in ("accurate", "objection", "evidence", "tone", "comment")
+    } == {
+        "accurate": 26,
+        "objection": 21,
+        "evidence": 22,
+        "tone": 17,
         "comment": "口径准，语气亲切",
     }
+    # 证据锚（第 121 列 B）：题面接检索的命中资产（该测试库有已发布规格）
+    assert isinstance(rec["score"].get("anchors"), list)
     assert rec["model_name"] == get_settings().llm_model  # 打分时刻底座名快照
     assert rec["operator_name"] == "operator"
     assert rec["question_text"] == "盲盒可以指定款式吗"
@@ -134,7 +141,7 @@ def test_question_bank_and_scored_attempt(api: ApiFixture, monkeypatch: pytest.M
 
     # rubric 三要素 + 三输入进 prompt
     assert len(calls) == 1
-    assert "口径准确 40" in calls[0]["system"]
+    assert "口径准确 30" in calls[0]["system"]
     assert "盲盒随机发货，不能指定" in calls[0]["user"]
     assert "盲盒是随机发货" in calls[0]["user"]
 
@@ -215,7 +222,7 @@ def test_unscored_when_no_key_then_rescore(
     assert rescored.status_code == 200
     r2 = rescored.json()
     assert r2["status"] == "scored"
-    assert r2["score"]["accurate"] == 36
+    assert r2["score"]["accurate"] == 26
     assert r2["last_error"] is None
     assert r2["model_name"] == get_settings().llm_model
 
@@ -286,11 +293,11 @@ def test_find_question_single_asset_equivalence_and_prompt_unchanged(
     target: dict[str, Any] = {}
     try:
         bank = coaching_module.derive_questions(session, storage)
-        assert {a1, a2} <= {q["key"]["asset_id"] for q in bank}
+        assert {a1, a2} <= {q["key"]["asset_id"] for q in bank if "asset_id" in q["key"]}
         for q in bank:
             assert coaching_module.find_question(session, storage, q["key"]) == q
-        target = next(q for q in bank if q["key"]["asset_id"] == a1 and q["key"]["source"] == "qa")
-        assert any(q["key"]["asset_id"] == a2 and q["key"]["source"] == "transcript" for q in bank)
+        target = next(q for q in bank if q["key"].get("asset_id") == a1 and q["key"]["source"] == "qa")
+        assert any(q["key"].get("asset_id") == a2 and q["key"]["source"] == "transcript" for q in bank)
 
         with pytest.raises(HTTPException) as ei:
             coaching_module.find_question(session, storage, {**target["key"], "pair_index": 999})
@@ -397,3 +404,54 @@ def test_rescore_record_llm_call_not_in_transaction(
         "rescore complete_chat 时刻不得 idle-in-transaction"
     )
     assert record.score is not None and record.last_error is None
+
+
+# ---------- 第 121 刀：题源换血 + 证据锚（真 PG） ----------
+
+
+def test_question_bank_has_gap_and_compliance_sources(api) -> None:
+    """题库含四种题源：缺口真实疑难（热度降序）+ 合规红线场景排在 QA 对
+    之前——「先练真问题」的排序语义。"""
+    client, _ = api
+    _login(client)
+    resp = client.get("/api/coach/questions")
+    assert resp.status_code == 200, resp.text
+    questions = resp.json()
+    sources = [q["key"]["source"] for q in questions]
+    assert "gap" in sources, "缺口题应在题库里（演示库有 open 缺口）"
+    assert "compliance" in sources
+    # 排序：gap/compliance 在前
+    first_asset = next(i for i, s in enumerate(sources) if s in ("qa", "transcript"))
+    assert all(s in ("gap", "compliance") for s in sources[:first_asset])
+    # 缺口题带热度标注
+    gap_q = next(q for q in questions if q["key"]["source"] == "gap")
+    assert "被问" in (gap_q["asset_title"] or "")
+
+
+def test_gap_attempt_scores_with_anchors(api, monkeypatch) -> None:
+    """缺口题作答全链：评分四维含 objection；证据锚挂在 score.anchors（题面
+    接站内检索的 top 命中已发布资产——B 方案核心差异化）。"""
+    client, _ = api
+    _login(client)
+    questions = client.get("/api/coach/questions").json()
+    gap_q = next(q for q in questions if q["key"]["source"] == "gap")
+    good = json.dumps(
+        {"accurate": 26, "objection": 21, "evidence": 22, "tone": 17, "comment": "口径稳"},
+        ensure_ascii=False,
+    )
+
+    async def fake_chat(system_prompt: str, user_prompt: str) -> str:
+        del system_prompt, user_prompt
+        return good
+
+    monkeypatch.setattr(llm_module, "complete_chat", fake_chat)
+    resp = client.post(
+        "/api/coach/attempts",
+        json={"question_key": gap_q["key"], "answer": "这个问题我帮您查一下口径再回复。"},
+    )
+    assert resp.status_code == 200, resp.text
+    record = resp.json()
+    assert record["status"] == "scored"
+    assert record["score"]["objection"] == 21  # 四维（+异议处理）
+    # 证据锚：题面接检索，score.anchors 应为 list（有已发布资产就非空）
+    assert isinstance(record["score"].get("anchors"), list)

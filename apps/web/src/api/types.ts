@@ -729,18 +729,49 @@ export interface ClipCandidate {
  * source=qa：confirmed 问答对逐对成题（pair_index 定位）；
  * source=transcript：弃权/空时转写首问兜底（standard_answer 为 null）。 */
 export interface CoachQuestionKey {
-  asset_id: number
-  version_no: number
-  source: 'qa' | 'transcript'
+  asset_id: number | null
+  version_no: number | null
+  source: 'qa' | 'transcript' | 'gap' | 'compliance'
   pair_index: number | null
+  gap_id?: number | null
+  scenario_id?: string | null
 }
 
-/** 三维分（原型 RUBRIC 冻结口径，0040）：口径准确 40 / 证据贴合 30 / 服务语气 30。 */
+/** AI 客户对练会话（第 121 刀 A）：多轮对话 + 整段评分。 */
+export interface CoachRoleplayTurn {
+  role: 'customer' | 'trainee' | 'system'
+  text: string
+}
+
+export interface CoachRoleplay {
+  id: number
+  status: 'active' | 'finished'
+  persona: { style?: string; trait?: string; quirk?: string }
+  question_text: string
+  question_key: CoachQuestionKey
+  turns: CoachRoleplayTurn[]
+  score: CoachScore | null
+  model_name: string | null
+  created_at: string
+}
+
+/** 四维分（第 121 刀 B，行业口径调研后重定）：口径准确 30 / 异议处理 25 /
+ * 证据贴合 25 / 服务语气 20；anchors=证据锚（题面接站内检索的 top 命中
+ * 已发布资产——评分参照与中台口径接通，答错直接指到正确出处）。 */
+export interface CoachScoreAnchor {
+  asset_id: number
+  version_no: number
+  chunk: string
+}
+
 export interface CoachScore {
   accurate: number
+  objection?: number
   evidence: number
   tone: number
   comment: string
+  remediation?: string
+  anchors?: CoachScoreAnchor[]
 }
 
 export interface CoachQuestion {

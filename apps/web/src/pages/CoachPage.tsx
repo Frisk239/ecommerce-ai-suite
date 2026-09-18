@@ -15,8 +15,10 @@ import {
   Warning,
   X,
 } from '@phosphor-icons/react'
+import { Link } from 'react-router-dom'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
+import RoleplayDrawer from './CoachRoleplayDrawer'
 import type { CoachQuestion, CoachRecord } from '../api/types'
 import { useApiData } from '../hooks/useApiData'
 import { useEscapeClose } from '../hooks/useEscapeClose'
@@ -32,22 +34,32 @@ const EMPTY_QUESTIONS: CoachQuestion[] = []
 const EMPTY_RECORDS: CoachRecord[] = []
 
 // 三维 rubric（原型冻结口径，0040）：键与后端 score JSON 字段同名
-const DIMS = [
-  { key: 'accurate', label: '口径准确', max: 40 },
-  { key: 'evidence', label: '证据贴合', max: 30 },
-  { key: 'tone', label: '服务语气', max: 30 },
+export const DIMS = [
+  { key: 'accurate', label: '口径准确', max: 30 },
+  { key: 'objection', label: '异议处理', max: 25 },
+  { key: 'evidence', label: '证据贴合', max: 25 },
+  { key: 'tone', label: '服务语气', max: 20 },
 ] as const
+
+/** 题源四通道标签（第 121 刀 B）：真实疑难（缺口）> 合规红线 > QA 对 > 转写兜底。 */
+const SOURCE_LABELS: Record<string, string> = {
+  gap: '真实疑难',
+  compliance: '合规红线',
+  qa: 'QA 对',
+  transcript: '转写兜底',
+}
 
 function UnscoredBadge() {
   return <span className="badge badge-review">未评分</span>
 }
 
-/** 得分三卡 + 评语 + 评分底座徽章（0040：model_name 是打分时刻的底座快照）。 */
+/** 得分四卡 + 评语 + 证据锚（第 121 刀：评分参照接中台已发布口径）+ 评分底座徽章。 */
 function ScorePanel({ record }: { record: CoachRecord }) {
   const score = record.score
+  const anchors = (score?.anchors ?? []) as Array<{ asset_id: number; version_no: number; chunk: string }>
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-4 gap-2.5">
         {DIMS.map((dim) => (
           <div key={dim.key} className="rounded-[8px] border border-line-2 bg-canvas px-3 py-2.5">
             <div className="text-xs text-ink-3">{dim.label}</div>
@@ -64,6 +76,26 @@ function ScorePanel({ record }: { record: CoachRecord }) {
           <p className="rounded-[6px] border border-line-2 bg-canvas px-3 py-2 text-[13px] leading-5 text-ink-2">
             {score.comment}
           </p>
+        </div>
+      ) : null}
+      {anchors.length > 0 ? (
+        <div>
+          <span className="field-label">证据锚（正确口径的出处 · 中台已发布）</span>
+          <div className="space-y-1.5">
+            {anchors.map((a) => (
+              <Link
+                key={`${a.asset_id}-${a.version_no}`}
+                to={`/platform/assets/${a.asset_id}?v=${a.version_no}`}
+                className="flex items-center gap-2 rounded-[6px] border border-line-2 bg-canvas px-3 py-1.5 transition-colors duration-150 hover:border-accent-border"
+                title="查看该版本的已发布口径（治理台只读证据视图）"
+              >
+                <span className="shrink-0 font-mono text-xs text-accent-strong">
+                  A-{String(a.asset_id).padStart(4, '0')} · v{a.version_no}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs text-ink-3">{a.chunk}</span>
+              </Link>
+            ))}
+          </div>
         </div>
       ) : null}
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -165,7 +197,13 @@ function AnswerDrawer({
             </p>
             <span className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-3">
               题源：
-              <AssetAnchorChip assetId={question.key.asset_id} version={question.key.version_no} />
+              {question.key.asset_id !== null ? (
+                <AssetAnchorChip assetId={question.key.asset_id} version={question.key.version_no ?? 1} />
+              ) : (
+                <span className="kind-chip">
+                  {question.key.source === 'gap' ? '真实疑难' : '合规红线'}
+                </span>
+              )}
               {question.asset_title ? <span className="truncate text-caption">{question.asset_title}</span> : null}
             </span>
           </div>
@@ -331,7 +369,7 @@ function RecordsPanel({
                       </span>
                       {r.status === 'scored' && r.score ? (
                         <span className="font-mono text-xs tabular-nums text-ink-2">
-                          {r.score.accurate}/40 · {r.score.evidence}/30 · {r.score.tone}/30
+                          {r.score.accurate}/30 · {r.score.objection ?? 0}/25 · {r.score.evidence}/25 · {r.score.tone}/20
                         </span>
                       ) : (
                         <UnscoredBadge />
@@ -382,12 +420,18 @@ function RecordsPanel({
                             ) : null}
                             <span className="field-label mt-2">题源</span>
                             <span className="flex items-center gap-1.5 text-xs text-ink-2">
-                              <AssetAnchorChip
-                                assetId={r.question_key.asset_id}
-                                version={r.question_key.version_no}
-                                title="题源对话资产（治理台）"
-                                stopPropagation
-                              />
+                              {r.question_key.asset_id !== null ? (
+                                <AssetAnchorChip
+                                  assetId={r.question_key.asset_id}
+                                  version={r.question_key.version_no ?? 1}
+                                  title="题源对话资产（治理台）"
+                                  stopPropagation
+                                />
+                              ) : (
+                                <span className="kind-chip">
+                                  {r.question_key.source === 'gap' ? '真实疑难' : '合规红线'}
+                                </span>
+                              )}
                               <span className="text-caption">
                                 {r.question_key.source === 'qa'
                                   ? `QA 对 #${r.question_key.pair_index}`
@@ -428,6 +472,7 @@ export default function CoachPage() {
   const records = recordsQ.state.phase === 'ok' ? recordsQ.state.data : EMPTY_RECORDS
 
   const [active, setActive] = useState<CoachQuestion | null>(null)
+  const [roleplayQ, setRoleplayQ] = useState<CoachQuestion | null>(null)
   const reloadAll = () => {
     recordsQ.reload()
   }
@@ -498,13 +543,15 @@ export default function CoachPage() {
                     </td>
                     <td>
                       <span className="flex items-center gap-1.5">
-                        <AssetAnchorChip
-                          assetId={q.key.asset_id}
-                          version={q.key.version_no}
-                          title={q.asset_title ?? '题源对话资产（治理台）'}
-                          stopPropagation
-                        />
-                        <span className="kind-chip">{q.key.source === 'qa' ? 'QA 对' : '转写兜底'}</span>
+                        {q.key.asset_id !== null ? (
+                          <AssetAnchorChip
+                            assetId={q.key.asset_id}
+                            version={q.key.version_no ?? 1}
+                            title={q.asset_title ?? '题源对话资产（治理台）'}
+                            stopPropagation
+                          />
+                        ) : null}
+                        <span className="kind-chip">{SOURCE_LABELS[q.key.source] ?? q.key.source}</span>
                       </span>
                     </td>
                     <td>
@@ -525,9 +572,20 @@ export default function CoachPage() {
                             e.stopPropagation()
                             setActive(q)
                           }}
-                          title="开始作答（题面即开场：AI 扮顾客，你作答）"
+                          title="开始作答（单轮：写一版回答，AI 按四维评分）"
                         >
                           开始作答
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setRoleplayQ(q)
+                          }}
+                          title="AI 客户对练（多轮）：AI 扮顾客与你对话，结束后整段评分"
+                        >
+                          对练
                         </button>
                         <span className="row-caret flex items-center text-caption">
                           <CaretRight aria-hidden size={13} />
@@ -556,6 +614,9 @@ export default function CoachPage() {
 
       {active ? (
         <AnswerDrawer key={JSON.stringify(active.key)} question={active} onClose={() => setActive(null)} onScored={reloadAll} />
+      ) : null}
+      {roleplayQ ? (
+        <RoleplayDrawer key={`rp-${JSON.stringify(roleplayQ.key)}`} question={roleplayQ} onClose={() => setRoleplayQ(null)} />
       ) : null}
     </div>
   )

@@ -586,6 +586,31 @@ class HandoffTicket(Base):
     )
 
 
+class CoachRoleplay(Base):
+    """第 121 刀 A（AI 客户对练）：多轮对话考核会话=考核模块自有，不是中台对象。
+
+    一次对练 = AI 扮演顾客（persona 含性格/开场白/真实疑难）↔ 受训者多轮对话；
+    结束时整段 transcript 打四维分（同单轮 rubric）+ 证据锚。turns 是
+    [{role: customer|trainee, text}] 按时间序追加（JSONB，练习量级 <50 轮）。
+    题源锚/question 快照语义同 CoachRecord；score 含四维+评语+anchors。
+    """
+
+    __tablename__ = "coach_roleplays"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operator_name: Mapped[str] = mapped_column(String(120))
+    question_key: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    question_text: Mapped[str] = mapped_column(Text)
+    standard_answer: Mapped[str | None] = mapped_column(Text)
+    persona: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    turns: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(20), server_default=text("'active'"))
+    # active | finished（finish 后只读，重开=新会话）
+    score: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    model_name: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class KnowledgeGap(Base):
     """ADR 0024/0030：知识缺口=无证据拒答留下的待补项，可挂商品。
 
