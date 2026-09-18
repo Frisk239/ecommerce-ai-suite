@@ -35,3 +35,4 @@ ops/metrics_token
 # 第 94b 刀门禁产物（切片本地留档）
 out/94b-junit.xml
 .reports/
+.mcp.json

@@ -142,6 +142,7 @@ event: complete    data: {"message_id": 1, "citations": [{"asset_id": 3, "versio
 
   活状态三件是**只读**的：复用客服 agent loop 的 TOOL_REGISTRY 同一条目（同一份参数白名单校验 + 同一执行函数），无任何写动作；订单/库存/商品仍不经检索索引、不进治理台（0002 工具数据源口径不变）。
 
+- **ZCode 接入（项目级 MCP 配置）**：仓库根的 `.mcp.json.example` 是本系统连接层的接入样例（复制为 `.mcp.json`，把占位符换成服务端 `.env` 里的 `MCP_BEARER_TOKEN` 即可——真 token 文件已 gitignore，不入库）。配好后 ZCode 会话里出现 `ecommerce-suite` 服务器的七个工具，AI 助手成为系统的真实 MCP 客户端（检索/取版/登记/导出/活状态三件）。
 - **冒烟**（需先有已发布资产）：
 
   ```bash
