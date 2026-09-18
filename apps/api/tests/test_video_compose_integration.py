@@ -258,6 +258,42 @@ def test_plan_without_published_material_422(api: ApiFixture) -> None:
     assert "没有已发布的切片" in resp.json()["detail"]
 
 
+def test_plan_skips_legacy_text_clip(api: ApiFixture, needs_ffmpeg: None) -> None:
+    """第 116 刀回归（验收预检实录）：旧式时间码文本切片（kind=video 但键 .txt，
+    ADR 0039 存量形态）不是可播素材——选材跳过它；只剩图片/文案的时间线照样
+    出预览。修复前它被当视频流喂给 ffmpeg（`[N:v]` 无流）→ **整单 502**。"""
+    client, _ = api
+    _login(client)
+    product_id = _new_product(client, "旧切片成片店")
+    # 旧路径切片真走产品路径：无源录像拣选 → 字节是「[start-end] 转写」文本
+    candidate_id = _insert_candidate(
+        product_id,
+        start="00:00:00",
+        end="00:00:05",
+        transcript="旧式时间码文本切片不该进成片",
+    )
+    picked = client.post("/api/clips/candidates/pick", json={"ids": [candidate_id]})
+    assert picked.status_code == 200, picked.text
+    legacy_id = int(picked.json()[0]["id"])
+    row = _fetch(
+        "SELECT object_key FROM asset_versions WHERE asset_id = %s AND version_no = 1",
+        (legacy_id,),
+    )
+    assert row and row[0][0].endswith(".txt")  # 直证：键不是 mp4（旧形态）
+    assert client.post(f"/api/assets/{legacy_id}/publish").status_code == 200
+
+    _make_published_image(client, product_id)  # 图保证时间线有料
+
+    created = client.post(
+        "/api/video-compose/plan",
+        json={"product_id": product_id, "template": "product_intro"},
+    )
+    assert created.status_code == 201, created.text  # 修复前这里 502
+    body = created.json()
+    assert all(item["type"] != "clip" for item in body["timeline"])  # 旧切片被过滤
+    assert body["timeline"], "时间线不为空（图片项在）"
+
+
 # ---------- 主链路：plan → 预览/草稿 → publish（无 TTS 形态） ----------
 
 

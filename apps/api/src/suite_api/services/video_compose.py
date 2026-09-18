@@ -55,6 +55,7 @@ from suite_api.services import material as material_service
 from suite_api.services import tts as tts_service
 from suite_api.services.asset_view import read_version_text
 from suite_api.services.cjk_font import find_cjk_font
+from suite_api.services.media import media_mime
 from suite_api.services.publishing import resolve_field_value
 from suite_api.services.registration import register_asset
 from suite_platform.storage import ObjectStorage
@@ -1066,6 +1067,16 @@ def load_compose_manifest(db: Session, storage: ObjectStorage, product: Product)
     text_points: list[tuple[int, str]] = []
     for asset, version in rows:
         if asset.kind == "video":
+            # 第 116 刀：**可播字节**是进选材的前提——旧式时间码文本切片
+            # （kind=video 但键后缀 .txt，ADR 0039 存量形态）不是可播素材；
+            # 此前它混进清单会让 ffmpeg 把文本当视频流（[N:v] 无流）整单 502。
+            # 判据与媒体端点同源（media_mime 非 None 才算可播 mp4）。
+            if media_mime("video", version.object_key) is None:
+                logger.warning(
+                    "成片选材：切片 A-%s 字节不是可播 mp4（旧时间码文本），跳过",
+                    asset.id,
+                )
+                continue
             transcript = resolve_field_value(
                 version.extracted_fields or {}, version.confirmed_fields or {}, "transcript"
             )
