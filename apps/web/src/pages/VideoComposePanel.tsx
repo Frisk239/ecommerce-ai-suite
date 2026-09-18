@@ -54,15 +54,20 @@ function TimelineRow({ item }: { item: ComposeTimelineItem }) {
       </span>
       {item.type === 'text' ? (
         <span className="flex-1 text-[13px] leading-5 text-ink">{item.text}</span>
-      ) : item.asset_id !== null ? (
-        <Link
-          to={`/platform/assets/${item.asset_id}`}
-          className="font-mono text-xs text-ink-2 underline-offset-2 hover:text-accent-strong hover:underline"
-        >
-          {formatAssetId(item.asset_id)}
-        </Link>
       ) : (
-        <span className="flex-1 text-[13px] text-ink-3">&mdash;</span>
+        <>
+          {item.asset_id !== null ? (
+            <Link
+              to={`/platform/assets/${item.asset_id}`}
+              className="shrink-0 font-mono text-xs text-ink-2 underline-offset-2 hover:text-accent-strong hover:underline"
+            >
+              {formatAssetId(item.asset_id)}
+            </Link>
+          ) : null}
+          <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-ink-2" title={item.text ?? undefined}>
+            {item.text ?? ''}
+          </span>
+        </>
       )}
       <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-3">
         {item.start.toFixed(1)}s +{item.dur.toFixed(1)}s

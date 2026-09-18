@@ -97,7 +97,8 @@ CARD_FONTSIZE = 54
 #   对外交付面。原 WATERMARK_* 常量删除。
 # - 广告脚本结构（行业「黄金 3 秒」惯例）：片头钩子卡 + 片尾 CTA 卡，口播稿
 #   = 钩子句 + 卖点段 + CTA 句的完整广告词。
-HOOK_SECONDS = 2.5  # 片头钩子卡时长（黄金 3 秒内）
+HOOK_SECONDS = 2.5  # （历史常量：解说对齐后钩子时长=语速估算，见 speech_seconds）
+CTA_HOLD_MAX_SECONDS = 4.0  # CTA 收尾静置上限（15s 补齐的出口，防无限拖尾）
 CTA_SECONDS = 2.5  # 片尾行动号召卡时长
 HOOK_TEMPLATE = "{name}，到底值不值？"  # 悬念提问式钩子（黄金 3 秒策略）
 CTA_TEMPLATE = "点击主页，把{name}带回家"
@@ -212,7 +213,7 @@ class ComposeManifest:
     clips: tuple[ClipOption, ...]
     images: tuple[ImageOption, ...]
     # 文案要点行：(来源 material 资产 id, 行文本)
-    text_points: tuple[tuple[int, str], ...]
+    text_points: tuple[tuple[int | None, str], ...]
 
 
 @dataclass(frozen=True)
@@ -310,18 +311,85 @@ _DROP_PRIORITY = {"text": 0, "image": 1, "clip": 2}
 _TYPE_LABEL = {"text": "文案", "image": "图", "clip": "切片"}
 
 
-def build_timeline(manifest: ComposeManifest, template: str) -> PlanOutcome:
-    """选材+排版主纯函数：清单+模板 → 时间线候选（15-60s 目标窗）。
+AD_LINES_SYSTEM_PROMPT = (
+    "你是电商带货视频的广告脚本作者。给你商品的真实事实（名称、类目、已知规格值），"
+    "请写 3-4 行短视频口播要点：每行一个独立卖点短句，不超过 20 个字，口语化、"
+    "有带货感；只用给出的规格事实，不编造参数与功效，不用极限词。"
+    '只输出一个 JSON 对象：{"lines": ["要点一", "要点二", ...]}，'
+    "不要输出 JSON 以外的任何文字。"
+)
 
-    规则（spec 口径）：
-    - 优先切片（rank_clips 匹配序）取模板配额；图取配额（目标 2-3 张）；
-      文案要点取配额（3 条为准，配额内有多少取多少）；不足时图+文案补足
-      （有多少用多少，note 如实）；
-    - 顺序：高光=切片打头，图收尾，文案垫底；商品介绍=图文交替推进、切片
-      殿后；
-    - 总时长：超 60s 从尾部降级裁（先裁文案、再裁图、切片最后）；不足 15s
-      把图/文案卡时长按比例拉长补足（切片维持实测窗不注水）；素材太少实在
-      补不到 15s 如实出 note（不硬凑）。
+
+def _ad_lines_fallback(product: Product) -> list[str]:
+    """LLM 不可用时的确定性兜底：规格值串要点（商品名恒在首行，事实纪律）。"""
+    name = (product.name or "").strip() or "这件商品"
+    lines = [name]
+    for entry in dict(product.spec_values).values():
+        if isinstance(entry, dict) and entry.get("value"):
+            lines.append(f"{entry['value']}")
+        if len(lines) >= 4:
+            break
+    return lines[:4] or [name]
+
+
+def generate_ad_lines(product: Product) -> list[str]:
+    """商品事实 → 广告要点行（与素材中心同款 LLM 通道；失败退确定性兜底）。
+
+    只抛不出（生成是增值项不是成片本体）：LLM 未配置/失败/坏 JSON 一律走
+    兜底——成片照常出，note 由调用方如实标注生成来源。
+    """
+    import asyncio
+
+    from suite_api.services import llm as llm_service
+    from suite_api.services.machine_wash import redact, strip_code_fence
+
+    facts = [f"商品名：{redact(product.name or '')}", f"类目：{redact(product.category or '')}"]
+    values = [
+        str(entry.get("value"))
+        for entry in dict(product.spec_values).values()
+        if isinstance(entry, dict) and entry.get("value")
+    ]
+    if values:
+        facts.append("已知规格值：" + "、".join(values))
+    prompt = chr(10).join(facts) + chr(10) + "请按约定输出 JSON。"
+    try:
+        raw = asyncio.run(llm_service.complete_chat(AD_LINES_SYSTEM_PROMPT, prompt))
+        data = json.loads(strip_code_fence(raw))
+        lines = [str(line).strip() for line in data.get("lines", []) if str(line).strip()]
+        if lines:
+            return lines[:6]
+    except (llm_service.LLMError, ValueError, TypeError, AttributeError):
+        logger.warning("成片文案生成失败，退规格值兜底", exc_info=True)
+    return _ad_lines_fallback(product)
+
+
+def speech_seconds(line: str) -> float:
+    """一行口播的语速估算（纯函数）：非空白字数 / 语速，下限 1.5s。
+
+    第 119 刀起是**节拍时长的权威**——解说对齐模型里每句口播绑定一个画面
+    节拍，节拍时长=本行估算（按视觉类型 clamp），声音与画面由此天然同步。
+    """
+    text = "".join(ch for ch in line if not ch.isspace())
+    if not text:
+        return 1.5
+    return max(len(text) / SPEECH_CHARS_PER_SECOND, 1.5)
+
+
+def build_timeline(manifest: ComposeManifest, template: str) -> PlanOutcome:
+    """选材+排版主纯函数（第 119 刀**解说对齐**重写）：清单+模板 → 时间线。
+
+    模型：**每个要点句绑定一个画面节拍，节拍时长=该句口播的语速估算**（按
+    视觉类型 clamp）——口播连续朗读时每句话恰好落在自己的画面上，字幕跟节拍
+    走（此前模型里切片段占墙钟而口播持续推进，导致「解说在响、画面无关、
+    字幕缺席」）。
+
+    - 叙事线：钩子卡 → 每个要点一拍（视觉从池里取：高光=切片优先，商品介绍=
+      切片/图轮换；池尽退回文案卡）→ CTA 卡。钩子/CTA 是结构卡（role 标注）。
+    - 节拍时长：clip clamp [3, min(8, 自身实测)]、image clamp [2.5, 6]、文案卡
+      clamp [2, 6]；钩子/CTA clamp [2, 5]。
+    - 15s 下限：缺口全部记在 **CTA hold**（结尾静置收尾——拉长中段节拍会让
+      后续句子漂移，结尾 hold 不破坏同步）；60s 上限：从尾部降级裁要点节拍
+      （narration 随剩余行重算，口播同步保持）。
     """
     validate_template(template)
     quota = TEMPLATES[template]
@@ -331,44 +399,69 @@ def build_timeline(manifest: ComposeManifest, template: str) -> PlanOutcome:
         : quota["clips"]
     ]
     images = list(manifest.images)[: quota["images"]]
-    texts = list(manifest.text_points)[: quota["texts"]]
+    points = list(manifest.text_points)[: quota["texts"]]
 
-    if not clips and not images and not texts:
+    if not clips and not images and not points:
         raise NoMaterialError(
             f"商品「{manifest.product_name}」没有已发布的切片/图片/文案素材可入选"
         )
 
-    entries: list[dict[str, Any]] = [
-        {"type": "clip", "asset_id": c.asset_id, "dur": clip_seconds(c)} for c in clips
-    ]
-    image_entries = [{"type": "image", "asset_id": i.asset_id, "dur": IMAGE_SECONDS} for i in images]
-    text_entries = [
-        {"type": "text", "asset_id": asset_id, "dur": TEXT_SECONDS, "text": line}
-        for asset_id, line in texts
-    ]
+    # 视觉池：高光=切片优先（画面优先）；商品介绍=切片/图轮换（B-roll 均衡）
     if template == "highlight":
-        entries += image_entries + text_entries
-    else:  # product_intro：图文交替推进，切片殿后
-        entries += _interleave(image_entries, text_entries)
+        pool: list[tuple[str, int | None, float]] = [
+            ("clip", c.asset_id, clip_seconds(c)) for c in clips
+        ] + [("image", i.asset_id, IMAGE_SECONDS) for i in images]
+    else:
+        pool = []
+        for index in range(max(len(clips), len(images))):
+            if index < len(clips):
+                pool.append(("clip", clips[index].asset_id, clip_seconds(clips[index])))
+            if index < len(images):
+                pool.append(("image", images[index].asset_id, IMAGE_SECONDS))
 
-    # 广告脚本结构（第 118 刀 W18）：商品介绍=片头钩子 + 片尾 CTA；高光集锦
-    # 切片打头不抢黄金 3 秒，只补片尾 CTA。钩子/CTA 是确定性模板句（悬念提问/
-    # 行动号召），不带资产锚（asset_id=None——渲染与草稿都按纯文本卡走）。
+    def beat(text_line: str, *, role: str | None = None, pool_take: bool = False) -> dict[str, Any]:
+        vtype, vaid, base = ("text", None, TEXT_SECONDS)
+        if pool_take and pool:
+            vtype, vaid, base = pool.pop(0)
+        est = speech_seconds(text_line)
+        if vtype == "clip":
+            dur = _clamp(est, CLIP_MIN_SECONDS, min(CLIP_MAX_SECONDS, max(base, CLIP_MIN_SECONDS)))
+        elif vtype == "image":
+            dur = _clamp(est, 2.5, 6.0)
+        elif role:
+            dur = _clamp(est, 2.0, 5.0)
+        else:
+            dur = _clamp(est, 2.0, 6.0)
+        entry: dict[str, Any] = {"type": vtype, "asset_id": vaid, "dur": round(dur, 3),
+                                 "text": text_line}
+        if role:
+            entry["role"] = role
+        return entry
+
     name = manifest.product_name.strip() or "这件好物"
+    entries: list[dict[str, Any]] = []
     if template == "product_intro":
-        entries.insert(0, {"type": "text", "asset_id": None, "dur": HOOK_SECONDS,
-                           "text": HOOK_TEMPLATE.format(name=name), "role": "hook"})
-    entries.append({"type": "text", "asset_id": None, "dur": CTA_SECONDS,
-                    "text": CTA_TEMPLATE.format(name=name), "role": "cta"})
+        entries.append(beat(HOOK_TEMPLATE.format(name=name), role="hook"))
+    for _asset_id, line in points:
+        if not str(line).strip():
+            continue
+        entries.append(beat(str(line), pool_take=True))
+    # 要点节拍用尽后池里剩的切片/图：作纯 B-roll 节拍垫在 CTA 前（无口播句、
+    # 垫乐铺底）——素材进了清单就该被用上（高光集锦常超文案数）
+    while pool:
+        vtype, vaid, base = pool.pop(0)
+        dur = _clamp(base, CLIP_MIN_SECONDS if vtype == "clip" else 2.5,
+                     CLIP_MAX_SECONDS if vtype == "clip" else 6.0)
+        entries.append({"type": vtype, "asset_id": vaid, "dur": round(dur, 3), "text": None})
+    entries.append(beat(CTA_TEMPLATE.format(name=name), role="cta"))
 
-    # 60s 上限：让位序降级裁（保至少一项——单项超 8s 也不可能，clip 已 clamp）；
-    # 钩子/CTA 各 2.5s 且是脚本结构件，不参与裁撤（裁了广告就不成广告了）
+    # 60s 上限：从尾部降级裁要点节拍（钩子/CTA 是结构件不裁；narration 随行重算）
     dropped: list[str] = []
     while sum(e["dur"] for e in entries) > TARGET_MAX_SECONDS:
         droppable = [i for i, e in enumerate(entries) if not e.get("role")]
         if not droppable:
             break
-        tail_index = max(droppable, key=lambda i: (-_DROP_PRIORITY[entries[i]["type"]], i))
+        tail_index = droppable[-1]
         dropped.append(entries[tail_index]["type"])
         entries.pop(tail_index)
     if dropped:
@@ -379,18 +472,16 @@ def build_timeline(manifest: ComposeManifest, template: str) -> PlanOutcome:
         )
 
     total = sum(e["dur"] for e in entries)
-    # 15s 下限：只拉长图/卖点卡（切片维持实测窗、钩子/CTA 是结构卡固定时长
-    # 不注水——拉长的行动号召卡只会更尬），均摊缺口
+    # 15s 下限：缺口记 CTA hold（结尾静置收尾——中段拉长会让口播漂移），hold
+    # 上限 4s（拖太长的静置尾也尴尬）；仍不足则如实 note（素材太少不硬凑）
     if total < TARGET_MIN_SECONDS:
-        flexible = [
-            e for e in entries if e["type"] in ("image", "text") and not e.get("role")
-        ]
-        if flexible:
-            share = (TARGET_MIN_SECONDS - total) / len(flexible)
-            for entry in flexible:
-                entry["dur"] = entry["dur"] + share
-            total = TARGET_MIN_SECONDS
-        else:
+        cta = entries[-1]
+        gap = TARGET_MIN_SECONDS - total
+        if cta.get("role") == "cta" and gap > 0:
+            hold = min(gap, CTA_HOLD_MAX_SECONDS)
+            cta["dur"] = round(cta["dur"] + hold, 3)
+            total += hold
+        if total < TARGET_MIN_SECONDS:
             notes.append(
                 f"素材时长仅 {total:.0f}s，不足 15s 目标（切片不注水，补素材再合成更长成片）"
             )
@@ -411,13 +502,13 @@ def build_timeline(manifest: ComposeManifest, template: str) -> PlanOutcome:
         cursor += entry["dur"]
 
     if template == "highlight" and not manifest.clips:
-        notes.append("没有已发布切片，高光集锦退化为图+文案成片")
-    if manifest.images and len(images) < 2:
-        notes.append("已发布图片不足 2 张，按现有数量入选")
+        notes.append("没有已发布切片（高光集锦以切片为主），图/文案补足")
+    if template == "product_intro" and not manifest.images:
+        notes.append("没有已发布商品图，画面以切片/文案卡推进")
 
     return PlanOutcome(
         timeline=tuple(timeline),
-        duration_seconds=round(cursor, 3),
+        duration_seconds=round(total, 3),
         note="；".join(notes) or None,
     )
 
@@ -586,9 +677,11 @@ def build_preview_filter(
         body = "[vcat]"
         chains.append(f"{''.join(stream_labels)}concat=n={len(stream_labels)}:v=1:a=0{body}")
 
-    # 字幕（每条文案要点在自己窗口）→ 按总时长终裁（水印已移除，ADR 0056 修订）
+    # 字幕（第 119 刀解说对齐）：clip/image 节拍携带的口播句走底部字幕（解说
+    # 响着的时候画面上有字）；文案卡节拍的字就是卡面大字，不重复叠底部字幕
+    # → 按总时长终裁（水印已移除，ADR 0056 修订）
     for index, item in enumerate(items):
-        if item["type"] != "text":
+        if item["type"] == "text" or not item.get("text"):
             continue
         sub_file = _drawtext_file(workdir, f"sub-{index}.txt", wrap_cjk(item.get("text") or "", 16))
         chains.append(
@@ -856,8 +949,9 @@ def build_draft_content(
             segment = _segment(material_id, item["start"], item["dur"], render_index=0, is_video=True)
             video_segments.append(segment)
             speeds.append(_speed_material(segment))
-        if item["type"] == "text" and item.get("text"):
-            # 文案要点字幕（text 项无媒体字节，走文本轨）
+        if item.get("text"):
+            # 节拍字幕（第 119 刀解说对齐）：口播句随节拍进文本轨——clip/image
+            # 节拍的句与 text 卡的句都是字幕（真机里统一样式可再分轨）
             text_material = _text_material(item["text"])
             texts.append(text_material)
             text_segment = _segment(
@@ -1229,6 +1323,23 @@ def plan_compose(
     manifest = load_compose_manifest(db, storage, product)
     db.rollback()  # P1#2：先收口——下面 ffprobe/TTS/ffmpeg 全程不持池连接
 
+    # 文案结合（第 119 刀，Owner 反馈「成片要跟素材中心的宣发文案结合」）：
+    # 该商品**没有已发布的素材文案**时，用与素材中心同款 LLM 通道按商品事实
+    # 生成广告要点（已发布文案永远优先——治理过的口径不绕过）；LLM 未配置/
+    # 失败退回规格值兜底。生成要点无资产锚（asset_id=None），登记发布时照走
+    # 双闸（timeline_content 含它们）——「成片时生成」不是绕过治理的通道。
+    gen_note: str | None = None
+    if not manifest.text_points:
+        lines = generate_ad_lines(product)
+        manifest = ComposeManifest(
+            product_name=manifest.product_name,
+            selling_points=manifest.selling_points,
+            clips=manifest.clips,
+            images=manifest.images,
+            text_points=tuple((None, line) for line in lines),
+        )
+        gen_note = "文案要点为成片时生成（该商品无已发布素材文案），登记发布时过双闸"
+
     # 切片实测时长（本地字节 ffprobe，秒级；单条失败退回转写估算不拖垮整次）
     probed_clips: list[ClipOption] = []
     clip_meta: dict[int, tuple[float, int, int]] = {}
@@ -1260,11 +1371,9 @@ def plan_compose(
 
     plan = build_timeline(manifest, template)
 
-    # 口播：文案要点串联（纯高光集锦无文案时用入选切片的转写串联）
-    narration_lines = [item.text for item in plan.timeline if item.type == "text" and item.text]
-    if not narration_lines:
-        picked_ids = {item.asset_id for item in plan.timeline if item.type == "clip"}
-        narration_lines = [o.transcript for o in manifest.clips if o.asset_id in picked_ids]
+    # 口播（第 119 刀解说对齐）：全部节拍句按序串联——钩子/要点/CTA 每句绑定
+    # 一个画面节拍（节拍时长=语速估算），连续朗读时声画同步
+    narration_lines = [item.text for item in plan.timeline if item.text]
     narration = "。".join(narration_lines)
     tts_bytes: bytes | None = None
     tts_note: str | None = None
@@ -1343,7 +1452,7 @@ def plan_compose(
             tts_bytes=tts_bytes,
         )
 
-    notes = [n for n in (plan.note, tts_note) if n]
+    notes = [n for n in (plan.note, gen_note, tts_note) if n]
     run_id = uuid.uuid4().hex
     preview_key, draft_key = f"compose/{run_id}/preview.mp4", f"compose/{run_id}/draft.zip"
     storage.put_bytes(preview_key, preview_bytes)
@@ -1377,10 +1486,12 @@ def timeline_content(timeline: Sequence[dict[str, Any]]) -> str:
     正文是给人洗/给投放引用的文本面——「AI 排的版、人确认的稿」；转写来自
     已发布资产（治理过的文本），纯高光集锦也有正文可登记。
     """
+    # 第 119 刀解说对齐：要点句挂在任意类型的节拍上（clip/image/text）——
+    # 文案面取全部非结构（无 role）节拍的口播句；钩子/CTA 模板句不进内容面
     lines = [
         str(item["text"]).strip()
         for item in timeline
-        if item.get("type") == "text" and item.get("text") and not item.get("role")
+        if item.get("text") and not item.get("role")
     ]
     if not lines:
         lines = [f"（切片高光）{item.get('text') or ''}".strip()
