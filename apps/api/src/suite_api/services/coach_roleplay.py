@@ -95,7 +95,7 @@ def roleplay_start(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"对练开场失败：{err}"
         )
-    session.turns.append({"role": "customer", "text": reply})
+    session.turns = [*session.turns, {"role": "customer", "text": reply}]
     db.commit()
     db.refresh(session)
     return session
@@ -120,16 +120,17 @@ def roleplay_turn(db: Session, roleplay_id: int, trainee_text: str) -> CoachRole
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="空消息不能发送"
         )
-    session.turns.append({"role": "trainee", "text": text})
+    session.turns = [*session.turns, {"role": "trainee", "text": text}]
     db.commit()  # 先落受训者轮（LLM 等待不持事务）
     reply, _err = _roleplay_reply(session)
     if reply is None:
         # 顾客回话失败：占位一句（对练继续，不杀会话——单点失败不杀整场的同族纪律）
-        session.turns.append(
-            {"role": "customer", "text": "（顾客这边网络卡了一下，你再说说看？）"}
-        )
+        session.turns = [
+            *session.turns,
+            {"role": "customer", "text": "（顾客这边网络卡了一下，你再说说看？）"},
+        ]
     else:
-        session.turns.append({"role": "customer", "text": reply})
+        session.turns = [*session.turns, {"role": "customer", "text": reply}]
     db.commit()
     db.refresh(session)
     return session
@@ -189,7 +190,7 @@ def roleplay_finish(db: Session, roleplay_id: int) -> CoachRoleplay:
         # 失败态：score 留 NULL + turns 尾记 system 注（前端显示「未评分 + 原因」）
         session.score = None
         session.model_name = None
-        session.turns.append({"role": "system", "text": f"评分未完成：{exc}"})
+        session.turns = [*session.turns, {"role": "system", "text": f"评分未完成：{exc}"}]
         db.commit()
         db.refresh(session)
         return session
