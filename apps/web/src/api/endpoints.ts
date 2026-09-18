@@ -39,6 +39,7 @@ import type {
   MaterialTask,
   Operator,
   OpsRun,
+  OpsSignal,
   Product,
   ProductCreate,
   ProductUpdate,
@@ -306,6 +307,8 @@ export const api = {
   // 运营 Agent（第 22 刀/ADR 0041）：编排轨迹不是中台对象；建任务/重试请求内
   // 同步执行三步（gen_material 含 LLM ≤20s，超时宽同素材生成）。投放=渠道动作。
   listOpsRuns: () => request<OpsRun[]>('/ops/runs'),
+  // 经营信号（第 122 刀 A）：中台数据面扫描 → 建议动作+跳转路由
+  listOpsSignals: () => request<OpsSignal[]>('/ops/signals'),
   createOpsRun: (productId: number) =>
     request<OpsRun>('/ops/runs', { method: 'POST', body: JSON.stringify({ product_id: productId }) }, 30_000),
   retryOpsRun: (runId: number) =>

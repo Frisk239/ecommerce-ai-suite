@@ -100,6 +100,17 @@ def dict_list(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
+@router.get("/signals", response_model=list[dict])
+def list_signals(
+    operator: Annotated[Operator, Depends(get_current_operator)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> list[dict]:
+    """经营信号扫描（第 122 刀 A）：中台数据面 → 信号+建议动作+跳转路由。
+    只读——信号是视图不是任务，行动在各自模块完成。"""
+    del operator
+    return ops_signals.scan_signals(db)
+
+
 @router.post("/runs", response_model=OpsRunOut, status_code=status.HTTP_201_CREATED)
 def create_run(
     body: OpsRunIn,

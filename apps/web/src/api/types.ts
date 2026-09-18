@@ -797,6 +797,17 @@ export interface CoachRecord {
   created_at: string
 }
 
+/** 经营信号（第 122 刀 A）：中台数据面扫描的建议动作。 */
+export interface OpsSignal {
+  kind: 'stock' | 'gap' | 'coverage' | 'stale'
+  detail: string
+  ref_id: number
+  ref_name: string | null
+  summary: string
+  action: string
+  route: string
+}
+
 // ---------- 运营 Agent（routes/ops.py 契约，第 22 刀/ADR 0041） ----------
 
 /** 步状态四态（0041，冻结原型 OpsStepStatus）：与资产三态/素材五态无关。 */

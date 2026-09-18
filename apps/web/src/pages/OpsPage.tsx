@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 // 运营 Agent（第 22 刀/ADR 0041）：三步编排轨迹可见、失败可重试、投放前二次确认。
 // 对照原型冻结交互：编号圆点（done 绿 / failed 红 / pending 灰）+ 状态徽章 + via
 // mono + detail；产出预览带引用芯片 `A-xxxx · vN`（0007：refs 冻结 compose 时刻
@@ -7,7 +8,9 @@
 // 动作（mock：记确认时间），不改变任何资产三态——与治理台的「发布资产」两件事。
 
 import { useCallback, useMemo, useState } from 'react'
-import { ArrowsClockwise, PaperPlaneTilt, Play, Robot, Warning } from '@phosphor-icons/react'
+import { ArrowsClockwise, PaperPlaneTilt, Play, Robot, Warning ,
+  CaretRight,
+} from '@phosphor-icons/react'
 import { detailText } from '../api/client'
 import { api } from '../api/endpoints'
 import type { OpsRun, OpsStepStatus } from '../api/types'
@@ -105,6 +108,13 @@ function OutputPanel({ run }: { run: OpsRun }) {
   )
 }
 
+const SIGNAL_LABELS: Record<string, string> = {
+  stock: '库存',
+  gap: '知识缺口',
+  coverage: '素材覆盖',
+  stale: '过期资产',
+}
+
 export default function OpsPage() {
   const runsFetcher = useCallback(() => api.listOpsRuns(), [])
   const { state, reload } = useApiData(runsFetcher)
@@ -114,6 +124,9 @@ export default function OpsPage() {
   const productsQ = useApiData(productsFetcher)
   const products = productsQ.state.phase === 'ok' ? productsQ.state.data : EMPTY_PRODUCTS
 
+  // 经营信号（第 122 刀 A）：随页加载，只读
+  const signalsFetcher = useCallback(() => api.listOpsSignals(), [])
+  const signalsQ = useApiData(signalsFetcher)
   const [productId, setProductId] = useState('')
   const [activeId, setActiveId] = useState<number | null>(null)
   const [busy, setBusy] = useState<null | 'start' | 'retry' | 'deliver'>(null)
@@ -162,7 +175,7 @@ export default function OpsPage() {
     <div className="max-w-[900px]">
       <PageHeader
         title="运营 Agent"
-        desc="选商品编排投放文案：三步轨迹可见，投放发布前需确认。"
+        desc="经营信号扫描：库存/缺口/素材覆盖/过期资产 → 今天该做什么（点击跳转行动）。"
         actions={
           <>
             {shown !== null && (hasFailed || allDone || delivered) ? (
@@ -198,9 +211,48 @@ export default function OpsPage() {
       {state.phase === 'error' ? <ErrorBanner error={state.error} onRetry={reload} /> : null}
       {error ? <ActionError message={error} className="mb-4" /> : null}
 
+      {/* 经营信号（第 122 刀 A）：中台数据面扫描 → 建议动作 + 一键跳转 */}
+      {signalsQ.state.phase === 'ok' && signalsQ.state.data.length > 0 ? (
+        <div className="panel mb-4">
+          <div className="panel-title flex items-center gap-2">
+            <Warning aria-hidden size={14} className="text-warn" />
+            <span>经营信号 · {signalsQ.state.data.length} 条</span>
+            <span className="text-xs font-normal text-ink-3">从中台扫描（库存/缺口/覆盖/过期），点击行去行动</span>
+          </div>
+          {signalsQ.state.data.map((sig, i) => (
+            <Link
+              key={`${sig.kind}-${sig.ref_id}-${i}`}
+              to={sig.route}
+              className="flex items-center gap-3 border-b border-line-1 px-4 py-2.5 transition-colors duration-150 last:border-b-0 hover:bg-hover"
+              title={sig.action}
+            >
+              <span
+                className={`badge ${
+                  sig.kind === 'stock' ? 'badge-review' :
+                  sig.kind === 'gap' ? 'badge-ingested' :
+                  sig.kind === 'stale' ? 'badge-ingested' : 'badge-review'
+                }`}
+              >
+                {SIGNAL_LABELS[sig.kind] ?? sig.kind}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={sig.summary}>
+                {sig.summary}
+              </span>
+              <span className="shrink-0 text-xs text-ink-3">{sig.action}</span>
+              <CaretRight aria-hidden size={13} className="shrink-0 text-caption" />
+            </Link>
+          ))}
+        </div>
+      ) : signalsQ.state.phase === 'ok' && signalsQ.state.data.length === 0 ? (
+        <div className="panel mb-4 px-4 py-3 text-center text-[13px] text-ink-3">
+          当前没有经营信号——库存健康、无高热缺口、全部商品有素材覆盖、无过期资产。
+        </div>
+      ) : null}
+
       <div className="panel mb-4 flex flex-wrap items-center gap-2.5 px-4 py-3">
         <Robot aria-hidden size={17} className="text-accent-strong" />
-        <span className="text-sm font-medium text-ink">编排</span>
+        <span className="text-sm font-medium text-ink">投放编排</span>
+        <span className="text-xs text-ink-3">（经营信号的一种动作：给覆盖缺口商品生成投放文案）</span>
         <div className="w-48">
           <ProductSelect
             products={products}
