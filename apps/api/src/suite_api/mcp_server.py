@@ -31,7 +31,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from suite_api.deps import ensure_engine, ensure_storage
-from suite_api.models import Asset, AssetVersion, AuditLog, Operator, Product
+from suite_api.models import Asset, AssetVersion, AuditLog, KnowledgeGap, Operator, Product
 from suite_api.services import registration
 from suite_api.services.agent_tools import TOOL_REGISTRY, _validate_args
 from suite_api.services.asset_view import (
@@ -42,7 +42,9 @@ from suite_api.services.asset_view import (
     to_asset_out,
 )
 from suite_api.services.catalog_tools import category_targets
+from suite_api.services.knowledge_gaps import load_attachable_gap
 from suite_api.services.machine_wash import QA_FIELD, redact
+from suite_api.services.media import media_mime
 from suite_api.services.retrieval import retrieve
 from suite_api.services.stock_tools import match_product
 
@@ -298,7 +300,9 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
         version 不传 = 当前已发布版本（权威指针）；传版本号 = 取该历史版本，
         但仅当它发布过。已接入/待人洗/从未发布的版本一律拒绝（错误信息不含
         未发布内容）。返回 {id, title, kind, source_kind, version_no,
-        object_key, content, extracted_fields, confirmed_fields}。
+        content, extracted_fields, confirmed_fields, has_media}（第 120 刀起
+        object_key 不再返回——键不出门；has_media=True 的资产可用
+        get_asset_media 取媒体字节）。
         0038 修订（第 21 刀评审处置件 1）：content 与两张字段映射表以掩码
         形态出边界（MCP 响应=进程边界出口，出口必掩；对象字节不动）。
         """
@@ -333,25 +337,38 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 "kind": asset.kind,
                 "source_kind": asset.source_kind,
                 "version_no": asset_version.version_no,
-                "object_key": asset_version.object_key,
+                # 第 120 刀：object_key 不再出门（0052「键不出门」纪律——对象键是
+                # 存储内部坐标，外部 Agent 拿到没有用途还扩泄漏面；图片/视频资产
+                # 的媒体字节走 get_asset_media（base64，多模态 Agent 直接可消费）。
                 "content": redact(content),
                 "extracted_fields": _mask_fields_map(dict(asset_version.extracted_fields)),
                 "confirmed_fields": _mask_fields_map(dict(asset_version.confirmed_fields)),
+                "has_media": media_mime(asset.kind, asset_version.object_key) is not None,
             }
 
     @mcp.tool()
-    def register_asset(content: str, title: str = "", product_id: int | None = None) -> dict:
+    def register_asset(
+        content: str,
+        title: str = "",
+        product_id: int | None = None,
+        knowledge_gap_id: int | None = None,
+    ) -> dict:
         """登记一份文本文档进中台（必须带正文，空正文拒绝）。
 
         登记后资产状态为已接入（或机洗成功后待人洗），出现在治理台队列等待
         操作者人洗与发布；来源固定为连接层登记（mcp_registered）。本工具
-        没有任何发布能力。返回登记后的资产视图 {id, title, kind, status,
-        source_kind, product, last_error, current_published_version_no}。
+        没有任何发布能力。knowledge_gap_id（可选，第 120 刀）=「补这份缺口」：
+        挂上后操作者发布该资产时缺口自动解决（0024 同治理台语义；缺口须存在
+        且 open 且未挂其他补文档）。返回登记后的资产视图 {id, title, kind,
+        status, source_kind, product, last_error, current_published_version_no}。
         """
         if not content.strip():
             raise ValueError("登记必须带正文：只给标题的空壳登记被拒绝（ADR 0013）")
         try:
             with _db_session() as session:
+                gap = None
+                if knowledge_gap_id is not None:
+                    gap = load_attachable_gap(session, knowledge_gap_id)
                 asset = registration.register_asset(
                     session,
                     ensure_storage(host),
@@ -362,6 +379,8 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                     product_id=product_id,
                     source_kind="mcp_registered",
                 )
+                if gap is not None:
+                    gap.resolved_by_asset_id = asset.id
                 session.commit()
                 session.refresh(asset)
                 out = to_asset_out(
@@ -501,6 +520,85 @@ def build_mcp_app(host: FastAPI) -> ASGIApp:
                 "currency": product.currency,
                 "stock": product.stock,
                 "spec_values": _spec_summary(product),
+            }
+
+    @mcp.tool()
+    def list_knowledge_gaps(status: str = "open", limit: int = 20) -> list[dict]:
+        """列出知识缺口（第 120 刀，运营飞轮入口，只读）。
+
+        缺口=顾客被拒答后排队等补口径的待办（0024）。status=open（默认）看
+        待补、resolved 看已解决；按被问热度降序。返回 [{gap_id, question,
+        hit_count, product_id, status, created_at, resolved_by_asset_id}]——
+        question 是顾客原问（出口已打码）。用法：看缺口 → register_asset(
+        content=补的口径文档, knowledge_gap_id=该缺口) → 操作者在治理台人洗
+        发布（发布时缺口自动解决）。发布权不在工具面（0001/0005）。
+        """
+        if status not in ("open", "resolved"):
+            raise ValueError("status 只认 open/resolved")
+        limit = max(1, min(limit, 50))
+        with _db_session() as session:
+            rows = session.execute(
+                select(KnowledgeGap)
+                .where(
+                    (KnowledgeGap.status == status)
+                    if status == "open"
+                    else KnowledgeGap.status != "open"
+                )
+                .order_by(KnowledgeGap.hit_count.desc(), KnowledgeGap.id.desc())
+                .limit(limit)
+            ).all()
+            return [
+                {
+                    "gap_id": gap.id,
+                    "question": redact(gap.question),
+                    "hit_count": gap.hit_count,
+                    "product_id": gap.product_id,
+                    "status": gap.status,
+                    "created_at": gap.created_at.isoformat() if gap.created_at else None,
+                    "resolved_by_asset_id": gap.resolved_by_asset_id,
+                }
+                for (gap,) in rows
+            ]
+
+    @mcp.tool()
+    def get_asset_media(asset_id: int, version: int | None = None) -> dict:
+        """取一份已发布媒体资产的字节（第 120 刀，多模态消费面，只读）。
+
+        图片/视频资产的媒体内容以 base64 返回（多模态 Agent 直接可消费）：
+        {asset_id, version_no, mime, size_bytes, data_base64}。版本口径同
+        get_asset（不传=当前已发布指针版，传版本号=历史已发布版）；非媒体
+        资产或未发布一律拒绝（错误不含未发布内容）。文本资产请用 get_asset。
+        """
+        import base64
+
+        with _db_session() as session:
+            asset = session.get(Asset, asset_id)
+            if asset is not None and asset.discarded_at is not None:
+                raise ValueError(_UNPUBLISHED_MESSAGE)
+            if version is None:
+                pointer = asset.current_published_version_id if asset is not None else None
+                if asset is None or pointer is None:
+                    raise ValueError(_UNPUBLISHED_MESSAGE)
+                asset_version = session.get(AssetVersion, pointer)
+            else:
+                asset_version = session.scalar(
+                    select(AssetVersion).where(
+                        AssetVersion.asset_id == asset_id,
+                        AssetVersion.version_no == version,
+                    )
+                )
+            if asset is None or asset_version is None or asset_version.published_at is None:
+                raise ValueError(_UNPUBLISHED_MESSAGE)
+            mime = media_mime(asset.kind, asset_version.object_key)
+            if mime is None:
+                raise ValueError("该资产不是可取字节的媒体（图片/视频）——文本正文请用 get_asset")
+            media = ensure_storage(host).get_bytes(asset_version.object_key)
+            return {
+                "asset_id": asset.id,
+                "version_no": asset_version.version_no,
+                "mime": mime,
+                "size_bytes": len(media),
+                "data_base64": base64.b64encode(media).decode("ascii"),
             }
 
     streamable_app = mcp.streamable_http_app()

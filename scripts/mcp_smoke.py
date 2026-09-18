@@ -1,4 +1,4 @@
-"""MCP 连接层冒烟脚本（ADR 0032 演示与验收；第 99 刀 ADR 0057 起恰七工具）。
+"""MCP 连接层冒烟脚本（ADR 0032 演示与验收；第 99 刀七工具；第 120 刀起恰九）。
 
 用法（仓库根，先起 api 与已发布资产）：
 
@@ -11,7 +11,7 @@
 - MCP_URL：默认 http://localhost:8000/mcp/
 - MCP_BEARER_TOKEN：必填（token 只从 env 读，脚本里不硬编码）
 
-流程：initialize -> list_tools（断言七工具且无 publish）-> 依次调用
+流程：initialize -> list_tools（断言恰九工具且无 publish）-> 依次调用
 search_published / get_asset（当前版与历史版）/ register_asset（演示文本）/
 export_published / 活状态三件 get_stock / get_order_status / get_product，
 打印结构化摘要。任一环节失败以非零码退出（活状态查无不算失败——如实返回
@@ -37,10 +37,12 @@ from typing import Any
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-# 第 99 刀（ADR 0057）：知识四件 + 活状态只读三件，恰七且无 publish。
+# 第 99 刀（ADR 0057）七件；第 120 刀：+运营飞轮两件（缺口列表/媒体字节）恰九且无 publish。
 _EXPECTED_TOOLS = {
     "search_published",
     "get_asset",
+    "get_asset_media",
+    "list_knowledge_gaps",
     "register_asset",
     "export_published",
     "get_product",
@@ -147,8 +149,17 @@ async def main(argv: list[str]) -> int:
             product = await session.call_tool("get_product", {"name": _LIVE_PRODUCT_QUERY})
             _dump(f"get_product({_LIVE_PRODUCT_QUERY!r})", _tool_text(product))
 
+            # 第 120 刀：运营飞轮两件
+            gaps = await session.call_tool("list_knowledge_gaps", {"status": "open", "limit": 3})
+            _dump("list_knowledge_gaps(open, 3)", _tool_text(gaps))
+            media = await session.call_tool("get_asset_media", {"asset_id": asset_id})
+            _dump(f"get_asset_media({asset_id})", {
+                k: v for k, v in (_tool_text(media) or {}).items() if k != "data_base64"
+            } or _tool_text(media))
+
             failures = [
-                r for r in (search, got, got_hist, reg, exported, stock, order, product)
+                r for r in (search, got, got_hist, reg, exported, stock, order, product,
+                            gaps, media)
                 if r.isError
             ]
             if failures:
@@ -158,7 +169,7 @@ async def main(argv: list[str]) -> int:
             if evidence:
                 return await _evidence_checks(session, names, tools, reg)
 
-    print("smoke OK：initialize / list_tools / 七工具全部通过")
+    print("smoke OK：initialize / list_tools / 九工具全部通过")
     return 0
 
 
@@ -180,7 +191,7 @@ async def _evidence_checks(
         )
     )
 
-    # E1 工具列表恰七且无 publish（第 99 刀起：知识四 + 活状态只读三；集合相等：
+    # E1 工具列表恰九且无 publish（第 120 刀起：知识四 + 活状态三 + 飞轮两件；集合相等：
     # 未来偷加任何工具——包括 publish——都会让集合不等而 FAIL）。
     checks.append(
         (

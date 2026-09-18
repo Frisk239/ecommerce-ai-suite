@@ -1,5 +1,5 @@
 // 连接层演示页（第 23 刀/ADR 0001/0005/0032；第 99 刀 ADR 0057 活状态三件）：
-// 把中台接口以 MCP 工具形式暴露给外部 Agent 的门面。七工具卡（知识四件 +
+// 把中台接口以 MCP 工具形式暴露给外部 Agent 的门面。九工具卡（知识四件 +
 // 活状态三件；没有 publish——发布只在治理台）+ 检索试玩 + 已发布资产取版预览 +
 // mcp.json 配置复制块。
 // 试玩走操作者面等价查询（listAssets 客户端过滤，不真发 MCP 协议请求；真 MCP
@@ -92,6 +92,20 @@ const TOOLS: ToolDef[] = [
     desc: '按名查一件商品的行档案：价格、库存与已写回规格摘要；先类目聚合后单品，未匹配返回 {found: false}。',
     write: false,
     live: true,
+  },
+  {
+    name: 'list_knowledge_gaps',
+    sig: 'status?, limit?',
+    label: '列知识缺口',
+    desc: '顾客被拒答后排队等补口径的待办（第 120 刀，运营飞轮入口）：open 看待补、按被问热度降序。外部 Agent 可看缺口 → register_asset(knowledge_gap_id=…) 补文档 → 治理台发布时自动解决。',
+    write: false,
+  },
+  {
+    name: 'get_asset_media',
+    sig: 'asset_id, version?',
+    label: '取媒体字节',
+    desc: '已发布图片/视频资产的字节以 base64 返回（第 120 刀，多模态消费面）：外部 Agent 可直接把商品图/切片画面给多模态模型看。文本资产请用 get_asset。',
+    write: false,
   },
 ]
 
@@ -188,7 +202,7 @@ export default function ConnectPage() {
 
       {state.phase === 'error' ? <ErrorBanner error={state.error} onRetry={reload} /> : null}
 
-      {/* 七工具卡：知识四件（0020/0013）+ 活状态三件（0057，第 99 刀） */}
+      {/* 九工具卡：知识四件（0020/0013）+ 活状态三件（0057，第 99 刀）+ 飞轮两件（第 120 刀） */}
       <div className="mb-4">
         <div className="panel-title">
           <PlugsConnected aria-hidden size={14} />
@@ -366,7 +380,7 @@ export default function ConnectPage() {
 
       <div className="mt-4 flex items-center gap-1.5 text-xs text-caption">
         <PlugsConnected aria-hidden size={13} />
-        新系统接入 = 提示词 + 选这七个工具（知识四件 + 活状态三件）；内部模块走中台接口互调，不绕连接层。
+        新系统接入 = 提示词 + 选这九个工具（知识四件 + 活状态三件 + 飞轮两件）；内部模块走中台接口互调，不绕连接层。
       </div>
     </div>
   )

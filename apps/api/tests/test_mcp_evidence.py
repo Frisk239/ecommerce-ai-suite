@@ -1,9 +1,9 @@
-"""MCP 连接层协议证据测试（goal §6.2.5 三断言的 pytest 版，第 38 刀；第 99 刀改恰七）。
+"""MCP 连接层协议证据测试（goal §6.2.5 三断言的 pytest 版，第 38 刀；第 99 刀恰七；第 120 刀起恰九）。
 
 脚本级证据在 scripts/mcp_smoke.py --evidence（smoke 级，不进 CI）；本文件是
 同一组断言的 TestClient 级版本，CI 可跑（DB 依赖走既有 skip 模式）：
 
-- E1 工具列表恰七且无 publish（第 99 刀/ADR 0057：知识四件 + 活状态只读三件
+- E1 工具列表恰九且无 publish（第 99 刀七件；第 120 刀 +飞轮两件
   get_product/get_stock/get_order_status）——集合相等，未来偷加任何工具
   （包括 publish）即红。
 - E2 未发布不进检索：register_asset 登记带独特标记词的文本（不发布）→
@@ -41,10 +41,12 @@ _TOKEN = "test-mcp-bearer"
 _BASE = "http://localhost:8000"
 _ENDPOINT = f"{_BASE}/mcp/"
 
-# 第 99 刀（ADR 0057）：知识四件 + 活状态只读三件，恰七且无 publish。
+# 第 99 刀（ADR 0057）七件；第 120 刀：+飞轮两件，恰九且无 publish。
 _EXPECTED_TOOLS = {
     "search_published",
     "get_asset",
+    "get_asset_media",
+    "list_knowledge_gaps",
     "register_asset",
     "export_published",
     "get_product",
@@ -149,9 +151,9 @@ async def _list_tool_names(session: ClientSession) -> list[str]:
     return sorted(t.name for t in tools.tools)
 
 
-def test_evidence_e1_tools_exactly_seven_no_publish(evidence_env) -> None:
+def test_evidence_e1_tools_exactly_nine_no_publish(evidence_env) -> None:
     """E1：工具列表集合恰等于七工具（知识四 + 活状态三）、且不含 publish——
-    多一个偷加的工具即红（第 99 刀/ADR 0057 起恰七）。"""
+    多一个偷加的工具即红（第 99 刀七件、第 120 刀起恰九）。"""
     app = _fresh_app(evidence_env)
 
     async def scenario() -> list[str]:
@@ -162,7 +164,7 @@ def test_evidence_e1_tools_exactly_seven_no_publish(evidence_env) -> None:
 
     names = _run_with_lifespan(app, scenario)
     assert set(names) == _EXPECTED_TOOLS
-    assert len(names) == 7
+    assert len(names) == 9
     assert "publish" not in names
 
 
@@ -266,7 +268,7 @@ def test_evidence_e3_live_state_tools_read_only(evidence_env) -> None:
                 }
 
     out = _run_with_lifespan(app, scenario)
-    assert set(out["names"]) == _EXPECTED_TOOLS  # 恰七：知识四 + 活状态三
+    assert set(out["names"]) == _EXPECTED_TOOLS  # 恰九：知识四 + 活状态三 + 飞轮两件
     assert set(_LIVE_TOOLS) <= set(out["names"])
     leaked = {
         name: [verb for verb in _WRITE_VERBS if verb in text.lower()]
