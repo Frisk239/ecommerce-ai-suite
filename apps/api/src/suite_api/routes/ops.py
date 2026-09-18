@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from suite_api.deps import get_current_operator, get_db
 from suite_api.models import Operator, OpsRun, Product
 from suite_api.services.asset_view import load_product_names
+from suite_api.services import ops_signals
 from suite_api.services.ops import deliver_run, retry_run, start_run
 
 router = APIRouter(prefix="/api/ops", tags=["ops"])
