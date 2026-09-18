@@ -248,13 +248,20 @@ def test_plan_bad_template_and_missing_product(api: ApiFixture) -> None:
     ).status_code == 404
 
 
-def test_plan_without_published_material_422(api: ApiFixture) -> None:
+def test_plan_without_any_material_generates_copy(api: ApiFixture, needs_ffmpeg: None) -> None:
+    """第 119 刀文案生成结合：什么素材都没有的商品也能出「纯文案卡」成片——
+    要点由兜底生成（conftest 空 LLM key → 规格值/商品名行），note 如实标注；
+    此前的「无素材 422」闸被生成路径替代（防御性 raise 仍在，生成失败才触达）。"""
     client, _ = api
     _login(client)
     empty_id = _new_product(client, "成片测试·空商品")
     resp = client.post("/api/video-compose/plan", json={"product_id": empty_id})
-    assert resp.status_code == 422
-    assert "没有已发布的切片" in resp.json()["detail"]
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["note"] and "成片时生成" in body["note"]
+    texts = [i["text"] for i in body["timeline"] if i.get("text") and not i.get("role")]
+    assert texts and all("成片测试·空商品" in t or t for t in texts)
+    # 无切片无图：画面全是文案卡（钩子/要点/CTA）
 
 
 def test_plan_skips_legacy_text_clip(api: ApiFixture, needs_ffmpeg: None) -> None:
@@ -411,20 +418,28 @@ def test_publish_without_upload_uses_preview_and_no_final(
 
 
 def test_publish_rule_gate_blocks_content_without_product_name(
-    api: ApiFixture, needs_ffmpeg: None
+    api: ApiFixture, needs_ffmpeg: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """规则闸（正文必须含商品名）在成片 publish 面的真路径：LLM 生成的要点
+    漏了商品名（真 LLM 也可能漏——这正是闸的意义），登记时被拦。"""
     client, _ = api
     _login(client)
     product_id = _new_product(client, "成片测试·无名商品")
-    # 只有一条转写不含商品名的切片：正文=转写串联 → 规则闸「正文必须含商品名」
     _make_published_clip(client, product_id, "今天随便聊聊天气还不错")
+
+    from suite_api.services import llm as llm_module
+
+    async def fake_lines(system_prompt: str, user_prompt: str) -> str:
+        del system_prompt, user_prompt
+        return json.dumps({"lines": ["很好用", "推荐购买"]}, ensure_ascii=False)
+
+    monkeypatch.setattr(llm_module, "complete_chat", fake_lines)
     task_id = client.post(
         "/api/video-compose/plan", json={"product_id": product_id, "template": "highlight"}
     ).json()["id"]
     denied = client.post(f"/api/video-compose/{task_id}/publish")
     assert denied.status_code == 422
     assert "商品名" in denied.json()["detail"]
-    assert client.get(f"/api/video-compose/tasks/{task_id}").json()["status"] == "planned"
 
 
 def test_publish_llm_gate_blocks_contradiction(

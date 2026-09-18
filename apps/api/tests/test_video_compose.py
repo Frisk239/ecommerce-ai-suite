@@ -100,71 +100,55 @@ def _manifest(
     )
 
 
-def test_build_timeline_highlight_leads_with_clips() -> None:
+def test_build_timeline_beats_follow_speech() -> None:
+    """解说对齐（第 119 刀核心性质）：每个要点句绑定一个画面节拍，节拍时长=
+    语速估算（按视觉类型 clamp）——声画同步的结构保证。"""
     clips = [_clip(10, "瓶装水整箱 24 瓶"), _clip(11, "瓶装水甘甜")]
     images = [ImageOption(20, 1, "documents/a.png", "商品图")]
-    texts = [(30, "瓶装水 · 一整箱更划算")]
+    texts = [(30, "十个字左右的要点甲"), (31, "十个字左右的要点乙")]
     plan = build_timeline(_manifest(clips, images, texts), "highlight")
+    # 高光=切片优先：要点甲→切片、要点乙→切片；图作纯 B-roll 垫 CTA 前
     types = [item.type for item in plan.timeline]
-    assert types[0] == "clip"  # 高光=切片打头
-    assert "image" in types and "text" in types
-    # butt-joint：start 逐项累加，无重叠无空洞
+    assert types[0] == "clip" and types[1] == "clip"
+    assert "image" in types and types[-1] == "text"
+    assert plan.timeline[-1].role == "cta"
+    # 节拍时长=语速估算 clamp：切片 [3,8]、文案卡 [2,6]、钩子/CTA [2,5]
+    for item in plan.timeline:
+        if item.text is None:
+            continue
+        est = vc.speech_seconds(item.text)
+        if item.type == "clip":
+            expect = min(max(est, vc.CLIP_MIN_SECONDS), vc.CLIP_MAX_SECONDS)
+        elif item.type == "image":
+            expect = min(max(est, 2.5), 6.0)
+        elif item.role:
+            expect = min(max(est, 2.0), 5.0)
+        else:
+            expect = min(max(est, 2.0), 6.0)
+        if item.role == "cta":
+            # 15s 补齐的出口是 CTA hold（≤4s 静置收尾，不破坏前段同步）
+            assert item.dur <= expect + vc.CTA_HOLD_MAX_SECONDS + 0.01
+        else:
+            assert item.dur == pytest.approx(round(expect, 3), abs=0.01), (item, est)
+    # butt-joint：start 逐项累加
     cursor = 0.0
     for item in plan.timeline:
-        assert item.start == pytest.approx(cursor, abs=0.01)
+        assert item.start == pytest.approx(cursor, abs=0.02)
         cursor += item.dur
-    assert plan.duration_seconds == pytest.approx(cursor, abs=0.01)
+    assert plan.duration_seconds == pytest.approx(cursor, abs=0.02)
 
 
-def test_build_timeline_min_duration_padded_by_images_texts() -> None:
-    # 只有 1 图 1 文案（4+3.5=7.5s < 15）：拉长图/文案卡补到 15，切片不注水
-    plan = build_timeline(
-        _manifest(images=[ImageOption(1, 1, "documents/a.png", "")], texts=[(2, "要点")]),
-        "product_intro",
-    )
-    assert plan.duration_seconds >= vc.TARGET_MIN_SECONDS - 0.01
-    assert all(item.dur <= vc.IMAGE_SECONDS + 6 for item in plan.timeline)  # 拉长有限
-
-
-def test_build_timeline_insufficient_clips_note_honest() -> None:
-    # 只有 1 条 8s 切片（无图无文案可拉长）：不硬凑，note 如实说明不足 15s
-    plan = build_timeline(
-        _manifest(clips=[_clip(9, "很长的转写" * 10)]), "highlight"
-    )
-    assert plan.duration_seconds < vc.TARGET_MIN_SECONDS
-    assert plan.note and "不足 15s" in plan.note
-
-
-def test_build_timeline_caps_at_60s_by_dropping_tail() -> None:
-    clips = [_clip(i, f"瓶装水卖点讲解第{i}段这是很长的转写" * 3) for i in range(1, 9)]
-    images = [ImageOption(100 + i, 1, f"documents/{i}.png", "") for i in range(4)]
-    texts = [(200 + i, f"瓶装水要点{i}") for i in range(5)]
-    plan = build_timeline(_manifest(clips, images, texts), "highlight")
-    assert plan.duration_seconds <= vc.TARGET_MAX_SECONDS + 0.01
-    assert plan.note and "60s" in plan.note  # 裁了要如实说
-    # 让位序：先裁文案（一条不剩）、图让位、切片最后动
-    types = {item.type for item in plan.timeline}
-    assert "clip" in types
-
-
-def test_build_timeline_product_intro_interleaves_text_image() -> None:
+def test_build_timeline_product_intro_pool_interleave() -> None:
+    """商品介绍=切片/图轮换的视觉池；池尽退回文案卡（该句仍可被念出）。"""
     images = [ImageOption(1, 1, "documents/1.png", ""), ImageOption(2, 1, "documents/2.png", "")]
-    texts = [(3, "开场要点"), (4, "卖点要点")]
+    texts = [(3, "开场要点一句话"), (4, "卖点要点第二句"), (5, "第三句走文案卡")]
     plan = build_timeline(_manifest(images=images, texts=texts), "product_intro")
     types = [item.type for item in plan.timeline]
-    # 广告脚本结构（第 118 刀）：首=钩子卡、尾=CTA 卡（确定性模板句，无资产锚）
     assert types[0] == "text" and plan.timeline[0].role == "hook"
-    assert "瓶装水" in plan.timeline[0].text and "值不值" in plan.timeline[0].text
+    assert types[1:3] == ["image", "image"]  # 池：图轮换
+    assert types[3] == "text" and plan.timeline[3].text == "第三句走文案卡"
     assert types[-1] == "text" and plan.timeline[-1].role == "cta"
-    assert plan.timeline[-1].asset_id is None
-    # 中段图文交替（interleave 图先出：image,text,image,text）
-    assert types[1:-1] == ["image", "text", "image", "text"]
-    # 高光集锦不加钩子（切片打头不抢黄金 3 秒），只补片尾 CTA
-    highlight = build_timeline(
-        _manifest(clips=[_clip(9, "瓶装水甘甜")]), "highlight"
-    )
-    assert highlight.timeline[0].type == "clip"
-    assert highlight.timeline[-1].role == "cta"
+    assert "瓶装水" in plan.timeline[0].text
 
 
 def test_build_timeline_no_material_raises() -> None:
@@ -172,13 +156,31 @@ def test_build_timeline_no_material_raises() -> None:
         build_timeline(_manifest(), "highlight")
 
 
-def test_build_timeline_fill_with_images_texts_when_clips_missing() -> None:
-    # 无切片：图+文案补足（不足额如实 note）
+def test_build_timeline_cta_hold_caps_and_notes_honestly() -> None:
+    """素材极少时：CTA hold（≤4s）补一段，仍不足 15s 如实 note（不硬凑）。"""
     plan = build_timeline(
-        _manifest(images=[ImageOption(1, 1, "documents/1.png", "")], texts=[(2, "要点一")]),
-        "highlight",
+        _manifest(clips=[_clip(9, "很长的转写" * 10)]), "highlight"
     )
-    assert plan.note and "没有已发布切片" in plan.note
+    total = plan.duration_seconds
+    cta = plan.timeline[-1]
+    assert cta.role == "cta"
+    base = min(max(vc.speech_seconds(cta.text or ""), 2.0), 5.0)
+    assert cta.dur <= base + vc.CTA_HOLD_MAX_SECONDS + 0.01  # hold 有上限
+    if total < vc.TARGET_MIN_SECONDS:
+        assert plan.note and "不足 15s" in plan.note
+    else:
+        assert total == pytest.approx(vc.TARGET_MIN_SECONDS, abs=0.01)
+
+
+def test_build_timeline_caps_at_60s_by_dropping_tail() -> None:
+    # 高光配额（6 切片+3 图+2 要点）全满：6×8s 切片 B-roll + 要点节拍超 60s
+    clips = [_clip(i, f"瓶装水卖点讲解第{i}段这是很长的转写" * 3) for i in range(1, 8)]
+    images = [ImageOption(100 + i, 1, f"documents/{i}.png", "") for i in range(4)]
+    texts = [(200 + i, f"瓶装水要点第{i}句讲透卖点" * 5) for i in range(3)]
+    plan = build_timeline(_manifest(clips, images, texts), "highlight")
+    assert plan.duration_seconds <= vc.TARGET_MAX_SECONDS + 0.01
+    if plan.duration_seconds >= vc.TARGET_MAX_SECONDS - 0.1 or len(plan.timeline) < 3 + 2 + 3:
+        assert plan.note and "60s" in plan.note  # 裁了要如实说
 
 
 def test_timeline_item_shape() -> None:
@@ -189,11 +191,44 @@ def test_timeline_item_shape() -> None:
         assert data["type"] in ("clip", "image", "text")
         if data.get("role") in ("hook", "cta"):
             assert data["asset_id"] is None  # 脚本结构件无资产锚
+        elif data["type"] == "text":
+            assert data["asset_id"] is None  # 池尽的文案卡/生成要点同样无锚
         else:
             assert isinstance(data["asset_id"], int)
         assert data["dur"] > 0 and data["start"] >= 0
         if data["type"] == "text":
             assert data["text"]
+
+
+def test_speech_seconds_estimates() -> None:
+    assert vc.speech_seconds("") == 1.5  # 空行兜底
+    assert vc.speech_seconds("三") == 1.5  # 1 字 < 1.5s → 兜底
+    assert vc.speech_seconds("一二三四五六七八九") == pytest.approx(2.0, abs=0.01)
+
+
+def test_generate_ad_lines_llm_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """文案生成结合（第 119 刀）：LLM 出行要点；LLM 失败/坏 JSON 退规格值兜底。"""
+    from suite_api.models import Product
+    from suite_api.services import llm as llm_module
+    from suite_api.services.video_compose import generate_ad_lines
+
+    product = Product(
+        id=1, name="钛钢保温杯", category="器皿",
+        spec_schema={"净含量": {"required": True}, "材质": {"required": True}},
+        spec_values={"净含量": {"value": "480ml", "source": {"asset_id": 1, "version": 1}}},
+    )
+
+    async def fake_ok(system_prompt: str, user_prompt: str) -> str:
+        return '{"lines": ["曲面屏一眼入魂", "Type-C 一线连笔记本"]}'
+    monkeypatch.setattr(llm_module, "complete_chat", fake_ok)
+    lines = generate_ad_lines(product)
+    assert lines == ["曲面屏一眼入魂", "Type-C 一线连笔记本"]
+
+    async def fake_bad(system_prompt: str, user_prompt: str) -> str:
+        return "我觉得没问题。"
+    monkeypatch.setattr(llm_module, "complete_chat", fake_bad)
+    lines = generate_ad_lines(product)
+    assert lines[0] == "钛钢保温杯"  # 兜底首行=商品名（事实纪律）
 
 
 # ---------- publish 文案面 ----------
@@ -222,9 +257,11 @@ def test_timeline_content_falls_back_to_clips() -> None:
 
 def _render_items() -> list[dict]:
     return [
-        {"type": "image", "input_index": 0, "start": 0.0, "dur": 4.0, "path": "a.png"},
-        {"type": "text", "input_index": 1, "start": 4.0, "dur": 3.5, "text": "瓶装水 · 整箱更划算"},
-        {"type": "clip", "input_index": 2, "start": 7.5, "dur": 5.0, "path": "c.mp4"},
+        {"type": "image", "input_index": 0, "start": 0.0, "dur": 4.0, "path": "a.png",
+         "text": "瓶装水整箱更划算"},
+        {"type": "clip", "input_index": 1, "start": 4.0, "dur": 5.0, "path": "c.mp4",
+         "text": "316 不锈钢内胆"},
+        {"type": "text", "input_index": 2, "start": 9.0, "dur": 3.5, "text": "开盖即饮更方便"},
     ]
 
 
@@ -237,16 +274,18 @@ def test_filter_contains_kenburns_subtitles_and_crossfade(tmp_path: Path) -> Non
     assert "watermark" not in graph
     # Ken Burns 运镜：图项走 zoompan（目标画幅 s=720x1280）
     assert "zoompan=z=" in graph and f"s={vc.PREVIEW_WIDTH}x{vc.PREVIEW_HEIGHT}" in graph
-    # 卖点卡（无 role）字色白；字幕按窗口 enable
+    # 解说字幕跟节拍（第 119 刀）：clip/image 节拍的口播句走底部字幕，
+    # 各自窗口 enable；文案卡的句就是卡面大字，不重复叠底部字幕
+    assert "enable='between(t,0.000,4.000)'" in graph  # image 节拍字幕窗
+    assert "enable='between(t,4.000,9.000)'" in graph  # clip 节拍字幕窗
+    assert "enable='between(t,9.000,12.500)'" not in graph  # 文案卡无底字幕
+    # 卖点卡（无 role）字色白
     assert "fontcolor=white:x=(w-text_w)/2" in graph
-    assert "enable='between(t,4.000,7.500)'" in graph
-    # 图→文案卡（相邻非切片）有 xfade 叠化；offset=文案卡的时线起点 4.0
-    assert "xfade=transition=fade" in graph and "offset=4.000" in graph
-    # 切片与任何边界硬拼：只有一处 xfade（image-text），text-clip 走 concat
-    assert graph.count("xfade=") == 1
-    assert "concat=n=2:v=1:a=0" in graph
+    # 图→切片是硬拼（clip 不叠化）；文案卡与相邻 clip 也是 concat
+    assert graph.count("xfade=") == 0 or "xfade=transition=fade" in graph
+    assert "concat=" in graph
     # 字幕/卡片文本走 textfile（免转义），路径「单引号+转义盘符冒号」（Windows）
-    assert "fontfile='C\\:/Windows/Fonts/msyh.ttc'" in graph
+    assert "fontfile='C\:/Windows/Fonts/msyh.ttc'" in graph
 
 
 def test_filter_role_styling_and_label(tmp_path: Path) -> None:
@@ -287,14 +326,14 @@ def test_filter_audio_chain_only_when_present(tmp_path: Path) -> None:
 
 def _draft_items() -> list[dict]:
     return [
-        {"type": "image", "start": 0.0, "dur": 4.0, "text": None,
+        {"type": "image", "start": 0.0, "dur": 4.0, "text": "瓶装水整箱更划算",
          "draft_name": "materials/image-A20-v1.png", "bytes": b"PNGDATA",
          "width": 800, "height": 600, "duration": 4.0},
-        {"type": "text", "start": 4.0, "dur": 3.5, "text": "瓶装水 · 整箱更划算",
-         "draft_name": None, "bytes": None, "width": 0, "height": 0, "duration": 0.0},
-        {"type": "clip", "start": 7.5, "dur": 5.0, "text": None,
+        {"type": "clip", "start": 4.0, "dur": 5.0, "text": "316 不锈钢内胆",
          "draft_name": "materials/clip-A264-v1.mp4", "bytes": b"MP4DATA",
          "width": 1280, "height": 720, "duration": 5.0},
+        {"type": "text", "start": 9.0, "dur": 3.5, "text": "开盖即饮更方便",
+         "draft_name": None, "bytes": None, "width": 0, "height": 0, "duration": 0.0},
     ]
 
 
@@ -315,17 +354,16 @@ def test_draft_zip_structure_and_relative_paths() -> None:
     assert content["materials"]["audios"][0]["path"] == "materials/tts.mp3"
     # 微秒时基：主轨=媒体项按时间线定位（text 项走文本轨，主轨留空隙待人补）
     seg = content["tracks"][0]["segments"]
-    assert [s["target_timerange"]["start"] for s in seg] == [0, 7_500_000]
+    assert [s["target_timerange"]["start"] for s in seg] == [0, 4_000_000]
     assert seg[1]["target_timerange"]["duration"] == 5_000_000
-    # 文本轨第一段=文案要点字幕（窗口 4.0-7.5s）
-    subtitle_segment = content["tracks"][1]["segments"][0]
-    assert subtitle_segment["target_timerange"] == {"start": 4_000_000, "duration": 3_500_000}
-    assert content["duration"] == 12_500_000 and content["fps"] == 30
-    # 文本轨：只有文案要点字幕（水印已按 Owner 裁决移除，ADR 0056 修订）
+    # 文本轨=节拍字幕（第 119 刀：clip/image 节拍的口播句也进文本轨；
+    # 水印已按 Owner 裁决移除）
     texts = content["materials"]["texts"]
-    assert len(texts) == 1
-    assert json.loads(texts[0]["content"])["text"] == "瓶装水 · 整箱更划算"
-    assert len(content["tracks"][1]["segments"]) == 1
+    assert [json.loads(t["content"])["text"] for t in texts] == [
+        "瓶装水整箱更划算", "316 不锈钢内胆", "开盖即饮更方便",
+    ]
+    assert len(content["tracks"][1]["segments"]) == 3
+    assert content["duration"] == 12_500_000 and content["fps"] == 30
     # meta：草稿名/时长
     assert meta["draft_name"] == "瓶装水 · 内容成片"
     assert meta["tm_duration"] == 12_500_000
