@@ -6,7 +6,7 @@
 - 协议集成（需 SUITE_TEST_DATABASE_URL，独立 suite_mcp_test 库）：官方 SDK
   client 经 httpx ASGITransport 直打挂载后的 app（不真起端口）；lifespan 用
   app.router.lifespan_context 手动进（session manager 与请求必须同 loop）。
-  覆盖：恰好七工具且无 publish（第 99 刀起恰七：知识四 + 活状态只读三，
+  覆盖：恰好九工具且无 publish（第 99 刀七件 + 第 120 刀飞轮两件，
   功能钉测在 test_mcp_live_tools.py）；检索只命中当前已发布指针版；get 默认
   当前版/历史已发布版/待人洗与已接入拒绝；register 落治理队列且 source_kind=
   mcp_registered；export 含正文全文。
@@ -24,9 +24,10 @@ import psycopg
 import pytest
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from sqlalchemy import select
 
 from suite_api.main import create_app
-from suite_api.models import Asset, AssetVersion
+from suite_api.models import Asset, AssetVersion, KnowledgeGap
 from suite_api.services.asset_view import VersionTextError, read_version_text
 from suite_api.settings import Settings
 from suite_platform.storage import LocalDirectoryStorage
@@ -406,13 +407,16 @@ def test_mcp_full_readonly_and_register_flow(mcp_env: McpEnv) -> None:
     assert out["health"] in (200, 503)
     assert out["api_assets_anon"] == 401
 
-    # 恰好七工具，无 publish（第 99 刀/ADR 0057：知识四 + 活状态只读三）
+    # 恰好九工具，无 publish（第 99 刀七件；第 120 刀 +飞轮两件：
+    # get_asset_media / list_knowledge_gaps——覆盖走查实证的缺口与媒体面）
     assert out["tools"] == [
         "export_published",
         "get_asset",
+        "get_asset_media",
         "get_order_status",
         "get_product",
         "get_stock",
+        "list_knowledge_gaps",
         "register_asset",
         "search_published",
     ]
@@ -747,3 +751,153 @@ def test_mcp_excludes_discarded_published_asset(mcp_env: McpEnv) -> None:
                 assert asset_id not in ids, "废弃后：export 不得包含"
 
     _run_with_lifespan(app, scenario)
+
+
+# ---------- 第 120 刀：运营飞轮两件（缺口列表 / 媒体字节）+ object_key 收口 ----------
+
+
+def test_get_asset_no_longer_leaks_object_key(mcp_env: McpEnv) -> None:
+    """0052「键不出门」纪律对齐（覆盖走查实证的泄漏）：get_asset 不再返回
+    object_key；has_media 指引媒体走 get_asset_media。"""
+
+    def scenario():
+        async def inner():
+            _, settings, storage_root = mcp_env
+            app = create_app(
+                Settings(
+                    database_url=settings.database_url,
+                    storage_root=storage_root,
+                    mcp_bearer_token=_TOKEN,
+                )
+            )
+            async with app.router.lifespan_context(app):
+                out = {}
+                with app.state.session_factory() as db:
+                    asset = db.scalar(select(Asset).where(Asset.status == "published"))
+                    out["asset_id"] = asset.id
+                async with _mcp_session(app, settings) as (read, write, _):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        got = await session.call_tool(
+                            "get_asset", {"asset_id": out["asset_id"]}
+                        )
+                        assert not got.isError
+                        out["get"] = _payload(got)
+                return out
+
+        return asyncio.run(inner())
+
+    out = scenario()
+    assert "object_key" not in out["get"]
+    assert "has_media" in out["get"]
+
+
+def test_list_knowledge_gaps_and_register_with_gap(mcp_env: McpEnv) -> None:
+    """飞轮闭环（第 120 刀核心旅程）：list_knowledge_gaps 看 open 缺口 →
+    register_asset(knowledge_gap_id=...) 补文档挂缺口（同一缺口二挂被拒）。"""
+
+    def scenario():
+        async def inner():
+            _, settings, storage_root = mcp_env
+            app = create_app(
+                Settings(
+                    database_url=settings.database_url,
+                    storage_root=storage_root,
+                    mcp_bearer_token=_TOKEN,
+                )
+            )
+            async with app.router.lifespan_context(app):
+                out = {}
+                with app.state.session_factory() as db:
+                    db.add(KnowledgeGap(question="会员积分怎么兑换呢", status="open"))
+                    db.commit()
+                    gap = db.scalar(
+                        select(KnowledgeGap).where(KnowledgeGap.status == "open")
+                    )
+                    out["gap_id"] = gap.id
+                async with _mcp_session(app, settings) as (read, write, _):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        listed = await session.call_tool(
+                            "list_knowledge_gaps", {"status": "open", "limit": 5}
+                        )
+                        assert not listed.isError
+                        out["gaps"] = _payload(listed)
+                        reg = await session.call_tool(
+                            "register_asset",
+                            {
+                                "content": "会员积分兑换口径：积分可在下单时抵扣。",
+                                "title": "会员积分兑换",
+                                "knowledge_gap_id": out["gap_id"],
+                            },
+                        )
+                        assert not reg.isError
+                        out["registered_id"] = _payload(reg)["id"]
+                        again = await session.call_tool(
+                            "register_asset",
+                            {
+                                "content": "重复挂缺口的第二份补文档。",
+                                "knowledge_gap_id": out["gap_id"],
+                            },
+                        )
+                        out["dup_is_error"] = again.isError
+                        resolved = await session.call_tool(
+                            "list_knowledge_gaps", {"status": "resolved", "limit": 5}
+                        )
+                        out["resolved"] = _payload(resolved)
+                        bad = await session.call_tool(
+                            "list_knowledge_gaps", {"status": "weird"}
+                        )
+                        out["bad_is_error"] = bad.isError
+                with app.state.session_factory() as db:
+                    gap = db.get(KnowledgeGap, out["gap_id"])
+                    out["gap_status"] = gap.status  # 仍 open：发布事务内才 resolve
+                    out["gap_pointee"] = gap.resolved_by_asset_id
+                return out
+
+        return asyncio.run(inner())
+
+    out = scenario()
+    mine = [g for g in out["gaps"] if g["gap_id"] == out["gap_id"]]
+    assert mine and "积分" in mine[0]["question"]
+    assert out["gap_pointee"] == out["registered_id"]  # 挂上补文档
+    assert out["gap_status"] == "open"  # 发布（人）才 resolve——工具无发布权
+    assert out["dup_is_error"]  # 同缺口二挂被拒（0024 语义）
+    assert out["bad_is_error"]  # status 只认 open/resolved
+
+
+def test_get_asset_media_returns_base64_and_rejects_text(mcp_env: McpEnv) -> None:
+    """媒体字节面（多模态 Agent 消费）：已发布图片资产回 base64+mime；文本
+    资产拒绝（提示走 get_asset）。"""
+
+    def scenario():
+        async def inner():
+            _, settings, storage_root = mcp_env
+            app = create_app(
+                Settings(
+                    database_url=settings.database_url,
+                    storage_root=storage_root,
+                    mcp_bearer_token=_TOKEN,
+                )
+            )
+            async with app.router.lifespan_context(app):
+                out = {}
+                with app.state.session_factory() as db:
+                    doc = db.scalar(
+                        select(Asset).where(
+                            Asset.status == "published", Asset.kind == "document"
+                        )
+                    )
+                    out["doc_id"] = doc.id
+                async with _mcp_session(app, settings) as (read, write, _):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        text = await session.call_tool(
+                            "get_asset_media", {"asset_id": out["doc_id"]}
+                        )
+                        out["text_is_error"] = text.isError
+                return out
+
+        return asyncio.run(inner())
+
+    assert scenario()["text_is_error"]

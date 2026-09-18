@@ -547,8 +547,9 @@ def test_mcp_export_and_search_masked(mcp_env: Any) -> None:
     # get_asset（第六出口钉测）：同资产响应无裸号，content 呈掩码
     assert API_PHONE not in json.dumps(out["get"], ensure_ascii=False)
     assert MASKED_PHONE in out["get"]["content"]
-    # 对象键/版本指针不动（字节不动纪律）：响应仍带真实 object_key
-    assert out["get"]["object_key"]
+    # 第 120 刀：object_key 不再出门（0052 键不出门）；改断言 has_media 指引
+    assert "object_key" not in out["get"]
+    assert "has_media" in out["get"]
 
 
 def test_first_question_masks_separated_phone_and_short_domain_email() -> None:
