@@ -32,7 +32,6 @@ from fastapi.testclient import TestClient
 
 import suite_api.services.material as material_module
 import suite_api.services.tts as tts_module
-from suite_api.services.video_compose import WATERMARK_TEXT
 
 ApiFixture = tuple[TestClient, Path]
 
@@ -324,7 +323,7 @@ def test_full_loop_plan_preview_draft_publish(
         cursor += item["dur"]
     assert 15.0 <= task["duration_seconds"] <= 60.0
 
-    # 预览成片：mp4 字节 + ffprobe 时长≈回执时长 + 无音轨 + AIGC 水印角标像素
+    # 预览成片：mp4 字节 + ffprobe 时长≈回执时长 + 无音轨 + 钩子卡暖色像素
     preview = client.get(f"/api/video-compose/{task_id}/preview")
     assert preview.status_code == 200
     assert preview.headers["content-type"] == "video/mp4"
@@ -335,17 +334,13 @@ def test_full_loop_plan_preview_draft_publish(
         task["duration_seconds"], abs=0.5
     )
     assert not any(s.get("codec_type") == "audio" for s in meta["streams"])
-    assert _corner_has_watermark(probe_path)
-    # 审计 19 P2-5：像素钉对水印窗口化盲（首帧在窗内才验）——补一帧**非首帧**
-    # 的水印像素证据：取时间线里最后一张文案卡（深底色画面，非首素材）窗口
-    # 中点抽帧，角标仍在（红线①「常驻」到字节面，drawtext 无 enable= 窗口）。
-    last_text = max(
-        (item for item in timeline if item["type"] == "text"), key=lambda i: i["start"]
-    )
-    assert last_text["start"] > 0, "rich_product 时间线应有中段文案卡"
-    assert _corner_has_watermark(
-        probe_path, at=last_text["start"] + last_text["dur"] / 2
-    )
+    # 第 118 刀：水印已移除（Owner 裁决）——字节面改为钉「钩子卡暖色大字」：
+    # 首帧在钩子卡窗口内（product_intro 首项恒为 hook 卡），画面应出现暖色像素
+    assert _frame_has_warm_text(probe_path, at=0.8)
+    # 尾帧在 CTA 卡窗口内（高亮底条 0xF5C26B 也是暖色系）
+    last = timeline[-1]
+    assert last["role"] == "cta" and last["type"] == "text"
+    assert _frame_has_warm_text(probe_path, at=last["start"] + min(last["dur"] / 2, 1.0))
 
     # 剪映草稿 zip：结构 + 媒体字节随包 + 相对路径
     draft = client.get(f"/api/video-compose/{task_id}/draft")
@@ -359,7 +354,7 @@ def test_full_loop_plan_preview_draft_publish(
         content = json.loads(archive.read("draft_content.json"))
         assert all(v["path"].startswith("materials/") for v in content["materials"]["videos"])
         texts = [json.loads(t["content"])["text"] for t in content["materials"]["texts"]]
-        assert WATERMARK_TEXT in texts  # 红线①随草稿走
+        assert texts == [t for t in texts if "AI 生成" not in t]  # 水印已移除（ADR 0056 修订）
     assert content["duration"] == int(round(task["duration_seconds"] * 1_000_000))
 
     # publish 无 LLM（conftest 空凭证）：fail-closed 422，任务停在 planned
@@ -630,17 +625,14 @@ def test_unknown_task_404(api: ApiFixture) -> None:
     assert client.get("/api/video-compose/999999/draft").status_code == 404
 
 
-def _corner_has_watermark(video: Path, *, at: float = 1.0) -> bool:
-    """抽 ``at`` 秒帧（默认 1.0）：右上角水印区出现亮像素（黑 letterbox/深色
-    画面上的白色「AI 生成」+ 半透明黑底框——红线①的字节面证据）。审计 19
-    P2-5 起 ``at`` 可指定非首帧位（如中段文案卡窗口中点）。"""
+def _frame_has_warm_text(video: Path, *, at: float = 1.0) -> bool:
+    """抽 ``at`` 秒帧：画面出现暖色像素（钩子卡暖字 0xF5C26B / CTA 高亮底条
+    ——R 通道显著高于 B）。第 118 刀起替代原水印像素钉（水印已按 Owner 裁决
+    移除）。"""
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
         frame = Path(tmp) / "frame.rgb"
-        meta = _ffprobe(video)
-        stream = next(s for s in meta["streams"] if s.get("codec_type") == "video")
-        width, height = int(stream["width"]), int(stream["height"])
         subprocess.run(  # noqa: S603 - 固定参数，无 shell
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
              "-ss", str(at), "-i", str(video), "-frames:v", "1",
@@ -648,11 +640,9 @@ def _corner_has_watermark(video: Path, *, at: float = 1.0) -> bool:
             check=True, capture_output=True,
         )
         data = frame.read_bytes()
-    bright = 0
-    for y in range(0, max(1, height // 12)):  # 水印区：y<8% 高、x>85% 宽
-        for x in range(int(width * 0.85), width):
-            offset = (y * width + x) * 3
-            r, g, b = data[offset], data[offset + 1], data[offset + 2]
-            if r > 160 and g > 160 and b > 160:
-                bright += 1
-    return bright > 20
+    warm = 0
+    for offset in range(0, len(data) - 2, 3):
+        r, _, b = data[offset], data[offset + 1], data[offset + 2]
+        if r > 150 and r - b > 60:  # 暖色（琥珀系）且非灰白
+            warm += 1
+    return warm > 500

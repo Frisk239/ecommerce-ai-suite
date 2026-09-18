@@ -1,9 +1,10 @@
 """第 98b 刀：内容成片纯函数与合成单测（选材/时长/时间线/滤镜/草稿包）。
 
-产品语义的钉子（ADR 0056）：改任何默认值都该在这里先红。预览合成用**真
-ffmpeg**（CI 与镜像同装 fonts-noto-cjk，本机 Windows 走系统字体）——2 图+1
-切片+1 文案卡的短合成，ffprobe 断言时长与流；AIGC 水印钉在 filter 命令断言
-（drawtext 常驻、无开关——红线①）。TTS 走替身（不打真网）。
+产品语义的钉子（ADR 0056；第 118 刀 W18 修订）：改任何默认值都该在这里先红。
+预览合成用**真 ffmpeg**（CI 与镜像同装 fonts-noto-cjk，本机 Windows 走系统字体）
+——图+切片+文案卡的短合成，ffprobe 断言时长与流；Ken Burns 运镜/垫乐/钩子-CTA
+脚本结构钉在 filter 与时间线断言。水印已按 Owner 裁决移除（红线①修订：本步是
+真实素材的程序化剪辑，无 AI 生成画面）。TTS 走替身（不打真网）。
 """
 
 import json
@@ -151,8 +152,19 @@ def test_build_timeline_product_intro_interleaves_text_image() -> None:
     texts = [(3, "开场要点"), (4, "卖点要点")]
     plan = build_timeline(_manifest(images=images, texts=texts), "product_intro")
     types = [item.type for item in plan.timeline]
-    # 图文交替：两类各 2 条且不相邻连排（interleave 图先出：image,text,image,text）
-    assert types == ["image", "text", "image", "text"]
+    # 广告脚本结构（第 118 刀）：首=钩子卡、尾=CTA 卡（确定性模板句，无资产锚）
+    assert types[0] == "text" and plan.timeline[0].role == "hook"
+    assert "瓶装水" in plan.timeline[0].text and "值不值" in plan.timeline[0].text
+    assert types[-1] == "text" and plan.timeline[-1].role == "cta"
+    assert plan.timeline[-1].asset_id is None
+    # 中段图文交替（interleave 图先出：image,text,image,text）
+    assert types[1:-1] == ["image", "text", "image", "text"]
+    # 高光集锦不加钩子（切片打头不抢黄金 3 秒），只补片尾 CTA
+    highlight = build_timeline(
+        _manifest(clips=[_clip(9, "瓶装水甘甜")]), "highlight"
+    )
+    assert highlight.timeline[0].type == "clip"
+    assert highlight.timeline[-1].role == "cta"
 
 
 def test_build_timeline_no_material_raises() -> None:
@@ -175,7 +187,10 @@ def test_timeline_item_shape() -> None:
     for item in plan.timeline:
         data = item.to_json()
         assert data["type"] in ("clip", "image", "text")
-        assert isinstance(data["asset_id"], int)
+        if data.get("role") in ("hook", "cta"):
+            assert data["asset_id"] is None  # 脚本结构件无资产锚
+        else:
+            assert isinstance(data["asset_id"], int)
         assert data["dur"] > 0 and data["start"] >= 0
         if data["type"] == "text":
             assert data["text"]
@@ -202,7 +217,7 @@ def test_timeline_content_falls_back_to_clips() -> None:
     assert "瓶装水甘甜" in timeline_content(timeline)
 
 
-# ---------- 滤镜命令断言（水印红线①/字幕/叠化） ----------
+# ---------- 滤镜命令断言（运镜/角色配色/字幕/叠化） ----------
 
 
 def _render_items() -> list[dict]:
@@ -213,16 +228,17 @@ def _render_items() -> list[dict]:
     ]
 
 
-def test_filter_contains_watermark_subtitles_and_crossfade(tmp_path: Path) -> None:
+def test_filter_contains_kenburns_subtitles_and_crossfade(tmp_path: Path) -> None:
     graph = build_preview_filter(
         _render_items(), total=12.5, has_audio=False, audio_input=None,
         workdir=tmp_path, font_file="C:/Windows/Fonts/msyh.ttc",
     )
-    # 红线①：AIGC 水印 drawtext 常驻（无 enable 窗口限制=全程），位置右上角
-    assert "watermark.txt" in graph
-    assert "x=w-tw-24:y=24" in graph
-    assert "enable" not in graph.split("watermark.txt")[1].split("[vout]")[0]
-    # 字幕按窗口 enable
+    # 水印已移除（Owner 裁决 2026-09-18，ADR 0056 红线①修订）
+    assert "watermark" not in graph
+    # Ken Burns 运镜：图项走 zoompan（目标画幅 s=720x1280）
+    assert "zoompan=z=" in graph and f"s={vc.PREVIEW_WIDTH}x{vc.PREVIEW_HEIGHT}" in graph
+    # 卖点卡（无 role）字色白；字幕按窗口 enable
+    assert "fontcolor=white:x=(w-text_w)/2" in graph
     assert "enable='between(t,4.000,7.500)'" in graph
     # 图→文案卡（相邻非切片）有 xfade 叠化；offset=文案卡的时线起点 4.0
     assert "xfade=transition=fade" in graph and "offset=4.000" in graph
@@ -233,17 +249,37 @@ def test_filter_contains_watermark_subtitles_and_crossfade(tmp_path: Path) -> No
     assert "fontfile='C\\:/Windows/Fonts/msyh.ttc'" in graph
 
 
+def test_filter_role_styling_and_label(tmp_path: Path) -> None:
+    """钩子/CTA 卡按 role 配色（暖字/高亮底条），商品名小标进卡。"""
+    items = [
+        {"type": "text", "input_index": 0, "start": 0.0, "dur": 2.5,
+         "text": "瓶装水，到底值不值？", "role": "hook"},
+        {"type": "text", "input_index": 1, "start": 2.5, "dur": 2.5,
+         "text": "点击主页，把瓶装水带回家", "role": "cta"},
+    ]
+    graph = build_preview_filter(
+        items, total=5.0, has_audio=False, audio_input=None,
+        workdir=tmp_path, font_file="font.ttf", label="瓶装水",
+    )
+    assert f"fontcolor={vc.CARD_TEXT_COLORS['hook']}" in graph  # 钩子暖色大字
+    assert "boxcolor=0xF5C26B@0.9" in graph  # CTA 高亮底条
+    assert "label.txt" in graph and "x=36:y=48" in graph  # 商品名小标进卡
+
+
 def test_filter_audio_chain_only_when_present(tmp_path: Path) -> None:
     silent = build_preview_filter(
         _render_items(), total=12.5, has_audio=False, audio_input=None,
         workdir=tmp_path, font_file="font.ttf",
     )
-    assert "[aout]" not in silent and "apad" not in silent
+    assert "[aout]" not in silent and "apad" not in silent and "aevalsrc" not in silent
     voiced = build_preview_filter(
         _render_items(), total=12.5, has_audio=True, audio_input=3,
         workdir=tmp_path, font_file="font.ttf",
     )
-    assert "[3:a]aresample=44100,apad,atrim=duration=12.500,asetpts=PTS-STARTPTS[aout]" in voiced
+    # 口播为主 + 程序化垫乐（18% 不盖人声）混音；无 TTS 时不合成任何音轨
+    assert "[3:a]aresample=44100,apad,atrim=duration=12.500,asetpts=PTS-STARTPTS[voice]" in voiced
+    assert "aevalsrc=exprs=" in voiced and f"volume={vc.BGM_VOLUME}" in voiced
+    assert "amix=inputs=2:duration=first:normalize=0" in voiced
 
 
 # ---------- 草稿包结构（自写最小 JSON 形态） ----------
@@ -285,12 +321,11 @@ def test_draft_zip_structure_and_relative_paths() -> None:
     subtitle_segment = content["tracks"][1]["segments"][0]
     assert subtitle_segment["target_timerange"] == {"start": 4_000_000, "duration": 3_500_000}
     assert content["duration"] == 12_500_000 and content["fps"] == 30
-    # 文本轨：1 条文案要点字幕 + AIGC 水印常驻（红线①随草稿走）
+    # 文本轨：只有文案要点字幕（水印已按 Owner 裁决移除，ADR 0056 修订）
     texts = content["materials"]["texts"]
-    assert len(texts) == 2
-    assert json.loads(texts[1]["content"])["text"] == vc.WATERMARK_TEXT
-    watermark_segment = content["tracks"][1]["segments"][-1]
-    assert watermark_segment["target_timerange"] == {"start": 0, "duration": 12_500_000}
+    assert len(texts) == 1
+    assert json.loads(texts[0]["content"])["text"] == "瓶装水 · 整箱更划算"
+    assert len(content["tracks"][1]["segments"]) == 1
     # meta：草稿名/时长
     assert meta["draft_name"] == "瓶装水 · 内容成片"
     assert meta["tm_duration"] == 12_500_000
@@ -335,7 +370,8 @@ class TestRealRender:
     def _items(self, media: dict) -> list[dict]:
         return [
             {"type": "image", "input_index": 0, "start": 0.0, "dur": 4.0, "path": media["png"]},
-            {"type": "text", "input_index": 1, "start": 4.0, "dur": 4.0, "text": "瓶装水整箱更划算"},
+            {"type": "text", "input_index": 1, "start": 4.0, "dur": 4.0,
+             "text": "瓶装水整箱更划算", "role": "hook"},
             {"type": "clip", "input_index": 2, "start": 8.0, "dur": 4.0, "path": media["mp4"]},
         ]
 
@@ -368,26 +404,6 @@ class TestRealRender:
         assert duration == pytest.approx(12.0, abs=0.3)
         assert has_audio is True  # 画面时长权威：口播 8s→apad 补到 12s
 
-    def test_watermark_pixels_present_top_right(self, media: dict, tmp_path: Path) -> None:
-        """AIGC 角标抽帧验证：右上角水印区非纯背景（红底图上白字+黑框=高亮度差）。"""
-        payload = vc.render_preview(
-            self._items(media), None, total=12.0, workdir=tmp_path,
-            font_file=vc._find_cjk_font(),
-        )
-        out = tmp_path / "probe.mp4"
-        out.write_bytes(payload)
-        frame = tmp_path / "frame.png"
-        subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-             "-ss", "1.0", "-i", str(out), "-frames:v", "1", str(frame)],
-            check=True, capture_output=True,
-        )
-        pixels = _corner_pixels(frame)
-        assert pixels, "帧抽取失败"
-        # 纯红背景 (r>180, g<80, b<80) 上有水印（白字/黑框）→ 会出现非背景像素
-        background = [p for p in pixels if p[0] > 150 and p[1] < 100 and p[2] < 100]
-        assert len(pixels) - len(background) > 20, "右上角未见 AIGC 水印像素"
-
 
 def _ffprobe_streams(path: Path) -> tuple[float, bool]:
     completed = subprocess.run(
@@ -399,31 +415,3 @@ def _ffprobe_streams(path: Path) -> tuple[float, bool]:
     duration = float(data["format"]["duration"])
     has_audio = any(s.get("codec_type") == "audio" for s in data["streams"])
     return duration, has_audio
-
-
-def _corner_pixels(path: Path) -> list[tuple[int, int, int]]:
-    """右上角水印区（x>0.86w, y<0.08h）的像素列表（ffmpeg 提 rawvideo RGB24）。"""
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp:
-        raw = Path(tmp) / "frame.rgb"
-        info = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=width,height", "-of", "json", str(path)],
-            check=True, capture_output=True,
-        )
-        meta = json.loads(info.stdout.decode())["streams"][0]
-        width, height = int(meta["width"]), int(meta["height"])
-        subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-             "-i", str(path), "-vf", "format=rgb24", "-frames:v", "1",
-             "-f", "rawvideo", str(raw)],
-            check=True, capture_output=True,
-        )
-        data = raw.read_bytes()
-    pixels: list[tuple[int, int, int]] = []
-    for y in range(0, max(1, height // 12)):
-        for x in range(int(width * 0.85), width):
-            offset = (y * width + x) * 3
-            pixels.append((data[offset], data[offset + 1], data[offset + 2]))
-    return pixels

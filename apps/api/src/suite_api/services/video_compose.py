@@ -89,9 +89,42 @@ PREVIEW_FPS = 25
 CROSSFADE_SECONDS = 0.4  # 相邻非切片素材（图/文案卡）间的叠化时长
 SUBTITLE_FONTSIZE = 40
 CARD_FONTSIZE = 54
-WATERMARK_FONTSIZE = 30
-# 红线①（ADR 0056）：AIGC 标识常驻角标——常量钉在代码里，没有配置开关
-WATERMARK_TEXT = "AI 生成"
+
+# 第 118 刀（W18 成片质量升级，Owner 裁决 2026-09-18）：
+# - **水印取消**（ADR 0056 红线①修订）：成片画面全部来自真实素材（切片/商品图/
+#   洗帧图）的程序化剪辑，本步不引入 AI 生成画面——「AI 生成」角标属过度声明；
+#   TTS 合成口播的标注责任在发布环节（剪映精修/人工上市），预览与草稿不是
+#   对外交付面。原 WATERMARK_* 常量删除。
+# - 广告脚本结构（行业「黄金 3 秒」惯例）：片头钩子卡 + 片尾 CTA 卡，口播稿
+#   = 钩子句 + 卖点段 + CTA 句的完整广告词。
+HOOK_SECONDS = 2.5  # 片头钩子卡时长（黄金 3 秒内）
+CTA_SECONDS = 2.5  # 片尾行动号召卡时长
+HOOK_TEMPLATE = "{name}，到底值不值？"  # 悬念提问式钩子（黄金 3 秒策略）
+CTA_TEMPLATE = "点击主页，把{name}带回家"
+
+# 文案卡视觉（role 配色）：双色渐变底 + 角色字色——与素材中心封面文字卡
+# （cover_card.py）同一套视觉语言（暖色=钩子、近黑=卖点、强调底条=CTA）。
+CARD_GRADIENTS = {
+    "hook": ("0x3A2A18", "0x6B4A24"),  # 暖棕渐变（钩子卡）
+    "point": ("0x14161A", "0x272B3A"),  # 深蓝灰渐变（卖点卡，原深底延续）
+    "cta": ("0x1F2430", "0x39415C"),  # 靛蓝渐变（CTA 卡）
+}
+CARD_TEXT_COLORS = {"hook": "0xF5C26B", "point": "white", "cta": "white"}
+LABEL_FONTSIZE = 26  # 卡片左上角商品名小标
+
+# Ken Burns 运镜（图项）：交替推近/拉远——让静态商品图「活起来」且不篡改商品
+# （行业主流做法；开源同类实测无约束的视频生成会「凭空长手、挤出商品」）
+ZOOM_MAX = 1.15
+ZOOM_RATE_PER_FRAME = 0.0018
+
+# 垫乐（BGM）：程序化轻和弦 pad（A 大调三和弦 + 低八度根音），tremolo 起伏 +
+# 低通柔化；音量 0.18×——行业纪律「BGM 15-20% 不盖人声」。只陪口播轨（无声
+# 预览语义保留：无 TTS = 纯无声），进预览不进剪映草稿（草稿 BGM 留人挑，债）。
+BGM_VOLUME = 0.18
+BGM_EXPR = (
+    "0.10*sin(2*PI*220*t)+0.07*sin(2*PI*277.18*t)"
+    "+0.07*sin(2*PI*329.63*t)+0.05*sin(2*PI*110*t)"
+)
 
 # publish 上传成品上限（与源录像同档 200MB）；只收 mp4 字节
 MAX_FINAL_VIDEO_BYTES = 200 * 1024 * 1024
@@ -184,13 +217,19 @@ class ComposeManifest:
 
 @dataclass(frozen=True)
 class TimelineItem:
-    """时间线一项（落库/回执形态）：clip|image|text + 资产锚 + 秒制起止。"""
+    """时间线一项（落库/回执形态）：clip|image|text + 资产锚 + 秒制起止。
+
+    ``role``（第 118 刀）：text 项的广告脚本角色——hook=片头钩子卡 / cta=片尾
+    行动号召卡（确定性模板生成，无资产锚）；None=普通卖点卡（来自 material
+    文案）。渲染配色与口播稿组装都按它分派。
+    """
 
     type: str  # clip | image | text
-    asset_id: int
+    asset_id: int | None
     start: float
     dur: float
     text: str | None = None  # text 项的文案要点行（字幕与口播的文本源）
+    role: str | None = None  # hook | cta | None（text 项）
 
     def to_json(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -201,6 +240,8 @@ class TimelineItem:
         }
         if self.text is not None:
             data["text"] = self.text
+        if self.role is not None:
+            data["role"] = self.role
         return data
 
 
@@ -310,10 +351,24 @@ def build_timeline(manifest: ComposeManifest, template: str) -> PlanOutcome:
     else:  # product_intro：图文交替推进，切片殿后
         entries += _interleave(image_entries, text_entries)
 
-    # 60s 上限：让位序降级裁（保至少一项——单项超 8s 也不可能，clip 已 clamp）
+    # 广告脚本结构（第 118 刀 W18）：商品介绍=片头钩子 + 片尾 CTA；高光集锦
+    # 切片打头不抢黄金 3 秒，只补片尾 CTA。钩子/CTA 是确定性模板句（悬念提问/
+    # 行动号召），不带资产锚（asset_id=None——渲染与草稿都按纯文本卡走）。
+    name = manifest.product_name.strip() or "这件好物"
+    if template == "product_intro":
+        entries.insert(0, {"type": "text", "asset_id": None, "dur": HOOK_SECONDS,
+                           "text": HOOK_TEMPLATE.format(name=name), "role": "hook"})
+    entries.append({"type": "text", "asset_id": None, "dur": CTA_SECONDS,
+                    "text": CTA_TEMPLATE.format(name=name), "role": "cta"})
+
+    # 60s 上限：让位序降级裁（保至少一项——单项超 8s 也不可能，clip 已 clamp）；
+    # 钩子/CTA 各 2.5s 且是脚本结构件，不参与裁撤（裁了广告就不成广告了）
     dropped: list[str] = []
-    while sum(e["dur"] for e in entries) > TARGET_MAX_SECONDS and len(entries) > 1:
-        tail_index = max(range(len(entries)), key=lambda i: (-_DROP_PRIORITY[entries[i]["type"]], i))
+    while sum(e["dur"] for e in entries) > TARGET_MAX_SECONDS:
+        droppable = [i for i, e in enumerate(entries) if not e.get("role")]
+        if not droppable:
+            break
+        tail_index = max(droppable, key=lambda i: (-_DROP_PRIORITY[entries[i]["type"]], i))
         dropped.append(entries[tail_index]["type"])
         entries.pop(tail_index)
     if dropped:
@@ -324,9 +379,12 @@ def build_timeline(manifest: ComposeManifest, template: str) -> PlanOutcome:
         )
 
     total = sum(e["dur"] for e in entries)
-    # 15s 下限：只拉长图/文案卡（切片维持实测窗），均摊缺口
+    # 15s 下限：只拉长图/卖点卡（切片维持实测窗、钩子/CTA 是结构卡固定时长
+    # 不注水——拉长的行动号召卡只会更尬），均摊缺口
     if total < TARGET_MIN_SECONDS:
-        flexible = [e for e in entries if e["type"] in ("image", "text")]
+        flexible = [
+            e for e in entries if e["type"] in ("image", "text") and not e.get("role")
+        ]
         if flexible:
             share = (TARGET_MIN_SECONDS - total) / len(flexible)
             for entry in flexible:
@@ -347,6 +405,7 @@ def build_timeline(manifest: ComposeManifest, template: str) -> PlanOutcome:
                 start=round(cursor, 3),
                 dur=round(entry["dur"], 3),
                 text=entry.get("text"),
+                role=entry.get("role"),
             )
         )
         cursor += entry["dur"]
@@ -431,27 +490,38 @@ def build_preview_filter(
     audio_input: int | None,
     workdir: Path,
     font_file: str,
+    label: str = "",
 ) -> str:
-    """预览合成的 filtergraph（纯函数；测试断言水印/字幕/叠化就在这里钉）。
+    """预览合成的 filtergraph（纯函数；测试断言运镜/字幕/叠化就在这里钉）。
 
-    ``items`` 每项：{type: image|text|clip, input_index, start, dur, text?}——
-    image/text 项的输入由命令构造侧给足 ``dur + CROSSFADE`` 的时长（尾帧），
-    本函数按 xfade offset=下一项的时线起点衔接，叠化不占时线时长；最后统一：
-    每条文案要点在自己窗口内字幕 drawtext → **AIGC 水印 drawtext 常驻全程**
-    （红线①）→ 按总时长终裁；有音轨时口播 apad/atrim 对齐画面时长。
+    ``items`` 每项：{type: image|text|clip, input_index, start, dur, text?, role?}。
+    第 118 刀（W18）起：图项走 **Ken Burns 运镜**（zoompan 交替推近/拉远）；
+    文案卡按 role 配色（钩子暖/卖点冷/CTA 靛蓝）+ 左上角商品名小标；相邻
+    非切片段 xfade 叠化；每条文案要点窗口内字幕；**有口播时叠程序化垫乐**
+    （BGM 音量 18% 不盖人声）；总时长终裁。水印已按 Owner 裁决移除（ADR 0056
+    红线①修订：本步是真实素材的程序化剪辑，无 AI 生成画面）。
     """
     chains: list[str] = []
+    label_file = _drawtext_file(workdir, "label.txt", (label or "").strip()[:12]) if label else None
 
     for index, item in enumerate(items):
         inp = f"[{item['input_index']}:v]"
         render_dur = item["dur"] + (CROSSFADE_SECONDS if _fades_to_next(items, index) else 0.0)
         common = f"fps={PREVIEW_FPS},format=yuv420p"
         if item["type"] == "image":
-            # 图：cover 裁切填满画幅（商品图四周留白没有信息量）
+            # Ken Burns：2x 画幅内 zoompan（只缩不放损画质），偶数项推近、奇数项
+            # 拉远——静态商品图「活起来」且不篡改商品
+            frames = max(int(round(render_dur * PREVIEW_FPS)) + 1, 2)
+            if index % 2 == 0:
+                zoom = f"min(1+{ZOOM_RATE_PER_FRAME}*on,{ZOOM_MAX})"
+            else:
+                zoom = f"max({ZOOM_MAX}-{ZOOM_RATE_PER_FRAME}*on,1.0)"
             chain = (
-                f"{inp}scale={PREVIEW_WIDTH}:{PREVIEW_HEIGHT}"
+                f"{inp}scale={PREVIEW_WIDTH * 2}:{PREVIEW_HEIGHT * 2}"
                 ":force_original_aspect_ratio=increase,"
-                f"crop={PREVIEW_WIDTH}:{PREVIEW_HEIGHT},setsar=1,"
+                f"crop={PREVIEW_WIDTH * 2}:{PREVIEW_HEIGHT * 2},setsar=1,"
+                f"zoompan=z='{zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                f":d={frames}:s={PREVIEW_WIDTH}x{PREVIEW_HEIGHT}:fps={PREVIEW_FPS},"
                 f"trim=duration={render_dur:.3f},setpts=PTS-STARTPTS,{common}"
             )
         elif item["type"] == "clip":
@@ -462,16 +532,26 @@ def build_preview_filter(
                 f"pad={PREVIEW_WIDTH}:{PREVIEW_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
                 f"trim=duration={render_dur:.3f},setpts=PTS-STARTPTS,{common}"
             )
-        else:  # text 文案卡：深底大字（字幕另在其下，这是主视觉）
+        else:  # 文案卡：role 配色大字（字幕另在其下）+ 左上角商品名小标
+            role = item.get("role") or "point"
             card_text = _drawtext_file(
                 workdir, f"card-{index}.txt", wrap_cjk(item.get("text") or "", 12)
             )
+            color = CARD_TEXT_COLORS[role]
+            cta_box = (
+                ":box=1:boxcolor=0xF5C26B@0.9:boxborderw=14" if role == "cta" else ""
+            )
             chain = (
                 f"{inp}drawtext=fontfile={_filter_path(font_file)}:textfile={card_text}"
-                f":fontsize={CARD_FONTSIZE}:fontcolor=white:"
-                "x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=14,"
-                f"trim=duration={render_dur:.3f},setpts=PTS-STARTPTS,{common}"
+                f":fontsize={CARD_FONTSIZE}:fontcolor={color}{cta_box}"
+                ":x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=14"
             )
+            if label_file is not None:
+                chain += (
+                    f",drawtext=fontfile={_filter_path(font_file)}:textfile={label_file}"
+                    f":fontsize={LABEL_FONTSIZE}:fontcolor=white@0.55:x=36:y=48"
+                )
+            chain += f",trim=duration={render_dur:.3f},setpts=PTS-STARTPTS,{common}"
         chains.append(f"{chain}[v{index}]")
 
     # 组段：相邻非切片段 xfade 链成 run；clip/run 之间 concat 硬拼
@@ -506,7 +586,7 @@ def build_preview_filter(
         body = "[vcat]"
         chains.append(f"{''.join(stream_labels)}concat=n={len(stream_labels)}:v=1:a=0{body}")
 
-    # 字幕（每条文案要点在自己窗口）→ AIGC 水印（常驻，红线①）→ 终裁
+    # 字幕（每条文案要点在自己窗口）→ 按总时长终裁（水印已移除，ADR 0056 修订）
     for index, item in enumerate(items):
         if item["type"] != "text":
             continue
@@ -518,19 +598,22 @@ def build_preview_filter(
             f":enable='between(t,{item['start']:.3f},{(item['start'] + item['dur']):.3f})'[s{index}]"
         )
         body = f"[s{index}]"
-    watermark_file = _drawtext_file(workdir, "watermark.txt", WATERMARK_TEXT)
-    chains.append(
-        f"{body}drawtext=fontfile={_filter_path(font_file)}:textfile={watermark_file}"
-        f":fontsize={WATERMARK_FONTSIZE}:fontcolor=white@0.85"
-        ":x=w-tw-24:y=24:box=1:boxcolor=black@0.45:boxborderw=8"
-        f",trim=duration={total:.3f},setpts=PTS-STARTPTS[vout]"
-    )
+    chains.append(f"{body}trim=duration={total:.3f},setpts=PTS-STARTPTS[vout]")
     if has_audio:
         assert audio_input is not None  # noqa: S101 - 有音轨必有输入索引（调用方契约）
+        # 口播为主（apad/atrim 对齐画面时长）+ 程序化垫乐（18% 不盖人声，
+        # tremolo 起伏 + 低通柔化 + 首尾淡入淡出），amix 不归一化保绝对音量
+        fade_out_start = max(total - 1.5, 0.0)
         chains.append(
             f"[{audio_input}:a]aresample=44100,apad,atrim=duration={total:.3f}"
-            ",asetpts=PTS-STARTPTS[aout]"
+            ",asetpts=PTS-STARTPTS[voice]"
         )
+        chains.append(
+            f"aevalsrc=exprs='{BGM_EXPR}':s=44100:d={total:.3f}"
+            f",tremolo=f=0.8:d=0.3,lowpass=f=1800,volume={BGM_VOLUME}"
+            f",afade=t=in:d=1.0,afade=t=out:st={fade_out_start:.3f}:d=1.5[bgm]"
+        )
+        chains.append("[voice][bgm]amix=inputs=2:duration=first:normalize=0[aout]")
     return ";".join(chains)
 
 
@@ -541,13 +624,16 @@ def render_preview(
     total: float,
     workdir: Path,
     font_file: str | None = None,
+    label: str = "",
 ) -> bytes:
     """时间线 → 预览成片 mp4 字节（阻塞 ffmpeg；items 带本地媒体路径）。
 
-    - 图输入 ``-loop 1 -t dur(+叠化)``；文案卡走 lavfi color 源；切片整段进、
-      filter 内 trim；
+    - 图输入单帧进滤镜（zoompan 在 filter 内拉出整段——Ken Burns 运镜）；
+      文案卡走 lavfi gradients 双色渐变源（第 118 刀）；切片整段进、filter 内
+      trim；
     - 口播字节落盘为一个音频输入：短了 apad 补静音、长了 atrim 截齐（**画面
-      时长权威**）；无 TTS=纯无声视频（with_tts 由调用方如实记）；
+      时长权威**）；有口播时叠程序化垫乐（BGM_VOLUME，行业 15-20% 纪律）；
+      无 TTS=纯无声视频（with_tts 由调用方如实记）；
     - 输出 720x1280 h264 +（有音轨时）aac，faststart 便于浏览器边下边播。
     ffmpeg 非 0 退出/无输出抛 RenderError（路由 502，可整任务重发）。
     """
@@ -555,19 +641,20 @@ def render_preview(
         font_file = _find_cjk_font()
     command: list[str] = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
     for index, item in enumerate(items):
-        render_dur = item["dur"] + (CROSSFADE_SECONDS if _fades_to_next(items, index) else 0.0)
         if item["type"] == "image":
-            command += [
-                "-loop", "1", "-framerate", str(PREVIEW_FPS), "-t", f"{render_dur:.3f}",
-                "-i", item["path"],
-            ]
+            # 单帧进：Ken Burns 由 zoompan 在 filter 内展开（-loop 会逐帧重复
+            # 静止画面，zoompan d=1 时不产生运动）
+            command += ["-i", item["path"]]
         elif item["type"] == "clip":
             command += ["-i", item["path"]]
-        else:  # 文案卡：lavfi color 源（+1s 余量，filter 内 trim 精确窗口）
+        else:  # 文案卡：lavfi gradients 双色渐变源（+1s 余量，filter 内 trim 精确窗口）
+            render_dur = item["dur"] + (CROSSFADE_SECONDS if _fades_to_next(items, index) else 0.0)
+            c0, c1 = CARD_GRADIENTS[item.get("role") or "point"]
             command += [
                 "-f", "lavfi", "-i",
-                f"color=c=0x14161A:s={PREVIEW_WIDTH}x{PREVIEW_HEIGHT}:r={PREVIEW_FPS}"
-                f":d={math.ceil(render_dur) + 1}",
+                f"gradients=s={PREVIEW_WIDTH}x{PREVIEW_HEIGHT}:c0={c0}:c1={c1}"
+                f":x0=0:y0=0:x1={PREVIEW_WIDTH}:y1={PREVIEW_HEIGHT}"
+                f":r={PREVIEW_FPS}:d={math.ceil(render_dur) + 1}",
             ]
     audio_input: int | None = None
     if tts_bytes:
@@ -582,6 +669,7 @@ def render_preview(
         audio_input=audio_input,
         workdir=workdir,
         font_file=font_file,
+        label=label,
     )
     out_path = workdir / "preview.mp4"
     command += [
@@ -778,12 +866,8 @@ def build_draft_content(
             text_segments.append(text_segment)
             speeds.append(_speed_material(text_segment))
 
-    # AIGC 标识（红线①）：常驻文本，全程钉住
-    watermark = _text_material(WATERMARK_TEXT)
-    texts.append(watermark)
-    watermark_segment = _segment(watermark["id"], 0.0, total, render_index=1, is_video=False)
-    text_segments.append(watermark_segment)
-    speeds.append(_speed_material(watermark_segment))
+    # 水印文本轨已按 Owner 裁决移除（第 118 刀，ADR 0056 红线①修订：本步是
+    # 真实素材的程序化剪辑，无 AI 生成画面——「AI 生成」角标属过度声明）
 
     audios: list[dict[str, Any]] = []
     audio_segments: list[dict[str, Any]] = []
@@ -1207,10 +1291,11 @@ def plan_compose(
             if option is None:  # text 项：来源 material 资产，无媒体字节（lavfi 卡）
                 render_items.append(
                     {"type": "text", "input_index": index, "start": item.start,
-                     "dur": item.dur, "text": item.text}
+                     "dur": item.dur, "text": item.text, "role": item.role}
                 )
                 draft_items.append(  # 草稿文本轨需要字幕项（无媒体字节）
                     {"type": "text", "start": item.start, "dur": item.dur, "text": item.text,
+                     "role": item.role,
                      "draft_name": None, "bytes": None, "width": 0, "height": 0, "duration": 0.0}
                 )
                 continue
@@ -1246,7 +1331,8 @@ def plan_compose(
             )
 
         preview_bytes = render_preview(
-            render_items, tts_bytes, total=plan.duration_seconds, workdir=workdir
+            render_items, tts_bytes, total=plan.duration_seconds, workdir=workdir,
+            label=manifest.product_name,
         )
         draft_bytes = build_draft_zip(
             draft_items,
@@ -1294,7 +1380,7 @@ def timeline_content(timeline: Sequence[dict[str, Any]]) -> str:
     lines = [
         str(item["text"]).strip()
         for item in timeline
-        if item.get("type") == "text" and item.get("text")
+        if item.get("type") == "text" and item.get("text") and not item.get("role")
     ]
     if not lines:
         lines = [f"（切片高光）{item.get('text') or ''}".strip()

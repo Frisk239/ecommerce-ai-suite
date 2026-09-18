@@ -2,7 +2,8 @@
 // 选商品+模板 → plan 同步出时间线候选+预览成片+剪映草稿（人审改）→
 // 「确认登记」把文案要点经双闸复用登记 material 资产（可上传剪映导出的成品
 // mp4 或直接用预览）。时间线/预览/草稿是任务暂存件不是资产；不做自动 publish。
-// 预览常驻「AI 生成」AIGC 角标（服务端 drawtext 钉死，红线①）。
+// 预览水印已按 Owner 裁决移除（第 118 刀，ADR 0056 红线①修订：
+// 本步是真实素材的程序化剪辑，无 AI 生成画面）。
 
 import { useCallback, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -32,30 +33,36 @@ const STATUS_LABEL: Record<ComposeTask['status'], string> = {
   registered: '已登记',
 }
 
-/** 时间线候选条：类型 + 资产锚 + 时窗 + 文案行（AI 排版的可视面）。 */
+/** 时间线候选条：类型 + 脚本角色（钩子/CTA）+ 资产锚 + 时窗 + 文案行。 */
 function TimelineRow({ item }: { item: ComposeTimelineItem }) {
   return (
     <li className="flex items-baseline gap-2 border-b border-line-1 py-1.5 last:border-b-0">
       <span
         className={`inline-block w-12 shrink-0 text-center text-[11px] leading-5 ${
-          item.type === 'clip'
-            ? 'bg-accent-soft text-accent-strong'
-            : item.type === 'image'
-              ? 'bg-[rgba(126,88,197,0.1)] text-[#6c4fb5]'
-              : 'bg-[rgba(138,97,22,0.12)] text-[#8a6116]'
+          item.role === 'hook'
+            ? 'bg-[rgba(244,179,66,0.18)] text-[#8a6116]'
+            : item.role === 'cta'
+              ? 'bg-accent-soft text-accent-strong'
+              : item.type === 'clip'
+                ? 'bg-accent-soft text-accent-strong'
+                : item.type === 'image'
+                  ? 'bg-[rgba(126,88,197,0.1)] text-[#6c4fb5]'
+                  : 'bg-[rgba(138,97,22,0.12)] text-[#8a6116]'
         }`}
       >
-        {ITEM_LABEL[item.type]}
+        {item.role === 'hook' ? '钩子' : item.role === 'cta' ? 'CTA' : ITEM_LABEL[item.type]}
       </span>
       {item.type === 'text' ? (
         <span className="flex-1 text-[13px] leading-5 text-ink">{item.text}</span>
-      ) : (
+      ) : item.asset_id !== null ? (
         <Link
           to={`/platform/assets/${item.asset_id}`}
           className="font-mono text-xs text-ink-2 underline-offset-2 hover:text-accent-strong hover:underline"
         >
           {formatAssetId(item.asset_id)}
         </Link>
+      ) : (
+        <span className="flex-1 text-[13px] text-ink-3">&mdash;</span>
       )}
       <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-3">
         {item.start.toFixed(1)}s +{item.dur.toFixed(1)}s
@@ -109,7 +116,7 @@ function TaskWorkbench({ task, onDone }: { task: ComposeTask; onDone: () => void
 
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <span className="field-label">预览成片（常驻「AI 生成」角标）</span>
+          <span className="field-label">预览成片（真实素材程序化混剪，Ken Burns 运镜 + 垫乐）</span>
           {/* compose/ 暂存件（不是资产）：操作者 cookie 同源直放 */}
           <video
             key={task.id}
@@ -229,7 +236,7 @@ export default function VideoComposePanel() {
       <div className="panel space-y-3 px-4 py-4">
         <p className="text-xs leading-5 text-ink-3">
           选商品与模板后一键合成：系统自动选材（该商品已发布的切片/图片/文案要点）
-          排出 15-60s 时间线，产出预览成片（常驻「AI 生成」角标）+ 剪映草稿；
+          按广告脚本（钩子-卖点-CTA）排出 15-60s 时间线，产出预览成片（Ken Burns 运镜+口播垫乐）+ 剪映草稿；
           人审改后「确认登记」，文案过双闸质检登记为 material 资产。
           {!ttsConfigured ? ' 未配置 TTS_API_KEY：预览无声（口播可后配）。' : ''}
         </p>

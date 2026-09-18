@@ -576,13 +576,15 @@ export interface MaterialImggenStatus {
 export type ComposeTemplate = 'highlight' | 'product_intro'
 
 /** 时间线候选项（AI 排版结果，秒制 butt-joint）：type=clip|image|text，
- * text 项带文案要点行（预览字幕与口播的文本源）。 */
+ * text 项带文案要点行（预览字幕与口播的文本源）。第 118 刀：钩子/CTA 卡是
+ * 广告脚本结构件（无资产锚，asset_id=null）——role 标注脚本角色。 */
 export interface ComposeTimelineItem {
   type: 'clip' | 'image' | 'text'
-  asset_id: number
+  asset_id: number | null
   start: number
   dur: number
   text?: string
+  role?: 'hook' | 'cta'
 }
 
 /** 成片任务（不是中台对象）：planned=时间线候选+预览+草稿已出（待人审改） /
