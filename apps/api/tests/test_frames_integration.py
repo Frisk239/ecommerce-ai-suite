@@ -79,7 +79,7 @@ def _insert_candidate(
             VALUES ((SELECT id FROM products ORDER BY id LIMIT 1), 'pending', %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (start, end, transcript, "洗帧测试录像", recording_id),
+            (start, end, transcript, "wash.mp4", recording_id),
         )
         return int(cur.fetchone()[0])
 

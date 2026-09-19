@@ -146,11 +146,18 @@ def register_recording(
     """落一份源录像 + 上传即绑定（第 46 刀裁决 1/2；第 49 刀加真值回执）。
 
     对象键 ``recordings/{uuid}/<sha16>.mp4``（源录像不是资产，不进 clips/ 资产
-    前缀、不进检索、不能发布）；插行拿主键后，把**尚无源录像**（recording_id
-    IS NULL）的 pending 候选 UPDATE 绑到这份录像——已登记候选不动（回执锚已
-    在），已绑过的候选也不改绑（**顺手的默认动作**；改绑交给第 49 刀的显式端点
-    ``bind_candidates``）。返回 (录像行, 本次绑定条数)——条数是后端真值，回执
-    不再用前端猜的候选数。
+    前缀、不进检索、不能发布）；插行拿主键后，把**尚无源录像且批次标签与这份
+    录像同名**（``source_video_label == label``）的 pending 候选 UPDATE 绑到这
+    份录像——已登记候选不动（回执锚已在），已绑过的候选也不改绑。返回
+    (录像行, 本次绑定条数)——条数是后端真值，回执不用前端猜的候选数。
+
+    第 124 刀收窄（真相链修根）：原「绑全部未绑定 pending」是单录像演示库时代
+    的顺手默认（46 刀裁决）——多源生产库实测会把**别场直播/演示种子**的候选
+    劫持到新录像上：候选转写说保温杯、切出的帧是显示器，已发布资产文案≠画面
+    （「引用=证据」红线延伸到视频面）。收窄为批次标签精确匹配：同名批次照旧
+    自动绑（演示流：录像 label 与候选批次同源）；异名批次留给显式改绑端点
+    （49 刀 ``bind_candidates`` 不动）。ASR 转写候选创建即绑定（asr.py），
+    不走本路径，语义不受影响。
     """
     digest = hashlib.sha256(content_bytes).hexdigest()[:16]
     object_key = f"recordings/{uuid4().hex}/{digest}.mp4"
@@ -159,7 +166,14 @@ def register_recording(
     recording = ClipRecording(label=label, object_key=object_key, size_bytes=len(content_bytes))
     db.add(recording)
     db.flush()  # 拿主键（绑定 UPDATE 要 recording_id）
-    bound = bind_candidates(db, recording.id, candidate_ids=None, only_unbound=True)
+    same_batch_ids = db.scalars(
+        select(ClipCandidate.id).where(
+            ClipCandidate.status == PENDING,
+            ClipCandidate.recording_id.is_(None),
+            ClipCandidate.source_video_label == label,
+        )
+    ).all()
+    bound = bind_candidates(db, recording.id, candidate_ids=same_batch_ids, only_unbound=True)
     db.commit()
     db.refresh(recording)
     return recording, bound

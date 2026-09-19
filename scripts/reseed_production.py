@@ -8,7 +8,8 @@
      publish_digital_specs，各自幂等；规格正文带商品名头行）
   5. Commons 数码图（Wikidata 商品 + 匹配商品照走治理链）
   6. ABCD 对话（走登记→机洗→QA 确认→发布）
-  7. Dell 视频全链（上传→ASR→拣选→发布→洗帧）
+  7. Dell 开箱视频全链（上传→ASR→拣选→发布→洗帧）
+  8. Samsung 官方直播全链（第 125 刀：CC BY 3.0 发布会直播，同一条链）
 
 用法（必须走 7890 代理，uv 管理的 Python 才能过 TLS）：
   HTTPS_PROXY=http://127.0.0.1:7890 uv run python scripts/reseed_production.py [--step N]
@@ -393,9 +394,12 @@ def step_dialogues(count=5):
     env["LLM_API_KEY"] = _read_env("LLM_API_KEY") or ""
     db = "postgresql://suite:suite@localhost:5433/suite"
     # --register 是开关（store_true），发布条数走 --publish K（重灌实测：当初
-    # 写成 --register 5 -> unrecognized arguments: 5，对话静默没灌进去）
+    # 写成 --register 5 -> unrecognized arguments: 5，对话静默没灌进去）。
+    # --n 控制登记量：默认 60 条逐条 LLM 机洗 >10 分钟必超 600s（上次实测卡死
+    # 在发布段）；登记 publish+3 条够七站用。
     cmd = [
         sys.executable, str(abcd_loader),
+        "--n", str(count + 3),
         "--register", "--publish", str(count), "--db", db,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=600)
@@ -416,31 +420,35 @@ def _read_env(key):
 
 
 # ---------------------------------------------------------------------------
-# Step Dell：视频全链
+# Step 视频：Dell 开箱 + Samsung 官方直播（第 125 刀接入，共用一条真链）
 # ---------------------------------------------------------------------------
 
 
-def step_dell():
-    """Dell 显示器开箱视频全链。"""
-    print(f"\n{'='*60}\nDell 视频全链\n{'='*60}")
-    video_path = OUT / "dell_monitor_unboxing.mp4"
-    if not video_path.exists():
-        # 找 data/tmp 下的副本
-        alt = REPO / "data" / "tmp" / "dell_monitor_unboxing.mp4"
-        if alt.exists():
-            video_path = alt
-        else:
-            print("  找不到 Dell 视频文件，跳过")
-            return
+def _video_chain(video_path, filename, category, pick_count=3):
+    """一条源录像走完 上传→ASR→按录像拣选→发布→洗帧（第 124/125 刀修根版）。
 
+    真相链纪律（本轮验收实证的三个坑全堵上）：
+    - 转写带 product_id（按类目找商品顺手归属，帧登记/店铺挂载有锚）；
+    - 拣选只从**本录像自己的候选**里选（旧 `pending[:3]` 全局盲选把演示种子
+      注册成了本录像资产——文案与画面两场内容）；
+    - 商品匹配失败/洗帧失败必须有声（旧 `if dell:` 无声跳过）。
+    """
     print(f"  视频文件: {video_path} ({video_path.stat().st_size // 1024 // 1024}MB)")
+
+    # 0. 类目商品（转写归属锚；找不到→转写不带归属，仍继续但有声）
+    products = _req(f"{API}/api/products")
+    anchor = next((p for p in products if p["category"] == category), None)
+    if anchor is None:
+        print(f"  ⚠ 库内无「{category}」类目商品：转写不带商品归属，洗帧跳过")
+    else:
+        print(f"  商品归属锚: {anchor['name']}（{category}）")
 
     # 1. 上传源录像
     import uuid
     boundary = uuid.uuid4().hex
     data = video_path.read_bytes()
     parts = [
-        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="dell_monitor.mp4"\r\n'
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\n'
         f"Content-Type: video/mp4\r\n\r\n".encode() + data + b"\r\n",
         f"--{boundary}--\r\n".encode(),
     ]
@@ -455,61 +463,98 @@ def step_dell():
         rec = json.loads(resp.read().decode())
     print(f"  ✓ 源录像已上传: {rec['label']} ({rec['size_bytes'] // 1024 // 1024}MB)")
 
-    # 2. ASR 转写（长视频，等 300s）
+    # 2. ASR 转写（带商品归属；长视频总预算 300s，超时可再点一次续块）
     print("  转写中（最长 5 分钟）…")
-    req = urllib.request.Request(
+    tr = _req(
         f"{API}/api/clips/recordings/{rec['id']}/transcribe",
-        data=b"{}", headers={"Content-Type": "application/json"}, method="POST",
+        data={"product_id": anchor["id"]} if anchor else {},
+        method="POST",
     )
-    with urllib.request.urlopen(req, timeout=600) as resp:
-        tr = json.loads(resp.read().decode())
     print(f"  ✓ 转写完成: {tr['candidates_created']} 候选")
 
-    # 3. 拣选前 3 条
+    # 3. 拣选——只从本次上传录像自己的候选里选（第 124 刀修根）
     candidates = _req(f"{API}/api/clips/candidates")
-    pending = [c for c in candidates if c["status"] == "pending"]
-    to_pick = [c["id"] for c in pending[:3]]
-    if to_pick:
-        registered = _req(
-            f"{API}/api/clips/candidates/pick",
-            data={"ids": to_pick},
-            method="POST",
+    own_pending = [
+        c for c in candidates
+        if c["status"] == "pending" and (c.get("recording") or {}).get("id") == rec["id"]
+    ]
+    if not own_pending:
+        print("  ✗ 本录像没有待拣候选（转写失败？）——不拣选，见上方转写日志")
+        return
+    to_pick = [c["id"] for c in own_pending[:pick_count]]
+    for c in own_pending[:pick_count]:
+        print(f"    拣选 C-{c['id']}: {c['transcript'][:60]}")
+    registered = _req(
+        f"{API}/api/clips/candidates/pick",
+        data={"ids": to_pick},
+        method="POST",
+    )
+    print(f"  ✓ 拣选 {len(registered)} 条: {[a['id'] for a in registered]}")
+
+    # 4. 发布
+    for a in registered:
+        _req(f"{API}/api/assets/{a['id']}/publish", method="POST")
+    print(f"  ✓ 已发布 {len(registered)} 条视频资产")
+
+    # 5. 洗帧（商品锚在则帧登记挂商品；第 124 刀：失败必须有声）
+    if anchor is None:
+        print("  ⚠ 无商品锚，洗帧跳过")
+        return
+    first = registered[0]
+    print(f"  洗帧 A-{first['id']}（挂商品 {anchor['name']}，最长 3 分钟）…")
+    try:
+        req = urllib.request.Request(
+            f"{API}/api/assets/{first['id']}/frame-candidates",
+            data=b"{}", headers={"Content-Type": "application/json"}, method="POST",
         )
-        print(f"  ✓ 拣选 {len(registered)} 条: {[a['id'] for a in registered]}")
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            fc = json.loads(resp.read().decode())
+        n_frames = len(fc.get("candidates", []))
+        if n_frames:
+            print(f"  ✓ 洗帧: {n_frames} 候选帧")
+        else:
+            print("  ⚠ 洗帧 0 候选帧（VLM 打分全跳/低于阈值——看服务端日志，可稍后重试）")
+        if fc.get("candidates"):
+            _req(
+                f"{API}/api/assets/{first['id']}/frames",
+                data={"at_second": fc["candidates"][0]["at_second"], "vlm_note": fc["candidates"][0].get("note")},
+                method="POST",
+            )
+            print(f"  ✓ 洗帧帧已登记为图片资产")
+    except Exception as e:
+        print(f"  ⚠ 洗帧失败（视频资产不受影响）: {e}")
 
-        # 4. 发布
-        for a in registered:
-            _req(f"{API}/api/assets/{a['id']}/publish", method="POST")
-        print(f"  ✓ 已发布 {len(registered)} 条视频资产")
 
-    # 5. 找戴尔商品（或创建）
-    products = _req(f"{API}/api/products")
-    dell = next((p for p in products if "显示器" in p["name"] or "Dell" in p["name"]), None)
-    if dell:
-        # 给第一条发布视频跑洗帧
-        first = registered[0] if registered else None
-        if first:
-            print(f"  洗帧 A-{first['id']}（最长 3 分钟）…")
-            try:
-                req = urllib.request.Request(
-                    f"{API}/api/assets/{first['id']}/frame-candidates",
-                    data=b"{}", headers={"Content-Type": "application/json"}, method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=300) as resp:
-                    fc = json.loads(resp.read().decode())
-                print(f"  ✓ 洗帧: {len(fc.get('candidates', []))} 候选帧")
-                # 确认第一帧
-                if fc.get("candidates"):
-                    _req(
-                        f"{API}/api/assets/{first['id']}/frames",
-                        data={"at_second": fc["candidates"][0]["at_second"], "vlm_note": fc["candidates"][0].get("note")},
-                        method="POST",
-                    )
-                    print(f"  ✓ 洗帧帧已登记为图片资产")
-            except Exception as e:
-                print(f"  洗帧跳过: {e}")
-
+def step_dell():
+    """Dell 显示器开箱视频全链。"""
+    print(f"\n{'='*60}\nDell 显示器开箱视频全链\n{'='*60}")
+    video_path = OUT / "dell_monitor_unboxing.mp4"
+    if not video_path.exists():
+        alt = REPO / "data" / "tmp" / "dell_monitor_unboxing.mp4"
+        if alt.exists():
+            video_path = alt
+        else:
+            print("  ✗ 找不到 Dell 视频文件，跳过")
+            return
+    _video_chain(video_path, "dell_monitor.mp4", "显示器")
     print("\n✓ Dell 视频链完成")
+
+
+def step_livestream():
+    """Samsung「Unbox & Discover 2023」官方发布会直播全链（第 125 刀）。
+
+    真实直播素材：CC BY 3.0（Samsung 官方标注），40 分钟多商品章节（Neo
+    QLED 8K / OLED / Gaming 屏），直播形态+英文讲解可 ASR。源：
+    https://archive.org/details/youtube-vUFub76fViA（调研见
+    docs/research/live-stream-sources.md）。下载缺网时跳过（文件在 out/）。
+    """
+    print(f"\n{'='*60}\nSamsung 官方直播（Unbox & Discover 2023）\n{'='*60}")
+    video_path = OUT / "samsung_unbox_discover_2023.mp4"
+    if not video_path.exists():
+        print("  ✗ 找不到 samsung_unbox_discover_2023.mp4（先跑下载，见调研文档），跳过")
+        return
+    _video_chain(video_path, "samsung_unbox_discover_2023.mp4", "显示器", pick_count=4)
+    print("\n✓ Samsung 直播链完成")
 
 
 # ---------------------------------------------------------------------------
@@ -537,7 +582,7 @@ def step_verify():
 
 def main():
     parser = argparse.ArgumentParser(description="生产级数据重灌")
-    parser.add_argument("--step", choices=["off", "wikidata", "commons", "dialogues", "dell", "verify"],
+    parser.add_argument("--step", choices=["off", "wikidata", "commons", "dialogues", "dell", "livestream", "verify"],
                         help="只跑某一步")
     parser.add_argument("--off-count", type=int, default=6, help="OFF 食品数（默认 6）")
     parser.add_argument("--dialogue-count", type=int, default=5, help="对话数（默认 5）")
@@ -560,6 +605,10 @@ def main():
         if not TOKEN:
             login()
         step_dell()
+    if not args.step or args.step == "livestream":
+        if not TOKEN:
+            login()
+        step_livestream()
     if not args.step or args.step == "verify":
         step_verify()
 

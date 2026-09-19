@@ -117,7 +117,7 @@ def _insert_candidate(product_id: int, *, start: str, end: str, transcript: str)
             VALUES (%s, 'pending', %s, %s, %s, %s)
             RETURNING id
             """,
-            (product_id, start, end, transcript, "成片测试录像"),
+            (product_id, start, end, transcript, "compose.mp4"),
         )
         return int(cur.fetchone()[0])
 

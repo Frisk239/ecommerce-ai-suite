@@ -720,18 +720,29 @@ def test_retrieve_entity_affinity_overrides_shorter_rival(api: object) -> None:
         db.commit()
 
         # baseline 形态自检：亲和停用（alpha=0）时更短的他品块夺冠——证明本
-        # 用例测的确实是「亲和翻盘」而非稳定序/建序巧合（评审证伪后补的钉）
+        # 用例测的确实是「亲和翻盘」而非稳定序/建序巧合（评审证伪后补的钉）。
+        # 断言限定在**本用例两资产**的配对序上（第 126 刀审计加固：模块共享库
+        # 里早前用例的资产若恰也命中问句，全局 top-1 与本用例无关——旧写法
+        # 隐含「干净语料」假设，集成环境整模块跑实测踩中）。
         from suite_api.services import retrieval as retrieval_module
 
         original_alpha = retrieval_module.AFFINITY_ALPHA
         retrieval_module.AFFINITY_ALPHA = 0.0
         try:
-            baseline = retrieve(db, "雀巢奶粉的净含量是多少")
+            baseline = [
+                h
+                for h in retrieve(db, "雀巢奶粉的净含量是多少")
+                if h["asset_id"] in (other_id, named_id)
+            ]
             assert baseline[0]["asset_id"] == other_id, "alpha=0 下更短他品块应夺冠"
         finally:
             retrieval_module.AFFINITY_ALPHA = original_alpha
 
-        hits = retrieve(db, "雀巢奶粉的净含量是多少")
+        hits = [
+            h
+            for h in retrieve(db, "雀巢奶粉的净含量是多少")
+            if h["asset_id"] in (other_id, named_id)
+        ]
         assert hits[0]["asset_id"] == named_id, "点名资产须靠亲和赢过更短的他品块"
 
 
