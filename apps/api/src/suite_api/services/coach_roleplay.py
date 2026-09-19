@@ -11,6 +11,7 @@ finish 失败=score NULL + turns 尾 system 注（可看原因，不可重评 v1
 """
 
 import asyncio
+import logging
 import random
 from typing import Any
 
@@ -19,6 +20,8 @@ from sqlalchemy.orm import Session
 
 from suite_api.models import CoachRoleplay
 from suite_api.services import llm
+logger = logging.getLogger(__name__)
+
 from suite_api.services.coaching import (
     ScoreParseError,
     evidence_anchors,
@@ -183,7 +186,10 @@ def roleplay_finish(db: Session, roleplay_id: int) -> CoachRoleplay:
         try:
             data = json.loads(strip_code_fence(raw))
             remediation = str(data.get("remediation", "")).strip()
-        except (ValueError, TypeError, AttributeError):
+        except (ValueError, TypeError, AttributeError) as exc:
+            # 第 126 刀审计：整改建议解析失败静默置空——操作者只看到空白，
+            # 不知道是模型输出坏还是本来就没有。失败留服务端痕。
+            logger.warning("对练整改建议解析失败，置空: %s", type(exc).__name__)
             remediation = ""
         score["remediation"] = remediation
     except (llm.LLMError, ScoreParseError) as exc:

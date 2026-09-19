@@ -63,6 +63,7 @@ def _insert_candidate(
     transcript: str,
     recording_id: int | None = None,
     status: str = "pending",
+    label: str = "测试录像",
 ) -> int:
     with psycopg.connect(_url()) as conn, conn.cursor() as cur:
         cur.execute(
@@ -73,7 +74,7 @@ def _insert_candidate(
             VALUES ((SELECT id FROM products ORDER BY id LIMIT 1), %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (status, start, end, transcript, "测试录像", recording_id),
+            (status, start, end, transcript, label, recording_id),
         )
         return int(cur.fetchone()[0])
 
@@ -174,13 +175,20 @@ def test_upload_recording_contract(api: ApiFixture, monkeypatch: pytest.MonkeyPa
 
 
 def test_upload_binds_only_unbound_pending(api: ApiFixture) -> None:
+    """上传即绑定（第 124 刀收窄后）：只绑**同名批次**的未绑定 pending。
+
+    收窄动机（生产重灌实证）：旧「绑全部未绑定」会把别场直播/演示种子的候选
+    劫持到新录像——候选转写与切出帧属于两场内容，已发布资产文案≠画面。
+    异名批次留给显式改绑端点（49 刀）。
+    """
     client, _ = api
     _login(client)
 
-    # 已绑过的候选：本用例自造一份录像把它绑上（不依赖别的用例的执行顺序）。
-    # 顺序要紧：先造 pre 候选再上传，上传会把它（以及库里其余无源录像的 pending）
-    # 一次绑掉；本用例要断言的两个候选在第一次上传之后才插，才是「尚无源录像」态。
-    pre_id = _insert_candidate(start="00:22:00", end="00:22:10", transcript="已绑候选不改写")
+    # 同名批次的已绑候选：自造录像绑上（不依赖执行顺序）。先造 pre 候选（批次
+    # 标签=上传名）再上传，上传把它绑掉；本用例其余候选在第一次上传后插。
+    pre_id = _insert_candidate(
+        start="00:22:00", end="00:22:10", transcript="已绑候选不改写", label="first.mp4"
+    )
     first = client.post(
         "/api/clips/recordings", files={"file": ("first.mp4", _FAKE_MP4, "video/mp4")}
     )
@@ -189,10 +197,16 @@ def test_upload_binds_only_unbound_pending(api: ApiFixture) -> None:
     assert _recording_id_of(pre_id) == pre_recording
 
     pending_id = _insert_candidate(
-        start="00:20:00", end="00:20:10", transcript="绑定测试待拣候选"
+        start="00:20:00", end="00:20:10", transcript="绑定测试待拣候选", label="bind.mp4"
     )
     registered_id = _insert_candidate(
-        start="00:21:00", end="00:21:10", transcript="已登记候选不回改", status="registered"
+        start="00:21:00", end="00:21:10", transcript="已登记候选不回改",
+        status="registered", label="bind.mp4",
+    )
+    # 异名批次（别场直播的候选）：上传 bind.mp4 不得劫持它——真相链钉子
+    other_show_id = _insert_candidate(
+        start="00:23:00", end="00:23:10", transcript="别场直播候选不被劫持",
+        label="2026-09-04 「钛钢保温杯 × 饮用水」专场·录像 24 分钟",
     )
 
     resp = client.post(
@@ -202,9 +216,10 @@ def test_upload_binds_only_unbound_pending(api: ApiFixture) -> None:
     assert resp.status_code == 201
     new_recording_id = resp.json()["id"]
 
-    assert _recording_id_of(pending_id) == new_recording_id  # 无源录像的 pending 被绑
+    assert _recording_id_of(pending_id) == new_recording_id  # 同名无源 pending 被绑
     assert _recording_id_of(registered_id) is None  # 已登记不动
     assert _recording_id_of(pre_id) == pre_recording  # 已绑过的候选不改写
+    assert _recording_id_of(other_show_id) is None  # 异名批次不被顺手绑（124 刀）
 
 
 # ---------- 3. 真切 mp4 ----------
@@ -215,7 +230,9 @@ def test_pick_with_recording_cuts_real_mp4(api: ApiFixture, test_mp4: bytes) -> 
     _login(client)
 
     transcript = "真片段测试：钛钢内胆一体成型没有焊缝。"
-    candidate_id = _insert_candidate(start="00:00:00", end="00:00:01", transcript=transcript)
+    candidate_id = _insert_candidate(
+        start="00:00:00", end="00:00:01", transcript=transcript, label="cut.mp4"
+    )
     uploaded = client.post(
         "/api/clips/recordings", files={"file": ("cut.mp4", test_mp4, "video/mp4")}
     )
@@ -275,7 +292,9 @@ def test_cut_failure_keeps_candidate_pending_and_previous_registered(
     client, _ = api
     _login(client)
 
-    good_id = _insert_candidate(start="00:00:00", end="00:00:01", transcript="原子性好片段")
+    good_id = _insert_candidate(
+        start="00:00:00", end="00:00:01", transcript="原子性好片段", label="good.mp4"
+    )
     assert (
         client.post(
             "/api/clips/recordings", files={"file": ("good.mp4", test_mp4, "video/mp4")}
@@ -283,7 +302,9 @@ def test_cut_failure_keeps_candidate_pending_and_previous_registered(
         == 201
     )
     # 坏候选绑到一份「扩展名 .mp4 但字节不是视频」的录像：ffmpeg 报 moov atom not found
-    bad_id = _insert_candidate(start="00:00:00", end="00:00:01", transcript="原子性坏片段")
+    bad_id = _insert_candidate(
+        start="00:00:00", end="00:00:01", transcript="原子性坏片段", label="bad.mp4"
+    )
     assert (
         client.post(
             "/api/clips/recordings", files={"file": ("bad.mp4", _FAKE_MP4, "video/mp4")}
@@ -317,7 +338,9 @@ def test_published_video_chunks_come_from_transcript_field(
     _login(client)
 
     transcript = "检索来源测试：钛钢内胆是316不锈钢材质。"
-    candidate_id = _insert_candidate(start="00:00:01", end="00:00:02", transcript=transcript)
+    candidate_id = _insert_candidate(
+        start="00:00:01", end="00:00:02", transcript=transcript, label="retrieval.mp4"
+    )
     uploaded = client.post(
         "/api/clips/recordings", files={"file": ("retrieval.mp4", test_mp4, "video/mp4")}
     )

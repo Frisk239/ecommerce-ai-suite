@@ -1424,7 +1424,13 @@ def plan_compose(
                 if item.asset_id not in image_meta:
                     try:
                         image_meta[item.asset_id] = probe_image_size(media_bytes)
-                    except ComposeError:
+                    except ComposeError as exc:
+                        # 第 126 刀审计：尺寸探测失败降级 (0,0) 进草稿原本无声
+                        # ——草稿排版会被压扁且无人知道为什么。失败留服务端痕。
+                        logger.warning(
+                            "草稿图片尺寸探测失败，按 0x0 进草稿 asset=%s err=%s",
+                            item.asset_id, type(exc).__name__,
+                        )
                         image_meta[item.asset_id] = (0, 0)
                 width, height = image_meta[item.asset_id]
                 duration = item.dur

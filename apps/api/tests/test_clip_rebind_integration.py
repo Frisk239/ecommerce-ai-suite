@@ -11,6 +11,7 @@
 
 import os
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
@@ -76,33 +77,34 @@ def _bind(client: TestClient, recording_id: int, ids: list[int] | None = None):
 
 
 def test_upload_receipt_carries_real_bound_count(api: ApiFixture) -> None:
-    """回执的绑定条数是后端真值（不是前端上传前数的候选数）。"""
+    """回执的绑定条数是后端真值（不是前端上传前数的候选数）。
+
+    第 124 刀收窄后只绑**同名批次**（上传名=批次标签；HTTP 上传名恒 .mp4，
+    种子/别场批次不会被顺手绑——那些走显式改绑端点）。本用例自造同名批次，
+    断言回执数=该批次真值而非全库 pending 数。
+    """
     client, _ = api
     _login(client)
-    pending = _candidate_ids(client)
-    assert pending, "种子候选应有 pending"
-
-    # 本文件共享一个库：先把 pending 解绑，造出「尚无源录像」的起点（否则前面
-    # 用例绑过之后，这里的 bound_count 会随执行顺序变化——审计刀 10 记的脆点）
-    factory = client.app.state.session_factory
-    with factory() as db:
-        from sqlalchemy import update
-
-        from suite_api.models import ClipCandidate
-
-        db.execute(
-            update(ClipCandidate)
-            .where(ClipCandidate.status == "pending")
-            .values(recording_id=None)
-        )
-        db.commit()
+    with psycopg.connect(os.environ["SUITE_TEST_DATABASE_URL"]) as conn, conn.cursor() as cur:
+        for i in range(3):
+            cur.execute(
+                """
+                INSERT INTO clip_candidates
+                    (product_id, status, timecode_start, timecode_end, transcript,
+                     source_video_label, recording_id)
+                VALUES ((SELECT id FROM products ORDER BY id LIMIT 1), 'pending',
+                        %s, %s, %s, 'receipt-a.mp4', NULL)
+                """,
+                (f"00:0{i}:00", f"00:0{i}:30", f"同名批次候选 {i}"),
+            )
+        conn.commit()
 
     first = _upload(client, "receipt-a.mp4")
-    # 第一次上传：尚无源录像的 pending 全被顺手绑上
-    assert first["bound_count"] == len(pending)
+    # 第一次上传：同名批次尚无源录像的 3 条被绑（种子候选批次标签不同，不算）
+    assert first["bound_count"] == 3
 
-    # 第二次上传：已全部绑过 -> 顺手绑 0 条（真值就该是 0，而不是「候选总数」）
-    second = _upload(client, "receipt-b.mp4")
+    # 第二次上传（同名重传）：该批次已全绑 -> 顺手绑 0 条（真值 0，不是候选总数）
+    second = _upload(client, "receipt-a.mp4")
     assert second["bound_count"] == 0
 
 
