@@ -82,6 +82,30 @@ def test_oov_verdict_flags_absent_entity_only(api: ApiFixture, monkeypatch: Any)
         assert oov_verdict(db, "请问退换政策说明值得入手吗") is None
 
 
+def test_oov_verdict_latin_entity(api: ApiFixture, monkeypatch: Any) -> None:
+    """第 123 刀：拉丁品牌名的 OOV 判定（整词 token + 字符位零出现串）。
+
+    旧位扫对拉丁词天然失效的两个方向都钉住：库内无此拉丁实体 -> 判 OOV 返回
+    原始大小写实体串；库内有（语料含该词）-> 不判（生产重灌的 Nutella 正例）。
+    """
+    client, _ = api
+    factory = client.app.state.session_factory
+    with factory() as db:
+        _seed_doc(
+            db,
+            "Nutella 榛子巧克力酱 · 规格",
+            ["品牌：Nutella, Ferrero", "净含量：400g"],
+        )
+        db.commit()
+        _open_corpus(monkeypatch)
+        from suite_api.services.retrieval import oov_verdict
+
+        # 库内无此拉丁实体 -> 判 OOV，实体串保留原始大小写（供商品名匹配）
+        assert oov_verdict(db, "Starbucks 咖啡的保质期是什么") == "Starbucks"
+        # 库内有该拉丁品牌（语料含 nutella token）-> 不判
+        assert oov_verdict(db, "Nutella的净含量是多少") is None
+
+
 def test_oov_verdict_respects_corpus_guard(api: ApiFixture) -> None:
     """护栏钉子：不放开语料护栏时，小语料库一律不判（数据不足不启用）。"""
     client, _ = api
