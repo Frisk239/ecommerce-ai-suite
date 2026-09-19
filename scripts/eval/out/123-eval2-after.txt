@@ -1,0 +1,17 @@
+# RAG 评测尺报告（脚本骨架，数字由 run_eval.py 生成）
+
+- 日期：2026-09-19
+- 演示库：`postgresql://suite:suite@localhost:5433/suite`
+- golden：`scripts\eval\out\123-golden-production.json`（89 条，种子 42 生成）
+- LLM judge：未启用（未传 --judge）
+
+```
+分布             条数  recall@1  recall@3     MRR   nDCG@3     噪声@3     拒答率     误拒率    混淆@1
+positive       40     95.0%    100.0%  0.9750   0.9815    34.2%       -    0.0%       -
+paraphrase     14    100.0%    100.0%  1.0000   1.0000    42.9%       -       -       -
+confusion      15     40.0%     40.0%  0.4000   0.4000    86.7%       -       -   40.0%
+refusal        20         -         -       -        -        -  100.0%       -       -
+oov_syn         0         -         -       -        -        -       -       -       -
+sem_neg         0         -         -       -        -        -       -       -       -
+overall        89     84.1%     87.0%  0.8551   0.8589    47.3%  100.0%    0.0%   40.0%
+```

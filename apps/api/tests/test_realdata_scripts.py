@@ -321,8 +321,12 @@ def test_digital_spec_candidates_and_text(tmp_path: Path) -> None:
         writer.writerow(["无牌耳机", "耳机", "{}", "{}", "{}", 3])  # 无品牌：规格文档无从写起
     rows = pds.candidate_rows(csv_path)
     assert [row["name"] for row in rows] == ["WH-1000XM4", "U2720Q"]
-    assert pds.spec_text("耳机", rows[0]["attrs"]) == "品牌：Sony\n上市年份：2016\n类目：耳机\n"
-    assert pds.spec_text("显示器", rows[1]["attrs"]) == "品牌：Dell\n高度：46\n宽度：81\n类目：显示器\n"
+    assert pds.spec_text(rows[0]["name"], "耳机", rows[0]["attrs"]) == (
+        "WH-1000XM4 规格\n品牌：Sony\n上市年份：2016\n类目：耳机\n"
+    )
+    assert pds.spec_text(rows[1]["name"], "显示器", rows[1]["attrs"]) == (
+        "U2720Q 规格\n品牌：Dell\n高度：46\n宽度：81\n类目：显示器\n"
+    )
     assert pds.spec_title("WH-1000XM4") == "WH-1000XM4 规格（Wikidata）"
     assert len(pds.spec_title("长" * 300)) == pds.TITLE_MAX  # assets.title String(200)
 
@@ -657,13 +661,15 @@ def test_digital_spec_confirm_fields_is_attrs_intersect_schema() -> None:
         "宽度",
     ]
     # 正文与确认同一真源：正文里出现的字段必然可确认
-    text = pds.spec_text("显示器", {"品牌": "Dell", "高度": "46", "宽度": "81", "上市年份": "2020"})
-    assert text == "品牌：Dell\n高度：46\n宽度：81\n类目：显示器\n"
+    text = pds.spec_text("U2720Q", "显示器", {"品牌": "Dell", "高度": "46", "宽度": "81", "上市年份": "2020"})
+    assert text == "U2720Q 规格\n品牌：Dell\n高度：46\n宽度：81\n类目：显示器\n"
     assert "上市年份" not in text
     # 归位后的新字段位：attrs 带 图片/官网 时进正文（可选字段，不设必填闸）
     assert pds.spec_text(
-        "耳机", {"品牌": "Sony", "图片": "Sony WH-1000XM3.jpg", "官网": "https://sony.com"}
-    ) == "品牌：Sony\n图片：Sony WH-1000XM3.jpg\n官网：https://sony.com\n类目：耳机\n"
+        "WH-1000XM3", "耳机", {"品牌": "Sony", "图片": "Sony WH-1000XM3.jpg", "官网": "https://sony.com"}
+    ) == (
+        "WH-1000XM3 规格\n品牌：Sony\n图片：Sony WH-1000XM3.jpg\n官网：https://sony.com\n类目：耳机\n"
+    )
 
 
 def test_digital_spec_confirm_fields_returns_ok_false_on_http_error(

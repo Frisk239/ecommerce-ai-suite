@@ -388,22 +388,78 @@ def _normalize(text: str) -> str:
     return "".join(ch for ch in text if ch.isalnum())
 
 
+# ---------- 第 123 刀：拉丁/数字段的整词 token（生产数据实测的权重修根） ----------
+#
+# 病根（OFF/Wikidata 生产重灌实测）：统一滑窗 bigram 把拉丁词切成 O(len) 个
+# bigram——「Nutella」=6 个（Nu/ut/te/el/ll/la），中文属性词「净含量」=2 个
+# （净含/含量）。问「Nutella的净含量是多少」时，任何含品牌字样的标题/品牌块
+# 的词法分（≈1.6）稳定压过真正含答案的数值块「净含量：400g」（≈0.8）：品牌名
+# 携带 3 倍于属性值的信号，证据窗口（top-k + prompt 前 2 条）被标题块占满，模型
+# 只看到「某商品的规格标题」如实自述未覆盖 → 第 58 刀收口成拒答。中文合成数据
+# 时代（保温杯=2 bigram，与属性词对称）不暴露；拉丁品牌名的生产数据必炸。
+#
+# 修法：ASCII 连续段按「字母串/数字串」整词成一个 token（小写归一——顺带修了
+# 旧 bigram 的大小写敏感洞：nutella≠Nu），CJK 段照旧滑窗 bigram。「Nutella 的
+# 净含量」的问句 terms 从 6+2 个 bigram 变为 {nutella}+{净含,含量} 两个信号源，
+# 数值块（净含+含量 双命中）反超品牌块（nutella 单命中）。字母↔数字边界切分
+# （so1002→{so,1002}、400g→{400,g}）保住「订单 1002」「400 克」这类混合问的
+# 命中面。双侧（query_terms/_chunk_terms）同口径，旧索引无需重建（打分实时算）。
+# OOV 判据里的「最长连续零出现串」从 bigram 位扫改为 token 字符位扫（见
+# oov_verdict 内注释），CJK 行为逐位等价。
+
+
+def _token_spans(text: str) -> list[tuple[str, int, int]]:
+    """原始串的 (token, 起始位, 字符长) 列表，保序保位。
+
+    在**原始串**（非 _normalize 后）上扫描：ASCII 字母/数字段整词成 token
+    （小写；字母↔数字边界切分，so1002→{so,1002}）——空格/标点天然断词，
+    「Nutella, Ferrero」不会被拼成单个巨型 token（先 normalize 会丢掉分隔
+    信息，Ferrero 单独问就 miss）。非 ASCII 段先剥掉非字词字符（空白/标点）
+    再滑窗 bigram（过停用字；跨标点的相邻字仍成 bigram，与旧版「先 normalize
+    再滑窗」逐 token 等价），孤立非停用单字退化 unigram。位置供 OOV 的零出
+    现串按字符位扫（token 覆盖的字符位即其缺失位）。
+    """
+    out: list[tuple[str, int, int]] = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch.isascii() and ch.isalnum():
+            digit = ch.isdigit()
+            j = i + 1
+            while j < n:
+                cj = text[j]
+                if not (cj.isascii() and cj.isalnum()) or cj.isdigit() != digit:
+                    break
+                j += 1
+            out.append((text[i:j].lower(), i, j - i))
+            i = j
+        else:
+            chars: list[tuple[str, int]] = []
+            while i < n and not (text[i].isascii() and text[i].isalnum()):
+                if text[i].isalnum():
+                    chars.append((text[i], i))
+                i += 1
+            if len(chars) == 1:
+                if chars[0][0] not in _STOP_CHARS:
+                    out.append((chars[0][0], chars[0][1], 1))
+            else:
+                for k in range(len(chars) - 1):
+                    bigram = chars[k][0] + chars[k + 1][0]
+                    if bigram[0] not in _STOP_CHARS and bigram[1] not in _STOP_CHARS:
+                        out.append(
+                            (bigram, chars[k][1], chars[k + 1][1] - chars[k][1] + 1)
+                        )
+    return out
+
+
 def query_terms(query: str) -> frozenset[str]:
-    """查询的有效词法单元集合：bigram（过滤含停用字的），单字查询退化 unigram。
+    """查询的有效词法单元集合：CJK bigram（过滤含停用字的）+ ASCII 整词 token
+    （第 123 刀，字母串/数字串小写归一），单字查询退化 unigram。
 
     空查询/纯停用词 -> 空集合（retrieve 对空集合直接返回空，0018 宁缺勿滥）。
     单字也停用 -> 空。
     """
-    normalized = _normalize(query)
-    if not normalized:
-        return frozenset()
-    if len(normalized) == 1:
-        return frozenset() if normalized in _STOP_CHARS else frozenset({normalized})
-    return frozenset(
-        bigram
-        for bigram in (normalized[i : i + 2] for i in range(len(normalized) - 1))
-        if bigram[0] not in _STOP_CHARS and bigram[1] not in _STOP_CHARS
-    )
+    return frozenset(token for token, _start, _len in _token_spans(query))
 
 
 def _chunk_terms(chunk: str) -> frozenset[str]:
@@ -413,6 +469,58 @@ def _chunk_terms(chunk: str) -> frozenset[str]:
     否则功能字把 sqrt(块单元数) 撑大，长证据句被纯噪音压分。
     """
     return query_terms(chunk)
+
+
+# ---------- 第 123 刀：字段行定向（属性问句的证据窗收口） ----------
+# 属性问句（「X 的配料有什么」「X 是哪年上市的」）的答案在被问字段的行里，
+# 但「字段：长值」块词法分天然低（长值串撑大 sqrt(块单元) 分母）：证据窗
+# （prompt/引用各前 2）被同资产的名字头行/图片描述、兄弟商品的头行占满，
+# 模型看不到数值行，如实自述未覆盖→第 58 刀收口成拒答（生产重灌实测
+# 「Coca-Cola 的配料」「Sennheiser HD 800 哪年上市」均此形态）。
+#
+# 为什么是**重排**不是打分乘数：乘数（实测 ×10）会把同品牌兄弟商品的短
+# 字段块（品牌：LU）抬到第 1——跨资产次序被打乱，评测 -4.4pp（三条同形态
+# 全坏）。重排方案零分值改动：top-1 资产自己的被问字段块提到最前，跨资产
+# 次序与所有分数不动——资产级 recall/MRR 零漂移，只有「赢家资产先给哪块」
+# 变化（数值行进 prompt/引用，头行退居第二证据行）。
+# 字段名形态上限（CJK 字数）：净含量/上市年份/保质期…最长 4 字，留余量到 6；
+# 名字头行「Sennheiser HD 800 规格」无冒号/含拉丁，天然不触发
+_FIELD_NAME_MAX = 6
+
+
+def _field_line_named(chunk: str, terms: frozenset[str]) -> bool:
+    """块是否是「字段：值」行且字段名被问句点名（纯函数便于单测）。
+
+    形态闸（防误伤）：取首个冒号（CJK/ASCII）前的头段，须纯 CJK 且 ≤6 字——
+    名字头行（无冒号或含拉丁）、QA 块（问/答 单字头且「问」进不了问句词法）
+    都不触发；命中判据 = 头段词法单元 ∩ 问句单元 ≠ ∅（「上市年份：2009」对
+    「哪年上市」共享 bigram「上市」即命中——字段名整词不必全在问句里）。
+    """
+    head = re.split(r"[：:]", chunk, maxsplit=1)[0]
+    if not head or len(head) > _FIELD_NAME_MAX:
+        return False
+    if not all("\u4e00" <= ch <= "\u9fff" for ch in head):
+        return False
+    return bool(query_terms(head) & terms)
+
+
+def _field_directed(fused: list[dict[str, Any]], terms: frozenset[str]) -> list[dict[str, Any]]:
+    """问句点名字段时，top-1 资产自己的该字段块提到最前（保序重排，不动分）。
+
+    只动「赢家资产先出哪块」：被问字段行进证据窗首槽（prompt/引用各取前 2），
+    其余次序原样。top-1 资产无被问字段行时零变化（属性词不在场或赢家是图片/
+    对话资产的常态路径）。
+    """
+    if not fused:
+        return fused
+    top_asset = fused[0]["asset_id"]
+    field_hits = [
+        hit for hit in fused if hit["asset_id"] == top_asset and _field_line_named(hit["chunk"], terms)
+    ]
+    if not field_hits:
+        return fused
+    field_keys = {id(hit) for hit in field_hits}
+    return [*field_hits, *(hit for hit in fused if id(hit) not in field_keys)]
 
 
 def score_chunk(terms: frozenset[str], chunk: str) -> float:
@@ -755,26 +863,37 @@ def oov_verdict(db: Session, question: str) -> str | None:
     miss = entity_terms - corpus
     if not miss:
         return None
-    # 最长连续零出现串（在归一化串上逐位扫；记起点以便回切实体串）
-    norm = _normalize(stripped)
+    # 最长连续零出现串（在原始问句上按 token 覆盖的字符位扫；记起点以便回切实
+    # 体串）。第 123 刀：miss 里的单元已是整词/bigram token——旧「逐位取 bigram
+    # 查 miss」对拉丁词天然失效（7 字词永不等于 2 字 bigram）。改扫 _token_spans
+    # 的覆盖位：缺失 token 的全部字符位计缺失，最长连续缺失字符段即 span。CJK
+    # 段逐位等价（雀巢咖啡 4 字 → 4）；拉丁词整段计长（Nutella → 7）；标点/空白
+    # 不属于任何 token，天然切断实体串（「Nutella, Ferrero」是两个实体不是 14
+    # 字一个）。实体串回切自原始串，保留原始大小写（oov_product_match 对商品名）。
+    norm = stripped  # 位扫在原始串上（token 位置即原始位置；见上注）
+    missing_positions: set[int] = set()
+    for token, start, length in _token_spans(norm):
+        if token in miss:
+            missing_positions.update(range(start, start + length))
     longest = current = 0
     best_start = 0
-    for i in range(len(norm) - 1):
-        if norm[i : i + 2] in miss:
+    for i in range(len(norm)):
+        if i in missing_positions:
             current += 1
             if current > longest:
                 longest = current
                 best_start = i - current + 1
         else:
             current = 0
-    span = longest + 1 if longest else 0
+    span = longest
     if span < OOV_MIN_SPAN:
         return None
     # 用快照里的 idf（此前这里重算一次并 shadow —— 评审 P2 的死缓存）
     if any(title_affinity(entity_terms, t, idf) > 0.0 for t in titles.values()):
         return None
-    # 返回实体串（归一化形态，去掉了标点/虚词）供拒答文案点名
-    return norm[best_start : best_start + span]
+    # 返回实体串（原始形态，保留大小写；两端虚词不在任何 token 内自然不带回）
+    # 供拒答文案点名
+    return stripped[best_start : best_start + span]
 
 
 # ---------- 稠密稀疏融合（第 106 刀，ADR 0058；矩阵定案 C-w=0.5-tau0.60-lexgate） ----------
@@ -1057,4 +1176,5 @@ def retrieve(
         return []
     vec_hits = dense_candidates(db, query, drop_reviews=drop_reviews)
     fused = fuse_dense_sparse(lex_hits, vec_hits)
-    return fused[:top_k]
+    # 第 123 刀字段行定向（保序重排，见 _field_directed 注释）
+    return _field_directed(fused, terms)[:top_k]

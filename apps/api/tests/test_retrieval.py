@@ -287,6 +287,99 @@ def test_query_terms_single_char_degrades_to_unigram() -> None:
     assert query_terms("的") == frozenset()  # 单字停用字 -> 空（宁缺勿滥）
 
 
+# ---------- 第 123 刀：拉丁/数字段整词 token（生产数据实测的权重修根） ----------
+
+
+def test_query_terms_latin_word_is_single_token() -> None:
+    """拉丁词一个 token（不是 O(len) 个 bigram）：品牌名与中文属性词权重对称。
+
+    修根动机（OFF 重灌实测）：旧滑窗把「Nutella」切 6 个 bigram、「净含量」
+    切 2 个——品牌块词法分恒为属性值块 ~2 倍，证据窗口被标题/品牌块占满，
+    「Nutella的净含量是多少」拒答。
+    """
+    assert query_terms("Nutella的净含量是多少") == frozenset(
+        {"nutella", "净含", "含量"}
+    )
+    # 大小写归一（旧 bigram 是大小写敏感的：nutella ≠ Nu）
+    assert query_terms("NUTELLA nutella Nutella") == frozenset({"nutella"})
+    # 字母↔数字边界切分：订单号/混合型号不粘成巨型 token
+    assert query_terms("SO-1002") == frozenset({"so", "1002"})
+    # 空格/逗号天然断词：品牌列表不拼接（先归一会丢分隔信息）
+    assert query_terms("品牌：Nutella, Ferrero") == frozenset(
+        {"品牌", "nutella", "ferrero"}
+    )
+    # 纯数字段整段一个 token
+    assert query_terms("容量 400") == frozenset({"容量", "400"})
+
+
+def test_score_chunk_attribute_value_outranks_brand_title() -> None:
+    """生产形态钉子：问「拉丁品牌+属性」时，含答案的数值块须反超标题/品牌块。
+
+    旧统一 bigram 下实测（A-2 库）：规格标题块 1.604 > 品牌块 1.604 >
+    「净含量：400g」0.816——prompt 只取 top-2 证据，模型只见标题块，如实
+    自述未覆盖 -> 第 58 刀收口成拒答。
+    """
+    terms = query_terms("Nutella的净含量是多少")
+    value = score_chunk(terms, "净含量：400g")
+    brand = score_chunk(terms, "品牌：Nutella, Ferrero")
+    title = score_chunk(terms, "Nutella 榛子巧克力酱 规格")
+    assert value > brand > 0
+    assert value > title > 0
+
+
+# ---------- 第 123 刀：字段行定向（属性问句的证据窗收口） ----------
+
+
+def test_field_line_named_shape_gate() -> None:
+    """形态闸：纯 CJK 短字段头 + 问句点名才触发；头行/QA/拉丁头不触发。"""
+    from suite_api.services.retrieval import _field_line_named
+
+    terms = query_terms("Coca-Cola 可乐的配料有什么")
+    assert _field_line_named("配料：Agua carbonatada, azúcar", terms) is True
+    assert _field_line_named("上市年份：2009", query_terms("Sennheiser 是哪年上市的")) is True
+    # 品牌（单字段）不在问句里 -> 不定向（问配料不是问品牌）
+    assert _field_line_named("品牌：COCA-COLA SERVICES SA/NV", terms) is False
+    # 名字头行：无冒号形态（整块作头段，含拉丁/超长）不触发
+    assert _field_line_named("Sennheiser HD 800 规格", query_terms("Sennheiser HD 800 怎么样")) is False
+    # QA 块单字头「问」进不了问句词法（请/问等虚词被停用字滤掉）
+    assert _field_line_named("问：退货怎么办", query_terms("请问退货怎么办")) is False
+    # 长头段（>6 字 CJK，如句子行）不触发
+    assert _field_line_named("签收后七天内可申请退货：详见政策", query_terms("退货政策")) is False
+
+
+def test_field_directed_promotes_top_asset_value_chunk() -> None:
+    """第 123 刀重排钉子：问句点名字段时 top-1 资产自己的字段行进首槽。
+
+    生产形态：数值行词法分低（长值撑大分母），融合序里被名字头行/图片描述/
+    兄弟商品头行压到 3-5 位——证据窗（prompt/引用前 2）看不见，模型如实自述
+    未覆盖→拒答。重排只动赢家资产先出哪块：跨资产次序与分数不动（乘数方案
+    实测会把兄弟商品的短字段块抬到第 1，评测 -4.4pp，见 _field_directed 注释）。
+    """
+    from suite_api.services.retrieval import _field_directed
+
+    terms = query_terms("Coca-Cola 可乐的配料有什么")
+    fused = [
+        {"asset_id": 6, "chunk": "Coca-Cola 可乐 330ml 规格", "score": 1.33},
+        {"asset_id": 5, "chunk": "Coca-Cola 可乐 330ml 的产品实拍图", "score": 1.02},
+        {"asset_id": 6, "chunk": "品牌：COCA-COLA SERVICES SA/NV", "score": 0.90},
+        {"asset_id": 6, "chunk": "配料：Agua carbonatada, azúcar", "score": 0.16},
+    ]
+    out = _field_directed(fused, terms)
+    # 配料行（top-1 资产 A-6 自己的）提到首槽；其余三条次序原样
+    assert out[0]["chunk"].startswith("配料：")
+    assert [h["chunk"] for h in out[1:]] == [fused[0]["chunk"], fused[1]["chunk"], fused[2]["chunk"]]
+    # 问句没点名字段（纯实体问）时零变化
+    plain = _field_directed(fused, query_terms("Coca-Cola 可乐 330ml 怎么样"))
+    assert plain == fused
+    # 赢家资产没有被问字段行时零变化（字段行属于兄弟资产不动它）
+    fused2 = [
+        {"asset_id": 5, "chunk": "Coca-Cola 可乐 330ml 的产品实拍图", "score": 1.4},
+        {"asset_id": 6, "chunk": "配料：Agua carbonatada, azúcar", "score": 0.16},
+    ]
+    assert _field_directed(fused2, terms) == fused2
+
+
+
 # ---------- 打分 ----------
 
 

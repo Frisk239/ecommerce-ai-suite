@@ -75,9 +75,15 @@ def spec_fields(category: str, attrs: dict[str, str]) -> list[str]:
     return ordered
 
 
-def spec_text(category: str, attrs: dict[str, str]) -> str:
-    """attrs → 文档正文（纯函数）。形如「品牌：Sony\\n类目：耳机」；有则附可选字段。"""
-    lines = [f"品牌：{attrs['品牌']}"]
+def spec_text(name: str, category: str, attrs: dict[str, str]) -> str:
+    """name+attrs → 文档正文（纯函数）。「{name} 规格\\n品牌：Sony\\n类目：耳机」。
+
+    第 123 刀：补商品名头行（OFF 先例形态）。旧正文只有「品牌：森海塞尔」这类
+    翻译值——商品名是拉丁名（Sennheiser HD 800）时块内容与标题/商品名零词法
+    交集，按名问句（「Sennheiser HD 800 怎么样」）词法路摸不到块，检索只剩
+    min-max 归一放大的跨品噪声。头行让名字进索引块，名字即实体锚。
+    """
+    lines = [f"{name} 规格", f"品牌：{attrs['品牌']}"]
     for field in spec_fields(category, attrs):
         if field != "品牌":
             lines.append(f"{field}：{attrs[field]}")
@@ -343,7 +349,7 @@ def run(base_url: str, username: str, password: str, db_url: str, csv_path: Path
                 else:
                     asset = register_asset(
                         opener, base_url, product_id, title, spec_text(
-                            row["category"], row["attrs"]
+                            row["name"], row["category"], row["attrs"]
                         ).encode("utf-8")
                     )
                     registered += 1
