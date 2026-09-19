@@ -471,6 +471,58 @@ def _chunk_terms(chunk: str) -> frozenset[str]:
     return query_terms(chunk)
 
 
+# ---------- 第 123 刀：字段行定向（属性问句的证据窗收口） ----------
+# 属性问句（「X 的配料有什么」「X 是哪年上市的」）的答案在被问字段的行里，
+# 但「字段：长值」块词法分天然低（长值串撑大 sqrt(块单元) 分母）：证据窗
+# （prompt/引用各前 2）被同资产的名字头行/图片描述、兄弟商品的头行占满，
+# 模型看不到数值行，如实自述未覆盖→第 58 刀收口成拒答（生产重灌实测
+# 「Coca-Cola 的配料」「Sennheiser HD 800 哪年上市」均此形态）。
+#
+# 为什么是**重排**不是打分乘数：乘数（实测 ×10）会把同品牌兄弟商品的短
+# 字段块（品牌：LU）抬到第 1——跨资产次序被打乱，评测 -4.4pp（三条同形态
+# 全坏）。重排方案零分值改动：top-1 资产自己的被问字段块提到最前，跨资产
+# 次序与所有分数不动——资产级 recall/MRR 零漂移，只有「赢家资产先给哪块」
+# 变化（数值行进 prompt/引用，头行退居第二证据行）。
+# 字段名形态上限（CJK 字数）：净含量/上市年份/保质期…最长 4 字，留余量到 6；
+# 名字头行「Sennheiser HD 800 规格」无冒号/含拉丁，天然不触发
+_FIELD_NAME_MAX = 6
+
+
+def _field_line_named(chunk: str, terms: frozenset[str]) -> bool:
+    """块是否是「字段：值」行且字段名被问句点名（纯函数便于单测）。
+
+    形态闸（防误伤）：取首个冒号（CJK/ASCII）前的头段，须纯 CJK 且 ≤6 字——
+    名字头行（无冒号或含拉丁）、QA 块（问/答 单字头且「问」进不了问句词法）
+    都不触发；命中判据 = 头段词法单元 ∩ 问句单元 ≠ ∅（「上市年份：2009」对
+    「哪年上市」共享 bigram「上市」即命中——字段名整词不必全在问句里）。
+    """
+    head = re.split(r"[：:]", chunk, maxsplit=1)[0]
+    if not head or len(head) > _FIELD_NAME_MAX:
+        return False
+    if not all("\u4e00" <= ch <= "\u9fff" for ch in head):
+        return False
+    return bool(query_terms(head) & terms)
+
+
+def _field_directed(fused: list[dict[str, Any]], terms: frozenset[str]) -> list[dict[str, Any]]:
+    """问句点名字段时，top-1 资产自己的该字段块提到最前（保序重排，不动分）。
+
+    只动「赢家资产先出哪块」：被问字段行进证据窗首槽（prompt/引用各取前 2），
+    其余次序原样。top-1 资产无被问字段行时零变化（属性词不在场或赢家是图片/
+    对话资产的常态路径）。
+    """
+    if not fused:
+        return fused
+    top_asset = fused[0]["asset_id"]
+    field_hits = [
+        hit for hit in fused if hit["asset_id"] == top_asset and _field_line_named(hit["chunk"], terms)
+    ]
+    if not field_hits:
+        return fused
+    field_keys = {id(hit) for hit in field_hits}
+    return [*field_hits, *(hit for hit in fused if id(hit) not in field_keys)]
+
+
 def score_chunk(terms: frozenset[str], chunk: str) -> float:
     """打分：|交集| / sqrt(块单元数)。见模块 docstring 的理由；无命中=0。"""
     if not terms:
@@ -1124,4 +1176,5 @@ def retrieve(
         return []
     vec_hits = dense_candidates(db, query, drop_reviews=drop_reviews)
     fused = fuse_dense_sparse(lex_hits, vec_hits)
-    return fused[:top_k]
+    # 第 123 刀字段行定向（保序重排，见 _field_directed 注释）
+    return _field_directed(fused, terms)[:top_k]

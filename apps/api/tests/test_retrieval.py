@@ -327,6 +327,58 @@ def test_score_chunk_attribute_value_outranks_brand_title() -> None:
     assert value > title > 0
 
 
+# ---------- 第 123 刀：字段行定向（属性问句的证据窗收口） ----------
+
+
+def test_field_line_named_shape_gate() -> None:
+    """形态闸：纯 CJK 短字段头 + 问句点名才触发；头行/QA/拉丁头不触发。"""
+    from suite_api.services.retrieval import _field_line_named
+
+    terms = query_terms("Coca-Cola 可乐的配料有什么")
+    assert _field_line_named("配料：Agua carbonatada, azúcar", terms) is True
+    assert _field_line_named("上市年份：2009", query_terms("Sennheiser 是哪年上市的")) is True
+    # 品牌（单字段）不在问句里 -> 不定向（问配料不是问品牌）
+    assert _field_line_named("品牌：COCA-COLA SERVICES SA/NV", terms) is False
+    # 名字头行：无冒号形态（整块作头段，含拉丁/超长）不触发
+    assert _field_line_named("Sennheiser HD 800 规格", query_terms("Sennheiser HD 800 怎么样")) is False
+    # QA 块单字头「问」进不了问句词法（请/问等虚词被停用字滤掉）
+    assert _field_line_named("问：退货怎么办", query_terms("请问退货怎么办")) is False
+    # 长头段（>6 字 CJK，如句子行）不触发
+    assert _field_line_named("签收后七天内可申请退货：详见政策", query_terms("退货政策")) is False
+
+
+def test_field_directed_promotes_top_asset_value_chunk() -> None:
+    """第 123 刀重排钉子：问句点名字段时 top-1 资产自己的字段行进首槽。
+
+    生产形态：数值行词法分低（长值撑大分母），融合序里被名字头行/图片描述/
+    兄弟商品头行压到 3-5 位——证据窗（prompt/引用前 2）看不见，模型如实自述
+    未覆盖→拒答。重排只动赢家资产先出哪块：跨资产次序与分数不动（乘数方案
+    实测会把兄弟商品的短字段块抬到第 1，评测 -4.4pp，见 _field_directed 注释）。
+    """
+    from suite_api.services.retrieval import _field_directed
+
+    terms = query_terms("Coca-Cola 可乐的配料有什么")
+    fused = [
+        {"asset_id": 6, "chunk": "Coca-Cola 可乐 330ml 规格", "score": 1.33},
+        {"asset_id": 5, "chunk": "Coca-Cola 可乐 330ml 的产品实拍图", "score": 1.02},
+        {"asset_id": 6, "chunk": "品牌：COCA-COLA SERVICES SA/NV", "score": 0.90},
+        {"asset_id": 6, "chunk": "配料：Agua carbonatada, azúcar", "score": 0.16},
+    ]
+    out = _field_directed(fused, terms)
+    # 配料行（top-1 资产 A-6 自己的）提到首槽；其余三条次序原样
+    assert out[0]["chunk"].startswith("配料：")
+    assert [h["chunk"] for h in out[1:]] == [fused[0]["chunk"], fused[1]["chunk"], fused[2]["chunk"]]
+    # 问句没点名字段（纯实体问）时零变化
+    plain = _field_directed(fused, query_terms("Coca-Cola 可乐 330ml 怎么样"))
+    assert plain == fused
+    # 赢家资产没有被问字段行时零变化（字段行属于兄弟资产不动它）
+    fused2 = [
+        {"asset_id": 5, "chunk": "Coca-Cola 可乐 330ml 的产品实拍图", "score": 1.4},
+        {"asset_id": 6, "chunk": "配料：Agua carbonatada, azúcar", "score": 0.16},
+    ]
+    assert _field_directed(fused2, terms) == fused2
+
+
 
 # ---------- 打分 ----------
 

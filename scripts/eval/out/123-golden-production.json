@@ -1,0 +1,921 @@
+[
+  {
+    "id": "pos-001",
+    "distribution": "positive",
+    "question": "Sennheiser HD 800 S 规格（Wikidata）怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 16,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-002",
+    "distribution": "positive",
+    "question": "troubleshoot_site/search_results · All I'm seeing is a spinning w怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 64,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-003",
+    "distribution": "positive",
+    "question": "Nutella 榛子巧克力酱 商品图怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 1,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-004",
+    "distribution": "positive",
+    "question": "Michael Kors衬衫洗涤后会缩水吗",
+    "expect": {
+      "cite": {
+        "asset_id": 63,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-005",
+    "distribution": "positive",
+    "question": "TWS Earbuds 规格（Wikidata）的类目是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 13,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-006",
+    "distribution": "positive",
+    "question": "Fairbuds 规格（Wikidata）的类目是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 14,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-007",
+    "distribution": "positive",
+    "question": "Nutella 榛子巧克力酱的品牌是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 2,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-008",
+    "distribution": "positive",
+    "question": "Lu Petit Écolier 黑巧克力饼干的品牌是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 4,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-009",
+    "distribution": "positive",
+    "question": "UE Pro Reference Remastered 规格（Wikidata）的类目是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 19,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-010",
+    "distribution": "positive",
+    "question": "single_item_query/shirt_other_1 · i want to know more about a sh怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 63,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-011",
+    "distribution": "positive",
+    "question": "Lu Petit Écolier 商品图怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 7,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-012",
+    "distribution": "positive",
+    "question": "Xperia Ear 规格（Wikidata）的类目是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 11,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-013",
+    "distribution": "positive",
+    "question": "Barilla 意大利面的保质期是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 10,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-014",
+    "distribution": "positive",
+    "question": "LK201 商品图怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 24,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-015",
+    "distribution": "positive",
+    "question": "Lu Petit Écolier的品牌是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 8,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-016",
+    "distribution": "positive",
+    "question": "Coca-Cola 可乐 330ml的净含量是多少",
+    "expect": {
+      "cite": {
+        "asset_id": 6,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-017",
+    "distribution": "positive",
+    "question": "UE LIVE 规格（Wikidata）怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 17,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-018",
+    "distribution": "positive",
+    "question": "UE 18+ Pro 规格（Wikidata）的品牌是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 18,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-019",
+    "distribution": "positive",
+    "question": "搜索栏无法使用，一直显示加载转圈怎么办",
+    "expect": {
+      "cite": {
+        "asset_id": 64,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-020",
+    "distribution": "positive",
+    "question": "purchase_dispute/mistimed_billing_already_returned · Hello! My name is Chloe Zhang.怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 65,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-021",
+    "distribution": "positive",
+    "question": "Sennheiser HD 800 规格（Wikidata）的品牌是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 15,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-022",
+    "distribution": "positive",
+    "question": "Barilla 意大利面 商品图怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 9,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-023",
+    "distribution": "positive",
+    "question": "已经退回的商品，账单上的费用还没扣回，退款进度是怎样的",
+    "expect": {
+      "cite": {
+        "asset_id": 65,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-024",
+    "distribution": "positive",
+    "question": "UE Pro Reference Remastered 规格（Wikidata）的品牌是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 19,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-025",
+    "distribution": "positive",
+    "question": "UE LIVE 规格（Wikidata）的上市年份是2018吗",
+    "expect": {
+      "cite": {
+        "asset_id": 17,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-026",
+    "distribution": "positive",
+    "question": "腰围36英寸的Tommy Hilfiger牛仔裤内长是多少",
+    "expect": {
+      "cite": {
+        "asset_id": 66,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-027",
+    "distribution": "positive",
+    "question": "Fairbuds 规格（Wikidata）怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 14,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-028",
+    "distribution": "positive",
+    "question": "Xperia Ear Duo 规格（Wikidata）的品牌是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 12,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-029",
+    "distribution": "positive",
+    "question": "Coca-Cola 可乐 330ml 商品图怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 5,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-030",
+    "distribution": "positive",
+    "question": "Ultimate Ears Super.fi 5 EB 规格（Wikidata）的上市年份是多少",
+    "expect": {
+      "cite": {
+        "asset_id": 20,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-031",
+    "distribution": "positive",
+    "question": "Coca-Cola 可乐 330ml的保质期是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 6,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-032",
+    "distribution": "positive",
+    "question": "Sennheiser HD 800 S 规格（Wikidata）的上市年份是2016吗",
+    "expect": {
+      "cite": {
+        "asset_id": 16,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-033",
+    "distribution": "positive",
+    "question": "Ultimate Ears Triple.fi 10 规格（Wikidata）的上市年份是多少",
+    "expect": {
+      "cite": {
+        "asset_id": 21,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-034",
+    "distribution": "positive",
+    "question": "Nutella 榛子巧克力酱的净含量是多少",
+    "expect": {
+      "cite": {
+        "asset_id": 2,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-035",
+    "distribution": "positive",
+    "question": "DataHand 商品图怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 22,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-036",
+    "distribution": "positive",
+    "question": "Lu Petit Écolier 黑巧克力饼干 商品图怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 3,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-037",
+    "distribution": "positive",
+    "question": "TWS Earbuds 规格（Wikidata）的品牌是Q5019402吗",
+    "expect": {
+      "cite": {
+        "asset_id": 13,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-038",
+    "distribution": "positive",
+    "question": "Barilla 意大利面的净含量是多少",
+    "expect": {
+      "cite": {
+        "asset_id": 10,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-039",
+    "distribution": "positive",
+    "question": "Ultimate Ears Triple.fi 10 规格（Wikidata）的类目是什么",
+    "expect": {
+      "cite": {
+        "asset_id": 21,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "pos-040",
+    "distribution": "positive",
+    "question": "single_item_query/jeans_other_4 · Hello! I was hoping i could fi怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 66,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-001",
+    "distribution": "paraphrase",
+    "question": "Sennheiser HD 800 参数（Wikidata）的哪一年出是2009，对吧",
+    "expect": {
+      "cite": {
+        "asset_id": 15,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-002",
+    "distribution": "paraphrase",
+    "question": "UE 18+ Pro 参数（Wikidata）的哪一年出是2016，对吧",
+    "expect": {
+      "cite": {
+        "asset_id": 18,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-003",
+    "distribution": "paraphrase",
+    "question": "如果网站很慢，我可以先做什么排查，麻烦告知",
+    "expect": {
+      "cite": {
+        "asset_id": 62,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-004",
+    "distribution": "paraphrase",
+    "question": "Xperia Ear 参数（Wikidata）的哪一年出是2016，对吧",
+    "expect": {
+      "cite": {
+        "asset_id": 11,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-005",
+    "distribution": "paraphrase",
+    "question": "请问Ultimate Ears Super.fi 5 EB 参数（Wikidata）值得入手吗",
+    "expect": {
+      "cite": {
+        "asset_id": 20,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-006",
+    "distribution": "paraphrase",
+    "question": "Lu Petit Écolier的配料是Farine de _blé_ 73，对吧",
+    "expect": {
+      "cite": {
+        "asset_id": 8,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-007",
+    "distribution": "paraphrase",
+    "question": "请问LK421 商品图值得入手吗",
+    "expect": {
+      "cite": {
+        "asset_id": 25,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-008",
+    "distribution": "paraphrase",
+    "question": "请问Knight keyboard 商品图值得入手吗",
+    "expect": {
+      "cite": {
+        "asset_id": 23,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-009",
+    "distribution": "paraphrase",
+    "question": "Lu Petit Écolier 黑巧克力饼干的配料是Farine de _blé_ 73，对吧",
+    "expect": {
+      "cite": {
+        "asset_id": 4,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-010",
+    "distribution": "paraphrase",
+    "question": "请问现场实测保温：早上九点灌的95度热水，现在下午三点，温度计显示还有63度。钛钢内胆一体成型，没有焊缝，泡柠檬水也不怕腐蚀值得入手吗",
+    "expect": {
+      "cite": {
+        "asset_id": 26,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-011",
+    "distribution": "paraphrase",
+    "question": "请问镜头带到水源地：海拔3800米天然低钠淡矿，直接灌装零添加。今天整箱24瓶带走，比单瓶买划算。值得入手吗",
+    "expect": {
+      "cite": {
+        "asset_id": 28,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-012",
+    "distribution": "paraphrase",
+    "question": "网站打开很慢，是不是服务器出问题了，麻烦告知",
+    "expect": {
+      "cite": {
+        "asset_id": 62,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-013",
+    "distribution": "paraphrase",
+    "question": "请问Xperia Ear Duo 参数（Wikidata）值得入手吗",
+    "expect": {
+      "cite": {
+        "asset_id": 12,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "syn-014",
+    "distribution": "paraphrase",
+    "question": "请问有家人问内胆牌号：外层是钛钢，内胆为316不锈钢，食品级接触材质，长期泡枸杞茶、柠檬水都放心。值得入手吗",
+    "expect": {
+      "cite": {
+        "asset_id": 27,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-001",
+    "distribution": "confusion",
+    "question": "品牌怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 4,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-002",
+    "distribution": "confusion",
+    "question": "规格怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 2,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-003",
+    "distribution": "confusion",
+    "question": "目耳怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 11,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-004",
+    "distribution": "confusion",
+    "question": "类目怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 11,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-005",
+    "distribution": "confusion",
+    "question": "耳机怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 11,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-006",
+    "distribution": "confusion",
+    "question": "产品怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 1,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-007",
+    "distribution": "confusion",
+    "question": "品实怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 1,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-008",
+    "distribution": "confusion",
+    "question": "实拍怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 1,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-009",
+    "distribution": "confusion",
+    "question": "拍图怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 1,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-010",
+    "distribution": "confusion",
+    "question": "来自怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 1,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-011",
+    "distribution": "confusion",
+    "question": "上市怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 11,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-012",
+    "distribution": "confusion",
+    "question": "市年怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 11,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-013",
+    "distribution": "confusion",
+    "question": "年份怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 11,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-014",
+    "distribution": "confusion",
+    "question": "保质怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 2,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "conf-015",
+    "distribution": "confusion",
+    "question": "公开怎么样",
+    "expect": {
+      "cite": {
+        "asset_id": 1,
+        "version_no": 1
+      }
+    }
+  },
+  {
+    "id": "ref-001",
+    "distribution": "refusal",
+    "question": "发票可以开电子的吗",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-002",
+    "distribution": "refusal",
+    "question": "宠物用品区在几楼",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-003",
+    "distribution": "refusal",
+    "question": "机票改签找谁",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-004",
+    "distribution": "refusal",
+    "question": "会员积分怎么兑换礼品",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-005",
+    "distribution": "refusal",
+    "question": "积分商城在哪里",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-006",
+    "distribution": "refusal",
+    "question": "以旧换新怎么办理",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-007",
+    "distribution": "refusal",
+    "question": "支持分期付款吗",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-008",
+    "distribution": "refusal",
+    "question": "可以货到付款吗",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-009",
+    "distribution": "refusal",
+    "question": "礼品卡怎么充值",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-010",
+    "distribution": "refusal",
+    "question": "话费充值有优惠吗",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-011",
+    "distribution": "refusal",
+    "question": "二手回收怎么估价",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-012",
+    "distribution": "refusal",
+    "question": "医疗器械能退吗",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-013",
+    "distribution": "refusal",
+    "question": "汽车用品有推荐的吗",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-014",
+    "distribution": "refusal",
+    "question": "母婴用品有活动吗",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-015",
+    "distribution": "refusal",
+    "question": "你们营业到几点",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-016",
+    "distribution": "refusal",
+    "question": "门店地址在哪里",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-017",
+    "distribution": "refusal",
+    "question": "支持到店自提吗",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-018",
+    "distribution": "refusal",
+    "question": "降价了能补差价吗",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-019",
+    "distribution": "refusal",
+    "question": "直播间优惠券怎么领",
+    "expect": {
+      "refuse": true
+    }
+  },
+  {
+    "id": "ref-020",
+    "distribution": "refusal",
+    "question": "数码相机防水吗",
+    "expect": {
+      "refuse": true
+    }
+  }
+]

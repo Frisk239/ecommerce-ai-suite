@@ -391,10 +391,12 @@ def step_dialogues(count=5):
     import subprocess
     env = os.environ.copy()
     env["LLM_API_KEY"] = _read_env("LLM_API_KEY") or ""
+    db = "postgresql://suite:suite@localhost:5433/suite"
+    # --register 是开关（store_true），发布条数走 --publish K（重灌实测：当初
+    # 写成 --register 5 -> unrecognized arguments: 5，对话静默没灌进去）
     cmd = [
         sys.executable, str(abcd_loader),
-        "--register", str(count),
-        "--publish", str(count),
+        "--register", "--publish", str(count), "--db", db,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=600)
     print(result.stdout[-500:] if result.stdout else "")
@@ -519,7 +521,8 @@ def step_verify():
     print(f"\n{'='*60}\ndemo_prepare 检查\n{'='*60}")
     import subprocess
     result = subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "demo_prepare.py")],
+        [sys.executable, str(REPO / "scripts" / "demo_prepare.py"),
+         "--db", "postgresql://suite:suite@localhost:5433/suite"],
         capture_output=True, text=True, timeout=120,
     )
     print(result.stdout)
