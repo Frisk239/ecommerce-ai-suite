@@ -21,7 +21,7 @@
 - Dell 拣选 C-5/6/7=真英文转写（"Hey what's good, I'm Sadia…"），A-34/35/36 发布、洗帧出 2 候选帧、帧资产 A-37 走待人洗 ✓
 - **保温杯材质问句从「带引用作答」变诚实拒答+缺口 G-1**——旧库的「正确回答」一直引的是污染转写，真相链恢复后如实暴露库内无保温杯规格文档（缺口飞轮正确触发）✓
 
-**测试**：收窄语义更新 6 处钉子（rebind 两枚改自包含同名批次+异名不劫持钉子；real_clips/frames/compose 的 `_insert_candidate` 补 label 参数对齐上传名）；22+39 集成全绿，全量 **1904 passed**（集成环境带 SUITE_TEST_DATABASE_URL）。
+**测试**：收窄语义更新 6 处钉子（rebind 两枚改自包含同名批次+异名不劫持钉子；real_clips/frames/compose 的 `_insert_candidate` 补 label 参数对齐上传名）；22+39 集成全绿，全量 **1703 passed**（集成环境带 SUITE_TEST_DATABASE_URL）。
 
 ## 第 125 刀：真实直播素材调研与接入
 
